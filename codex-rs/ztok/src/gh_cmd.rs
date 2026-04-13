@@ -1066,49 +1066,11 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
 }
 
 fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
-    let timer = tracking::TimedExecution::start();
-
-    let mut cmd = resolved_command("gh");
-    cmd.args(["pr", "merge"]);
-    for arg in args {
-        cmd.arg(arg);
-    }
-
-    let output = cmd.output().context("运行 gh pr merge 失败")?;
-    let stdout = crate::utils::decode_output(&output.stdout).to_string();
-    let stderr = crate::utils::decode_output(&output.stderr).to_string();
-
-    if !output.status.success() {
-        timer.track("gh pr merge", "ztok gh pr merge", &stderr, &stderr);
-        eprintln!("{}", stderr.trim());
-        std::process::exit(output.status.code().unwrap_or(1));
-    }
-
-    // 从参数中提取 PR 编号（第一个非 flag 参数）
-    let pr_num = args
-        .iter()
-        .find(|a| !a.starts_with('-'))
-        .map(std::string::String::as_str)
-        .unwrap_or("");
-
-    let detail = if !pr_num.is_empty() {
-        format!("#{pr_num}")
-    } else {
-        String::new()
-    };
-
-    let filtered = ok_confirmation("合并", &detail);
-    println!("{filtered}");
-
-    // 使用 stdout 或 detail 作为原始输入（gh pr merge 的输出通常很少）
-    let raw = if !stdout.trim().is_empty() {
-        stdout
-    } else {
-        detail
-    };
-
-    timer.track("gh pr merge", "ztok gh pr merge", &raw, &filtered);
-    Ok(())
+    run_passthrough("gh", "pr", &{
+        let mut merged_args = vec!["merge".to_string()];
+        merged_args.extend_from_slice(args);
+        merged_args
+    })
 }
 
 fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {

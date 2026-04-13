@@ -35,7 +35,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let raw = stdout.to_string();
 
     // 自动识别 JSON 并交给过滤器处理
-    let filtered = filter_curl_output(&stdout);
+    let filtered = filter_curl_output(&stdout, args);
     println!("{filtered}");
 
     timer.track(
@@ -48,18 +48,17 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-fn filter_curl_output(output: &str) -> String {
+fn filter_curl_output(output: &str, args: &[String]) -> String {
     let trimmed = output.trim();
 
     // 尝试识别 JSON：以 { 或 [ 开头
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
         && (trimmed.ends_with('}') || trimmed.ends_with(']'))
+        && !is_internal_url(args)
         && let Ok(schema) = json_cmd::filter_json_string(trimmed, /*max_depth*/ 5)
+        && schema.len() <= trimmed.len()
     {
-        // 仅当 schema 确实比原文更短时才使用（#297）
-        if schema.len() <= trimmed.len() {
-            return schema;
-        }
+        return schema;
     }
 
     // 非 JSON：截断过长输出
@@ -83,6 +82,17 @@ fn filter_curl_output(output: &str) -> String {
         .join("\n")
 }
 
+fn is_internal_url(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        let lower = arg.to_lowercase();
+        lower.starts_with("http://localhost")
+            || lower.starts_with("http://127.0.0.1")
+            || lower.starts_with("http://[::1]")
+            || lower.starts_with("https://localhost")
+            || lower.starts_with("https://127.0.0.1")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,7 +101,7 @@ mod tests {
     fn test_filter_curl_json() {
         // 大型 JSON：若 schema 比原文更短，应返回 schema
         let output = r#"{"name": "a very long user name here", "count": 42, "items": [1, 2, 3], "description": "a very long description that takes up many characters in the original JSON payload", "status": "active", "url": "https://example.com/api/v1/users/123"}"#;
-        let result = filter_curl_output(output);
+        let result = filter_curl_output(output, &[]);
         assert!(result.contains("name"));
         assert!(result.contains("string"));
         assert!(result.contains("int"));
@@ -100,14 +110,14 @@ mod tests {
     #[test]
     fn test_filter_curl_json_array() {
         let output = r#"[{"id": 1}, {"id": 2}]"#;
-        let result = filter_curl_output(output);
+        let result = filter_curl_output(output, &[]);
         assert!(result.contains("id"));
     }
 
     #[test]
     fn test_filter_curl_non_json() {
         let output = "Hello, World!\nThis is plain text.";
-        let result = filter_curl_output(output);
+        let result = filter_curl_output(output, &[]);
         assert!(result.contains("Hello, World!"));
         assert!(result.contains("plain text"));
     }
@@ -116,7 +126,7 @@ mod tests {
     fn test_filter_curl_json_small_returns_original() {
         // 小型 JSON：若结构摘要反而更长（issue #297）
         let output = r#"{"r2Ready":true,"status":"ok"}"#;
-        let result = filter_curl_output(output);
+        let result = filter_curl_output(output, &[]);
         // 结构摘要会是 "{\n  r2Ready: bool,\n  status: string\n}"，长度更长
         // 应保持返回原始 JSON
         assert_eq!(result.trim(), output.trim());
@@ -126,9 +136,25 @@ mod tests {
     fn test_filter_curl_long_output() {
         let lines: Vec<String> = (0..50).map(|i| format!("Line {i}")).collect();
         let output = lines.join("\n");
-        let result = filter_curl_output(&output);
+        let result = filter_curl_output(&output, &[]);
         assert!(result.contains("Line 0"));
         assert!(result.contains("Line 29"));
         assert!(result.contains("剩余"));
+    }
+
+    #[test]
+    fn test_is_internal_url_localhost() {
+        assert!(is_internal_url(&[
+            "http://localhost:9222/json/version".to_string()
+        ]));
+        assert!(is_internal_url(&["http://127.0.0.1:8080/api".to_string()]));
+        assert!(is_internal_url(&[
+            "-s".to_string(),
+            "http://localhost:3000".to_string()
+        ]));
+        assert!(!is_internal_url(&[
+            "https://api.example.com/data".to_string()
+        ]));
+        assert!(!is_internal_url(&["https://github.com".to_string()]));
     }
 }

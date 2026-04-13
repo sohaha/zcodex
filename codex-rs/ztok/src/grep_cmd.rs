@@ -4,6 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
+use std::process::Stdio;
 
 pub struct GrepOptions<'a> {
     pub pattern: &'a str,
@@ -35,7 +36,9 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     let rg_pattern = pattern.replace(r"\|", "|");
 
     let mut rg_cmd = resolved_command("rg");
-    rg_cmd.args(["-n", "--no-heading", &rg_pattern, path]);
+    rg_cmd
+        .args(["-n", "--no-heading", &rg_pattern, path])
+        .stdin(Stdio::null());
 
     if let Some(ft) = file_type {
         rg_cmd.arg("--type").arg(ft);
@@ -50,6 +53,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
         .or_else(|_| {
             resolved_command("grep")
                 .args(["-rn", pattern, path])
+                .stdin(Stdio::null())
                 .output()
         })
         .context("运行 grep/rg 失败")?;

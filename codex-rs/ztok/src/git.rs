@@ -4,6 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use std::ffi::OsString;
 use std::process::Command;
+use std::process::Stdio;
 
 #[derive(Debug, Clone)]
 pub enum GitCommand {
@@ -29,6 +30,29 @@ fn git_cmd(global_args: &[String]) -> Command {
         cmd.arg(arg);
     }
     cmd
+}
+
+fn looks_like_path(arg: &str) -> bool {
+    arg.contains('/') || arg.contains('\\') || arg.starts_with('.') || arg.starts_with('~')
+}
+
+fn normalize_diff_args(args: &[String]) -> Vec<String> {
+    if args.iter().any(|arg| arg == "--") {
+        return args.to_vec();
+    }
+
+    match args
+        .iter()
+        .position(|arg| !arg.starts_with('-') && looks_like_path(arg))
+    {
+        Some(index) => {
+            let mut normalized = args[..index].to_vec();
+            normalized.push("--".to_string());
+            normalized.extend_from_slice(&args[index..]);
+            normalized
+        }
+        None => args.to_vec(),
+    }
 }
 
 pub fn run(
@@ -63,6 +87,8 @@ fn run_diff(
     global_args: &[String],
 ) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let normalized_args = normalize_diff_args(args);
+    let args = normalized_args.as_slice();
 
     // 检查用户是否想看 stat 输出
     let wants_stat = args
@@ -297,8 +323,7 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
             // 新 hunk
             in_hunk = true;
             hunk_lines = 0;
-            let hunk_info = line.split("@@").nth(1).unwrap_or("").trim();
-            result.push(format!("  @@ {hunk_info} @@"));
+            result.push(format!("  {line}"));
         } else if in_hunk {
             if line.starts_with('+') && !line.starts_with("+++") {
                 added += 1;
@@ -845,6 +870,7 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     }
 
     let output = build_commit_command(args, global_args)
+        .stdin(Stdio::inherit())
         .output()
         .context("运行 git commit 失败")?;
 
@@ -909,7 +935,10 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("运行 git push 失败")?;
+    let output = cmd
+        .stdin(Stdio::inherit())
+        .output()
+        .context("运行 git push 失败")?;
 
     let stderr = crate::utils::decode_output(&output.stderr);
     let stdout = crate::utils::decode_output(&output.stdout);

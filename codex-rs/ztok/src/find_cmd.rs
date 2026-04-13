@@ -207,9 +207,11 @@ pub fn run(
 
     let want_dirs = file_type == "d";
 
+    let search_hidden = effective_pattern.starts_with('.');
+
     let mut builder = WalkBuilder::new(path);
     builder
-        .hidden(true) // 跳过隐藏文件/目录
+        .hidden(!search_hidden) // 仅在点文件模式下包含隐藏项
         .git_ignore(true) // 遵循 .gitignore
         .git_global(true)
         .git_exclude(true);

@@ -105,7 +105,7 @@ struct Cli {
     verbose: u8,
 
     /// 超紧凑模式：ASCII 图标、行内格式（Level 2 优化）
-    #[arg(short = 'u', long, global = true)]
+    #[arg(long, global = true)]
     ultra_compact: bool,
 
     /// 为子进程设置 SKIP_ENV_VALIDATION=1（Next.js、tsc、lint、prisma）
@@ -139,10 +139,11 @@ enum Commands {
 
     /// 读取文件并智能过滤
     Read {
-        /// 要读取的文件
-        file: PathBuf,
+        /// 要读取的文件（可传多个，行为类似 cat）
+        #[arg(required = true, num_args = 1..)]
+        files: Vec<PathBuf>,
         /// 过滤级别：none、minimal、aggressive
-        #[arg(short, long, default_value = "minimal")]
+        #[arg(short, long, default_value = "none")]
         level: filter::FilterLevel,
         /// 最大行数
         #[arg(short, long, conflicts_with = "tail_lines")]
@@ -232,6 +233,10 @@ enum Commands {
 
     /// pnpm 命令超紧凑输出
     Pnpm {
+        /// pnpm 全局过滤参数（可重复：--filter @app1 --filter @app2）
+        #[arg(long, short = 'F')]
+        filter: Vec<String>,
+
         #[command(subcommand)]
         command: PnpmCommands,
     },
@@ -823,6 +828,31 @@ const REMOVED_BUILTIN_COMMANDS: &[&str] = &[
 
 const RAW_DOUBLE_DASH_WRAPPERS: &[&str] = &["env", "command", "nice", "stdbuf", "ionice", "chrt"];
 
+fn merge_pnpm_args(filters: &[String], args: &[String]) -> Vec<String> {
+    filters
+        .iter()
+        .map(|filter| format!("--filter={filter}"))
+        .chain(args.iter().cloned())
+        .collect()
+}
+
+fn merge_pnpm_args_os(filters: &[String], args: &[OsString]) -> Vec<OsString> {
+    filters
+        .iter()
+        .map(|filter| OsString::from(format!("--filter={filter}")))
+        .chain(args.iter().cloned())
+        .collect()
+}
+
+fn validate_pnpm_filters(filters: &[String], command: &PnpmCommands) -> Option<String> {
+    match command {
+        PnpmCommands::Typecheck { .. } if !filters.is_empty() => Some(
+            "[ztok] warning: --filter 还不支持 pnpm tsc，子命令前的 filters 会被忽略".to_string(),
+        ),
+        _ => None,
+    }
+}
+
 fn should_show_parse_error(args: &[OsString]) -> bool {
     let Some(first_arg) = first_subcommand_arg(args) else {
         return true;
@@ -868,7 +898,7 @@ fn first_subcommand_index(args: &[OsString]) -> Option<usize> {
             }
             if matches!(
                 arg.as_ref(),
-                "-v" | "--verbose" | "-u" | "--ultra-compact" | "--skip-env"
+                "-v" | "--verbose" | "--ultra-compact" | "--skip-env"
             ) || is_global_short_flag_cluster(arg.as_ref())
             {
                 continue;
@@ -884,7 +914,7 @@ fn first_subcommand_index(args: &[OsString]) -> Option<usize> {
 fn is_global_short_flag_cluster(arg: &str) -> bool {
     arg.strip_prefix('-')
         .filter(|flags| !flags.is_empty() && !flags.starts_with('-'))
-        .is_some_and(|flags| flags.chars().all(|flag| matches!(flag, 'u' | 'v')))
+        .is_some_and(|flags| flags.chars().all(|flag| matches!(flag, 'v')))
 }
 
 fn rewrite_grep_option_first_args(args: &[OsString]) -> Option<Vec<OsString>> {
@@ -1102,23 +1132,25 @@ fn run_cli(cli: Cli) -> Result<()> {
         }
 
         Commands::Read {
-            file,
+            files,
             level,
             max_lines,
             tail_lines,
             line_numbers,
         } => {
-            if file == Path::new("-") {
-                read::run_stdin(level, max_lines, tail_lines, line_numbers, cli.verbose)?;
-            } else {
-                read::run(
-                    &file,
-                    level,
-                    max_lines,
-                    tail_lines,
-                    line_numbers,
-                    cli.verbose,
-                )?;
+            for file in files {
+                if file == Path::new("-") {
+                    read::run_stdin(level, max_lines, tail_lines, line_numbers, cli.verbose)?;
+                } else {
+                    read::run(
+                        &file,
+                        level,
+                        max_lines,
+                        tail_lines,
+                        line_numbers,
+                        cli.verbose,
+                    )?;
+                }
             }
         }
 
@@ -1299,33 +1331,48 @@ fn run_cli(cli: Cli) -> Result<()> {
             psql_cmd::run(&args, cli.verbose)?;
         }
 
-        Commands::Pnpm { command } => match command {
-            PnpmCommands::List { depth, args } => {
-                pnpm_cmd::run(pnpm_cmd::PnpmCommand::List { depth }, &args, cli.verbose)?;
+        Commands::Pnpm { filter, command } => {
+            if let Some(warning) = validate_pnpm_filters(&filter, &command) {
+                eprintln!("{warning}");
             }
-            PnpmCommands::Outdated { args } => {
-                pnpm_cmd::run(pnpm_cmd::PnpmCommand::Outdated, &args, cli.verbose)?;
+
+            match command {
+                PnpmCommands::List { depth, args } => {
+                    pnpm_cmd::run(
+                        pnpm_cmd::PnpmCommand::List { depth },
+                        &merge_pnpm_args(&filter, &args),
+                        cli.verbose,
+                    )?;
+                }
+                PnpmCommands::Outdated { args } => {
+                    pnpm_cmd::run(
+                        pnpm_cmd::PnpmCommand::Outdated,
+                        &merge_pnpm_args(&filter, &args),
+                        cli.verbose,
+                    )?;
+                }
+                PnpmCommands::Install { packages, args } => {
+                    pnpm_cmd::run(
+                        pnpm_cmd::PnpmCommand::Install { packages },
+                        &merge_pnpm_args(&filter, &args),
+                        cli.verbose,
+                    )?;
+                }
+                PnpmCommands::Build { args } => {
+                    let mut build_args = merge_pnpm_args(&filter, &args);
+                    build_args.insert(0, "build".into());
+                    let os_args: Vec<OsString> =
+                        build_args.into_iter().map(OsString::from).collect();
+                    pnpm_cmd::run_passthrough(&os_args, cli.verbose)?;
+                }
+                PnpmCommands::Typecheck { args } => {
+                    tsc_cmd::run(&args, cli.verbose)?;
+                }
+                PnpmCommands::Other(args) => {
+                    pnpm_cmd::run_passthrough(&merge_pnpm_args_os(&filter, &args), cli.verbose)?;
+                }
             }
-            PnpmCommands::Install { packages, args } => {
-                pnpm_cmd::run(
-                    pnpm_cmd::PnpmCommand::Install { packages },
-                    &args,
-                    cli.verbose,
-                )?;
-            }
-            PnpmCommands::Build { args } => {
-                let mut build_args: Vec<String> = vec!["build".into()];
-                build_args.extend(args);
-                let os_args: Vec<OsString> = build_args.into_iter().map(OsString::from).collect();
-                pnpm_cmd::run_passthrough(&os_args, cli.verbose)?;
-            }
-            PnpmCommands::Typecheck { args } => {
-                tsc_cmd::run(&args, cli.verbose)?;
-            }
-            PnpmCommands::Other(args) => {
-                pnpm_cmd::run_passthrough(&args, cli.verbose)?;
-            }
-        },
+        }
 
         Commands::Err { command } => {
             runner::run_err(&command, cli.verbose)?;
@@ -1928,7 +1975,8 @@ mod tests {
     fn test_first_subcommand_arg_skips_global_flags() {
         let args = vec![
             OsString::from("--verbose"),
-            OsString::from("-uvv"),
+            OsString::from("--ultra-compact"),
+            OsString::from("-vv"),
             OsString::from("--skip-env"),
             OsString::from("rewrite"),
         ];
@@ -2027,7 +2075,7 @@ mod tests {
     fn test_should_not_show_parse_error_for_unknown_command_after_global_flags() {
         let args = vec![
             OsString::from("--skip-env"),
-            OsString::from("-u"),
+            OsString::from("--ultra-compact"),
             OsString::from("custom-fallback"),
         ];
         assert!(!should_show_parse_error(&args));

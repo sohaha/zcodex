@@ -40,6 +40,15 @@ pub fn run(
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&content, lang);
 
+    if filtered.trim().is_empty() && !content.trim().is_empty() {
+        eprintln!(
+            "ztok: warning: filter produced empty output for {} ({} bytes), showing raw content",
+            file.display(),
+            content.len()
+        );
+        filtered = content.clone();
+    }
+
     if verbose > 0 {
         let original_lines = content.lines().count();
         let filtered_lines = filtered.lines().count();
@@ -101,6 +110,14 @@ pub fn run_stdin(
     // 应用过滤器
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&content, lang);
+
+    if filtered.trim().is_empty() && !content.trim().is_empty() {
+        eprintln!(
+            "ztok: warning: filter produced empty output for stdin ({} bytes), showing raw content",
+            content.len()
+        );
+        filtered = content.clone();
+    }
 
     if verbose > 0 {
         let original_lines = content.lines().count();

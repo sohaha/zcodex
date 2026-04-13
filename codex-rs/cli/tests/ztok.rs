@@ -71,6 +71,14 @@ fn fallback_marker_script(stdout: &str) -> &'static str {
     }
 }
 
+fn echo_args_script() -> &'static str {
+    if cfg!(windows) {
+        "@echo %*\r\n"
+    } else {
+        "#!/bin/sh\nprintf '%s ' \"$@\"\nprintf '\\n'\n"
+    }
+}
+
 #[cfg(unix)]
 fn shell_args(script: &str) -> [&str; 3] {
     ["sh", "-c", script]
@@ -138,6 +146,28 @@ fn ztok_read_tail_lines() -> Result<()> {
     .assert()
     .success()
     .stdout(contains("three").and(contains("one").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_read_accepts_multiple_files() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let first = codex_home.path().join("one.txt");
+    let second = codex_home.path().join("two.txt");
+    std::fs::write(&first, "alpha\n")?;
+    std::fs::write(&second, "beta\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "read",
+        first.to_string_lossy().as_ref(),
+        second.to_string_lossy().as_ref(),
+    ])
+    .assert()
+    .success()
+    .stdout(contains("alpha").and(contains("beta")));
 
     Ok(())
 }
@@ -372,10 +402,70 @@ fn ztok_version_still_works_with_global_flags() -> Result<()> {
     for args in [
         vec!["ztok", "--version"],
         vec!["ztok", "--verbose", "--version"],
-        vec!["ztok", "-u", "--version"],
+        vec!["ztok", "--ultra-compact", "--version"],
     ] {
         assert_version_contains(codex_home.path(), &args)?;
     }
+
+    Ok(())
+}
+
+#[test]
+fn ztok_find_matches_hidden_dotfiles() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(codex_home.path().join(".claude.json"), "{}")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "find",
+        ".claude.json",
+        codex_home.path().to_string_lossy().as_ref(),
+    ])
+    .assert()
+    .success()
+    .stdout(contains(".claude.json"));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_gh_pr_merge_passthroughs_real_output() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let _fake_gh = write_fake_command(&bin_dir, "gh", echo_args_script())?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["ztok", "gh", "pr", "merge", "123", "--squash"])
+        .assert()
+        .success()
+        .stdout(
+            contains("pr")
+                .and(contains("merge"))
+                .and(contains("123"))
+                .and(contains("--squash")),
+        );
+
+    Ok(())
+}
+
+#[test]
+fn ztok_pnpm_build_keeps_global_filters_in_passthrough() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let _fake_pnpm = write_fake_command(&bin_dir, "pnpm", echo_args_script())?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["ztok", "pnpm", "--filter", "@web", "build", "--prod"])
+        .assert()
+        .success()
+        .stdout(
+            contains("build")
+                .and(contains("--filter=@web"))
+                .and(contains("--prod")),
+        );
 
     Ok(())
 }
@@ -501,7 +591,7 @@ fn ztok_unknown_commands_still_fall_back_after_global_flags() -> Result<()> {
         .args([
             "ztok",
             "--skip-env",
-            "-u",
+            "--ultra-compact",
             "custom-fallback",
             "alpha",
             "beta",

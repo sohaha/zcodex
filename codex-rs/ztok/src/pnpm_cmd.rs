@@ -19,8 +19,9 @@ use crate::parser::truncate_output;
 /// `pnpm list` 的 JSON 输出结构
 #[derive(Debug, Deserialize)]
 struct PnpmListOutput {
+    name: String,
     #[serde(flatten)]
-    packages: HashMap<String, PnpmPackage>,
+    package: PnpmPackage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,15 +57,15 @@ impl OutputParser for PnpmListParser {
 
     fn parse(input: &str) -> ParseResult<DependencyState> {
         // Tier 1：尝试解析 JSON
-        match serde_json::from_str::<PnpmListOutput>(input) {
+        match serde_json::from_str::<Vec<PnpmListOutput>>(input) {
             Ok(json) => {
                 let mut dependencies = Vec::new();
                 let mut total_count = 0;
 
-                for (name, pkg) in &json.packages {
+                for pkg in &json {
                     collect_dependencies(
-                        name,
-                        pkg,
+                        pkg.name.as_str(),
+                        &pkg.package,
                         /*is_dev*/ false,
                         &mut dependencies,
                         &mut total_count,
@@ -527,8 +528,9 @@ mod tests {
 
     #[test]
     fn test_pnpm_list_parser_json() {
-        let json = r#"{
-            "my-project": {
+        let json = r#"[
+            {
+                "name": "my-project",
                 "version": "1.0.0",
                 "dependencies": {
                     "express": {
@@ -536,7 +538,7 @@ mod tests {
                     }
                 }
             }
-        }"#;
+        ]"#;
 
         let result = PnpmListParser::parse(json);
         assert_eq!(result.tier(), 1);
