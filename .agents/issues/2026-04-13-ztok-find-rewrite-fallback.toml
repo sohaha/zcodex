@@ -1,0 +1,22 @@
+plan = ".agents/plan/2026-04-13-ztok-find-rewrite-fallback.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收敛 ztok find 的自动重写回退边界"
+scope = """
+本 issue 负责把 shell 自动重写对 `find` 的行为从“无条件改写”收敛为“仅在 ztok 已支持时改写”，并补齐对应测试与最小验证闭环。
+
+包括：为 `find` 增加专用 rewrite 判定路径、复用现有 `UNSUPPORTED_FIND_FLAGS` 或等效单一事实源判断是否应 passthrough、保留简单 `find` 的自动改写、补充“命中不支持参数不改写”和“简单 find 仍改写”的测试，并完成格式化与 `codex-ztok` 局部测试。
+不包括：扩展 `ztok find` 对复合谓词/动作参数的支持，不包括调整 `find` 以外命令的自动重写策略，也不包括修改显式 `ztok find` 的运行时报错语义。
+"""
+touch_points = ["module:ztok", "command:find", "command:ztok find", "command:shell_command", "codex-rs/ztok/src/rewrite.rs", "codex-rs/ztok/src/find_cmd.rs", "codex-rs/ztok/src/lib.rs"]
+depends_on = []
+done_when = "普通 shell `find` 仅在参数落入 ztok 已支持子集时才会被自动改写；命中 `UNSUPPORTED_FIND_FLAGS` 的 `find` 会直接透传到系统 `find`；对应测试覆盖支持与不支持两类路由；`just fmt` 与受影响 crate 的局部测试通过。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：spec-reviewer=PASS，code-reviewer=PASS。实现上移除了 `find` 的无条件直通重写，改为在 `codex-rs/ztok/src/rewrite.rs` 走专用 `rewrite_find(...)`，并复用 `codex-rs/ztok/src/find_cmd.rs` 的 `UNSUPPORTED_FIND_FLAGS` / `has_unsupported_find_flags()` 作为单一事实源；命中不支持参数时保持 passthrough 到系统 `find`，简单 `find` 仍改写为 `ztok find`。验证结果：`just fmt` 通过；本机未安装 `cargo-nextest`，已按 issue 合同降级执行 `env -u RUSTC_WRAPPER cargo test -p codex-ztok`，496 passed / 0 failed / 3 ignored。available capabilities 结论：none-applicable；当前任务是 `codex-rs/ztok` 内的窄范围本地实现、评审与测试回路，现有会话能力没有比主代理直接完成更高收益的专用入口。"

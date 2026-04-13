@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use crate::find_cmd;
+
 const ZTOK_PREFIX: &str = "ztok";
 const ENV_PREFIX_FLAGS: &[&str] = &["-i", "--ignore-environment"];
 
@@ -9,7 +11,6 @@ const DIRECT_PREFIXES: &[&str] = &[
     "cargo",
     "curl",
     "docker",
-    "find",
     "gh",
     "git",
     "go",
@@ -165,6 +166,7 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
         "cat" => rewrite_cat(parsed.rest),
         "head" => rewrite_head(parsed.rest),
         "tail" => rewrite_tail(parsed.rest),
+        "find" => rewrite_find(parsed.rest),
         "rg" => rewrite_rg(parsed.rest),
         command if DIRECT_PREFIXES.contains(&command) => Some(format!(
             "{ZTOK_PREFIX} {command}{}",
@@ -288,6 +290,14 @@ fn rewrite_rg(rest: &[String]) -> Option<String> {
     let mut rewritten = vec![ZTOK_PREFIX.to_string(), "grep".to_string(), pattern, path];
     rewritten.extend(extra_args);
     Some(join_shell_words(&rewritten))
+}
+
+fn rewrite_find(rest: &[String]) -> Option<String> {
+    if find_cmd::has_unsupported_find_flags(rest) {
+        return None;
+    }
+
+    Some(format!("{ZTOK_PREFIX} find{}", join_rest_args(rest)))
 }
 
 fn rewrite_read_window(rest: &[String], line_flag: &str) -> Option<String> {
@@ -953,6 +963,10 @@ mod tests {
                 "nice -n 5 chrt -r 10 git status",
                 Some("nice -n 5 chrt -r 10 ztok git status"),
             ),
+            (
+                "find apps -name '*.test.ts' -type f",
+                Some("ztok find apps -name '*.test.ts' -type f"),
+            ),
         ]);
     }
 
@@ -1361,6 +1375,8 @@ mod tests {
             "head -n 3 src/main.rs src/lib.rs",
             "tail -f src/main.rs",
             "env FOO=1 command tail -f src/main.rs",
+            "find . -name '*.rs' -o -name '*.ts'",
+            "find . -name '*.tmp' -exec rm {} ';'",
             "rg -r '$1' needle src/main.rs",
             "rg --replace '$1' needle src/main.rs",
             "rg needle src/main.rs nested.rs",

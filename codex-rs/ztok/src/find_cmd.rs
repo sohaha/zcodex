@@ -63,13 +63,13 @@ fn has_native_find_flags(args: &[String]) -> bool {
 
 /// 在 ZTOK 中无法正确处理的原生 find 标志位。
 /// 这些标志涉及组合谓词、动作或暂不支持的语义。
-const UNSUPPORTED_FIND_FLAGS: &[&str] = &[
+pub(crate) const UNSUPPORTED_FIND_FLAGS: &[&str] = &[
     "-not", "!", "-or", "-o", "-and", "-a", "-exec", "-execdir", "-delete", "-print0", "-newer",
     "-perm", "-size", "-mtime", "-mmin", "-atime", "-amin", "-ctime", "-cmin", "-empty", "-link",
     "-regex", "-iregex",
 ];
 
-fn has_unsupported_find_flags(args: &[String]) -> bool {
+pub(crate) fn has_unsupported_find_flags(args: &[String]) -> bool {
     args.iter()
         .any(|a| UNSUPPORTED_FIND_FLAGS.contains(&a.as_str()))
 }
