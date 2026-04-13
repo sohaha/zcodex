@@ -50,6 +50,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-12-remote-compaction-nonblocking-connectors.md`：远程 compaction 仍卡住时，要继续检查 `build_initial_context()` 和 connector 指令链路是否还在走阻塞版 MCP tools。
 - `.agents/llmdoc/memory/reflections/2026-04-12-core-nextest-mcp-timeout-triage.md`：`codex-core` 中依赖 MCP tool ready 的测试若只在 nextest 30 秒 case timeout 下失败，先用定向 `cargo test --exact` 区分 runner 时限和真实回归。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
+- `.agents/llmdoc/memory/reflections/2026-04-13-zmemory-relative-path-config-deserialization.md`：`zmemory.path` 若需要按 repo root / cwd 解析，就不能在通用配置层提前反序列化成 `AbsolutePathBuf`。
 
 - `.agents/llmdoc/memory/reflections/2026-04-12-cli-startup-error-chain-visibility.md`：CLI 入口只打印最外层 anyhow 错误会隐藏 TUI bootstrap 根因，需显式展开 error chain。
 - `.agents/llmdoc/memory/reflections/2026-04-12-windows-native-tldr-daemon-first.md`：Windows 并不需要独立 native-tldr 安装物，缺的是非 Unix daemon-first 的 TCP endpoint metadata 与生命周期接线。

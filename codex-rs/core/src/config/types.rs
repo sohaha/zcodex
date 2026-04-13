@@ -1,4 +1,3 @@
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_zmemory::config::ZmemorySettings;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -10,7 +9,11 @@ use std::path::PathBuf;
 #[schemars(deny_unknown_fields)]
 pub struct ZmemoryToml {
     /// Optional override for the `zmemory` database path.
-    pub path: Option<AbsolutePathBuf>,
+    ///
+    /// Keep this as a raw `PathBuf` so relative paths can be resolved later by
+    /// the zmemory path resolver against the repo root or cwd, rather than
+    /// being forced through config-layer `AbsolutePathBuf` resolution.
+    pub path: Option<PathBuf>,
     /// Optional writable memory domains for the current runtime profile.
     pub valid_domains: Option<Vec<String>>,
     /// Optional boot anchor URIs for the current runtime profile.
@@ -31,7 +34,7 @@ impl ZmemoryConfig {
     pub fn from_toml(toml: Option<ZmemoryToml>) -> Self {
         let (path, valid_domains, core_memory_uris, namespace) = match toml {
             Some(toml) => (
-                toml.path.map(AbsolutePathBuf::into_path_buf),
+                toml.path,
                 toml.valid_domains,
                 toml.core_memory_uris,
                 toml.namespace,

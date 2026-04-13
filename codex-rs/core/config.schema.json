@@ -2163,12 +2163,8 @@
           "type": "string"
         },
         "path": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Optional override for the `zmemory` database path."
+          "description": "Optional override for the `zmemory` database path.\n\nKeep this as a raw `PathBuf` so relative paths can be resolved later by the zmemory path resolver against the repo root or cwd, rather than being forced through config-layer `AbsolutePathBuf` resolution.",
+          "type": "string"
         },
         "valid_domains": {
           "description": "Optional writable memory domains for the current runtime profile.",

@@ -57,6 +57,7 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::RealtimeVoice;
+use codex_zmemory::resolve_zmemory_path;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -3521,6 +3522,44 @@ nickname_candidates = ["Hypatia", "Noether"]
             .and_then(|role| role.nickname_candidates.as_ref())
             .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
         Some(vec!["Hypatia", "Noether"])
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_relative_path_loads_and_resolves_against_repo_root() -> std::io::Result<()> {
+    let repo = TempDir::new()?;
+    tokio::fs::create_dir(repo.path().join(".git")).await?;
+    tokio::fs::create_dir_all(repo.path().join(".agents")).await?;
+    tokio::fs::create_dir(repo.path().join("src")).await?;
+    tokio::fs::write(
+        repo.path().join(CONFIG_TOML_FILE),
+        r#"[zmemory]
+path = ".agents/memory.db"
+"#,
+    )
+    .await?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(repo.path().to_path_buf())
+        .fallback_cwd(Some(repo.path().join("src")))
+        .build()
+        .await?;
+
+    assert_eq!(
+        config.zmemory.path.as_deref(),
+        Some(Path::new(".agents/memory.db"))
+    );
+    assert_eq!(
+        resolve_zmemory_path(
+            config.codex_home.as_path(),
+            config.cwd.as_path(),
+            config.zmemory.path.as_deref(),
+        )
+        .map_err(std::io::Error::other)?
+        .db_path,
+        repo.path().join(".agents").join("memory.db")
     );
 
     Ok(())
