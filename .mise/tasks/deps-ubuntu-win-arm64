@@ -3,6 +3,8 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
 target="aarch64-pc-windows-gnullvm"
 target_label="Windows arm64"
 build_task_name="build-ubuntu-win-arm64"
