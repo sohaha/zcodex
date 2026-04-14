@@ -429,6 +429,8 @@ pub struct OtelConfigToml {
 
     /// Optional metrics exporter
     pub metrics_exporter: Option<OtelExporterKind>,
+    /// PostHog API key for user analytics
+    pub posthog_api_key: Option<String>,
 }
 
 /// Effective OTEL settings after defaults are applied.
@@ -439,6 +441,7 @@ pub struct OtelConfig {
     pub exporter: OtelExporterKind,
     pub trace_exporter: OtelExporterKind,
     pub metrics_exporter: OtelExporterKind,
+    pub posthog_api_key: Option<String>,
 }
 
 impl Default for OtelConfig {
@@ -449,6 +452,7 @@ impl Default for OtelConfig {
             exporter: OtelExporterKind::None,
             trace_exporter: OtelExporterKind::None,
             metrics_exporter: OtelExporterKind::Statsig,
+            posthog_api_key: None,
         }
     }
 }
@@ -688,6 +692,15 @@ pub struct BuddyReactionStrategy {
     /// Force AI for critical interactions (user mentions buddy, tool completion, etc).
     #[serde(default = "default_true")]
     pub critical_scenarios_use_ai: bool,
+}
+impl BuddyReactionStrategy {
+    /// Validate the strategy configuration.
+    pub fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.ai_probability) {
+            return Err("ai_probability must be between 0.0 and 1.0".into());
+        }
+        Ok(())
+    }
 }
 
 fn default_ai_probability() -> f64 {

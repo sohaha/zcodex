@@ -262,6 +262,7 @@ async fn process_sse(
             }
         };
 
+        trace!(raw_sse_data = %sse.data, "anthropic raw SSE");
         let event: AnthropicStreamEvent = match serde_json::from_str(&sse.data) {
             Ok(event) => event,
             Err(err) => {
@@ -749,12 +750,13 @@ impl AnthropicStreamState {
         self.usage.as_ref().map(|usage| {
             let input_tokens = usage.input_tokens.unwrap_or_default();
             let output_tokens = usage.output_tokens.unwrap_or_default();
+            let cached_input_tokens = usage.cache_read_input_tokens.unwrap_or_default();
             TokenUsage {
                 input_tokens,
-                cached_input_tokens: usage.cache_read_input_tokens.unwrap_or_default(),
+                cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens: 0,
-                total_tokens: input_tokens + output_tokens,
+                total_tokens: input_tokens + cached_input_tokens + output_tokens,
             }
         })
     }

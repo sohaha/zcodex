@@ -179,6 +179,9 @@ struct LocalReactionLibrary {
     thinking: &'static [&'static str],
     debugging: &'static [&'static str],
     interactive: &'static [&'static str],
+    greeting: &'static [&'static str],
+    error: &'static [&'static str],
+    waiting: &'static [&'static str],
 }
 
 impl Default for LocalReactionLibrary {
@@ -220,10 +223,30 @@ impl Default for LocalReactionLibrary {
                 "我也这么想。",
                 "继续说。",
             ],
+            greeting: &[
+                "开始吧！",
+                "准备好了。",
+                "让我看看...",
+                "有新任务？",
+                "开工！",
+            ],
+            error: &[
+                "别慌，排查一下。",
+                "这个报错有意思。",
+                "看看错误信息。",
+                "慢慢来。",
+                "加油解决！",
+            ],
+            waiting: &[
+                "稍等...",
+                "处理中...",
+                "马上好。",
+                "还在跑...",
+                "等一下哈。",
+            ],
         }
     }
 }
-
 impl LocalReactionLibrary {
     fn select(&self, category: ReactionCategory, preference: LocalPreference) -> &'static str {
         match preference {
@@ -234,6 +257,9 @@ impl LocalReactionLibrary {
                     ReactionCategory::Thinking => self.thinking,
                     ReactionCategory::Debugging => self.debugging,
                     ReactionCategory::Interactive => self.interactive,
+                    ReactionCategory::Greeting => self.greeting,
+                    ReactionCategory::Error => self.error,
+                    ReactionCategory::Waiting => self.waiting,
                 };
                 let idx = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -269,6 +295,9 @@ impl LocalReactionLibrary {
                     ReactionCategory::Thinking => self.thinking,
                     ReactionCategory::Debugging => self.debugging,
                     ReactionCategory::Interactive => self.interactive,
+                    ReactionCategory::Greeting => self.greeting,
+                    ReactionCategory::Error => self.error,
+                    ReactionCategory::Waiting => self.waiting,
                 };
                 let item_idx = (time_ms / categories.len()) % items.len();
                 items[item_idx]
@@ -284,6 +313,9 @@ enum ReactionCategory {
     Thinking,
     Debugging,
     Interactive,
+    Greeting,
+    Error,
+    Waiting,
 }
 
 /// Determine reaction category from context.
@@ -315,6 +347,41 @@ fn classify_reaction_context(
         }
         if msg.len() > 500 {
             return ReactionCategory::Thinking;
+        }
+    }
+
+
+    // Check for greeting patterns (first turn, short messages)
+    if let Some(msg) = last_user_message {
+        let msg_len = msg.len();
+        if msg_len < 50 && !msg.contains(" ") {
+            return ReactionCategory::Greeting;
+        }
+    }
+
+    // Check for error patterns in agent response
+    if let Some(msg) = last_agent_message {
+        if msg.contains("错误")
+            || msg.contains("error")
+            || msg.contains("失败")
+            || msg.contains("warning")
+            || msg.contains("警告")
+            || msg.contains("panic")
+            || msg.contains("异常")
+        {
+            return ReactionCategory::Error;
+        }
+    }
+
+    // Check for waiting patterns
+    if let Some(msg) = last_agent_message {
+        if msg.contains("正在")
+            || msg.contains("加载")
+            || msg.contains("loading")
+            || msg.contains("processing")
+            || msg.contains("处理")
+        {
+            return ReactionCategory::Waiting;
         }
     }
 

@@ -2963,12 +2963,13 @@ impl Config {
                 let exporter = t.exporter.unwrap_or(OtelExporterKind::None);
                 let trace_exporter = t.trace_exporter.unwrap_or_else(|| exporter.clone());
                 let metrics_exporter = t.metrics_exporter.unwrap_or(OtelExporterKind::Statsig);
+                let posthog_api_key = t.posthog_api_key;
                 OtelConfig {
                     log_user_prompt,
-                    environment,
                     exporter,
                     trace_exporter,
                     metrics_exporter,
+                    posthog_api_key,
                 }
             },
         };
