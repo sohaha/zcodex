@@ -59,6 +59,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-12-windows-installer-bundle-parity.md`：Windows `install.ps1` 收口到 npm bundle/vendor 分发语义，并补齐 `CODEX_BASE_URL` / `CODEX_INSTALL_DIR` 对齐点的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-13-ztok-find-rewrite-boundary.md`：shell 自动重写不能越过 `ztok find` 的能力边界，rewrite 层应复用运行时不支持参数事实源的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-14-upstream-sync-rtk-global-flag-validation.md`：同步 RTK 时，已删除全局 flag 的残留测试矩阵与定向验证闭环反思。
+- `.agents/llmdoc/memory/reflections/2026-04-14-cli-lifecycle-daemon-lock-probe-race.md`：CLI lifecycle 双 contender 场景里，daemon-lock 探测不能在 launcher owner 的最终 spawn 入口重复做一次，否则会把同伴的瞬时抢锁误判成真实 owner。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。
