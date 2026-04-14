@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::time::Instant;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
@@ -15,6 +16,7 @@ use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
 use crate::apps::render_apps_section;
+use crate::buddy::BuddyReactionState;
 use crate::buddy::maybe_inject_companion_intro;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
@@ -857,6 +859,8 @@ pub(crate) struct Session {
     pub(crate) services: SessionServices,
     js_repl: Arc<JsReplHandle>,
     next_internal_sub_id: AtomicU64,
+    /// Buddy reaction state: consecutive local count and last reaction time.
+    buddy_reaction_state: Mutex<BuddyReactionState>,
 }
 
 #[derive(Clone, Debug)]
@@ -2232,6 +2236,7 @@ impl Session {
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
+            buddy_reaction_state: Mutex::new(BuddyReactionState::default()),
         });
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;

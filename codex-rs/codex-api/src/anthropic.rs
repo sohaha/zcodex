@@ -361,6 +361,9 @@ struct AnthropicStreamState {
     /// Tracks whether we are currently inside an inline `<think>...</think>` block
     /// that some non-Anthropic endpoints embed inside `text_delta` events.
     in_inline_think: bool,
+    /// Buffer for inline `<tool_call>...</tool_call>` text emitted by models that
+    /// cannot produce structured tool-use events.
+    inline_tool_call_buf: Option<String>,
 }
 
 #[derive(Default)]
@@ -553,7 +556,24 @@ impl AnthropicStreamState {
             if remaining.is_empty() {
                 break;
             }
-            if self.in_inline_think {
+            if self.inline_tool_call_buf.is_some() {
+                if let Some(end) = remaining.find("</tool_call>") {
+                    let chunk = &remaining[..end];
+                    self.inline_tool_call_buf.as_mut().unwrap().push_str(chunk);
+                    remaining = &remaining[end + "</tool_call>".len()..];
+                    let buf = self.inline_tool_call_buf.take().unwrap();
+                    let tool_index = self.tool_blocks.len();
+                    if let Some(tool) = parse_inline_tool_call(&buf) {
+                        self.tool_blocks.insert(tool_index, tool);
+                    }
+                } else {
+                    self.inline_tool_call_buf
+                        .as_mut()
+                        .unwrap()
+                        .push_str(remaining);
+                    break;
+                }
+            } else if self.in_inline_think {
                 if let Some(end) = remaining.find("</think>") {
                     let think_chunk = &remaining[..end];
                     if !think_chunk.is_empty() {
@@ -567,6 +587,18 @@ impl AnthropicStreamState {
                         .await?;
                     break;
                 }
+            } else if let Some(start) = remaining.find("<tool_call>") {
+                let before = &remaining[..start];
+                if !before.is_empty() {
+                    self.ensure_message_started(tx_event).await?;
+                    self.text_blocks.entry(index).or_default().push_str(before);
+                    send_event(tx_event, ResponseEvent::OutputTextDelta(before.to_string()))
+                        .await?;
+                }
+                let after = &remaining[start + "<tool_call>".len()..];
+                let after = after.trim_start_matches("<tool_call>");
+                self.inline_tool_call_buf = Some(String::new());
+                remaining = after;
             } else if let Some(start) = remaining.find("<think>") {
                 let before = &remaining[..start];
                 if !before.is_empty() {
@@ -986,6 +1018,62 @@ fn anthropic_tool(tool: &Value) -> Option<Value> {
         "image_generation" => None,
         _ => None,
     }
+}
+
+/// Parse an inline `<tool_call>` buffer into a `ToolUseState`.
+///
+/// Expected buffer content (after stripping outer `<tool_call>` tags and any
+/// duplicate opening tag):
+///
+/// ```text
+/// shell<arg_key>command</arg_key><arg_value>ls -la</arg_value>
+/// ```
+///
+/// The tool name is the leading plain text before the first `<`.  Arguments
+/// are collected as alternating `<arg_key>`/`<arg_value>` pairs and assembled
+/// into a JSON object.
+fn parse_inline_tool_call(buf: &str) -> Option<ToolUseState> {
+    let buf = buf.trim();
+    let buf = buf.trim_start_matches("<tool_call>");
+    let tool_name_end = buf.find('<').unwrap_or(buf.len());
+    let tool_name = buf[..tool_name_end].trim().to_string();
+    if tool_name.is_empty() {
+        return None;
+    }
+    let rest = &buf[tool_name_end..];
+    let mut args: Map<String, Value> = Map::new();
+    let mut cursor = rest;
+    while !cursor.is_empty() {
+        let key_start = match cursor.find("<arg_key>") {
+            Some(pos) => pos + "<arg_key>".len(),
+            None => break,
+        };
+        let key_end = match cursor[key_start..].find("</arg_key>") {
+            Some(pos) => key_start + pos,
+            None => break,
+        };
+        let key = cursor[key_start..key_end].trim().to_string();
+        cursor = &cursor[key_end + "</arg_key>".len()..];
+        let val_start = match cursor.find("<arg_value>") {
+            Some(pos) => pos + "<arg_value>".len(),
+            None => break,
+        };
+        let val_end = match cursor[val_start..].find("</arg_value>") {
+            Some(pos) => val_start + pos,
+            None => break,
+        };
+        let val = cursor[val_start..val_end].trim().to_string();
+        cursor = &cursor[val_end + "</arg_value>".len()..];
+        if !key.is_empty() {
+            args.insert(key, Value::String(val));
+        }
+    }
+    Some(ToolUseState {
+        id: None,
+        name: Some(tool_name),
+        input: Some(Value::Object(args)),
+        partial_json: String::new(),
+    })
 }
 
 fn tool_use_to_response_item(

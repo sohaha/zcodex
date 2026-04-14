@@ -6,6 +6,8 @@ use crate::compact::content_items_to_text;
 use crate::config::Config;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
+use codex_config::types::BuddyReactionMode;
+use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::BaseInstructions;
@@ -16,6 +18,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 use std::path::Path;
+use std::time::Duration;
 use toml_edit::Item as TomlItem;
 use toml_edit::Table as TomlTable;
 use toml_edit::value;
@@ -57,6 +60,13 @@ struct BuddySoulOutput {
 #[derive(Deserialize)]
 struct BuddyReactionOutput {
     text: String,
+}
+
+/// State tracked for buddy reaction decisions.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct BuddyReactionState {
+    pub(crate) consecutive_local_count: usize,
+    pub(crate) last_reaction_time: Option<std::time::Instant>,
 }
 
 pub(crate) fn maybe_inject_companion_intro(config: &Config, base: &mut BaseInstructions) {
@@ -114,17 +124,13 @@ pub(crate) async fn generate_buddy_soul(
     Some(BuddySoul { name, personality })
 }
 
-pub(crate) async fn generate_buddy_reaction(
+async fn generate_buddy_reaction_ai(
     session: &Session,
     turn_context: &TurnContext,
     soul: Option<&BuddySoul>,
     last_user_message: Option<&str>,
     last_agent_message: Option<&str>,
-) -> Option<String> {
-    if last_user_message.is_none() && last_agent_message.is_none() {
-        return None;
-    }
-
+) -> CodexResult<Option<String>> {
     let mut lines = Vec::new();
     if let Some(soul) = soul {
         lines.push(format!("Buddy name: {}", soul.name));
@@ -157,15 +163,192 @@ pub(crate) async fn generate_buddy_reaction(
         personality: None,
         output_schema: Some(buddy_reaction_output_schema()),
     };
-    let raw = match stream_prompt_text(session, turn_context, prompt).await {
-        Ok(text) => text,
-        Err(err) => {
-            warn!(turn_id = %turn_context.sub_id, "buddy reaction failed: {err}");
-            return None;
+
+    let raw = stream_prompt_text(session, turn_context, prompt).await?;
+    let output: BuddyReactionOutput = parse_json_payload(&raw).ok_or_else(|| {
+        codex_protocol::error::CodexErr::InvalidRequest("invalid buddy reaction output".to_string())
+    })?;
+    Ok(sanitize_reaction_text(&output.text))
+}
+
+/// Local reaction library organized by category.
+struct LocalReactionLibrary {
+    encouraging: &'static [&'static str],
+    success: &'static [&'static str],
+    thinking: &'static [&'static str],
+    debugging: &'static [&'static str],
+    interactive: &'static [&'static str],
+}
+
+impl Default for LocalReactionLibrary {
+    fn default() -> Self {
+        Self {
+            encouraging: &[
+                "稳住，继续敲。",
+                "这波有点意思。",
+                "进度不错。",
+                "我在旁边看着呢。",
+                "继续加油！",
+                "这个思路不错。",
+            ],
+            success: &[
+                "搞定！",
+                "完美收工。",
+                "这波操作稳了。",
+                "漂亮！",
+                "收工吃饭！",
+            ],
+            thinking: &[
+                "让我想想...",
+                "这题有点意思。",
+                "嗯...",
+                "正在理解...",
+                "有点复杂...",
+            ],
+            debugging: &[
+                "稳住，慢慢来。",
+                "别急，再试试。",
+                "这个bug有点顽固。",
+                "排查中...",
+                "再加把劲！",
+            ],
+            interactive: &[
+                "我在呢。",
+                "你说得对。",
+                "有道理。",
+                "我也这么想。",
+                "继续说。",
+            ],
         }
-    };
-    let output: BuddyReactionOutput = parse_json_payload(&raw)?;
-    sanitize_reaction_text(&output.text)
+    }
+}
+
+impl LocalReactionLibrary {
+    fn select(&self, category: ReactionCategory) -> &'static str {
+        let items = match category {
+            ReactionCategory::Encouraging => self.encouraging,
+            ReactionCategory::Success => self.success,
+            ReactionCategory::Thinking => self.thinking,
+            ReactionCategory::Debugging => self.debugging,
+            ReactionCategory::Interactive => self.interactive,
+        };
+        let idx = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as usize)
+            % items.len();
+        items[idx]
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ReactionCategory {
+    Encouraging,
+    Success,
+    Thinking,
+    Debugging,
+    Interactive,
+}
+
+/// Determine reaction category from context.
+fn classify_reaction_context(
+    last_user_message: Option<&str>,
+    last_agent_message: Option<&str>,
+) -> ReactionCategory {
+    if let Some(msg) = last_user_message {
+        let msg_lower = msg.to_lowercase();
+        if msg_lower.contains("codey")
+            || msg_lower.contains("小伙伴")
+            || msg_lower.contains(" buddy")
+        {
+            return ReactionCategory::Interactive;
+        }
+    }
+
+    if let Some(msg) = last_agent_message {
+        if msg.contains("完成") || msg.contains("成功") || msg.contains("搞定") {
+            return ReactionCategory::Success;
+        }
+        if msg.contains("编译")
+            || msg.contains("测试")
+            || msg.contains("运行")
+            || msg.contains("构建")
+            || msg.contains("debug")
+        {
+            return ReactionCategory::Debugging;
+        }
+        if msg.len() > 500 {
+            return ReactionCategory::Thinking;
+        }
+    }
+
+    ReactionCategory::Encouraging
+}
+
+/// Hybrid buddy reaction generator using strategy config.
+pub(crate) async fn generate_buddy_reaction_hybrid(
+    session: &Session,
+    turn_context: &TurnContext,
+    soul: Option<&BuddySoul>,
+    last_user_message: Option<&str>,
+    last_agent_message: Option<&str>,
+    strategy: &BuddyReactionStrategy,
+) -> Option<String> {
+    if last_user_message.is_none() && last_agent_message.is_none() {
+        return None;
+    }
+
+    match strategy.mode {
+        BuddyReactionMode::LocalOnly => {
+            let category = classify_reaction_context(last_user_message, last_agent_message);
+            let library = LocalReactionLibrary::default();
+            Some(library.select(category).to_string())
+        }
+        BuddyReactionMode::AiOnly => generate_buddy_reaction_ai(
+            session,
+            turn_context,
+            soul,
+            last_user_message,
+            last_agent_message,
+        )
+        .await
+        .ok()
+        .flatten(),
+        BuddyReactionMode::Hybrid => {
+            let agent_len = last_agent_message.map(|m| m.len()).unwrap_or(0);
+            // Short replies use local presets
+            if agent_len < strategy.min_reply_length {
+                let category = classify_reaction_context(last_user_message, last_agent_message);
+                let library = LocalReactionLibrary::default();
+                return Some(library.select(category).to_string());
+            }
+            // Probability-based AI usage
+            let rand = (stable_hash(
+                &std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    .to_string(),
+            ) as f64)
+                / (u64::MAX as f64);
+            if rand < strategy.ai_probability {
+                generate_buddy_reaction_ai(
+                    session,
+                    turn_context,
+                    soul,
+                    last_user_message,
+                    last_agent_message,
+                )
+                .await
+                .ok()
+                .flatten()
+            } else {
+                let category = classify_reaction_context(last_user_message, last_agent_message);
+                let library = LocalReactionLibrary::default();
+                Some(library.select(category).to_string())
+            }
+        }
+    }
 }
 
 pub(crate) fn fallback_buddy_reaction(seed: &str) -> String {
@@ -225,6 +408,8 @@ fn buddy_reaction_output_schema() -> Value {
     })
 }
 
+const BUDDY_REACTION_TIMEOUT: Duration = Duration::from_secs(10);
+
 async fn stream_prompt_text(
     session: &Session,
     turn_context: &TurnContext,
@@ -245,22 +430,33 @@ async fn stream_prompt_text(
         .await?;
 
     let mut result = String::new();
-    while let Some(message) = stream.next().await.transpose()? {
-        match message {
-            ResponseEvent::OutputTextDelta(delta) => result.push_str(&delta),
-            ResponseEvent::OutputItemDone(item) => {
-                if result.is_empty()
-                    && let ResponseItem::Message { content, .. } = item
-                    && let Some(text) = content_items_to_text(&content)
-                {
-                    result.push_str(&text);
+    let timeout_result = tokio::time::timeout(BUDDY_REACTION_TIMEOUT, async {
+        while let Some(message) = stream.next().await.transpose()? {
+            match message {
+                ResponseEvent::OutputTextDelta(delta) => result.push_str(&delta),
+                ResponseEvent::OutputItemDone(item) => {
+                    if result.is_empty()
+                        && let ResponseItem::Message { content, .. } = item
+                        && let Some(text) = content_items_to_text(&content)
+                    {
+                        result.push_str(&text);
+                    }
                 }
+                ResponseEvent::Completed { .. } => break,
+                _ => {}
             }
-            ResponseEvent::Completed { .. } => break,
-            _ => {}
         }
+        Ok::<(), codex_protocol::error::CodexErr>(())
+    })
+    .await;
+
+    match timeout_result {
+        Ok(Ok(())) => Ok(result),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(codex_protocol::error::CodexErr::InvalidRequest(
+            "buddy reaction generation timed out".to_string(),
+        )),
     }
-    Ok(result)
 }
 
 fn parse_json_payload<T: for<'de> Deserialize<'de>>(raw: &str) -> Option<T> {

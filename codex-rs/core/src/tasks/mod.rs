@@ -20,7 +20,7 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::buddy::fallback_buddy_reaction;
-use crate::buddy::generate_buddy_reaction;
+use crate::buddy::generate_buddy_reaction_hybrid;
 use crate::buddy::generate_buddy_soul;
 use crate::buddy::persist_buddy_soul;
 use crate::codex::Session;
@@ -718,12 +718,13 @@ async fn handle_buddy_observer(
         return;
     }
 
-    let reaction = generate_buddy_reaction(
+    let reaction = generate_buddy_reaction_hybrid(
         session.as_ref(),
         turn_context.as_ref(),
         soul.as_ref(),
         last_user_message.as_deref(),
         last_agent_message.as_deref(),
+        &turn_context.config.tui_buddy_reaction_strategy,
     )
     .await
     .unwrap_or_else(|| fallback_buddy_reaction(&turn_context.sub_id));

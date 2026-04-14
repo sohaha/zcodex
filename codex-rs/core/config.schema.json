@@ -975,6 +975,18 @@
           "description": "Optional fixed model override used by legacy configs.",
           "type": "string"
         },
+        "model_auto_compact_token_limit": {
+          "default": null,
+          "description": "Token usage threshold triggering auto-compaction of conversation history.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "model_context_window": {
+          "default": null,
+          "description": "Size of the context window for the model, in tokens.",
+          "format": "int64",
+          "type": "integer"
+        },
         "name": {
           "description": "Friendly display name.",
           "type": "string"

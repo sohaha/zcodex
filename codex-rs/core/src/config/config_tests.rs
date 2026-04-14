@@ -26,6 +26,7 @@ use codex_config::permissions_toml::PermissionsToml;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::AppToolApproval;
 use codex_config::types::ApprovalsReviewer;
+use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BundledSkillsConfig;
 use codex_config::types::FeedbackConfigToml;
 use codex_config::types::HistoryPersistence;
@@ -4877,6 +4878,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_pasted_image_jpeg_quality: 85,
             tui_buddy_reactions_enabled: true,
             tui_buddy_soul: None,
+            tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
             otel: OtelConfig::default(),
         },
         o3_profile_config
@@ -5041,6 +5043,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
+        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 
@@ -5203,6 +5206,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
+        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 
@@ -5351,6 +5355,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
+        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 

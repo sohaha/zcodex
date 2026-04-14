@@ -614,7 +614,7 @@ pub struct Tui {
     pub model_availability_nux: ModelAvailabilityNuxConfig,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct TuiBuddy {
     /// Whether AI-driven buddy reactions are enabled.
@@ -625,6 +625,10 @@ pub struct TuiBuddy {
     /// Persisted AI soul for the buddy (global).
     #[serde(default)]
     pub soul: Option<BuddySoul>,
+
+    /// Reaction strategy configuration.
+    #[serde(default)]
+    pub reaction_strategy: Option<BuddyReactionStrategy>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
@@ -632,6 +636,51 @@ pub struct TuiBuddy {
 pub struct BuddySoul {
     pub name: String,
     pub personality: String,
+}
+
+/// Strategy mode for buddy reactions.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+pub enum BuddyReactionMode {
+    /// Hybrid: use local presets most of the time, AI occasionally.
+    #[default]
+    Hybrid,
+    /// Only use AI for reactions.
+    AiOnly,
+    /// Only use local presets.
+    LocalOnly,
+}
+
+/// Configuration for buddy reaction strategy.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct BuddyReactionStrategy {
+    /// Strategy mode. Defaults to `hybrid`.
+    #[serde(default)]
+    pub mode: BuddyReactionMode,
+
+    /// Probability of using AI in hybrid mode (0.0-1.0). Defaults to `0.2`.
+    #[serde(default = "default_ai_probability")]
+    pub ai_probability: f64,
+
+    /// Minimum time between AI reactions in seconds. Defaults to `20`.
+    #[serde(default = "default_min_ai_interval_secs")]
+    pub min_ai_interval_secs: u64,
+
+    /// Minimum agent reply length to consider using AI. Defaults to `100`.
+    #[serde(default = "default_min_reply_length")]
+    pub min_reply_length: usize,
+}
+
+fn default_ai_probability() -> f64 {
+    0.2
+}
+
+fn default_min_ai_interval_secs() -> u64 {
+    20
+}
+
+fn default_min_reply_length() -> usize {
+    100
 }
 
 const fn default_true() -> bool {

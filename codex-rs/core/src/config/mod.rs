@@ -35,6 +35,7 @@ use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AppsConfigToml;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;
 use codex_config::types::DEFAULT_OTEL_ENVIRONMENT;
 use codex_config::types::History;
@@ -418,6 +419,9 @@ pub struct Config {
 
     /// Persisted AI soul for the buddy (global).
     pub tui_buddy_soul: Option<BuddySoul>,
+
+    /// Buddy reaction strategy configuration.
+    pub tui_buddy_reaction_strategy: BuddyReactionStrategy,
 
     /// The absolute directory that should be treated as the current working
     /// directory for the session. All relative paths inside the business-logic
@@ -2942,6 +2946,14 @@ impl Config {
                 .as_ref()
                 .and_then(|t| t.buddy.as_ref())
                 .and_then(|buddy| buddy.soul.clone()),
+
+            tui_buddy_reaction_strategy: cfg
+                .tui
+                .as_ref()
+                .and_then(|t| t.buddy.as_ref())
+                .and_then(|buddy| buddy.reaction_strategy.clone())
+                .unwrap_or_default(),
+
             otel: {
                 let t: OtelConfigToml = cfg.otel.unwrap_or_default();
                 let log_user_prompt = t.log_user_prompt.unwrap_or(false);
