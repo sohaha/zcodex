@@ -1071,13 +1071,13 @@ async fn run_ratatui_app(
             .await
     {
         let version = env!("CARGO_PKG_VERSION").to_string();
-        tracing::info!("Preparing to capture CLI startup event via PostHog");
+        // tracing::info!("Preparing to capture CLI startup event via PostHog");
         let posthog_handle = tokio::task::spawn_blocking(move || {
             let client = PostHogClient::new_with_default_key().unwrap_or_else(|err| {
-                tracing::warn!(
-                    "Failed to initialize PostHog client: {}. Using disabled client.",
-                    err
-                );
+                // tracing::warn!(
+                //     "Failed to initialize PostHog client: {}. Using disabled client.",
+                //     err
+                // );
                 PostHogClient::disabled()
             });
             let (os_type, os_version) = posthog_events::get_os_info();
@@ -1094,13 +1094,13 @@ async fn run_ratatui_app(
         tokio::spawn(async move {
             match tokio::time::timeout(tokio::time::Duration::from_secs(8), posthog_handle).await {
                 Ok(Ok(())) => {
-                    tracing::info!("CLI startup event captured successfully via PostHog");
+                    // tracing::info!("CLI startup event captured successfully via PostHog");
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("PostHog task failed: {}", e);
+                    // tracing::warn!("PostHog task failed: {}", e);
                 }
                 Err(_) => {
-                    tracing::warn!("PostHog task timed out after 8 seconds");
+                    // tracing::warn!("PostHog task timed out after 8 seconds");
                 }
             }
         });
