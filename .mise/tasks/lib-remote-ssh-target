@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+parse_remote_ssh_target_from_schema() {
+  local ssh_schema="${1:-}"
+  local ssh_target
+
+  if [ -z "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
+  if [ "$ssh_target" = "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_target%%/*}"
+  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
+    return 1
+  fi
+
+  printf '%s\n' "$ssh_target"
+}
+
+parse_remote_ssh_target_from_hint_file() {
+  local ssh_hint_file="${1:-${CNB_REMOTE_SSH_HINT_FILE:-/root/nm}}"
+  local nm_target
+
+  if [ ! -r "$ssh_hint_file" ]; then
+    return 1
+  fi
+
+  nm_target="$(
+    awk '
+      NR == 1 {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /.+@.+/) {
+            print $i
+            exit
+          }
+        }
+      }
+    ' "$ssh_hint_file"
+  )"
+
+  if ! printf '%s\n' "$nm_target" | grep -Eq '.+@.+'; then
+    return 1
+  fi
+
+  printf '%s\n' "$nm_target"
+}
+
+resolve_optional_remote_ssh_target() {
+  local task_name="$1"
+  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
+  local ssh_hint_file="${CNB_REMOTE_SSH_HINT_FILE:-/root/nm}"
+  local ssh_target
+
+  if ssh_target="$(parse_remote_ssh_target_from_schema "$ssh_schema")"; then
+    printf '%s\n' "$ssh_target"
+    return 0
+  fi
+
+  if [ -z "$ssh_schema" ] && ssh_target="$(parse_remote_ssh_target_from_hint_file "$ssh_hint_file")"; then
+    echo "[$task_name] 未检测到 CNB_VSCODE_REMOTE_SSH_SCHEMA，已改用 $ssh_hint_file 解析 SSH 目标" >&2
+    printf '%s\n' "$ssh_target"
+    return 0
+  fi
+
+  return 1
+}

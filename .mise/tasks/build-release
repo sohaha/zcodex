@@ -3,6 +3,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/lib-remote-ssh-target"
 source "$script_dir/build"
 
 print_help() {
@@ -15,31 +16,10 @@ print_help() {
 EOF
 }
 
-resolve_remote_ssh_target() {
-  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
-  local ssh_target
-
-  if [ -z "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
-  if [ "$ssh_target" = "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_target%%/*}"
-  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
-    return 1
-  fi
-
-  printf '%s\n' "$ssh_target"
-}
-
 print_download_hint() {
   local dist_bin="$1"
 
-  if remote_ssh_target="$(resolve_remote_ssh_target)"; then
+  if remote_ssh_target="$(resolve_optional_remote_ssh_target "build-release")"; then
     printf '\n下载命令:\nscp %s:%s ./codex\n' \
       "$remote_ssh_target" \
       "$dist_bin"

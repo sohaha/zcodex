@@ -33,6 +33,7 @@ run_tests() {
   mkdir -p "$task_dir"
   cp "$repo_root/.mise/tasks/build-release" "$task_dir/build-release"
   cp "$repo_root/.mise/tasks/lib-artifact-size" "$task_dir/lib-artifact-size"
+  cp "$repo_root/.mise/tasks/lib-remote-ssh-target" "$task_dir/lib-remote-ssh-target"
 
   cat >"$task_dir/build" <<'EOF'
 #!/usr/bin/env bash
@@ -58,7 +59,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 fi
 EOF
 
-  chmod +x "$task_dir/build-release" "$task_dir/build"
+  chmod +x "$task_dir/build-release" "$task_dir/build" "$task_dir/lib-remote-ssh-target"
 
   output="$(
     TEST_DIST_BIN="$dist_bin" \

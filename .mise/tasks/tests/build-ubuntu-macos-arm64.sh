@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git -C "$script_dir/../../.." rev-parse --show-toplevel)"
+
+assert_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local message="$3"
+
+  if [[ "$haystack" != *"$needle"* ]]; then
+    echo "assertion failed: $message" >&2
+    echo "  expected to find: $needle" >&2
+    echo "  actual output: $haystack" >&2
+    exit 1
+  fi
+}
+
+run_tests() {
+  local temp_root
+  local sandbox_repo
+  local task_dir
+  local codex_rs_scripts_dir
+  local fake_bin_dir
+  local sdk_dir
+  local ssh_hint_file
+  local output_bin
+  local output
+  temp_root="$(mktemp -d)"
+  trap "rm -rf '$temp_root'" EXIT
+  sandbox_repo="$temp_root/repo"
+  task_dir="$sandbox_repo/.mise/tasks"
+  codex_rs_scripts_dir="$sandbox_repo/codex-rs/scripts"
+  fake_bin_dir="$temp_root/bin"
+  sdk_dir="$sandbox_repo/.cache/macos-sdk/MacOSX.sdk"
+  ssh_hint_file="$temp_root/nm"
+  output_bin="$sandbox_repo/test-target/aarch64-apple-darwin/release/codex"
+
+  mkdir -p "$task_dir" "$codex_rs_scripts_dir" "$fake_bin_dir" "$sdk_dir"
+  git -C "$sandbox_repo" init >/dev/null 2>&1
+
+  cp "$repo_root/.mise/tasks/build-ubuntu-macos-arm64" "$task_dir/build-ubuntu-macos-arm64"
+  cp "$repo_root/.mise/tasks/lib-remote-ssh-target" "$task_dir/lib-remote-ssh-target"
+
+  cat >"$task_dir/lib-artifact-size" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+move_artifact_to_dist() {
+  printf '%s\n' "$1"
+}
+
+print_artifact_size() {
+  :
+}
+EOF
+
+  cat >"$task_dir/lib-speed-first-build" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+configure_speed_first_build_defaults() {
+  :
+}
+
+print_speed_first_build_summary() {
+  :
+}
+EOF
+
+  cat >"$task_dir/lib-ubuntu-macos-arm64" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+has_usable_rust_target() {
+  return 0
+}
+
+ensure_zig_binary() {
+  printf '%s\n' "$TEST_FAKE_ZIG"
+}
+EOF
+
+  cat >"$task_dir/rs-ext" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p "$(dirname "$TEST_OUTPUT_BIN")"
+perl - "$TEST_OUTPUT_BIN" <<'PL'
+use strict;
+use warnings;
+
+my $path = shift @ARGV;
+open my $fh, '>:raw', $path or die "open $path: $!";
+print {$fh} pack('V8', 0xfeedfacf, 0, 0, 0, 1, 72, 0, 0);
+print {$fh} pack(
+  'VVa16QQQQiiVV',
+  0x19,
+  72,
+  "__DATA_CONST\0\0\0\0",
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+);
+close $fh or die "close $path: $!";
+PL
+chmod +x "$TEST_OUTPUT_BIN"
+EOF
+
+  cat >"$codex_rs_scripts_dir/resolve-cargo-slot.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'slot-macos-arm64\n'
+EOF
+
+  cat >"$codex_rs_scripts_dir/resolve-cargo-target-dir.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s/test-target\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+EOF
+
+  cat >"$fake_bin_dir/cargo" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+
+  cat >"$fake_bin_dir/rustup" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+
+  cat >"$fake_bin_dir/clang" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exit 0
+EOF
+
+  cat >"$fake_bin_dir/zig" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cache_root="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/zig}"
+mkdir -p "$cache_root/o/fake"
+: >"$cache_root/o/fake/libubsan_rt.a"
+: >"$cache_root/o/fake/libcompiler_rt.a"
+
+out_path=""
+previous=""
+for arg in "$@"; do
+  if [ "$previous" = "-o" ]; then
+    out_path="$arg"
+    break
+  fi
+  previous="$arg"
+done
+
+if [ -n "$out_path" ]; then
+  mkdir -p "$(dirname "$out_path")"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$out_path"
+  chmod +x "$out_path"
+fi
+EOF
+
+  chmod +x \
+    "$task_dir/build-ubuntu-macos-arm64" \
+    "$task_dir/lib-artifact-size" \
+    "$task_dir/lib-remote-ssh-target" \
+    "$task_dir/lib-speed-first-build" \
+    "$task_dir/lib-ubuntu-macos-arm64" \
+    "$task_dir/rs-ext" \
+    "$codex_rs_scripts_dir/resolve-cargo-slot.sh" \
+    "$codex_rs_scripts_dir/resolve-cargo-target-dir.sh" \
+    "$fake_bin_dir/cargo" \
+    "$fake_bin_dir/rustup" \
+    "$fake_bin_dir/clang" \
+    "$fake_bin_dir/zig"
+
+  printf '%s\n' 'ssh user@example.com -p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' >"$ssh_hint_file"
+
+  output="$(
+    cd "$sandbox_repo"
+    unset CNB_VSCODE_REMOTE_SSH_SCHEMA
+    PATH="$fake_bin_dir:$PATH" \
+      TEST_FAKE_ZIG="$fake_bin_dir/zig" \
+      TEST_OUTPUT_BIN="$output_bin" \
+      ZIG_GLOBAL_CACHE_DIR="$temp_root/zig-cache" \
+      CNB_REMOTE_SSH_HINT_FILE="$ssh_hint_file" \
+      bash "$task_dir/build-ubuntu-macos-arm64" 2>&1
+  )"
+
+  assert_contains \
+    "$output" \
+    "未检测到 CNB_VSCODE_REMOTE_SSH_SCHEMA，已改用 $ssh_hint_file 解析 SSH 目标" \
+    "build-ubuntu-macos-arm64 should log when it falls back to the SSH hint file"
+
+  assert_contains \
+    "$output" \
+    "scp user@example.com:$output_bin ~/.local/bin/codex" \
+    "build-ubuntu-macos-arm64 should print the download command derived from the SSH hint file"
+}
+
+run_tests

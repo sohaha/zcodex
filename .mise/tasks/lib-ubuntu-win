@@ -12,6 +12,7 @@ set -euo pipefail
 : "${codex_rs_dir:?}"
 
 source "$script_dir/lib-ubuntu-macos-arm64"
+source "$script_dir/lib-remote-ssh-target"
 
 ensure_host_tools() {
   local -a missing_tools=()
@@ -183,32 +184,11 @@ resolve_rs_ext_target_dir() {
   bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot"
 }
 
-resolve_remote_ssh_target() {
-  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
-  local ssh_target
-
-  if [ -z "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
-  if [ "$ssh_target" = "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_target%%/*}"
-  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
-    return 1
-  fi
-
-  printf '%s\n' "$ssh_target"
-}
-
 print_remote_download_command() {
   local dist_bin="$1"
   local remote_ssh_target
 
-  if remote_ssh_target="$(resolve_remote_ssh_target)"; then
+  if remote_ssh_target="$(resolve_optional_remote_ssh_target "$build_task_name")"; then
     printf '\n下载命令:\nscp %s:%s ./codex.exe\n' \
       "$remote_ssh_target" \
       "$dist_bin"

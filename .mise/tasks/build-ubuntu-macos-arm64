@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-remote-ssh-target"
 source "$script_dir/lib-speed-first-build"
 source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-apple-darwin"
@@ -87,27 +88,6 @@ resolve_rs_ext_target_dir() {
       cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
   )"
   bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot"
-}
-
-resolve_remote_ssh_target() {
-  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
-  local ssh_target
-
-  if [ -z "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
-  if [ "$ssh_target" = "$ssh_schema" ]; then
-    return 1
-  fi
-
-  ssh_target="${ssh_target%%/*}"
-  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
-    return 1
-  fi
-
-  printf '%s\n' "$ssh_target"
 }
 
 has_clang() {
@@ -589,10 +569,10 @@ ensure_data_const_read_only_flag "$output_bin"
 dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
 print_artifact_size "build-ubuntu-macos-arm64" "$dist_bin"
 
-if remote_ssh_target="$(resolve_remote_ssh_target)"; then
+if remote_ssh_target="$(resolve_optional_remote_ssh_target "build-ubuntu-macos-arm64")"; then
   printf '\n下载命令:\nscp %s:%s ~/.local/bin/codex &&  codesign --force --sign - ~/.local/bin/codex\n' \
     "$remote_ssh_target" \
     "$dist_bin"
 else
-  echo "[build-ubuntu-macos-arm64] 未检测到可用的 CNB_VSCODE_REMOTE_SSH_SCHEMA，已跳过下载命令输出" >&2
+  echo "[build-ubuntu-macos-arm64] 未检测到可用的 CNB_VSCODE_REMOTE_SSH_SCHEMA，且无法从 /root/nm 解析 SSH 目标，已跳过下载命令输出" >&2
 fi
