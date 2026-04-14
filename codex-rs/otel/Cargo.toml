@@ -48,7 +48,7 @@ opentelemetry_sdk = { workspace = true, features = [
 http = { workspace = true }
 os_info = { workspace = true }
 reqwest = { workspace = true, features = ["blocking", "rustls-tls", "json"] }
-posthog = { version = "0.2", features = ["reqwest"] }
+posthog-rs = "0.5"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 strum_macros = { workspace = true }

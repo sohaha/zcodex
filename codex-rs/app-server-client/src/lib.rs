@@ -139,6 +139,10 @@ pub mod legacy_core {
     pub mod windows_sandbox {
         pub use codex_core::windows_sandbox::*;
     }
+
+    pub mod installation_id {
+        pub use codex_core::installation_id::resolve_installation_id;
+    }
 }
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);

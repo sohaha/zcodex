@@ -65,4 +65,5 @@ pub fn start_global_timer(name: &str, tags: &[(&str, &str)]) -> MetricsResult<Ti
     metrics.start_timer(name, tags)
 }
 pub(crate) mod posthog;
+pub mod posthog_events;
 pub use crate::posthog::{PostHogClient, PostHogError, PostHogEvent};

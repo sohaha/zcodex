@@ -1,31 +1,43 @@
 //! PostHog analytics client for user fingerprinting and startup events.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::time::Duration;
-use tracing::{debug, warn};
+use tracing::debug;
+use tracing::warn;
 
 const POSTHOG_API_VERSION: &str = "3";
 const POSTHOG_TIMEOUT: Duration = Duration::from_secs(5);
+const POSTHOG_HOST: &str = "https://us.i.posthog.com";
+const DEFAULT_POSTHOG_KEY: &str = "phc_tnpmpHSZKvoVp5A62kD7dAtje5fTTMNCafvpizv5BZTe";
 
 /// PostHog event client.
 #[derive(Clone)]
 pub struct PostHogClient {
     api_key: String,
+    host: String,
     client: reqwest::blocking::Client,
     enabled: bool,
 }
 
 impl PostHogClient {
-    /// Create a new PostHog client.
-    pub fn new(api_key: String) -> Result<Self, reqwest::Error> {
+    /// Create a new PostHog client with the default API key.
+    pub fn new_with_default_key() -> Result<Self, reqwest::Error> {
+        Self::new(DEFAULT_POSTHOG_KEY.to_string(), POSTHOG_HOST.to_string())
+    }
+
+    /// Create a new PostHog client with custom API key and host.
+    pub fn new(api_key: String, host: String) -> Result<Self, reqwest::Error> {
+        let enabled = !api_key.is_empty();
         let client = reqwest::blocking::Client::builder()
             .timeout(POSTHOG_TIMEOUT)
             .build()?;
-        
+
         Ok(Self {
             api_key,
+            host,
             client,
-            enabled: !api_key.is_empty(),
+            enabled,
         })
     }
 
@@ -33,6 +45,7 @@ impl PostHogClient {
     pub fn disabled() -> Self {
         Self {
             api_key: String::new(),
+            host: POSTHOG_HOST.to_string(),
             client: reqwest::blocking::Client::builder()
                 .timeout(POSTHOG_TIMEOUT)
                 .build()
@@ -57,9 +70,10 @@ impl PostHogClient {
 
         debug!("capturing PostHog event: {}", payload.event);
 
+        let url = format!("{}/capture/", self.host);
         let response = self
             .client
-            .post("https://app.posthog.com/capture/" )
+            .post(&url)
             .header("Content-Type", "application/json")
             .json(&payload)
             .send();
@@ -99,9 +113,10 @@ impl PostHogClient {
 
         debug!("aliasing PostHog ID: {} -> {}", distinct_id, alias);
 
+        let url = format!("{}/capture/", self.host);
         let response = self
             .client
-            .post("https://app.posthog.com/capture/")
+            .post(&url)
             .header("Content-Type", "application/json")
             .json(&payload)
             .send();
@@ -158,7 +173,7 @@ impl PostHogEvent {
 
     /// Add a property to the event.
     pub fn with_property(mut self, key: &str, value: impl Into<serde_json::Value>) -> Self {
-        if let Ok(obj) = self.properties.as_object_mut() {
+        if let Some(obj) = self.properties.as_object_mut() {
             obj.insert(key.to_string(), value.into());
         }
         self
@@ -211,7 +226,7 @@ mod tests {
         let event = PostHogEvent::new("test-id".to_string(), "test_event".to_string())
             .with_property("key", "value")
             .with_property("number", 42);
-        
+
         assert_eq!(event.properties["key"], "value");
         assert_eq!(event.properties["number"], 42);
     }
@@ -220,7 +235,7 @@ mod tests {
     fn test_posthog_client_disabled() {
         let client = PostHogClient::disabled();
         let event = PostHogEvent::new("test-id".to_string(), "test_event".to_string());
-        
+
         // Should not error when disabled
         assert!(client.capture(event).is_ok());
     }

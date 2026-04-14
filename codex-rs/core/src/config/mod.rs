@@ -2966,6 +2966,7 @@ impl Config {
                 let posthog_api_key = t.posthog_api_key;
                 OtelConfig {
                     log_user_prompt,
+                    environment,
                     exporter,
                     trace_exporter,
                     metrics_exporter,

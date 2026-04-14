@@ -44,6 +44,10 @@ use codex_exec_server::ExecServerRuntimePaths;
 use codex_login::AuthConfig;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
+use codex_otel::PostHogClient;
+use codex_otel::posthog_events::capture_cli_startup;
+use codex_otel::posthog_events::get_os_info;
+use codex_otel::posthog_events::{self};
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::SandboxMode;
@@ -1061,7 +1065,29 @@ async fn run_ratatui_app(
     }
 
     // Initialize high-fidelity session event logging if enabled.
-    session_log::maybe_init(&initial_config);
+    // Initialize PostHog analytics.
+    let posthog_client = PostHogClient::new_with_default_key().unwrap_or_else(|err| {
+        tracing::warn!(
+            "Failed to initialize PostHog client: {}. Using disabled client.",
+            err
+        );
+        PostHogClient::disabled()
+    });
+
+    // Capture CLI startup event.
+    if let Ok(installation_id) =
+        crate::legacy_core::installation_id::resolve_installation_id(&initial_config.codex_home)
+            .await
+    {
+        let (os_type, os_version) = posthog_events::get_os_info();
+        posthog_events::capture_cli_startup(
+            &posthog_client,
+            &installation_id,
+            env!("CARGO_PKG_VERSION"),
+            &os_type,
+            &os_version,
+        );
+    }
 
     let mut app_server = Some(
         match start_app_server(

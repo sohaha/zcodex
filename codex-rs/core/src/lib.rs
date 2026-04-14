@@ -40,7 +40,7 @@ mod flags;
 mod git_info_tests;
 mod guardian;
 mod hook_runtime;
-mod installation_id;
+pub mod installation_id;
 pub mod instructions;
 pub mod landlock;
 pub mod mcp;
