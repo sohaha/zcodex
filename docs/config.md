@@ -295,6 +295,28 @@ For Chinese-commented example configs, including:
 
 see `docs/fallback-providers.zh-example.md`.
 
+
+## Retry and timeout configuration
+
+Model providers support several retry and timeout options:
+
+- `request_max_retries`: Maximum number of times to retry a failed HTTP request to this provider.
+- `stream_max_retries`: Number of times to retry reconnecting a dropped streaming response before failing.
+- `stream_idle_timeout_ms`: Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost.
+- `websocket_connect_timeout_ms`: Maximum time (in milliseconds) to wait for a websocket connection attempt before treating it as failed.
+- `retry_base_delay_ms`: Base delay (in milliseconds) for retry backoff. The actual delay between retries will be this value multiplied by 2^(attempt-1) with jitter. Defaults to `200`.
+
+Example:
+
+```toml
+[model_providers.myprovider]
+request_max_retries = 4
+stream_max_retries = 5
+stream_idle_timeout_ms = 300000
+websocket_connect_timeout_ms = 15000
+retry_base_delay_ms = 500  # Longer base delay for slower networks
+```
+
 ## Custom model catalogs
 
 Codex supports two startup-only config keys for overriding available models:

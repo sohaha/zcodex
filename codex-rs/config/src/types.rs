@@ -650,6 +650,18 @@ pub enum BuddyReactionMode {
     LocalOnly,
 }
 
+/// Local preset preference mode.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+pub enum LocalPreference {
+    /// Use contextual category selection based on last message.
+    #[default]
+    Contextual,
+    /// Use encouraging presets primarily.
+    Encouraging,
+    /// Cycle through all categories for variety.
+    Diverse,
+}
+
 /// Configuration for buddy reaction strategy.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -669,10 +681,17 @@ pub struct BuddyReactionStrategy {
     /// Minimum agent reply length to consider using AI. Defaults to `100`.
     #[serde(default = "default_min_reply_length")]
     pub min_reply_length: usize,
+
+    /// Local preset preference mode. Defaults to `Contextual`.
+    #[serde(default)]
+    pub local_preference: LocalPreference,
+    /// Force AI for critical interactions (user mentions buddy, tool completion, etc).
+    #[serde(default = "default_true")]
+    pub critical_scenarios_use_ai: bool,
 }
 
 fn default_ai_probability() -> f64 {
-    0.2
+    0.1
 }
 
 fn default_min_ai_interval_secs() -> u64 {

@@ -300,6 +300,82 @@
       ],
       "type": "string"
     },
+    "BuddyReactionMode": {
+      "description": "Strategy mode for buddy reactions.",
+      "oneOf": [
+        {
+          "description": "Hybrid: use local presets most of the time, AI occasionally.",
+          "enum": [
+            "Hybrid"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only use AI for reactions.",
+          "enum": [
+            "AiOnly"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only use local presets.",
+          "enum": [
+            "LocalOnly"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "BuddyReactionStrategy": {
+      "additionalProperties": false,
+      "description": "Configuration for buddy reaction strategy.",
+      "properties": {
+        "ai_probability": {
+          "default": 0.1,
+          "description": "Probability of using AI in hybrid mode (0.0-1.0). Defaults to `0.1`.",
+          "format": "double",
+          "type": "number"
+        },
+        "critical_scenarios_use_ai": {
+          "default": true,
+          "description": "Force AI for critical interactions (user mentions buddy, tool completion, etc).",
+          "type": "boolean"
+        },
+        "local_preference": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/LocalPreference"
+            }
+          ],
+          "default": "Contextual",
+          "description": "Local preset preference mode. Defaults to `Contextual`."
+        },
+        "min_ai_interval_secs": {
+          "default": 20,
+          "description": "Minimum time between AI reactions in seconds. Defaults to `20`.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min_reply_length": {
+          "default": 100,
+          "description": "Minimum agent reply length to consider using AI. Defaults to `100`.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BuddyReactionMode"
+            }
+          ],
+          "default": "Hybrid",
+          "description": "Strategy mode. Defaults to `hybrid`."
+        }
+      },
+      "type": "object"
+    },
     "BuddySoul": {
       "additionalProperties": false,
       "properties": {
@@ -808,6 +884,32 @@
         }
       ]
     },
+    "LocalPreference": {
+      "description": "Local preset preference mode.",
+      "oneOf": [
+        {
+          "description": "Use contextual category selection based on last message.",
+          "enum": [
+            "Contextual"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Use encouraging presets primarily.",
+          "enum": [
+            "Encouraging"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Cycle through all categories for variety.",
+          "enum": [
+            "Diverse"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "McpServerToolConfig": {
       "additionalProperties": false,
       "description": "Per-tool approval settings for a single MCP server tool.",
@@ -1008,6 +1110,12 @@
           "default": false,
           "description": "Does this provider require an OpenAI API Key or ChatGPT login token? If true, user is presented with login screen on first run, and login preference and token/key are stored in auth.json. If false (which is the default), login screen is skipped, and API key (if needed) comes from the \"env_key\" environment variable.",
           "type": "boolean"
+        },
+        "retry_base_delay_ms": {
+          "description": "Base delay (in milliseconds) for retry backoff. The actual delay between retries will be this value multiplied by 2^(attempt-1) with jitter.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
         },
         "stream_idle_timeout_ms": {
           "description": "Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost.",
@@ -2019,6 +2127,15 @@
     "TuiBuddy": {
       "additionalProperties": false,
       "properties": {
+        "reaction_strategy": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BuddyReactionStrategy"
+            }
+          ],
+          "default": null,
+          "description": "Reaction strategy configuration."
+        },
         "reactions_enabled": {
           "default": true,
           "description": "Whether AI-driven buddy reactions are enabled. Defaults to `true`.",

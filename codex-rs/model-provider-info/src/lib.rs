@@ -26,6 +26,7 @@ use std::time::Duration;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
 const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;
 const DEFAULT_REQUEST_MAX_RETRIES: u64 = 4;
+const DEFAULT_RETRY_BASE_DELAY_MS: u64 = 200;
 pub const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS: u64 = 15_000;
 /// Hard cap for user-configured `stream_max_retries`.
 const MAX_STREAM_MAX_RETRIES: u64 = 100;
@@ -127,6 +128,9 @@ pub struct ModelProviderInfo {
     /// Idle timeout (in milliseconds) to wait for activity on a streaming response before treating
     /// the connection as lost.
     pub stream_idle_timeout_ms: Option<u64>,
+    /// Base delay (in milliseconds) for retry backoff. The actual delay between retries will be
+    /// this value multiplied by 2^(attempt-1) with jitter.
+    pub retry_base_delay_ms: Option<u64>,
     /// Maximum time (in milliseconds) to wait for a websocket connection attempt before treating
     /// it as failed.
     pub websocket_connect_timeout_ms: Option<u64>,
@@ -245,7 +249,7 @@ impl ModelProviderInfo {
         }
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
-            base_delay: Duration::from_millis(200),
+            base_delay: self.retry_base_delay(),
             retry_429: false,
             retry_5xx: true,
             retry_transport: true,
@@ -309,6 +313,13 @@ impl ModelProviderInfo {
             .unwrap_or(Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS))
     }
 
+    /// Effective base delay for retry backoff.
+    pub fn retry_base_delay(&self) -> Duration {
+        self.retry_base_delay_ms
+            .map(Duration::from_millis)
+            .unwrap_or(Duration::from_millis(DEFAULT_RETRY_BASE_DELAY_MS))
+    }
+
     /// Effective timeout for websocket connect attempts.
     pub fn websocket_connect_timeout(&self) -> Duration {
         self.websocket_connect_timeout_ms
@@ -347,6 +358,7 @@ impl ModelProviderInfo {
             request_max_retries: None,
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
+            retry_base_delay_ms: None,
             websocket_connect_timeout_ms: None,
             requires_openai_auth: true,
             supports_websockets: true,
@@ -480,6 +492,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         model_context_window: None,

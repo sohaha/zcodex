@@ -9,6 +9,7 @@ use crate::config::edit::ConfigEditsBuilder;
 use codex_config::types::BuddyReactionMode;
 use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;
+use codex_config::types::LocalPreference;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
@@ -224,20 +225,55 @@ impl Default for LocalReactionLibrary {
 }
 
 impl LocalReactionLibrary {
-    fn select(&self, category: ReactionCategory) -> &'static str {
-        let items = match category {
-            ReactionCategory::Encouraging => self.encouraging,
-            ReactionCategory::Success => self.success,
-            ReactionCategory::Thinking => self.thinking,
-            ReactionCategory::Debugging => self.debugging,
-            ReactionCategory::Interactive => self.interactive,
-        };
-        let idx = (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as usize)
-            % items.len();
-        items[idx]
+    fn select(&self, category: ReactionCategory, preference: LocalPreference) -> &'static str {
+        match preference {
+            LocalPreference::Contextual => {
+                let items = match category {
+                    ReactionCategory::Encouraging => self.encouraging,
+                    ReactionCategory::Success => self.success,
+                    ReactionCategory::Thinking => self.thinking,
+                    ReactionCategory::Debugging => self.debugging,
+                    ReactionCategory::Interactive => self.interactive,
+                };
+                let idx = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as usize)
+                    % items.len();
+                items[idx]
+            }
+            LocalPreference::Encouraging => {
+                let idx = (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as usize)
+                    % self.encouraging.len();
+                self.encouraging[idx]
+            }
+            LocalPreference::Diverse => {
+                let categories = [
+                    ReactionCategory::Encouraging,
+                    ReactionCategory::Success,
+                    ReactionCategory::Thinking,
+                    ReactionCategory::Debugging,
+                    ReactionCategory::Interactive,
+                ];
+                let time_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as usize;
+                let cat_idx = time_ms % categories.len();
+                let items = match categories[cat_idx] {
+                    ReactionCategory::Encouraging => self.encouraging,
+                    ReactionCategory::Success => self.success,
+                    ReactionCategory::Thinking => self.thinking,
+                    ReactionCategory::Debugging => self.debugging,
+                    ReactionCategory::Interactive => self.interactive,
+                };
+                let item_idx = (time_ms / categories.len()) % items.len();
+                items[item_idx]
+            }
+        }
     }
 }
 
@@ -285,6 +321,32 @@ fn classify_reaction_context(
     ReactionCategory::Encouraging
 }
 
+/// Check if this is a critical interaction that should force AI generation.
+fn is_critical_interaction(
+    last_user_message: Option<&str>,
+    last_agent_message: Option<&str>,
+) -> bool {
+    // User directly mentions the buddy
+    if let Some(msg) = last_user_message {
+        let msg_lower = msg.to_lowercase();
+        if msg_lower.contains("codey")
+            || msg_lower.contains("小伙伴")
+            || msg_lower.contains(" buddy")
+        {
+            return true;
+        }
+    }
+
+    // Long response often means complex task or important completion
+    if let Some(msg) = last_agent_message {
+        if msg.len() > 1000 {
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Hybrid buddy reaction generator using strategy config.
 pub(crate) async fn generate_buddy_reaction_hybrid(
     session: &Session,
@@ -302,7 +364,11 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
         BuddyReactionMode::LocalOnly => {
             let category = classify_reaction_context(last_user_message, last_agent_message);
             let library = LocalReactionLibrary::default();
-            Some(library.select(category).to_string())
+            Some(
+                library
+                    .select(category, strategy.local_preference)
+                    .to_string(),
+            )
         }
         BuddyReactionMode::AiOnly => generate_buddy_reaction_ai(
             session,
@@ -315,12 +381,32 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
         .ok()
         .flatten(),
         BuddyReactionMode::Hybrid => {
-            let agent_len = last_agent_message.map(|m| m.len()).unwrap_or(0);
+            // Check if this is a critical interaction that should force AI
+            if strategy.critical_scenarios_use_ai
+                && is_critical_interaction(last_user_message, last_agent_message)
+            {
+                return generate_buddy_reaction_ai(
+                    session,
+                    turn_context,
+                    soul,
+                    last_user_message,
+                    last_agent_message,
+                )
+                .await
+                .ok()
+                .flatten();
+            }
+
+            let agent_len = last_agent_message.map(str::len).unwrap_or(0);
             // Short replies use local presets
             if agent_len < strategy.min_reply_length {
                 let category = classify_reaction_context(last_user_message, last_agent_message);
                 let library = LocalReactionLibrary::default();
-                return Some(library.select(category).to_string());
+                return Some(
+                    library
+                        .select(category, strategy.local_preference)
+                        .to_string(),
+                );
             }
             // Probability-based AI usage
             let rand = (stable_hash(
@@ -345,7 +431,11 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
             } else {
                 let category = classify_reaction_context(last_user_message, last_agent_message);
                 let library = LocalReactionLibrary::default();
-                Some(library.select(category).to_string())
+                Some(
+                    library
+                        .select(category, strategy.local_preference)
+                        .to_string(),
+                )
             }
         }
     }

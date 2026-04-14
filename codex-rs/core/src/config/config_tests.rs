@@ -7111,8 +7111,7 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
         cwd: Some(cwd.path().to_path_buf()),
         ..Default::default()
     };
-    let config =
-        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())?;
+    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
 
     // Provider-specific model should still win over profile model
     assert_eq!(config.model.as_deref(), Some("provider-model"));

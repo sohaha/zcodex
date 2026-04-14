@@ -26,9 +26,12 @@ base_url = "http://localhost:11434/v1"
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -60,9 +63,12 @@ query_params = { api-version = "2025-04-01-preview" }
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -97,9 +103,12 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
@@ -127,9 +136,12 @@ api_key = "test-token"
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
@@ -155,9 +167,12 @@ fn provider_supplied_auth_detects_configured_authorization_headers() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     assert!(provider.uses_provider_supplied_auth());
@@ -182,9 +197,12 @@ fn provider_supplied_auth_ignores_unrelated_headers() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     assert!(!provider.uses_provider_supplied_auth());
@@ -221,9 +239,12 @@ fn official_openai_api_detection_uses_wire_api_and_base_url() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
     assert!(chat_provider.uses_official_openai_api());
     assert!(!chat_provider.uses_official_openai_responses_api());
@@ -252,9 +273,12 @@ fn anthropic_provider_defaults_to_official_base_url() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_provider = provider
@@ -280,9 +304,12 @@ fn anthropic_provider_honors_configured_base_url() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_provider = provider
@@ -330,9 +357,12 @@ fn anthropic_provider_uses_api_key_for_authorization_and_x_api_key() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_provider = provider
@@ -381,9 +411,12 @@ fn anthropic_provider_preserves_explicit_authorization_header() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_provider = provider
