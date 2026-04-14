@@ -8,6 +8,7 @@ use chrono::Local;
 use codex_exec_server::LOCAL_FS;
 use codex_protocol::account::PlanType;
 use std::path::Path;
+use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 fn normalize_agents_display_path(path: &Path) -> String {
@@ -50,53 +51,23 @@ pub(crate) fn compose_model_display(
     (model_name.to_string(), details)
 }
 
-pub(crate) fn compose_agents_summary(config: &Config) -> String {
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return "无".to_string();
-    };
-
-    let paths = match handle.runtime_flavor() {
-        tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::scope(|scope| {
-            scope
-                .spawn(|| {
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("create current-thread runtime for agents summary")
-                        .block_on(discover_agents_summary(config))
-                })
-                .join()
-                .expect("agents summary worker thread panicked")
-        }),
-        _ => tokio::task::block_in_place(|| handle.block_on(discover_agents_summary(config))),
-    };
-
-    match paths {
-        Ok(summary) => summary,
-        Err(_) => "无".to_string(),
-    }
-}
-
-pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<String> {
-    let paths = discover_project_doc_paths(config, LOCAL_FS.as_ref()).await?;
+pub(crate) fn compose_agents_summary(config: &Config, paths: &[PathBuf]) -> String {
     let mut rels: Vec<String> = Vec::new();
-    if let Some(path) = config.user_instructions_path.as_deref() {
-        rels.push(format_directory_display(path, /*max_width*/ None));
-    }
+
     for p in paths {
         let file_name = p
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_else(|| "<未知>".to_string());
         let display = if let Some(parent) = p.parent() {
-            if parent.as_path() == config.cwd.as_path() {
+            if parent == config.cwd.as_path() {
                 file_name.clone()
             } else {
                 let mut cur = config.cwd.as_path();
                 let mut ups = 0usize;
                 let mut reached = false;
                 while let Some(c) = cur.parent() {
-                    if cur == parent.as_path() {
+                    if cur == parent {
                         reached = true;
                         break;
                     }
@@ -106,23 +77,37 @@ pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<
                 if reached {
                     let up = format!("..{}", std::path::MAIN_SEPARATOR);
                     format!("{}{}", up.repeat(ups), file_name)
-                } else if let Ok(stripped) = p.strip_prefix(config.cwd.as_path()) {
+                } else if let Ok(stripped) = p.strip_prefix(&config.cwd) {
                     normalize_agents_display_path(stripped)
                 } else {
-                    normalize_agents_display_path(p.as_path())
+                    normalize_agents_display_path(p)
                 }
             }
         } else {
-            normalize_agents_display_path(p.as_path())
+            normalize_agents_display_path(p)
         };
         rels.push(display);
     }
 
-    Ok(if rels.is_empty() {
+    if rels.is_empty() {
         "无".to_string()
     } else {
         rels.join(", ")
-    })
+    }
+}
+
+pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<String> {
+    let mut paths = Vec::new();
+    if let Some(path) = config.user_instructions_path.as_ref() {
+        paths.push(path.to_path_buf());
+    }
+    paths.extend(
+        discover_project_doc_paths(config, LOCAL_FS.as_ref())
+            .await?
+            .into_iter()
+            .map(|path| path.as_path().to_path_buf()),
+    );
+    Ok(compose_agents_summary(config, &paths))
 }
 
 pub(crate) fn compose_account_display(

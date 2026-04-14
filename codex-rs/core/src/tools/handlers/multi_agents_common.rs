@@ -237,7 +237,9 @@ pub(crate) async fn build_agent_shared_config(
     config
         .model_providers
         .insert(config.model_provider_id.clone(), turn.provider.clone());
-    config.model_reasoning_effort = turn.reasoning_effort;
+    config.model_reasoning_effort = turn
+        .reasoning_effort
+        .or(turn.model_info.default_reasoning_level);
     config.model_reasoning_summary = Some(turn.reasoning_summary);
     config.developer_instructions = turn.developer_instructions.clone();
     config.compact_prompt = turn.compact_prompt.clone();
@@ -291,7 +293,7 @@ async fn reload_project_scoped_config(config: &mut Config, turn: &TurnContext) {
     }
 
     match ConfigBuilder::default()
-        .codex_home(config.codex_home.clone())
+        .codex_home(config.codex_home.clone().to_path_buf())
         .fallback_cwd(Some(turn.cwd.to_path_buf()))
         .build()
         .await
@@ -322,6 +324,19 @@ async fn reload_project_scoped_config(config: &mut Config, turn: &TurnContext) {
             );
         }
     }
+}
+
+pub(crate) fn reject_full_fork_spawn_overrides(
+    agent_type: Option<&str>,
+    model: Option<&str>,
+    reasoning_effort: Option<ReasoningEffort>,
+) -> Result<(), FunctionCallError> {
+    if agent_type.is_some() || model.is_some() || reasoning_effort.is_some() {
+        return Err(FunctionCallError::RespondToModel(
+            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without fork_context/fork_turns=all.".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Copies runtime-only turn state onto a child config before it is handed to `AgentControl`.
@@ -391,7 +406,7 @@ pub(crate) fn apply_requested_spawn_agent_provider_override(
 
 pub(crate) fn spawn_agent_models_manager(session: &Session, config: &Config) -> ModelsManager {
     ModelsManager::new_with_provider(
-        config.codex_home.clone(),
+        config.codex_home.clone().to_path_buf(),
         session.services.auth_manager.clone(),
         config.model_catalog.clone(),
         CollaborationModesConfig::default(),

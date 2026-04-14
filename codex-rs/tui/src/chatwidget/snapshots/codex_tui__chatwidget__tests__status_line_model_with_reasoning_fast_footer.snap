@@ -15,4 +15,4 @@ expression: normalized_backend_snapshot(terminal.backend())
 "                                                                                "
 "› Ask Codex to do anything                                                      "
 "                                                                                "
-"  gpt-5.4 极高 快速 · 上下文 [     ] · /tmp/project                             " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " "), (27, " ")]
+"  gpt-5.4 极高 快速 · 剩余 100% · /tmp/project                                  " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " ")]

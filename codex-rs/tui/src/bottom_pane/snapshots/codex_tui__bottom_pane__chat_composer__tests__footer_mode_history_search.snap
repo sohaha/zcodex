@@ -1,0 +1,14 @@
+---
+source: tui/src/bottom_pane/chat_composer.rs
+assertion_line: 4210
+expression: terminal.backend()
+---
+"                                                                                                    "
+"› cargo test                                                                                        "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"  历史搜索：c  enter 接受 · esc 取消                                                                " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (11, " "), (22, " "), (24, " "), (33, " "), (35, " ")]

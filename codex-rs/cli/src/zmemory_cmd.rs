@@ -414,7 +414,10 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
             command.output,
         ),
         ZmemorySubcommand::ServeCompat(command) => {
-            let codex_home = command.output.codex_home.unwrap_or(find_codex_home()?);
+            let codex_home = command
+                .output
+                .codex_home
+                .unwrap_or(find_codex_home()?.to_path_buf());
             let cwd = std::env::current_dir()?;
             let config = ConfigBuilder::default()
                 .codex_home(codex_home.clone())
@@ -445,7 +448,9 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
         }
     };
 
-    let codex_home = output.codex_home.unwrap_or(find_codex_home()?);
+    let codex_home = output
+        .codex_home
+        .unwrap_or(find_codex_home()?.to_path_buf());
     let cwd = std::env::current_dir()?;
     let config = ConfigBuilder::default()
         .codex_home(codex_home.clone())
