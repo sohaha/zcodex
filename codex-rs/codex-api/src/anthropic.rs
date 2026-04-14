@@ -870,26 +870,12 @@ fn parse_base64_data_url(image_url: &str) -> Option<(&str, &str)> {
     Some((media_type, data))
 }
 
-fn tool_use_message(name: String, call_id: String, input: Value) -> Value {
-    json!({
-        "role": "assistant",
-        "content": [tool_use_block(name, call_id, input)],
-    })
-}
-
 fn tool_use_block(name: String, call_id: String, input: Value) -> Value {
     json!({
         "type": "tool_use",
         "id": call_id,
         "name": name,
         "input": input,
-    })
-}
-
-fn tool_result_message(call_id: String, output: String, is_error: bool) -> Value {
-    json!({
-        "role": "user",
-        "content": [tool_result_block(call_id, output, is_error)],
     })
 }
 
@@ -1299,6 +1285,7 @@ mod tests {
     use futures::TryStreamExt;
     use futures::stream;
     use http::HeaderMap;
+    use pretty_assertions::assert_eq;
     use tokio::sync::mpsc;
     use tokio_test::io::Builder as IoBuilder;
     use tokio_util::io::ReaderStream;
@@ -1382,6 +1369,91 @@ mod tests {
                 .as_str()
                 .expect("system string")
                 .contains(ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS)
+        );
+    }
+
+    #[test]
+    fn builds_anthropic_request_merges_tool_result_with_following_user_message() {
+        let request = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "You are helpful.".to_string(),
+            input: vec![
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "run it".to_string(),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+                ResponseItem::FunctionCall {
+                    id: None,
+                    call_id: "call-1".to_string(),
+                    name: "shell".to_string(),
+                    namespace: None,
+                    arguments: "{\"command\":\"pwd\"}".to_string(),
+                },
+                ResponseItem::FunctionCallOutput {
+                    call_id: "call-1".to_string(),
+                    output: FunctionCallOutputPayload {
+                        body: FunctionCallOutputBody::Text("/workspace".to_string()),
+                        success: Some(true),
+                    },
+                },
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "继续".to_string(),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+            ],
+            tools: vec![json!({
+                "type": "function",
+                "name": "shell",
+                "description": "run shell",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": { "type": "string" }
+                    },
+                    "required": ["command"]
+                }
+            })],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: false,
+            reasoning: None,
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+        };
+
+        let body = build_request_body(&request);
+        let messages = body["messages"].as_array().expect("messages array");
+        assert_eq!(messages.len(), 3);
+        assert_eq!(
+            messages[2],
+            json!({
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "call-1",
+                        "content": "/workspace",
+                    },
+                    {
+                        "type": "text",
+                        "text": "继续",
+                    }
+                ],
+            })
         );
     }
 
