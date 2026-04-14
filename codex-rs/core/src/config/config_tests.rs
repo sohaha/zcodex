@@ -7026,3 +7026,132 @@ fn test_tui_pasted_image_compression_settings_can_be_configured() {
     assert_eq!(tui.pasted_image_max_height, 600);
     assert_eq!(tui.pasted_image_jpeg_quality, 77);
 }
+
+#[test]
+fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
+    let codex_home = tempfile::tempdir()?;
+    let cwd = tempfile::tempdir()?;
+    
+    // Create a config with global model, provider-specific model, and profile
+    let cfg = ConfigToml {
+        model: Some("global-model".to_string()),
+        model_provider: Some("cc".to_string()),
+        model_providers: HashMap::from([(
+            "cc".to_string(),
+            ModelProviderInfo {
+                name: "CC Provider".to_string(),
+                model: Some("provider-model".to_string()),
+                base_url: Some("http://127.0.0.1:18100/v1".to_string()),
+                env_key: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                wire_api: WireApi::Anthropic,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        profiles: HashMap::from([(
+            "test-profile".to_string(),
+            ConfigProfile {
+                model: Some("profile-model".to_string()),
+                model_provider: Some("cc".to_string()),
+                ..Default::default()
+            },
+        )]),
+        ..Default::default()
+    };
+
+    // Test 1: Provider-specific model should override global model
+    let overrides = ConfigOverrides {
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config = Config::load_from_base_config_with_overrides(
+        cfg.clone(),
+        overrides,
+        codex_home.abs(),
+    )?;
+    
+    assert_eq!(config.model.as_deref(), Some("provider-model"));
+
+    // Test 2: Command line model should still have highest priority
+    let overrides = ConfigOverrides {
+        model: Some("cli-model".to_string()),
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config = Config::load_from_base_config_with_overrides(
+        cfg.clone(),
+        overrides,
+        codex_home.abs(),
+    )?;
+    
+    assert_eq!(config.model.as_deref(), Some("cli-model"));
+
+    // Test 3: Profile model should override global but not provider-specific
+    let overrides = ConfigOverrides {
+        config_profile: Some("test-profile".to_string()),
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config = Config::load_from_base_config_with_overrides(
+        cfg.clone(),
+        overrides,
+        codex_home.abs(),
+    )?;
+    
+    // Provider-specific model should still win over profile model
+    assert_eq!(config.model.as_deref(), Some("provider-model"));
+
+    // Test 4: Provider without specific model should fall back to global model
+    let cfg_no_provider_model = ConfigToml {
+        model: Some("global-model".to_string()),
+        model_provider: Some("cc".to_string()),
+        model_providers: HashMap::from([(
+            "cc".to_string(),
+            ModelProviderInfo {
+                name: "CC Provider".to_string(),
+                model: None, // No provider-specific model
+                base_url: Some("http://127.0.0.1:18100/v1".to_string()),
+                env_key: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                wire_api: WireApi::Anthropic,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let overrides = ConfigOverrides {
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config = Config::load_from_base_config_with_overrides(
+        cfg_no_provider_model,
+        overrides,
+        codex_home.abs(),
+    )?;
+    
+    // Should fall back to global model since provider has no specific model
+    assert_eq!(config.model.as_deref(), Some("global-model"));
+
+    Ok(())
+}

@@ -2502,7 +2502,20 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let model = model.or(config_profile.model).or(cfg.model);
+        // Provider-specific model has second highest priority (after CLI args)
+        let model = if let Some(cli_model) = model {
+            // CLI model always has highest priority
+            Some(cli_model)
+        } else if model_provider_id != "openai" || model_provider.model.is_some() {
+            // Provider-specific model has second highest priority
+            model_provider.model.as_ref()
+                .and_then(|m| if m.trim().is_empty() { None } else { Some(m.clone()) })
+                .or(config_profile.model)
+                .or(cfg.model)
+        } else {
+            // Fallback to original logic for OpenAI or when no provider-specific model
+            config_profile.model.or(cfg.model)
+        };
         let service_tier = service_tier_override
             .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
         let service_tier = match service_tier {
