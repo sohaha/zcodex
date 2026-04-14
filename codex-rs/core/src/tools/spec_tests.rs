@@ -629,6 +629,7 @@ fn test_build_specs_default_shell_present() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -664,6 +665,7 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     let user_shell = Shell {
         shell_type: ShellType::Zsh,
@@ -781,6 +783,7 @@ fn tool_suggest_requires_apps_and_plugins_features() {
             session_source: SessionSource::Cli,
             sandbox_policy: &SandboxPolicy::DangerFullAccess,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
+            wire_api: codex_model_provider_info::WireApi::Responses,
         });
         let (tools, _) = build_specs_with_discoverable_tools(
             &tools_config,

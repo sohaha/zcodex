@@ -471,6 +471,7 @@ fn tools_config_for_mcp_tool_exposure(search_tool: bool) -> ToolsConfig {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     tools_config.search_tool = search_tool;
     tools_config

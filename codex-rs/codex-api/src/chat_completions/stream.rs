@@ -140,6 +140,7 @@ struct ChatStreamState {
     tool_search_tool_names: HashSet<String>,
     local_shell_tool_names: HashSet<String>,
     in_inline_think: bool,
+    think_tag_buf: String,
     reasoning_text: String,
     reasoning_item_started: bool,
 }
@@ -295,7 +296,14 @@ impl ChatStreamState {
         text: String,
         tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
     ) -> Result<(), ApiError> {
-        let mut remaining = text.as_str();
+        let combined = if self.think_tag_buf.is_empty() {
+            text
+        } else {
+            let mut s = std::mem::take(&mut self.think_tag_buf);
+            s.push_str(&text);
+            s
+        };
+        let mut remaining = combined.as_str();
         loop {
             if remaining.is_empty() {
                 break;
@@ -325,13 +333,16 @@ impl ChatStreamState {
                 self.in_inline_think = true;
                 remaining = &remaining[start + "<think>".len()..];
             } else {
-                self.ensure_message_started(tx_event).await?;
-                self.output_text.push_str(remaining);
-                send_event(
-                    tx_event,
-                    ResponseEvent::OutputTextDelta(remaining.to_string()),
-                )
-                .await?;
+                let tag_prefix = longest_tag_prefix(remaining);
+                let emit = &remaining[..remaining.len() - tag_prefix.len()];
+                if !emit.is_empty() {
+                    self.ensure_message_started(tx_event).await?;
+                    self.output_text.push_str(emit);
+                    send_event(tx_event, ResponseEvent::OutputTextDelta(emit.to_string())).await?;
+                }
+                if !tag_prefix.is_empty() {
+                    self.think_tag_buf.push_str(tag_prefix);
+                }
                 break;
             }
         }

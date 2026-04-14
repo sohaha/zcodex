@@ -383,6 +383,8 @@ struct AnthropicStreamState {
     /// Tracks whether we are currently inside an inline `<think>...</think>` block
     /// that some non-Anthropic endpoints embed inside `text_delta` events.
     in_inline_think: bool,
+    /// Buffer for partial `<think>` or `</think>` tag prefix that was split across chunks.
+    think_tag_buf: String,
     /// Buffer for inline `<tool_call>...</tool_call>` text emitted by models that
     /// cannot produce structured tool-use events.
     inline_tool_call_buf: Option<String>,
@@ -573,7 +575,14 @@ impl AnthropicStreamState {
         text: String,
         tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
     ) -> Result<(), ApiError> {
-        let mut remaining = text.as_str();
+        let combined = if self.think_tag_buf.is_empty() {
+            text
+        } else {
+            let mut s = std::mem::take(&mut self.think_tag_buf);
+            s.push_str(&text);
+            s
+        };
+        let mut remaining = combined.as_str();
         loop {
             if remaining.is_empty() {
                 break;
@@ -632,16 +641,17 @@ impl AnthropicStreamState {
                 self.in_inline_think = true;
                 remaining = &remaining[start + "<think>".len()..];
             } else {
-                self.ensure_message_started(tx_event).await?;
-                self.text_blocks
-                    .entry(index)
-                    .or_default()
-                    .push_str(remaining);
-                send_event(
-                    tx_event,
-                    ResponseEvent::OutputTextDelta(remaining.to_string()),
-                )
-                .await?;
+                // Check if the tail of `remaining` could be a partial `<think>` or `</think>` tag.
+                let tag_prefix = longest_tag_prefix(remaining);
+                let emit = &remaining[..remaining.len() - tag_prefix.len()];
+                if !emit.is_empty() {
+                    self.ensure_message_started(tx_event).await?;
+                    self.text_blocks.entry(index).or_default().push_str(emit);
+                    send_event(tx_event, ResponseEvent::OutputTextDelta(emit.to_string())).await?;
+                }
+                if !tag_prefix.is_empty() {
+                    self.think_tag_buf.push_str(tag_prefix);
+                }
                 break;
             }
         }
@@ -794,6 +804,22 @@ fn output_schema(request: &ResponsesApiRequest) -> Option<&Value> {
 fn anthropic_output_schema_instruction(output_schema: &Value) -> String {
     let schema = serde_json::to_string(output_schema).unwrap_or_else(|_| output_schema.to_string());
     format!("{ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS} {schema}")
+}
+
+/// Returns the longest suffix of `s` that is a proper prefix of `"<think>"` or `"</think>"`.
+/// Used to detect cross-chunk tag splits so the tag buffer can be held until the next delta.
+fn longest_tag_prefix(s: &str) -> &str {
+    const TAGS: &[&str] = &["<think>", "</think>"];
+    let bytes = s.as_bytes();
+    for tag in TAGS {
+        let tag_bytes = tag.as_bytes();
+        for len in (1..tag_bytes.len()).rev() {
+            if bytes.len() >= len && &bytes[bytes.len() - len..] == &tag_bytes[..len] {
+                return &s[s.len() - len..];
+            }
+        }
+    }
+    ""
 }
 
 fn content_text(content: &[ContentItem]) -> String {

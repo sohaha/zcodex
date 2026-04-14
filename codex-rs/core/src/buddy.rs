@@ -63,6 +63,20 @@ struct BuddyReactionOutput {
     text: String,
 }
 
+/// Time utility for consistent time access.
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+/// Select a random item from a slice using current time.
+fn select_random<T: Copy>(items: &[T]) -> T {
+    let idx = (current_time_ms() as usize) % items.len();
+    items[idx]
+}
+
 /// State tracked for buddy reaction decisions.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BuddyReactionState {
@@ -182,6 +196,11 @@ struct LocalReactionLibrary {
     greeting: &'static [&'static str],
     error: &'static [&'static str],
     waiting: &'static [&'static str],
+    commit: &'static [&'static str],
+    test_pass: &'static [&'static str],
+    api_dev: &'static [&'static str],
+    refactor: &'static [&'static str],
+    review: &'static [&'static str],
 }
 
 impl Default for LocalReactionLibrary {
@@ -194,6 +213,10 @@ impl Default for LocalReactionLibrary {
                 "我在旁边看着呢。",
                 "继续加油！",
                 "这个思路不错。",
+                "不错不错~",
+                "有进步！",
+                "稳如老狗。",
+                "继续肝！",
             ],
             success: &[
                 "搞定！",
@@ -201,6 +224,9 @@ impl Default for LocalReactionLibrary {
                 "这波操作稳了。",
                 "漂亮！",
                 "收工吃饭！",
+                "干得漂亮！",
+                "666！",
+                "太强了！",
             ],
             thinking: &[
                 "让我想想...",
@@ -208,6 +234,8 @@ impl Default for LocalReactionLibrary {
                 "嗯...",
                 "正在理解...",
                 "有点复杂...",
+                "分析中...",
+                "捋一捋逻辑。",
             ],
             debugging: &[
                 "稳住，慢慢来。",
@@ -215,6 +243,8 @@ impl Default for LocalReactionLibrary {
                 "这个bug有点顽固。",
                 "排查中...",
                 "再加把劲！",
+                "Stack trace 看看？",
+                "断点打上。",
             ],
             interactive: &[
                 "我在呢。",
@@ -222,6 +252,8 @@ impl Default for LocalReactionLibrary {
                 "有道理。",
                 "我也这么想。",
                 "继续说。",
+                "嗯嗯~",
+                "收到！",
             ],
             greeting: &[
                 "开始吧！",
@@ -229,6 +261,8 @@ impl Default for LocalReactionLibrary {
                 "让我看看...",
                 "有新任务？",
                 "开工！",
+                "来活了~",
+                "冲！",
             ],
             error: &[
                 "别慌，排查一下。",
@@ -236,6 +270,8 @@ impl Default for LocalReactionLibrary {
                 "看看错误信息。",
                 "慢慢来。",
                 "加油解决！",
+                "错误也是经验~",
+                "先看 stack trace。",
             ],
             waiting: &[
                 "稍等...",
@@ -243,6 +279,57 @@ impl Default for LocalReactionLibrary {
                 "马上好。",
                 "还在跑...",
                 "等一下哈。",
+                "loading...",
+                "咕咕咕~",
+            ],
+            // 代码提交场景
+            commit: &[
+                "commit 写好了~",
+                "push 成功！",
+                "代码入库！",
+                "提交记录又+1。",
+                "版本更新！",
+                "git 操作用得熟练。",
+                "提交信息很清晰。",
+            ],
+            // 测试通过场景
+            test_pass: &[
+                "测试全绿！",
+                "test pass~",
+                "用例都过了！",
+                "coverage 又涨了。",
+                "没毛病。",
+                "测试覆盖率不错。",
+                "测试用例写得好。",
+            ],
+            // API 开发场景
+            api_dev: &[
+                "接口定义好了~",
+                "endpoint 就绪。",
+                "request/response 配好了。",
+                "swagger 更新了？",
+                "RESTful 风格。",
+                "接口文档跟上。",
+            ],
+            // 重构场景
+            refactor: &[
+                "重构得漂亮。",
+                "代码更干净了。",
+                "可读性提升！",
+                "抽象得不错。",
+                "消除技术债~",
+                "设计更合理了。",
+                " SOLID 遵守了。",
+            ],
+            // Code Review 场景
+            review: &[
+                "review 一下~",
+                "代码风格不错。",
+                "逻辑清晰。",
+                "考虑得很周全。",
+                " LGTM！",
+                "可以合并了。",
+                "优雅！",
             ],
         }
     }
@@ -260,22 +347,15 @@ impl LocalReactionLibrary {
                     ReactionCategory::Greeting => self.greeting,
                     ReactionCategory::Error => self.error,
                     ReactionCategory::Waiting => self.waiting,
+                    ReactionCategory::Commit => self.commit,
+                    ReactionCategory::TestPass => self.test_pass,
+                    ReactionCategory::ApiDev => self.api_dev,
+                    ReactionCategory::Refactor => self.refactor,
+                    ReactionCategory::Review => self.review,
                 };
-                let idx = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as usize)
-                    % items.len();
-                items[idx]
+                select_random(items)
             }
-            LocalPreference::Encouraging => {
-                let idx = (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as usize)
-                    % self.encouraging.len();
-                self.encouraging[idx]
-            }
+            LocalPreference::Encouraging => select_random(self.encouraging),
             LocalPreference::Diverse => {
                 let categories = [
                     ReactionCategory::Encouraging,
@@ -283,12 +363,13 @@ impl LocalReactionLibrary {
                     ReactionCategory::Thinking,
                     ReactionCategory::Debugging,
                     ReactionCategory::Interactive,
+                    ReactionCategory::Commit,
+                    ReactionCategory::TestPass,
+                    ReactionCategory::ApiDev,
+                    ReactionCategory::Refactor,
+                    ReactionCategory::Review,
                 ];
-                let time_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as usize;
-                let cat_idx = time_ms % categories.len();
+                let cat_idx = (current_time_ms() as usize) % categories.len();
                 let items = match categories[cat_idx] {
                     ReactionCategory::Encouraging => self.encouraging,
                     ReactionCategory::Success => self.success,
@@ -298,9 +379,13 @@ impl LocalReactionLibrary {
                     ReactionCategory::Greeting => self.greeting,
                     ReactionCategory::Error => self.error,
                     ReactionCategory::Waiting => self.waiting,
+                    ReactionCategory::Commit => self.commit,
+                    ReactionCategory::TestPass => self.test_pass,
+                    ReactionCategory::ApiDev => self.api_dev,
+                    ReactionCategory::Refactor => self.refactor,
+                    ReactionCategory::Review => self.review,
                 };
-                let item_idx = (time_ms / categories.len()) % items.len();
-                items[item_idx]
+                select_random(items)
             }
         }
     }
@@ -316,6 +401,11 @@ enum ReactionCategory {
     Greeting,
     Error,
     Waiting,
+    Commit,
+    TestPass,
+    ApiDev,
+    Refactor,
+    Review,
 }
 
 /// Determine reaction category from context.
@@ -325,6 +415,7 @@ fn classify_reaction_context(
 ) -> ReactionCategory {
     if let Some(msg) = last_user_message {
         let msg_lower = msg.to_lowercase();
+        // Interactive: user mentions buddy directly
         if msg_lower.contains("codey")
             || msg_lower.contains("小伙伴")
             || msg_lower.contains(" buddy")
@@ -334,17 +425,78 @@ fn classify_reaction_context(
     }
 
     if let Some(msg) = last_agent_message {
+        let msg_lower = msg.to_lowercase();
+
+        // Commit/push: git operations
+        if msg_lower.contains("commit")
+            || msg_lower.contains("git commit")
+            || msg_lower.contains("pushed")
+            || msg_lower.contains("git push")
+            || msg.contains("已提交")
+            || msg.contains("推送成功")
+        {
+            return ReactionCategory::Commit;
+        }
+
+        // Test pass: test results
+        if msg_lower.contains("test passed")
+            || msg_lower.contains("all tests")
+            || msg.contains("测试通过")
+            || msg.contains("用例通过")
+            || msg.contains("测试全绿")
+            || msg.contains("coverage")
+        {
+            return ReactionCategory::TestPass;
+        }
+
+        // API development: REST endpoints
+        if msg_lower.contains("api")
+            || msg_lower.contains("endpoint")
+            || msg_lower.contains("route")
+            || msg.contains("接口")
+            || msg.contains("请求")
+            || msg.contains("响应")
+            || msg.contains("REST")
+        {
+            return ReactionCategory::ApiDev;
+        }
+
+        // Refactor: code improvement
+        if msg_lower.contains("refactor")
+            || msg.contains("重构")
+            || msg.contains("抽象")
+            || msg.contains("优化")
+            || msg.contains("清理")
+        {
+            return ReactionCategory::Refactor;
+        }
+
+        // Review: code review
+        if msg_lower.contains("review")
+            || msg_lower.contains("lgtm")
+            || msg.contains("审查")
+            || msg.contains("合并")
+            || msg.contains(" LGTM")
+        {
+            return ReactionCategory::Review;
+        }
+
+        // Success: task completion
         if msg.contains("完成") || msg.contains("成功") || msg.contains("搞定") {
             return ReactionCategory::Success;
         }
-        if msg.contains("编译")
-            || msg.contains("测试")
-            || msg.contains("运行")
-            || msg.contains("构建")
-            || msg.contains("debug")
+
+        // Debugging: build/run operations
+        if msg_lower.contains("编译")
+            || msg_lower.contains("build")
+            || msg_lower.contains("运行")
+            || msg_lower.contains("执行")
+            || msg_lower.contains("debug")
         {
             return ReactionCategory::Debugging;
         }
+
+        // Thinking: long responses
         if msg.len() > 500 {
             return ReactionCategory::Thinking;
         }
@@ -358,8 +510,8 @@ fn classify_reaction_context(
         }
     }
 
-    // Check for error patterns in agent response
     if let Some(msg) = last_agent_message {
+        // Error patterns
         if msg.contains("错误")
             || msg.contains("error")
             || msg.contains("失败")
@@ -370,10 +522,8 @@ fn classify_reaction_context(
         {
             return ReactionCategory::Error;
         }
-    }
 
-    // Check for waiting patterns
-    if let Some(msg) = last_agent_message {
+        // Waiting patterns
         if msg.contains("正在")
             || msg.contains("加载")
             || msg.contains("loading")
@@ -475,14 +625,7 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 );
             }
             // Probability-based AI usage
-            let rand = (stable_hash(
-                &std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis()
-                    .to_string(),
-            ) as f64)
-                / (u64::MAX as f64);
+            let rand = (current_time_ms() as f64) / (u64::MAX as f64);
             if rand < strategy.ai_probability {
                 generate_buddy_reaction_ai(
                     session,

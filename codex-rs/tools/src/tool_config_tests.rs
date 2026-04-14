@@ -90,6 +90,7 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     assert_eq!(tools_config.shell_type, ConfigShellToolType::ShellCommand);
@@ -150,6 +151,7 @@ fn subagents_keep_request_user_input_mode_config_and_agent_jobs_workers_opt_in_b
         )),
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     assert!(tools_config.default_mode_request_user_input);
@@ -178,6 +180,7 @@ fn image_generation_requires_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let supported_tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &supported_model_info,
@@ -188,6 +191,7 @@ fn image_generation_requires_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let auth_disallowed_tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &supported_model_info,
@@ -198,6 +202,7 @@ fn image_generation_requires_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let unsupported_tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &unsupported_model_info,
@@ -208,6 +213,7 @@ fn image_generation_requires_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     assert!(!default_tools_config.image_gen_tool);
     assert!(supported_tools_config.image_gen_tool);

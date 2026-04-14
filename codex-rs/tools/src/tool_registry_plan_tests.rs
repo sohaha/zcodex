@@ -54,6 +54,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &config,
@@ -161,6 +162,7 @@ fn test_build_specs_collab_tools_enabled() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -201,6 +203,7 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -344,6 +347,7 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -379,6 +383,7 @@ fn view_image_tool_omits_detail_without_original_detail_feature() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -410,6 +415,7 @@ fn view_image_tool_includes_detail_with_original_detail_feature() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -448,6 +454,7 @@ fn disabled_environment_omits_environment_backed_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     })
     .with_has_environment(/*has_environment*/ false);
     tools_config
@@ -488,6 +495,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         )),
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -525,6 +533,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -548,6 +557,7 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -576,6 +586,7 @@ fn request_permissions_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -596,6 +607,7 @@ fn request_permissions_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -625,6 +637,7 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -651,6 +664,7 @@ fn js_repl_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -685,6 +699,7 @@ fn js_repl_enabled_adds_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -716,6 +731,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (default_tools, _) = build_specs(
         &default_tools_config,
@@ -739,6 +755,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (supported_tools, _) = build_specs(
         &supported_tools_config,
@@ -765,6 +782,7 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -795,6 +813,7 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -831,6 +850,7 @@ fn web_search_mode_live_sets_external_web_access_true() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -880,6 +900,7 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     })
     .with_web_search_config(Some(web_search_config.clone()));
     let (tools, _) = build_specs(
@@ -922,6 +943,7 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -957,6 +979,7 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -988,6 +1011,7 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1022,6 +1046,7 @@ fn test_parallel_support_flags() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1049,6 +1074,7 @@ fn test_test_model_info_includes_sync_tool() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1075,6 +1101,7 @@ fn test_build_specs_mcp_tools_converted() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1167,6 +1194,7 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let tools_map = HashMap::from([
@@ -1220,6 +1248,7 @@ fn search_tool_description_lists_each_mcp_source_once() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, handlers) = build_specs(
@@ -1322,6 +1351,7 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1340,6 +1370,7 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1360,6 +1391,7 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1388,6 +1420,7 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs_with_discoverable_tools(
         &tools_config,
@@ -1428,6 +1461,7 @@ fn tool_suggest_can_be_registered_without_search_tool() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs_with_discoverable_tools(
         &tools_config,
@@ -1474,6 +1508,7 @@ fn tool_suggest_description_lists_discoverable_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let discoverable_tools = vec![
@@ -1576,6 +1611,7 @@ fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1632,6 +1668,7 @@ fn code_mode_preserves_nullable_and_literal_mcp_input_shapes() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1721,6 +1758,7 @@ fn code_mode_augments_builtin_tool_descriptions_with_typed_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1757,6 +1795,7 @@ fn code_mode_only_exec_description_includes_full_nested_tool_details() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1794,6 +1833,7 @@ fn code_mode_exec_description_omits_nested_tool_details_when_not_code_mode_only(
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1942,6 +1982,7 @@ fn code_mode_augments_mcp_tool_descriptions_with_structured_output_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let mut tool = mcp_tool(
