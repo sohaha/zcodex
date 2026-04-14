@@ -59,10 +59,7 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
                 } else if matches!(role.as_str(), "user" | "assistant") {
                     let blocks = content_blocks(content);
                     if !blocks.is_empty() {
-                        messages.push(json!({
-                            "role": role,
-                            "content": blocks,
-                        }));
+                        push_message_blocks(&mut messages, role, blocks);
                     }
                 }
             }
@@ -71,71 +68,95 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
                 call_id,
                 arguments,
                 ..
-            } => messages.push(tool_use_message(
-                name.clone(),
-                call_id.clone(),
-                parse_json_object_or_wrapped(arguments),
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "assistant",
+                vec![tool_use_block(
+                    name.clone(),
+                    call_id.clone(),
+                    parse_json_object_or_wrapped(arguments),
+                )],
+            ),
             ResponseItem::CustomToolCall {
                 name,
                 call_id,
                 input,
                 ..
-            } => messages.push(tool_use_message(
-                name.clone(),
-                call_id.clone(),
-                parse_json_object_or_wrapped(input),
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "assistant",
+                vec![tool_use_block(
+                    name.clone(),
+                    call_id.clone(),
+                    parse_json_object_or_wrapped(input),
+                )],
+            ),
             ResponseItem::ToolSearchCall {
                 call_id,
                 execution,
                 arguments,
                 ..
-            } => messages.push(tool_use_message(
-                "tool_search".to_string(),
-                call_id
-                    .clone()
-                    .unwrap_or_else(|| "tool_search_call".to_string()),
-                tool_search_input(execution, arguments),
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "assistant",
+                vec![tool_use_block(
+                    "tool_search".to_string(),
+                    call_id
+                        .clone()
+                        .unwrap_or_else(|| "tool_search_call".to_string()),
+                    tool_search_input(execution, arguments),
+                )],
+            ),
             ResponseItem::LocalShellCall {
                 call_id,
                 id,
                 action,
                 ..
-            } => messages.push(tool_use_message(
-                "local_shell".to_string(),
-                call_id
-                    .clone()
-                    .or_else(|| id.clone())
-                    .unwrap_or_else(|| "local_shell_call".to_string()),
-                local_shell_input(action),
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "assistant",
+                vec![tool_use_block(
+                    "local_shell".to_string(),
+                    call_id
+                        .clone()
+                        .or_else(|| id.clone())
+                        .unwrap_or_else(|| "local_shell_call".to_string()),
+                    local_shell_input(action),
+                )],
+            ),
             ResponseItem::FunctionCallOutput { call_id, output }
             | ResponseItem::CustomToolCallOutput {
                 call_id, output, ..
-            } => messages.push(tool_result_message(
-                call_id.clone(),
-                tool_result_text(output),
-                output.success == Some(false),
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "user",
+                vec![tool_result_block(
+                    call_id.clone(),
+                    tool_result_text(output),
+                    output.success == Some(false),
+                )],
+            ),
             ResponseItem::ToolSearchOutput {
                 call_id,
                 status,
                 execution,
                 tools,
-            } => messages.push(tool_result_message(
-                call_id
-                    .clone()
-                    .unwrap_or_else(|| "tool_search_call".to_string()),
-                json!({
-                    "status": status,
-                    "execution": execution,
-                    "tools": tools,
-                })
-                .to_string(),
-                status != "completed",
-            )),
+            } => push_message_blocks(
+                &mut messages,
+                "user",
+                vec![tool_result_block(
+                    call_id
+                        .clone()
+                        .unwrap_or_else(|| "tool_search_call".to_string()),
+                    json!({
+                        "status": status,
+                        "execution": execution,
+                        "tools": tools,
+                    })
+                    .to_string(),
+                    status != "completed",
+                )],
+            ),
             _ => {}
         }
     }
@@ -852,16 +873,27 @@ fn parse_base64_data_url(image_url: &str) -> Option<(&str, &str)> {
 fn tool_use_message(name: String, call_id: String, input: Value) -> Value {
     json!({
         "role": "assistant",
-        "content": [{
-            "type": "tool_use",
-            "id": call_id,
-            "name": name,
-            "input": input,
-        }],
+        "content": [tool_use_block(name, call_id, input)],
+    })
+}
+
+fn tool_use_block(name: String, call_id: String, input: Value) -> Value {
+    json!({
+        "type": "tool_use",
+        "id": call_id,
+        "name": name,
+        "input": input,
     })
 }
 
 fn tool_result_message(call_id: String, output: String, is_error: bool) -> Value {
+    json!({
+        "role": "user",
+        "content": [tool_result_block(call_id, output, is_error)],
+    })
+}
+
+fn tool_result_block(call_id: String, output: String, is_error: bool) -> Value {
     let mut block = json!({
         "type": "tool_result",
         "tool_use_id": call_id,
@@ -870,15 +902,33 @@ fn tool_result_message(call_id: String, output: String, is_error: bool) -> Value
     if is_error && let Some(object) = block.as_object_mut() {
         object.insert("is_error".to_string(), Value::Bool(true));
     }
-
-    json!({
-        "role": "user",
-        "content": [block],
-    })
+    block
 }
 
 fn tool_result_text(output: &FunctionCallOutputPayload) -> String {
     output.body.to_text().unwrap_or_else(|| output.to_string())
+}
+
+fn push_message_blocks(messages: &mut Vec<Value>, role: &str, blocks: Vec<Value>) {
+    if blocks.is_empty() {
+        return;
+    }
+
+    if let Some(existing_blocks) = messages.last_mut().and_then(|message| {
+        if message.get("role").and_then(Value::as_str) == Some(role) {
+            message.get_mut("content").and_then(Value::as_array_mut)
+        } else {
+            None
+        }
+    }) {
+        existing_blocks.extend(blocks);
+        return;
+    }
+
+    messages.push(json!({
+        "role": role,
+        "content": blocks,
+    }));
 }
 
 fn local_shell_input(action: &LocalShellAction) -> Value {

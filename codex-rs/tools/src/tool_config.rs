@@ -1,6 +1,7 @@
 use crate::can_request_original_image_detail;
 use codex_features::Feature;
 use codex_features::Features;
+use codex_model_provider_info::WireApi;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -144,6 +145,7 @@ pub struct ToolsConfig {
     pub agent_jobs_worker_tools: bool,
     pub agent_type_description: String,
     pub zmemory_tool_enabled: bool,
+    pub wire_api: WireApi,
 }
 
 pub struct ToolsConfigParams<'a> {
@@ -155,6 +157,7 @@ pub struct ToolsConfigParams<'a> {
     pub session_source: SessionSource,
     pub sandbox_policy: &'a SandboxPolicy,
     pub windows_sandbox_level: WindowsSandboxLevel,
+    pub wire_api: WireApi,
 }
 
 impl ToolsConfig {
@@ -168,6 +171,7 @@ impl ToolsConfig {
             session_source,
             sandbox_policy,
             windows_sandbox_level,
+            wire_api,
         } = params;
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_code_mode = features.enabled(Feature::CodeMode);
@@ -268,6 +272,7 @@ impl ToolsConfig {
             agent_jobs_worker_tools,
             agent_type_description: String::new(),
             zmemory_tool_enabled: include_zmemory_tool,
+            wire_api: *wire_api,
         }
     }
 
