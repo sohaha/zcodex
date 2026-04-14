@@ -1,145 +1,73 @@
 //! PostHog analytics client for user fingerprinting and startup events.
 
-use serde::Deserialize;
-use serde::Serialize;
-use std::time::Duration;
+use posthog_rs::{Event, init_global, capture};
 use tracing::debug;
 use tracing::warn;
 
-const POSTHOG_API_VERSION: &str = "3";
-const POSTHOG_TIMEOUT: Duration = Duration::from_secs(5);
-const POSTHOG_HOST: &str = "https://us.i.posthog.com";
 const DEFAULT_POSTHOG_KEY: &str = "phc_tnpmpHSZKvoVp5A62kD7dAtje5fTTMNCafvpizv5BZTe";
 
-/// PostHog event client.
+/// PostHog event client wrapper.
 #[derive(Clone)]
 pub struct PostHogClient {
     api_key: String,
-    host: String,
-    client: reqwest::blocking::Client,
     enabled: bool,
 }
 
 impl PostHogClient {
     /// Create a new PostHog client with the default API key.
     pub fn new_with_default_key() -> Result<Self, reqwest::Error> {
-        Self::new(DEFAULT_POSTHOG_KEY.to_string(), POSTHOG_HOST.to_string())
+        Self::new(DEFAULT_POSTHOG_KEY.to_string())
     }
 
-    /// Create a new PostHog client with custom API key and host.
-    pub fn new(api_key: String, host: String) -> Result<Self, reqwest::Error> {
+    /// Create a new PostHog client with custom API key.
+    pub fn new(api_key: String) -> Result<Self, reqwest::Error> {
         let enabled = !api_key.is_empty();
-        let client = reqwest::blocking::Client::builder()
-            .timeout(POSTHOG_TIMEOUT)
-            .build()?;
-
-        Ok(Self {
-            api_key,
-            host,
-            client,
-            enabled,
-        })
+        Ok(Self { api_key, enabled })
     }
 
     /// Create a disabled PostHog client (no-op).
     pub fn disabled() -> Self {
         Self {
             api_key: String::new(),
-            host: POSTHOG_HOST.to_string(),
-            client: reqwest::blocking::Client::builder()
-                .timeout(POSTHOG_TIMEOUT)
-                .build()
-                .expect("create default reqwest client"),
             enabled: false,
         }
     }
 
-    /// Capture an event.
+    /// Capture an event using the global client with runtime.
     pub fn capture(&self, event: PostHogEvent) -> Result<(), PostHogError> {
         if !self.enabled {
             return Ok(());
         }
 
-        let payload = PostHogPayload {
-            api_key: self.api_key.clone(),
-            event: event.event_name,
-            distinct_id: event.distinct_id,
-            properties: event.properties,
-            timestamp: Some(event.timestamp),
-        };
-
-        debug!("capturing PostHog event: {}", payload.event);
-
-        let url = format!("{}/capture/", self.host);
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send();
-
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                debug!("PostHog event captured successfully");
-                Ok(())
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().unwrap_or_default();
-                warn!("PostHog capture failed: {} - {}", status, body);
-                Err(PostHogError::HttpError {
-                    status: status.as_u16(),
-                    message: body,
-                })
-            }
-            Err(err) => {
-                warn!("PostHog capture request failed: {}", err);
-                Err(PostHogError::RequestError(err.to_string()))
+        let mut posthog_event = Event::new(&event.event_name, &event.distinct_id);
+        
+        // Add properties
+        if let Some(obj) = event.properties.as_object() {
+            for (key, value) in obj {
+                let _ = posthog_event.insert_prop(key, value);
             }
         }
-    }
 
-    /// Alias a distinct ID to another ID (e.g., anonymous to authenticated).
-    pub fn alias(&self, distinct_id: &str, alias: &str) -> Result<(), PostHogError> {
-        if !self.enabled {
-            return Ok(());
-        }
+        debug!("capturing PostHog event: {}", event.event_name);
 
-        let payload = PostHogAliasPayload {
-            api_key: self.api_key.clone(),
-            distinct_id: distinct_id.to_string(),
-            alias: alias.to_string(),
-        };
+        // Initialize global client and capture event
+        let rt = tokio::runtime::Runtime::new().map_err(|e| {
+            PostHogError::RuntimeError(format!("Failed to create tokio runtime: {}", e))
+        })?;
 
-        debug!("aliasing PostHog ID: {} -> {}", distinct_id, alias);
-
-        let url = format!("{}/capture/", self.host);
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send();
-
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                debug!("PostHog alias created successfully");
-                Ok(())
+        rt.block_on(async {
+            init_global(self.api_key.as_str()).await?;
+            match capture(posthog_event).await {
+                Ok(_) => {
+                    debug!("PostHog event captured successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("PostHog capture failed: {}", e);
+                    Err(PostHogError::from(e))
+                }
             }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().unwrap_or_default();
-                warn!("PostHog alias failed: {} - {}", status, body);
-                Err(PostHogError::HttpError {
-                    status: status.as_u16(),
-                    message: body,
-                })
-            }
-            Err(err) => {
-                warn!("PostHog alias request failed: {}", err);
-                Err(PostHogError::RequestError(err.to_string()))
-            }
-        }
+        })
     }
 }
 
@@ -151,23 +79,15 @@ pub struct PostHogEvent {
     pub event_name: String,
     /// Event properties.
     pub properties: serde_json::Value,
-    /// Event timestamp (Unix milliseconds).
-    pub timestamp: u64,
 }
 
 impl PostHogEvent {
-    /// Create a new event with the current timestamp.
+    /// Create a new event.
     pub fn new(distinct_id: String, event_name: String) -> Self {
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-
         Self {
             distinct_id,
             event_name,
             properties: serde_json::json!({}),
-            timestamp,
         }
     }
 
@@ -180,33 +100,19 @@ impl PostHogEvent {
     }
 }
 
-/// PostHog capture payload.
-#[derive(Serialize)]
-struct PostHogPayload {
-    api_key: String,
-    event: String,
-    distinct_id: String,
-    properties: serde_json::Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    timestamp: Option<u64>,
-}
-
-/// PostHog alias payload.
-#[derive(Serialize)]
-struct PostHogAliasPayload {
-    api_key: String,
-    distinct_id: String,
-    alias: String,
-}
-
 /// PostHog client errors.
 #[derive(Debug, thiserror::Error)]
 pub enum PostHogError {
-    #[error("HTTP error {status}: {message}")]
-    HttpError { status: u16, message: String },
+    #[error("Runtime error: {0}")]
+    RuntimeError(String),
+    #[error("PostHog error: {0}")]
+    PostHogError(String),
+}
 
-    #[error("Request error: {0}")]
-    RequestError(String),
+impl From<posthog_rs::Error> for PostHogError {
+    fn from(err: posthog_rs::Error) -> Self {
+        PostHogError::PostHogError(format!("{}", err))
+    }
 }
 
 #[cfg(test)]
@@ -218,7 +124,6 @@ mod tests {
         let event = PostHogEvent::new("test-id".to_string(), "test_event".to_string());
         assert_eq!(event.distinct_id, "test-id");
         assert_eq!(event.event_name, "test_event");
-        assert!(event.timestamp > 0);
     }
 
     #[test]

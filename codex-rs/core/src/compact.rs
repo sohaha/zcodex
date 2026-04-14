@@ -60,8 +60,19 @@ pub(crate) enum InitialContextInjection {
 }
 
 pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
-    (provider.wire_api == crate::model_provider_info::WireApi::Responses && provider.is_openai())
-        || provider.wire_api == crate::model_provider_info::WireApi::Anthropic
+    if provider.wire_api == crate::model_provider_info::WireApi::Responses {
+        return provider.is_openai();
+    }
+    if provider.wire_api == crate::model_provider_info::WireApi::Anthropic {
+        // Only official Anthropic supports the remote compact messages endpoint;
+        // third-party Anthropic-compatible providers (e.g. MiniMax) should use inline compact.
+        let is_official_anthropic = match provider.base_url.as_deref() {
+            Some(url) => url.starts_with("https://api.anthropic.com"),
+            None => true,
+        };
+        return is_official_anthropic;
+    }
+    false
 }
 
 pub(crate) async fn run_inline_auto_compact_task(

@@ -350,7 +350,6 @@ fn classify_reaction_context(
         }
     }
 
-
     // Check for greeting patterns (first turn, short messages)
     if let Some(msg) = last_user_message {
         let msg_len = msg.len();

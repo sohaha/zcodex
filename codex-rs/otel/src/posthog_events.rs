@@ -1,6 +1,7 @@
 //! PostHog event helpers for common Codex CLI events.
 
-use crate::posthog::{PostHogClient, PostHogEvent};
+use crate::posthog::PostHogClient;
+use crate::posthog::PostHogEvent;
 
 /// Capture CLI startup event.
 pub fn capture_cli_startup(

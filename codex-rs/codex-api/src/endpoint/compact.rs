@@ -83,7 +83,7 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
             tools: Vec::new(),
             tool_choice: "auto".to_string(),
             parallel_tool_calls: false,
-            reasoning: input.reasoning.clone(),
+            reasoning: None,
             store: false,
             stream: false,
             include: Vec::new(),
@@ -105,9 +105,43 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
                     .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
             })
             .await?;
-        let parsed: AnthropicMessageResponse =
-            serde_json::from_slice(&resp.body).map_err(|e| ApiError::Stream(e.to_string()))?;
-        let summary = extract_compaction_summary(parsed.content)?;
+        let content = match serde_json::from_slice::<AnthropicMessageResponse>(&resp.body) {
+            Ok(parsed) => parsed.content,
+            Err(_) => {
+                // Some providers (e.g. MiniMax) return SSE even when stream:false is requested.
+                // Fall back to extracting text from SSE data lines.
+                let body_str = String::from_utf8_lossy(&resp.body);
+                let mut blocks = Vec::new();
+                for line in body_str.lines() {
+                    let data = line.strip_prefix("data:").map(str::trim).unwrap_or("");
+                    if data.is_empty() || data == "[DONE]" {
+                        continue;
+                    }
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(delta) = chunk
+                            .get("delta")
+                            .and_then(|d| d.get("text"))
+                            .and_then(|t| t.as_str())
+                        {
+                            if !delta.is_empty() {
+                                blocks.push(AnthropicContentBlock {
+                                    kind: "text".to_string(),
+                                    text: Some(delta.to_string()),
+                                });
+                            }
+                        }
+                    }
+                }
+                if blocks.is_empty() {
+                    let preview = String::from_utf8_lossy(&resp.body[..resp.body.len().min(256)]);
+                    return Err(ApiError::Stream(format!(
+                        "could not parse compaction response as json or sse; body preview: {preview}"
+                    )));
+                }
+                blocks
+            }
+        };
+        let summary = extract_compaction_summary(content)?;
         Ok(vec![ResponseItem::Compaction {
             encrypted_content: summary,
         }])

@@ -1065,28 +1065,45 @@ async fn run_ratatui_app(
     }
 
     // Initialize high-fidelity session event logging if enabled.
-    // Initialize PostHog analytics.
-    let posthog_client = PostHogClient::new_with_default_key().unwrap_or_else(|err| {
-        tracing::warn!(
-            "Failed to initialize PostHog client: {}. Using disabled client.",
-            err
-        );
-        PostHogClient::disabled()
-    });
-
-    // Capture CLI startup event.
+    // Capture CLI startup event via PostHog (blocking client runs in a blocking thread).
     if let Ok(installation_id) =
         crate::legacy_core::installation_id::resolve_installation_id(&initial_config.codex_home)
             .await
     {
-        let (os_type, os_version) = posthog_events::get_os_info();
-        posthog_events::capture_cli_startup(
-            &posthog_client,
-            &installation_id,
-            env!("CARGO_PKG_VERSION"),
-            &os_type,
-            &os_version,
-        );
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        tracing::info!("Preparing to capture CLI startup event via PostHog");
+        let posthog_handle = tokio::task::spawn_blocking(move || {
+            let client = PostHogClient::new_with_default_key().unwrap_or_else(|err| {
+                tracing::warn!(
+                    "Failed to initialize PostHog client: {}. Using disabled client.",
+                    err
+                );
+                PostHogClient::disabled()
+            });
+            let (os_type, os_version) = posthog_events::get_os_info();
+            posthog_events::capture_cli_startup(
+                &client,
+                &installation_id,
+                &version,
+                &os_type,
+                &os_version,
+            );
+        });
+
+        // Wait for PostHog task to complete with timeout (longer than PostHog's 5s internal timeout)
+        tokio::spawn(async move {
+            match tokio::time::timeout(tokio::time::Duration::from_secs(8), posthog_handle).await {
+                Ok(Ok(())) => {
+                    tracing::info!("CLI startup event captured successfully via PostHog");
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("PostHog task failed: {}", e);
+                }
+                Err(_) => {
+                    tracing::warn!("PostHog task timed out after 8 seconds");
+                }
+            }
+        });
     }
 
     let mut app_server = Some(
