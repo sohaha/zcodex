@@ -11,6 +11,8 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::LocalShellAction;
 use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TokenUsage;
 use eventsource_stream::Eventsource;
@@ -137,6 +139,9 @@ struct ChatStreamState {
     custom_tool_names: HashSet<String>,
     tool_search_tool_names: HashSet<String>,
     local_shell_tool_names: HashSet<String>,
+    in_inline_think: bool,
+    reasoning_text: String,
+    reasoning_item_started: bool,
 }
 
 impl ChatStreamState {
@@ -158,6 +163,9 @@ impl ChatStreamState {
             custom_tool_names,
             tool_search_tool_names,
             local_shell_tool_names,
+            in_inline_think: false,
+            reasoning_text: String::new(),
+            reasoning_item_started: false,
         }
     }
 
@@ -184,9 +192,7 @@ impl ChatStreamState {
         for choice in chunk.choices {
             if let Some(delta) = choice.delta {
                 if let Some(text) = delta_content_text(delta.content.as_ref()) {
-                    self.ensure_message_started(tx_event).await?;
-                    self.output_text.push_str(&text);
-                    send_event(tx_event, ResponseEvent::OutputTextDelta(text)).await?;
+                    self.handle_text_delta(text, tx_event).await?;
                 }
                 for tool_call in delta.tool_calls {
                     self.merge_tool_call(tool_call);
@@ -220,10 +226,123 @@ impl ChatStreamState {
         }
     }
 
+    async fn handle_reasoning_delta(
+        &mut self,
+        chunk: String,
+        tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    ) -> Result<(), ApiError> {
+        if !self.reasoning_item_started {
+            self.reasoning_item_started = true;
+            send_event(
+                tx_event,
+                ResponseEvent::OutputItemAdded(ResponseItem::Reasoning {
+                    id: self.response_id.clone().unwrap_or_default(),
+                    summary: Vec::new(),
+                    content: None,
+                    encrypted_content: None,
+                }),
+            )
+            .await?;
+            send_event(
+                tx_event,
+                ResponseEvent::ReasoningSummaryPartAdded { summary_index: 0 },
+            )
+            .await?;
+        }
+        self.reasoning_text.push_str(&chunk);
+        send_event(
+            tx_event,
+            ResponseEvent::ReasoningSummaryDelta {
+                delta: chunk,
+                summary_index: 0,
+            },
+        )
+        .await
+    }
+
+    async fn finish_reasoning_if_needed(
+        &mut self,
+        tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    ) -> Result<(), ApiError> {
+        if !self.reasoning_item_started {
+            return Ok(());
+        }
+        let text = std::mem::take(&mut self.reasoning_text);
+        let summary = if text.is_empty() {
+            Vec::new()
+        } else {
+            vec![ReasoningItemReasoningSummary::SummaryText { text: text.clone() }]
+        };
+        let content = if text.is_empty() {
+            None
+        } else {
+            Some(vec![ReasoningItemContent::ReasoningText { text }])
+        };
+        send_event(
+            tx_event,
+            ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
+                id: self.response_id.clone().unwrap_or_default(),
+                summary,
+                content,
+                encrypted_content: None,
+            }),
+        )
+        .await
+    }
+
+    async fn handle_text_delta(
+        &mut self,
+        text: String,
+        tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    ) -> Result<(), ApiError> {
+        let mut remaining = text.as_str();
+        loop {
+            if remaining.is_empty() {
+                break;
+            }
+            if self.in_inline_think {
+                if let Some(end) = remaining.find("</think>") {
+                    let think_chunk = &remaining[..end];
+                    if !think_chunk.is_empty() {
+                        self.handle_reasoning_delta(think_chunk.to_string(), tx_event)
+                            .await?;
+                    }
+                    self.in_inline_think = false;
+                    remaining = &remaining[end + "</think>".len()..];
+                } else {
+                    self.handle_reasoning_delta(remaining.to_string(), tx_event)
+                        .await?;
+                    break;
+                }
+            } else if let Some(start) = remaining.find("<think>") {
+                let before = &remaining[..start];
+                if !before.is_empty() {
+                    self.ensure_message_started(tx_event).await?;
+                    self.output_text.push_str(before);
+                    send_event(tx_event, ResponseEvent::OutputTextDelta(before.to_string()))
+                        .await?;
+                }
+                self.in_inline_think = true;
+                remaining = &remaining[start + "<think>".len()..];
+            } else {
+                self.ensure_message_started(tx_event).await?;
+                self.output_text.push_str(remaining);
+                send_event(
+                    tx_event,
+                    ResponseEvent::OutputTextDelta(remaining.to_string()),
+                )
+                .await?;
+                break;
+            }
+        }
+        Ok(())
+    }
+
     async fn flush_output_items(
         &mut self,
         tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
     ) -> Result<(), ApiError> {
+        self.finish_reasoning_if_needed(tx_event).await?;
         if !self.output_text_done && !self.output_text.is_empty() {
             send_event(
                 tx_event,

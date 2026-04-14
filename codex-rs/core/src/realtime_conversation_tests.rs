@@ -78,6 +78,8 @@ fn realtime_api_key_ignores_empty_configured_bearer_token() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_key = realtime_api_key(Some(&CodexAuth::from_api_key("auth-json-key")), &provider)
@@ -127,6 +129,8 @@ fn realtime_api_key_uses_openai_env_fallback_for_official_chat_provider() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     let api_key = realtime_api_key(None, &provider).expect("official endpoint should use env key");

@@ -358,6 +358,9 @@ struct AnthropicStreamState {
     usage: Option<AnthropicUsage>,
     stop_reason: Option<String>,
     freeform_tool_names: HashSet<String>,
+    /// Tracks whether we are currently inside an inline `<think>...</think>` block
+    /// that some non-Anthropic endpoints embed inside `text_delta` events.
+    in_inline_think: bool,
 }
 
 #[derive(Default)]
@@ -475,9 +478,7 @@ impl AnthropicStreamState {
         match delta.kind.as_deref() {
             Some("text_delta") => {
                 let text = delta.text.unwrap_or_default();
-                self.ensure_message_started(tx_event).await?;
-                self.text_blocks.entry(index).or_default().push_str(&text);
-                send_event(tx_event, ResponseEvent::OutputTextDelta(text)).await?;
+                self.handle_text_delta(index, text, tx_event).await?;
             }
             Some("thinking_delta") => {
                 let thinking = delta.thinking.unwrap_or_default();
@@ -539,6 +540,58 @@ impl AnthropicStreamState {
             },
         )
         .await
+    }
+
+    async fn handle_text_delta(
+        &mut self,
+        index: usize,
+        text: String,
+        tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    ) -> Result<(), ApiError> {
+        let mut remaining = text.as_str();
+        loop {
+            if remaining.is_empty() {
+                break;
+            }
+            if self.in_inline_think {
+                if let Some(end) = remaining.find("</think>") {
+                    let think_chunk = &remaining[..end];
+                    if !think_chunk.is_empty() {
+                        self.handle_reasoning_delta(index, think_chunk.to_string(), tx_event)
+                            .await?;
+                    }
+                    self.in_inline_think = false;
+                    remaining = &remaining[end + "</think>".len()..];
+                } else {
+                    self.handle_reasoning_delta(index, remaining.to_string(), tx_event)
+                        .await?;
+                    break;
+                }
+            } else if let Some(start) = remaining.find("<think>") {
+                let before = &remaining[..start];
+                if !before.is_empty() {
+                    self.ensure_message_started(tx_event).await?;
+                    self.text_blocks.entry(index).or_default().push_str(before);
+                    send_event(tx_event, ResponseEvent::OutputTextDelta(before.to_string()))
+                        .await?;
+                }
+                self.in_inline_think = true;
+                remaining = &remaining[start + "<think>".len()..];
+            } else {
+                self.ensure_message_started(tx_event).await?;
+                self.text_blocks
+                    .entry(index)
+                    .or_default()
+                    .push_str(remaining);
+                send_event(
+                    tx_event,
+                    ResponseEvent::OutputTextDelta(remaining.to_string()),
+                )
+                .await?;
+                break;
+            }
+        }
+        Ok(())
     }
 
     async fn finish_reasoning_if_needed(

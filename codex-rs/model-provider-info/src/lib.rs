@@ -139,6 +139,12 @@ pub struct ModelProviderInfo {
     /// Whether this provider supports the Responses API WebSocket transport.
     #[serde(default)]
     pub supports_websockets: bool,
+    /// Size of the context window for the model, in tokens.
+    #[serde(default)]
+    pub model_context_window: Option<i64>,
+    /// Token usage threshold triggering auto-compaction of conversation history.
+    #[serde(default)]
+    pub model_auto_compact_token_limit: Option<i64>,
 }
 
 impl ModelProviderInfo {
@@ -344,6 +350,8 @@ impl ModelProviderInfo {
             websocket_connect_timeout_ms: None,
             requires_openai_auth: true,
             supports_websockets: true,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
         }
     }
 
@@ -474,6 +482,8 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
         supports_websockets: false,
     }
 }

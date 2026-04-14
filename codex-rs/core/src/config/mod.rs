@@ -802,9 +802,19 @@ impl ConfigBuilder {
 
 impl Config {
     pub fn to_models_manager_config(&self) -> ModelsManagerConfig {
+        // Provider-specific settings take priority over global settings
+        let model_context_window = self
+            .model_provider
+            .model_context_window
+            .or(self.model_context_window);
+        let model_auto_compact_token_limit = self
+            .model_provider
+            .model_auto_compact_token_limit
+            .or(self.model_auto_compact_token_limit);
+
         ModelsManagerConfig {
-            model_context_window: self.model_context_window,
-            model_auto_compact_token_limit: self.model_auto_compact_token_limit,
+            model_context_window,
+            model_auto_compact_token_limit,
             tool_output_token_limit: self.tool_output_token_limit,
             base_instructions: self.base_instructions.clone(),
             personality_enabled: self.features.enabled(Feature::Personality),
@@ -812,7 +822,6 @@ impl Config {
             model_catalog: self.model_catalog.clone(),
         }
     }
-
     pub fn to_mcp_config(&self, plugins_manager: &crate::plugins::PluginsManager) -> McpConfig {
         let loaded_plugins = plugins_manager.plugins_for_config(self);
         let mut configured_mcp_servers = self.mcp_servers.get().clone();
@@ -2508,8 +2517,16 @@ impl Config {
             Some(cli_model)
         } else if model_provider_id != "openai" || model_provider.model.is_some() {
             // Provider-specific model has second highest priority
-            model_provider.model.as_ref()
-                .and_then(|m| if m.trim().is_empty() { None } else { Some(m.clone()) })
+            model_provider
+                .model
+                .as_ref()
+                .and_then(|m| {
+                    if m.trim().is_empty() {
+                        None
+                    } else {
+                        Some(m.clone())
+                    }
+                })
                 .or(config_profile.model)
                 .or(cfg.model)
         } else {
@@ -2697,12 +2714,19 @@ impl Config {
             } else {
                 NetworkSandboxPolicy::from(&effective_sandbox_policy)
             };
+        let model_context_window = model_provider
+            .model_context_window
+            .or(cfg.model_context_window);
+        let model_auto_compact_token_limit = model_provider
+            .model_auto_compact_token_limit
+            .or(cfg.model_auto_compact_token_limit);
+
         let config = Self {
             model,
             service_tier,
             review_model,
-            model_context_window: cfg.model_context_window,
-            model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_context_window,
+            model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
             resume_model_source: cfg.resume_model_source.unwrap_or_default(),

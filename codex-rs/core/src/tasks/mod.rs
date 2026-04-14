@@ -659,8 +659,7 @@ impl Session {
 }
 
 fn should_run_buddy_observer(turn_context: &TurnContext) -> bool {
-    matches!(turn_context.session_source, SessionSource::Cli)
-        && (turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled)
+    matches!(turn_context.session_source, SessionSource::Cli) && turn_context.config.tui_show_buddy
 }
 
 async fn handle_buddy_observer(
@@ -674,7 +673,7 @@ async fn handle_buddy_observer(
 
     let mut soul = turn_context.config.tui_buddy_soul.clone();
     if soul.is_none()
-        && (turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled)
+        && turn_context.config.tui_show_buddy
         && let Some(generated) = generate_buddy_soul(session.as_ref(), turn_context.as_ref()).await
     {
         match persist_buddy_soul(turn_context.config.codex_home.as_path(), &generated).await {
@@ -701,10 +700,6 @@ async fn handle_buddy_observer(
         }
     }
 
-    if !turn_context.config.tui_buddy_reactions_enabled {
-        return;
-    }
-
     let history = session
         .clone_history()
         .await
@@ -715,6 +710,11 @@ async fn handle_buddy_observer(
             .as_ref()
             .is_some_and(|msg| !msg.is_empty());
     if !has_context {
+        return;
+    }
+
+    // Skip buddy reaction on startup to avoid unnecessary token usage
+    if history.len() <= 2 {
         return;
     }
 

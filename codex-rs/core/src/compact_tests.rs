@@ -205,6 +205,8 @@ fn should_use_remote_compact_task_for_anthropic_provider() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     assert!(should_use_remote_compact_task(&provider));
@@ -230,6 +232,8 @@ fn should_not_use_remote_compact_task_for_chat_providers() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     assert!(!should_use_remote_compact_task(&provider));
@@ -255,6 +259,8 @@ fn should_use_remote_compact_task_for_openai_responses_compatible_provider() {
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
     };
 
     assert!(should_use_remote_compact_task(&provider));
