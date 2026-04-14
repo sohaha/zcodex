@@ -1,6 +1,8 @@
 //! PostHog analytics client for user fingerprinting and startup events.
 
-use posthog_rs::{Event, init_global, capture};
+use posthog_rs::Event;
+use posthog_rs::capture;
+use posthog_rs::init_global;
 use tracing::debug;
 use tracing::warn;
 
@@ -40,7 +42,7 @@ impl PostHogClient {
         }
 
         let mut posthog_event = Event::new(&event.event_name, &event.distinct_id);
-        
+
         // Add properties
         if let Some(obj) = event.properties.as_object() {
             for (key, value) in obj {

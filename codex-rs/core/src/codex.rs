@@ -1006,6 +1006,7 @@ impl TurnContext {
             session_source: self.session_source.clone(),
             sandbox_policy: self.sandbox_policy.get(),
             windows_sandbox_level: self.windows_sandbox_level,
+            wire_api: config.model_provider.wire_api,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -1125,6 +1126,7 @@ impl TurnContext {
             session_source: self.session_source.clone(),
             sandbox_policy: self.sandbox_policy.get(),
             windows_sandbox_level: self.windows_sandbox_level,
+            wire_api: model_provider.wire_api,
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
@@ -1671,6 +1673,7 @@ impl Session {
             session_source: session_source.clone(),
             sandbox_policy: session_configuration.sandbox_policy.get(),
             windows_sandbox_level: session_configuration.windows_sandbox_level,
+            wire_api: provider_for_context.wire_api,
         })
         .with_unified_exec_shell_mode_for_session(
             crate::tools::spec::tool_user_shell_type(user_shell),
@@ -6108,6 +6111,7 @@ async fn spawn_review_thread(
         session_source: parent_turn_context.session_source.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
         windows_sandbox_level: parent_turn_context.windows_sandbox_level,
+        wire_api: parent_turn_context.provider.wire_api,
     })
     .with_unified_exec_shell_mode_for_session(
         crate::tools::spec::tool_user_shell_type(sess.services.user_shell.as_ref()),

@@ -189,6 +189,7 @@ fn multi_agent_v2_tools_config() -> ToolsConfig {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     })
 }
 
@@ -250,6 +251,7 @@ fn model_provided_unified_exec_is_blocked_for_windows_sandboxed_policies() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::new_workspace_write_policy(),
         windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let expected_shell_type = if cfg!(target_os = "windows") {
@@ -276,6 +278,7 @@ fn get_memory_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -308,6 +311,7 @@ fn assert_model_tools(
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     let router = ToolRouter::from_config(
         &tools_config,
@@ -812,6 +816,7 @@ fn search_tool_description_handles_no_enabled_mcp_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -846,6 +851,7 @@ fn search_tool_description_falls_back_to_connector_name_without_description() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -897,6 +903,7 @@ fn search_tool_registers_namespaced_mcp_tool_aliases() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (_, registry) = build_specs(
@@ -984,6 +991,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1044,6 +1052,7 @@ fn test_mcp_tool_preserves_integer_schema() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1103,6 +1112,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1164,6 +1174,7 @@ fn test_mcp_tool_anyof_schema_is_preserved() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1230,6 +1241,7 @@ fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: codex_model_provider_info::WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,

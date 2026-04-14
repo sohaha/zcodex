@@ -3000,6 +3000,7 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-code-mode",
  "codex-features",
+ "codex-model-provider-info",
  "codex-native-tldr",
  "codex-protocol",
  "codex-utils-absolute-path",
