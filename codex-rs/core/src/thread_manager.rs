@@ -22,6 +22,7 @@ use codex_exec_server::EnvironmentManager;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
@@ -32,7 +33,6 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelPreset;
-use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InitialHistory;
@@ -45,6 +45,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_state::DirectionalThreadSpawnEdgeStatus;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use std::collections::HashMap;
@@ -205,10 +206,6 @@ pub(crate) struct ThreadManagerState {
     thread_created_tx: broadcast::Sender<ThreadId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
-    models_manager_provider: ModelProviderInfo,
-    models_manager_codex_home: PathBuf,
-    models_manager_catalog: Option<ModelsResponse>,
-    collaboration_modes_config: CollaborationModesConfig,
     environment_manager: Arc<EnvironmentManager>,
     skills_manager: Arc<SkillsManager>,
     plugins_manager: Arc<PluginsManager>,
@@ -231,15 +228,14 @@ impl ThreadManager {
     ) -> Self {
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
-        let models_manager_provider = config
+        let openai_models_provider = config
             .model_providers
-            .get(&config.model_provider_id)
+            .get(OPENAI_PROVIDER_ID)
             .cloned()
-            .unwrap_or_else(|| config.model_provider.clone());
-        let models_manager_catalog = config.model_catalog.clone();
+            .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
-            codex_home.clone(),
+            codex_home.to_path_buf(),
             restriction_product,
         ));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
@@ -254,16 +250,12 @@ impl ThreadManager {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
                 models_manager: Arc::new(ModelsManager::new_with_provider(
-                    codex_home.clone(),
+                    codex_home.to_path_buf(),
                     auth_manager.clone(),
-                    models_manager_catalog.clone(),
+                    config.model_catalog.clone(),
                     collaboration_modes_config,
-                    models_manager_provider.clone(),
+                    openai_models_provider,
                 )),
-                models_manager_provider,
-                models_manager_codex_home: codex_home,
-                models_manager_catalog,
-                collaboration_modes_config,
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -312,6 +304,10 @@ impl ThreadManager {
     ) -> Self {
         set_thread_manager_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
+        let skills_codex_home = match AbsolutePathBuf::from_absolute_path_checked(&codex_home) {
+            Ok(codex_home) => codex_home,
+            Err(err) => panic!("test codex_home should be absolute: {err}"),
+        };
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let restriction_product = SessionSource::Exec.restriction_product();
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
@@ -320,7 +316,7 @@ impl ThreadManager {
         ));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new_with_restriction_product(
-            codex_home.clone(),
+            skills_codex_home,
             /*bundled_skills_enabled*/ true,
             restriction_product,
         ));
@@ -330,14 +326,10 @@ impl ThreadManager {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
-                    codex_home.clone(),
+                    codex_home,
                     auth_manager.clone(),
-                    provider.clone(),
+                    provider,
                 )),
-                models_manager_provider: provider,
-                models_manager_codex_home: codex_home,
-                models_manager_catalog: None,
-                collaboration_modes_config: CollaborationModesConfig::default(),
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -433,7 +425,7 @@ impl ThreadManager {
         subtree_thread_ids.push(thread_id);
         seen_thread_ids.insert(thread_id);
 
-        if let Some(state_db_ctx) = thread_state_db(thread.as_ref()).await {
+        if let Some(state_db_ctx) = thread.state_db() {
             for status in [
                 DirectionalThreadSpawnEdgeStatus::Open,
                 DirectionalThreadSpawnEdgeStatus::Closed,
@@ -722,23 +714,6 @@ impl ThreadManager {
     }
 }
 
-async fn thread_state_db(thread: &CodexThread) -> Option<codex_rollout::state_db::StateDbHandle> {
-    if let Some(state_db_ctx) = thread.state_db() {
-        return Some(state_db_ctx);
-    }
-    let config = thread.codex.session.get_config().await;
-    if let Some(state_db_ctx) = codex_rollout::state_db::init(&config).await {
-        Some(state_db_ctx)
-    } else {
-        codex_state::StateRuntime::init(
-            config.sqlite_home.clone(),
-            config.model_provider_id.clone(),
-        )
-        .await
-        .ok()
-    }
-}
-
 impl ThreadManagerState {
     pub(crate) async fn list_thread_ids(&self) -> Vec<ThreadId> {
         self.threads.read().await.keys().copied().collect()
@@ -933,27 +908,12 @@ impl ThreadManagerState {
             self.skills_manager.as_ref(),
             self.plugins_manager.as_ref(),
         );
-        let models_manager = if Arc::ptr_eq(&auth_manager, &self.auth_manager)
-            && config.codex_home == self.models_manager_codex_home
-            && config.model_catalog == self.models_manager_catalog
-            && config.model_provider == self.models_manager_provider
-        {
-            Arc::clone(&self.models_manager)
-        } else {
-            Arc::new(ModelsManager::new_with_provider(
-                config.codex_home.clone(),
-                auth_manager.clone(),
-                config.model_catalog.clone(),
-                self.collaboration_modes_config,
-                config.model_provider.clone(),
-            ))
-        };
         let CodexSpawnOk {
             codex, thread_id, ..
         } = Codex::spawn(CodexSpawnArgs {
             config,
             auth_manager,
-            models_manager,
+            models_manager: Arc::clone(&self.models_manager),
             environment_manager: Arc::clone(&self.environment_manager),
             skills_manager: Arc::clone(&self.skills_manager),
             plugins_manager: Arc::clone(&self.plugins_manager),

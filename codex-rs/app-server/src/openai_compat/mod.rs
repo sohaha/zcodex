@@ -652,7 +652,7 @@ async fn build_upstream_config(
     let adapter = UpstreamAdapter::from_wire_api(config.model_provider.wire_api)?;
 
     let auth_manager = AuthManager::shared(
-        config.codex_home.clone(),
+        config.codex_home.to_path_buf(),
         false,
         config.cli_auth_credentials_store_mode,
     );

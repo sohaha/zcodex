@@ -1196,7 +1196,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "exec-server",
             )?;
-            run_exec_server_command(cmd).await?;
+            run_exec_server_command(cmd, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Features(FeaturesCli { sub })) => match sub {
             FeaturesSubcommand::List => {
@@ -1269,8 +1269,15 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn run_exec_server_command(cmd: ExecServerCommand) -> anyhow::Result<()> {
-    codex_exec_server::run_main_with_listen_url(&cmd.listen)
+async fn run_exec_server_command(
+    cmd: ExecServerCommand,
+    arg0_paths: Arg0DispatchPaths,
+) -> anyhow::Result<()> {
+    let runtime_paths = codex_exec_server::ExecServerRuntimePaths::from_optional_paths(
+        arg0_paths.codex_self_exe,
+        arg0_paths.codex_linux_sandbox_exe,
+    )?;
+    codex_exec_server::run_main(&cmd.listen, runtime_paths)
         .await
         .map_err(anyhow::Error::from_boxed)
 }

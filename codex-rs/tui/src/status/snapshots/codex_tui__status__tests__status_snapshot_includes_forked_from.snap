@@ -1,5 +1,6 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 289
 expression: sanitized
 ---
 /status
@@ -13,7 +14,7 @@ expression: sanitized
 │  模型:         gpt-5.1-codex-max (推理 无, 总结 自动)  │
 │  目录:         /workspace/tests                        │
 │  权限:         自定义 (read-only, on-request)          │
-│  Agents.md:    ../AGENTS.md                            │
+│  Agents.md:    无                                      │
 │  会话:         0f0f3c13-6cf9-4aa4-8b80-7d49c2f1be2e    │
 │  分叉自:       e9f18a88-8081-4e51-9d4e-8af5cde2d8dd    │
 │                                                        │

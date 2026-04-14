@@ -2219,9 +2219,10 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "base64 0.22.1",
- "clap",
  "codex-app-server-protocol",
+ "codex-config",
  "codex-protocol",
+ "codex-sandboxing",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
  "codex-utils-pty",
@@ -2229,6 +2230,7 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+ "serial_test",
  "tempfile",
  "test-case",
  "thiserror 2.0.18",
@@ -2471,6 +2473,7 @@ dependencies = [
  "codex-plugin",
  "codex-protocol",
  "codex-rmcp-client",
+ "codex-utils-absolute-path",
  "codex-utils-plugins",
  "futures",
  "pretty_assertions",
@@ -3156,6 +3159,7 @@ version = "0.0.0"
 name = "codex-utils-home-dir"
 version = "0.0.0"
 dependencies = [
+ "codex-utils-absolute-path",
  "dirs",
  "pretty_assertions",
  "tempfile",

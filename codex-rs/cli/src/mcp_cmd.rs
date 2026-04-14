@@ -304,6 +304,7 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
         transport: transport.clone(),
         enabled: true,
         required: false,
+        supports_parallel_tool_calls: false,
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -395,7 +396,9 @@ async fn run_login(config_overrides: &CliConfigOverrides, login_args: LoginArgs)
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("加载配置失败")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
+        config.codex_home.to_path_buf(),
+    )));
     let mcp_servers = mcp_manager.effective_servers(&config, /*auth*/ None);
 
     let LoginArgs { name, scopes } = login_args;
@@ -446,7 +449,9 @@ async fn run_logout(config_overrides: &CliConfigOverrides, logout_args: LogoutAr
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("加载配置失败")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
+        config.codex_home.to_path_buf(),
+    )));
     let mcp_servers = mcp_manager.effective_servers(&config, /*auth*/ None);
 
     let LogoutArgs { name } = logout_args;
@@ -476,7 +481,9 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("加载配置失败")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
+        config.codex_home.to_path_buf(),
+    )));
     let mcp_servers = mcp_manager.effective_servers(&config, /*auth*/ None);
 
     let mut entries: Vec<_> = mcp_servers.iter().collect();
@@ -723,7 +730,9 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
     let config = Config::load_with_cli_overrides(overrides)
         .await
         .context("加载配置失败")?;
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
+        config.codex_home.to_path_buf(),
+    )));
     let mcp_servers = mcp_manager.effective_servers(&config, /*auth*/ None);
 
     let Some(server) = mcp_servers.get(&get_args.name) else {

@@ -35,6 +35,8 @@ use crate::style::proposed_plan_style;
 use crate::style::user_message_style;
 #[cfg(test)]
 use crate::test_support::PathBufExt;
+#[cfg(test)]
+use crate::test_support::test_path_buf;
 use crate::text_formatting::format_and_truncate_tool_result;
 use crate::text_formatting::truncate_text;
 use crate::tooltips;
@@ -526,25 +528,25 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         use ratatui_macros::line;
         use ratatui_macros::text;
         let update_instruction = if let Some(update_action) = self.update_action {
-            line!["运行 ", update_action.command_str().cyan(), " 即可更新。"]
+            line!["Run ", update_action.command_str().cyan(), " to update."]
         } else {
             line![
-                "安装方式见 ",
-                "https://github.com/sohaha/zcodex".cyan().underlined(),
-                "。"
+                "See ",
+                "https://github.com/openai/codex".cyan().underlined(),
+                " for installation options."
             ]
         };
 
         let content = text![
             line![
                 padded_emoji("✨").bold().cyan(),
-                "发现可用更新！".bold().cyan(),
+                "Update available!".bold().cyan(),
                 " ",
                 format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
             ],
             update_instruction,
             "",
-            "查看完整更新日志：",
+            "See full release notes:",
             "https://github.com/openai/codex/releases/latest"
                 .cyan()
                 .underlined(),
@@ -1204,14 +1206,13 @@ pub(crate) fn new_session_info(
     } else {
         if config.show_tooltips
             && let Some(tooltips) = tooltip_override
-                .map(|tip| TooltipHistoryCell::new(tip, &config.cwd))
                 .or_else(|| {
                     tooltips::get_tooltip(
                         auth_plan,
                         matches!(config.service_tier, Some(ServiceTier::Fast)),
                     )
-                    .map(|tip| TooltipHistoryCell::new(tip, &config.cwd))
                 })
+                .map(|tip| TooltipHistoryCell::new(tip, &config.cwd))
         {
             parts.push(Box::new(tooltips));
         }
@@ -1851,7 +1852,9 @@ pub(crate) fn new_mcp_tools_output(
         lines.push("".into());
     }
 
-    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(config.codex_home.clone())));
+    let mcp_manager = McpManager::new(Arc::new(PluginsManager::new(
+        config.codex_home.to_path_buf(),
+    )));
     let effective_servers = mcp_manager.effective_servers(config, /*auth*/ None);
     let mut servers: Vec<_> = effective_servers.iter().collect();
     servers.sort_by(|(a, _), (b, _)| a.cmp(b));
@@ -2271,10 +2274,10 @@ impl HistoryCell for RequestUserInputResultCell {
             .count();
         let unanswered = total.saturating_sub(answered);
 
-        let mut header = vec!["•".dim(), " ".into(), "问题".bold()];
-        header.push(format!(" {answered}/{total} 已回答").dim());
+        let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
+        header.push(format!(" {answered}/{total} answered").dim());
         if self.interrupted {
-            header.push("（已中断）".cyan());
+            header.push(" (interrupted)".cyan());
         }
 
         let mut lines: Vec<Line<'static>> = vec![header.into()];
@@ -2293,7 +2296,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 Style::default(),
             );
             if answer_missing && let Some(last) = question_lines.last_mut() {
-                last.spans.push("（未回答）".dim());
+                last.spans.push(" (unanswered)".dim());
             }
             lines.extend(question_lines);
 
@@ -2304,8 +2307,8 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     "••••••",
                     width,
-                    "    回答：".dim(),
-                    "          ".dim(),
+                    "    answer: ".dim(),
+                    "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
                 continue;
@@ -2317,22 +2320,22 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     &option,
                     width,
-                    "    回答：".dim(),
-                    "          ".dim(),
+                    "    answer: ".dim(),
+                    "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
             }
             if let Some(note) = note {
                 let (label, continuation, style) = if question.options.is_some() {
                     (
-                        "    备注：".dim(),
+                        "    note: ".dim(),
                         "          ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
                 } else {
                     (
-                        "    回答：".dim(),
-                        "          ".dim(),
+                        "    answer: ".dim(),
+                        "            ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
                 };
@@ -2341,7 +2344,7 @@ impl HistoryCell for RequestUserInputResultCell {
         }
 
         if self.interrupted && unanswered > 0 {
-            let summary = format!("已中断，仍有 {unanswered} 个问题未回答");
+            let summary = format!("interrupted with {unanswered} unanswered");
             lines.extend(wrap_with_prefix(
                 &summary,
                 width,
@@ -2541,7 +2544,7 @@ pub(crate) fn new_patch_apply_failure(stderr: String) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // Failure title
-    lines.push(Line::from("✘ 应用补丁失败".magenta().bold()));
+    lines.push(Line::from("✘ Failed to apply patch".magenta().bold()));
 
     if !stderr.trim().is_empty() {
         let output = output_lines(
@@ -2660,7 +2663,7 @@ impl HistoryCell for FinalMessageSeparator {
             .filter(|seconds| *seconds > 60)
             .map(super::status_indicator_widget::fmt_elapsed_compact)
         {
-            label_parts.push(format!("已运行 {elapsed_seconds}"));
+            label_parts.push(format!("Worked for {elapsed_seconds}"));
         }
         if let Some(metrics_label) = self.runtime_metrics.and_then(runtime_metrics_label) {
             label_parts.push(metrics_label);
@@ -2709,8 +2712,10 @@ pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<St
     }
     if summary.streaming_events.count > 0 {
         let duration = format_duration_ms(summary.streaming_events.duration_ms);
+        let stream_label = "流式输出";
+        let events = "个事件";
         parts.push(format!(
-            "流式输出：{} 个事件（{duration}）",
+            "{stream_label}：{} {events}（{duration}）",
             summary.streaming_events.count
         ));
     }
@@ -2718,7 +2723,7 @@ pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<St
         let duration = format_duration_ms(summary.websocket_events.duration_ms);
         parts.push(format!(
             "收到 {} 个事件（{duration}）",
-            summary.websocket_events.count,
+            summary.websocket_events.count
         ));
     }
     if summary.responses_api_overhead_ms > 0 {
@@ -3001,7 +3006,7 @@ mod tests {
             approval_policy: AskForApproval::Never,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
-            cwd: PathBuf::from("/tmp/project").abs().to_path_buf(),
+            cwd: test_path_buf("/tmp/project"),
             reasoning_effort: None,
             history_log_id: 0,
             history_entry_count: 0,
@@ -3065,7 +3070,7 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(/*width*/ 600));
 
         assert_eq!(rendered.len(), 1);
-        assert!(!rendered[0].contains("已运行"));
+        assert!(!rendered[0].contains("Worked for"));
         assert!(rendered[0].contains("本地工具：3 次调用（2.5s）"));
         assert!(rendered[0].contains("推理：2 次调用（1.2s）"));
         assert!(rendered[0].contains("WebSocket：发送 1 个事件（700ms）"));
@@ -3083,7 +3088,7 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(/*width*/ 200));
 
         assert_eq!(rendered.len(), 1);
-        assert!(rendered[0].contains("已运行"));
+        assert!(rendered[0].contains("Worked for"));
     }
 
     #[test]
@@ -3118,7 +3123,7 @@ mod tests {
     )]
     async fn session_info_availability_nux_tooltip_snapshot() {
         let mut config = test_config().await;
-        config.cwd = PathBuf::from("/tmp/project").abs();
+        config.cwd = test_path_buf("/tmp/project").abs();
         config.show_tooltips = true;
         let cell = new_session_info(
             &config,
@@ -3774,28 +3779,6 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
 
         insta::assert_snapshot!(rendered);
-    }
-
-    #[test]
-    fn active_mcp_tool_call_mark_failed_renders_localized_interrupt_error() {
-        let invocation = McpInvocation {
-            server: "search".into(),
-            tool: "find_docs".into(),
-            arguments: Some(json!({
-                "query": "ratatui styling",
-                "limit": 3,
-            })),
-        };
-
-        let mut cell = new_active_mcp_tool_call(
-            "call-interrupted".into(),
-            invocation,
-            /*animations_enabled*/ true,
-        );
-        cell.mark_failed();
-
-        let rendered = render_lines(&cell.display_lines(/*width*/ 80)).join("\n");
-        assert!(rendered.contains("错误：已中断"));
     }
 
     #[test]

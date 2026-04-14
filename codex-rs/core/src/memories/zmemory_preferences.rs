@@ -189,7 +189,7 @@ async fn resolve_zmemory_context_for_turn(
             )
         })
     };
-    let codex_home = turn_context.config.codex_home.clone();
+    let codex_home = turn_context.config.codex_home.clone().to_path_buf();
 
     if !should_reload {
         return ResolvedZmemoryContext {

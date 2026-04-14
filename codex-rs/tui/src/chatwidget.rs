@@ -945,6 +945,8 @@ pub(crate) struct ChatWidget {
     current_rollout_path: Option<PathBuf>,
     // Current working directory (if known)
     current_cwd: Option<PathBuf>,
+    // Instruction source files loaded for the current session, supplied by app-server.
+    instruction_source_paths: Vec<PathBuf>,
     // Runtime network proxy bind addresses from SessionConfigured.
     session_network_proxy: Option<codex_protocol::protocol::SessionNetworkProxyRuntime>,
     // Shared latch so we only warn once about invalid status-line item IDs.
@@ -2073,6 +2075,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_thread_session(&mut self, session: ThreadSessionState) {
+        self.instruction_source_paths = session.instruction_source_paths.clone();
         self.on_session_configured(thread_session_state_to_legacy_event(session));
     }
 
@@ -4852,6 +4855,7 @@ impl ChatWidget {
             feedback,
             current_rollout_path: None,
             current_cwd,
+            instruction_source_paths: Vec::new(),
             session_network_proxy: None,
             status_line_invalid_items_warned,
             terminal_title_invalid_items_warned,
@@ -5353,6 +5357,14 @@ impl ChatWidget {
         self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
     }
 
+    fn maybe_defer_user_message_for_realtime(
+        &mut self,
+        user_message: UserMessage,
+    ) -> Option<UserMessage> {
+        // Standard user turns are already mirrored into active realtime sessions upstream.
+        Some(user_message)
+    }
+
     fn queue_user_message(&mut self, user_message: UserMessage) {
         if !self.is_session_configured() || self.bottom_pane.is_task_running() {
             self.queued_user_messages.push_back(user_message);
@@ -5454,11 +5466,11 @@ impl ChatWidget {
                 if let Some(skill) = skills
                     .iter()
                     .find(|skill| skill.path_to_skills_md.as_path() == path)
-                    && selected_skill_paths.insert(skill.path_to_skills_md.clone())
+                    && selected_skill_paths.insert(skill.path_to_skills_md.clone().to_path_buf())
                 {
                     items.push(UserInput::Skill {
                         name: skill.name.clone(),
-                        path: skill.path_to_skills_md.clone(),
+                        path: skill.path_to_skills_md.clone().to_path_buf(),
                     });
                 }
             }
@@ -5466,13 +5478,13 @@ impl ChatWidget {
             let skill_mentions = find_skill_mentions_with_tool_mentions(&mentions, skills);
             for skill in skill_mentions {
                 if bound_names.contains(skill.name.as_str())
-                    || !selected_skill_paths.insert(skill.path_to_skills_md.clone())
+                    || !selected_skill_paths.insert(skill.path_to_skills_md.clone().to_path_buf())
                 {
                     continue;
                 }
                 items.push(UserInput::Skill {
                     name: skill.name.clone(),
-                    path: skill.path_to_skills_md.clone(),
+                    path: skill.path_to_skills_md.clone().to_path_buf(),
                 });
             }
         }
@@ -7180,6 +7192,8 @@ impl ChatWidget {
             .values()
             .cloned()
             .collect();
+        let agents_summary =
+            crate::status::compose_agents_summary(&self.config, &self.instruction_source_paths);
         let (cell, handle) = crate::status::new_status_output_with_rate_limits_handle(
             &self.config,
             self.status_account_display.as_ref(),
@@ -7194,6 +7208,7 @@ impl ChatWidget {
             self.model_display_name(),
             collaboration_mode,
             reasoning_effort_override,
+            agents_summary,
             refreshing_rate_limits,
         );
         if let Some(request_id) = request_id {
@@ -10420,7 +10435,7 @@ impl ChatWidget {
             return;
         }
 
-        let plugins = PluginsManager::new(self.config.codex_home.clone())
+        let plugins = PluginsManager::new(self.config.codex_home.clone().to_path_buf())
             .plugins_for_config(&self.config)
             .capability_summaries()
             .to_vec();

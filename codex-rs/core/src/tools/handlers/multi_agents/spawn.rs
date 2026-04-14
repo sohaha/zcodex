@@ -61,18 +61,26 @@ impl ToolHandler for Handler {
                 .into(),
             )
             .await;
-        apply_requested_spawn_agent_model_overrides(
-            &session,
-            turn.as_ref(),
-            &mut config,
-            args.provider.as_deref(),
-            args.model.as_deref(),
-            args.reasoning_effort,
-        )
-        .await?;
-        apply_role_to_config(&mut config, role_name)
-            .await
-            .map_err(FunctionCallError::RespondToModel)?;
+        if args.fork_context {
+            reject_full_fork_spawn_overrides(
+                role_name,
+                args.model.as_deref(),
+                args.reasoning_effort,
+            )?;
+        } else {
+            apply_requested_spawn_agent_model_overrides(
+                &session,
+                turn.as_ref(),
+                &mut config,
+                args.provider.as_deref(),
+                args.model.as_deref(),
+                args.reasoning_effort,
+            )
+            .await?;
+            apply_role_to_config(&mut config, role_name)
+                .await
+                .map_err(FunctionCallError::RespondToModel)?;
+        }
         apply_spawn_agent_runtime_overrides(&mut config, turn.as_ref())?;
         apply_spawn_agent_overrides(&mut config, child_depth);
 

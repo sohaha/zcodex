@@ -9,13 +9,12 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnStartedEvent;
-use codex_protocol::protocol::UserMessageEvent;
+use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
@@ -286,14 +285,14 @@ async fn ignores_session_prefix_messages_when_truncating() {
 async fn shutdown_all_threads_bounded_submits_shutdown_to_every_thread() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
+    config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 
     let manager = ThreadManager::with_models_provider_and_home_for_tests(
         CodexAuth::from_api_key("dummy"),
         config.model_provider.clone(),
-        config.codex_home.clone(),
+        config.codex_home.to_path_buf(),
         Arc::new(codex_exec_server::EnvironmentManager::new(
             /*exec_server_url*/ None,
         )),
@@ -328,7 +327,7 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
 
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
+    config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
     config.model_catalog = None;
@@ -356,362 +355,10 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
 }
 
 #[tokio::test]
-async fn new_uses_current_model_provider_for_model_refresh() {
-    let server = MockServer::start().await;
-    let models_mock = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
-
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-    config.model_catalog = None;
-    config.model_provider_id = "mock_provider".to_string();
-    config.model_provider = ModelProviderInfo {
-        name: "OpenAI".to_string(),
-        base_url: Some(server.uri()),
-        requires_openai_auth: true,
-        supports_websockets: false,
-        ..ModelProviderInfo::create_openai_provider(None)
-    };
-    config.model_providers.insert(
-        config.model_provider_id.clone(),
-        config.model_provider.clone(),
-    );
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-
-    let _ = manager.list_models(RefreshStrategy::Online).await;
-    assert_eq!(models_mock.requests().len(), 1);
-}
-
-#[tokio::test]
-async fn start_thread_with_different_provider_builds_distinct_models_manager() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-
-    let mut child_config = config.clone();
-    child_config.model_provider_id = "custom-openai".to_string();
-    child_config.model_provider =
-        ModelProviderInfo::create_openai_provider(Some("https://example.invalid/v1".to_string()));
-    child_config.model_providers.insert(
-        child_config.model_provider_id.clone(),
-        child_config.model_provider.clone(),
-    );
-
-    let thread_id = manager
-        .start_thread(child_config)
-        .await
-        .expect("start thread")
-        .thread_id;
-    let thread = manager.get_thread(thread_id).await.expect("get thread");
-
-    assert!(!Arc::ptr_eq(
-        &manager.get_models_manager(),
-        &thread.codex.session.services.models_manager,
-    ));
-}
-
-#[tokio::test]
-async fn start_thread_reuses_shared_models_manager_when_spawn_context_matches() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-
-    let thread_id = manager
-        .start_thread(config)
-        .await
-        .expect("start thread")
-        .thread_id;
-    let thread = manager.get_thread(thread_id).await.expect("get thread");
-
-    assert!(Arc::ptr_eq(
-        &manager.get_models_manager(),
-        &thread.codex.session.services.models_manager,
-    ));
-}
-
-#[tokio::test]
-async fn resume_thread_with_different_auth_manager_builds_distinct_models_manager() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-
-    let manager_auth =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        manager_auth,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-    let resume_auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("other-key"));
-
-    let thread_id = manager
-        .resume_thread_with_history(
-            config,
-            InitialHistory::New,
-            resume_auth,
-            /*persist_extended_history*/ false,
-            /*parent_trace*/ None,
-        )
-        .await
-        .expect("resume thread")
-        .thread_id;
-    let thread = manager.get_thread(thread_id).await.expect("get thread");
-
-    assert!(!Arc::ptr_eq(
-        &manager.get_models_manager(),
-        &thread.codex.session.services.models_manager,
-    ));
-}
-
-#[tokio::test]
-async fn start_thread_with_different_codex_home_builds_distinct_models_manager() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-
-    let mut child_config = config.clone();
-    child_config.codex_home = temp_dir.path().join("other-codex-home");
-    child_config.cwd = child_config.codex_home.abs();
-    std::fs::create_dir_all(&child_config.codex_home).expect("create child codex home");
-
-    let thread_id = manager
-        .start_thread(child_config)
-        .await
-        .expect("start thread")
-        .thread_id;
-    let thread = manager.get_thread(thread_id).await.expect("get thread");
-
-    assert!(!Arc::ptr_eq(
-        &manager.get_models_manager(),
-        &thread.codex.session.services.models_manager,
-    ));
-}
-
-#[tokio::test]
-async fn start_thread_with_non_default_provider_reuses_matching_shared_models_manager() {
-    let temp_dir = tempdir().expect("tempdir");
-    let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
-    config.cwd = config.codex_home.abs();
-    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
-    let custom_provider_id = "custom-openai".to_string();
-    let custom_provider =
-        ModelProviderInfo::create_openai_provider(Some("https://example.invalid/v1".to_string()));
-    config.model_provider_id = custom_provider_id.clone();
-    config.model_provider = custom_provider.clone();
-    config
-        .model_providers
-        .insert(custom_provider_id, custom_provider);
-
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let manager = ThreadManager::new(
-        &config,
-        auth_manager,
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-        Arc::new(codex_exec_server::EnvironmentManager::new(
-            /*exec_server_url*/ None,
-        )),
-        /*analytics_events_client*/ None,
-    );
-
-    let thread_id = manager
-        .start_thread(config)
-        .await
-        .expect("start thread")
-        .thread_id;
-    let thread = manager.get_thread(thread_id).await.expect("get thread");
-
-    assert!(Arc::ptr_eq(
-        &manager.get_models_manager(),
-        &thread.codex.session.services.models_manager,
-    ));
-}
-
-#[test]
-fn interrupted_fork_snapshot_appends_interrupt_boundary() {
-    let committed_history =
-        InitialHistory::Forked(vec![RolloutItem::ResponseItem(user_msg("hello"))]);
-
-    assert_eq!(
-        serde_json::to_value(
-            append_interrupted_boundary(committed_history, /*turn_id*/ None).get_rollout_items()
-        )
-        .expect("serialize interrupted fork history"),
-        serde_json::to_value(vec![
-            RolloutItem::ResponseItem(user_msg("hello")),
-            RolloutItem::ResponseItem(interrupted_turn_history_marker()),
-            RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
-                turn_id: None,
-                reason: TurnAbortReason::Interrupted,
-                completed_at: None,
-                duration_ms: None,
-            })),
-        ])
-        .expect("serialize expected interrupted fork history"),
-    );
-    assert_eq!(
-        serde_json::to_value(
-            append_interrupted_boundary(InitialHistory::New, /*turn_id*/ None).get_rollout_items()
-        )
-        .expect("serialize interrupted empty fork history"),
-        serde_json::to_value(vec![
-            RolloutItem::ResponseItem(interrupted_turn_history_marker()),
-            RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
-                turn_id: None,
-                reason: TurnAbortReason::Interrupted,
-                completed_at: None,
-                duration_ms: None,
-            })),
-        ])
-        .expect("serialize expected interrupted empty history"),
-    );
-}
-
-#[test]
-fn interrupted_snapshot_is_not_mid_turn() {
-    let interrupted_history = InitialHistory::Forked(vec![
-        RolloutItem::ResponseItem(user_msg("hello")),
-        RolloutItem::ResponseItem(assistant_msg("partial")),
-        RolloutItem::ResponseItem(interrupted_turn_history_marker()),
-        RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
-            turn_id: Some("turn-1".to_string()),
-            reason: TurnAbortReason::Interrupted,
-            completed_at: None,
-            duration_ms: None,
-        })),
-    ]);
-
-    assert_eq!(
-        snapshot_turn_state(&interrupted_history),
-        SnapshotTurnState {
-            ends_mid_turn: false,
-            active_turn_id: None,
-            active_turn_start_index: None,
-        },
-    );
-}
-
-#[test]
-fn completed_legacy_event_history_is_not_mid_turn() {
-    let completed_history = InitialHistory::Forked(vec![
-        RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: "hello".to_string(),
-            images: None,
-            text_elements: Vec::new(),
-            local_images: Vec::new(),
-        })),
-        RolloutItem::EventMsg(EventMsg::AgentMessage(AgentMessageEvent {
-            message: "done".to_string(),
-            phase: None,
-            memory_citation: None,
-        })),
-    ]);
-
-    assert_eq!(
-        snapshot_turn_state(&completed_history),
-        SnapshotTurnState {
-            ends_mid_turn: false,
-            active_turn_id: None,
-            active_turn_start_index: None,
-        },
-    );
-}
-
-#[test]
-fn mixed_response_and_legacy_user_event_history_is_mid_turn() {
-    let mixed_history = InitialHistory::Forked(vec![
-        RolloutItem::ResponseItem(user_msg("hello")),
-        RolloutItem::EventMsg(EventMsg::UserMessage(UserMessageEvent {
-            message: "hello".to_string(),
-            images: None,
-            text_elements: Vec::new(),
-            local_images: Vec::new(),
-        })),
-    ]);
-
-    assert_eq!(
-        snapshot_turn_state(&mixed_history),
-        SnapshotTurnState {
-            ends_mid_turn: true,
-            active_turn_id: None,
-            active_turn_start_index: None,
-        },
-    );
-}
-
-#[tokio::test]
 async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_history() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
+    config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 
@@ -814,7 +461,7 @@ async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_histor
 async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
+    config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 
@@ -907,7 +554,7 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
 async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_source() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
-    config.codex_home = temp_dir.path().join("codex-home");
+    config.codex_home = temp_dir.path().join("codex-home").abs();
     config.cwd = config.codex_home.abs();
     std::fs::create_dir_all(&config.codex_home).expect("create codex home");
 

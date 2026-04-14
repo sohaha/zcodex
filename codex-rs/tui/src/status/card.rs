@@ -28,7 +28,6 @@ use super::format::line_display_width;
 use super::format::push_label;
 use super::format::truncate_line_to_width;
 use super::helpers::compose_account_display;
-use super::helpers::compose_agents_summary;
 use super::helpers::compose_model_display;
 use super::helpers::format_directory_display;
 use super::helpers::format_tokens_compact;
@@ -177,6 +176,7 @@ pub(crate) fn new_status_output_with_rate_limits(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
+        "无".to_string(),
         refreshing_rate_limits,
     )
     .0
@@ -197,6 +197,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
+    agents_summary: String,
     refreshing_rate_limits: bool,
 ) -> (CompositeHistoryCell, StatusHistoryHandle) {
     let command = PlainHistoryCell::new(vec!["/status".magenta().into()]);
@@ -214,6 +215,7 @@ pub(crate) fn new_status_output_with_rate_limits_handle(
         model_name,
         collaboration_mode,
         reasoning_effort_override,
+        agents_summary,
         refreshing_rate_limits,
     );
 
@@ -239,6 +241,7 @@ impl StatusHistoryCell {
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
+        agents_summary: String,
         refreshing_rate_limits: bool,
     ) -> (Self, StatusHistoryHandle) {
         let mut config_entries = vec![
@@ -302,7 +305,7 @@ impl StatusHistoryCell {
         } else {
             format!("自定义 ({sandbox}, {approval})")
         };
-        let agents_summary = compose_agents_summary(config);
+        let agents_summary = agents_summary;
         let model_provider = format_model_provider(config);
         let account = compose_account_display(account_display);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);

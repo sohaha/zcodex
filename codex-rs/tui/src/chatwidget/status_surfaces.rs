@@ -434,7 +434,10 @@ impl ChatWidget {
                     Some(format!("已用 {}", format_tokens_compact(total)))
                 }
             }
-            StatusLineItem::ContextUsage => self
+            StatusLineItem::ContextRemaining => self
+                .status_line_context_remaining_percent()
+                .map(|remaining| format!("剩余 {remaining}%")),
+            StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
                 .map(format_context_used_meter),
             StatusLineItem::FiveHourLimit => {

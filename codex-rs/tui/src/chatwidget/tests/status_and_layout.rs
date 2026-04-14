@@ -970,7 +970,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.4 极高 快速 · 上下文 [     ] · {test_cwd}"))
+        Some(format!("gpt-5.4 极高 快速 · 剩余 100% · {test_cwd}"))
     );
 
     chat.set_model("gpt-5.3-codex");
@@ -978,7 +978,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.3-codex 极高 · 上下文 [     ] · {test_cwd}"))
+        Some(format!("gpt-5.3-codex 极高 · 剩余 100% · {test_cwd}"))
     );
 }
 
