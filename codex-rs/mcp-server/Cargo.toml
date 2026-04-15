@@ -27,7 +27,9 @@ codex-models-manager = { workspace = true }
 codex-native-tldr = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-cli = { workspace = true }
+codex-utils-home-dir = { workspace = true }
 codex-utils-json-to-toml = { workspace = true }
+codex-zmemory = { workspace = true }
 once_cell = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }

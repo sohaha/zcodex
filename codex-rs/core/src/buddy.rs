@@ -66,7 +66,10 @@ struct BuddyReactionOutput {
 
 /// Select a random item from a slice using thread-local RNG.
 fn select_random<T: Copy>(items: &[T]) -> T {
-    assert!(!items.is_empty(), "select_random requires a non-empty slice");
+    assert!(
+        !items.is_empty(),
+        "select_random requires a non-empty slice"
+    );
     let idx = rand::rng().random_range(0..items.len());
     items[idx]
 }
@@ -81,6 +84,10 @@ pub(crate) struct BuddyReactionState {
 impl BuddyReactionState {
     fn consecutive_local_count(&self) -> usize {
         self.consecutive_local_count
+    }
+
+    fn last_reaction_time(&self) -> Option<std::time::Instant> {
+        self.last_reaction_time
     }
 
     fn last_ai_reaction_time(&self) -> Option<std::time::Instant> {
@@ -608,7 +615,7 @@ fn local_reaction(
 
 /// Hybrid buddy reaction generator using strategy config.
 /// Outcome of a buddy reaction decision, to be applied to state after lock release.
-enum ReactionOutcome {
+pub enum ReactionOutcome {
     /// No reaction was generated.
     None,
     /// A local preset reaction was selected.
@@ -656,7 +663,12 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
             .await
             .ok()
             .flatten();
-            (result, if result.is_some() { ReactionOutcome::Ai } else { ReactionOutcome::None })
+            let outcome = if result.is_some() {
+                ReactionOutcome::Ai
+            } else {
+                ReactionOutcome::None
+            };
+            (result, outcome)
         }
         BuddyReactionMode::Hybrid => {
             // Check if this is a critical interaction that should force AI
@@ -674,7 +686,12 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 .await
                 .ok()
                 .flatten();
-                return (result, if result.is_some() { ReactionOutcome::Ai } else { ReactionOutcome::None });
+                let outcome = if result.is_some() {
+                    ReactionOutcome::Ai
+                } else {
+                    ReactionOutcome::None
+                };
+                return (result, outcome);
             }
 
             let agent_len = last_agent_message.map(str::len).unwrap_or(0);
@@ -698,7 +715,12 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 .await
                 .ok()
                 .flatten();
-                return (result, if result.is_some() { ReactionOutcome::Ai } else { ReactionOutcome::None });
+                let outcome = if result.is_some() {
+                    ReactionOutcome::Ai
+                } else {
+                    ReactionOutcome::None
+                };
+                return (result, outcome);
             }
 
             // Probability-based AI usage, respecting cooldown
@@ -714,115 +736,17 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 .await
                 .ok()
                 .flatten();
-                return (result, if result.is_some() { ReactionOutcome::Ai } else { ReactionOutcome::None });
+                let outcome = if result.is_some() {
+                    ReactionOutcome::Ai
+                } else {
+                    ReactionOutcome::None
+                };
+                return (result, outcome);
             }
 
             // Fall back to local
             let reaction = local_reaction(last_user_message, last_agent_message, strategy);
             (Some(reaction), ReactionOutcome::Local)
-        }
-    }
-}
-    session: &Session,
-    }
-
-    let now = std::time::Instant::now();
-
-    match strategy.mode {
-        BuddyReactionMode::LocalOnly => {
-            let reaction = local_reaction(last_user_message, last_agent_message, strategy);
-            record_local(state, now);
-            Some(reaction)
-        }
-        BuddyReactionMode::AiOnly => {
-            let result = generate_buddy_reaction_ai(
-                session,
-                turn_context,
-                soul,
-                last_user_message,
-                last_agent_message,
-            )
-            .await
-            .ok()
-            .flatten();
-            if result.is_some() {
-                record_ai(state, now);
-            }
-            result
-        }
-        BuddyReactionMode::Hybrid => {
-            // Check if this is a critical interaction that should force AI
-            if strategy.critical_scenarios_use_ai
-                && is_critical_interaction(last_user_message, last_agent_message)
-                && !within_ai_cooldown(state, strategy)
-            {
-                let result = generate_buddy_reaction_ai(
-                    session,
-                    turn_context,
-                    soul,
-                    last_user_message,
-                    last_agent_message,
-                )
-                .await
-                .ok()
-                .flatten();
-                if result.is_some() {
-                    record_ai(state, now);
-                    return result;
-                }
-            }
-
-            let agent_len = last_agent_message.map(str::len).unwrap_or(0);
-            // Short replies use local presets
-            if agent_len < strategy.min_reply_length {
-                let reaction = local_reaction(last_user_message, last_agent_message, strategy);
-                record_local(state, now);
-                return Some(reaction);
-            }
-
-            // After too many consecutive local reactions, try AI if cooldown allows
-            if state.consecutive_local_count >= MAX_CONSECUTIVE_LOCAL
-                && !within_ai_cooldown(state, strategy)
-            {
-                if let Some(result) = generate_buddy_reaction_ai(
-                    session,
-                    turn_context,
-                    soul,
-                    last_user_message,
-                    last_agent_message,
-                )
-                .await
-                .ok()
-                .flatten()
-                {
-                    record_ai(state, now);
-                    return Some(result);
-                }
-            }
-
-            // Probability-based AI usage, respecting cooldown
-            let roll = rand::rng().random::<f64>();
-            if roll < strategy.ai_probability && !within_ai_cooldown(state, strategy) {
-                if let Some(result) = generate_buddy_reaction_ai(
-                    session,
-                    turn_context,
-                    soul,
-                    last_user_message,
-                    last_agent_message,
-                )
-                .await
-                .ok()
-                .flatten()
-                {
-                    record_ai(state, now);
-                    return Some(result);
-                }
-            }
-
-            // Fall back to local
-            let reaction = local_reaction(last_user_message, last_agent_message, strategy);
-            record_local(state, now);
-            Some(reaction)
         }
     }
 }
@@ -1009,7 +933,7 @@ mod tests {
     fn default_strategy() -> BuddyReactionStrategy {
         BuddyReactionStrategy {
             mode: BuddyReactionMode::LocalOnly,
-            ai_probability: 0.2,
+            ai_probability: 0.1,
             min_ai_interval_secs: 20,
             min_reply_length: 100,
             local_preference: LocalPreference::Contextual,

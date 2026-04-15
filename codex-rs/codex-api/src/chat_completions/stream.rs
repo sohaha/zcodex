@@ -503,7 +503,9 @@ impl PendingToolCall {
 
 #[derive(Debug, Deserialize)]
 struct ChatCompletionChunk {
+    #[serde(default)]
     id: String,
+    #[serde(default)]
     model: String,
     #[serde(default)]
     choices: Vec<ChatChoice>,

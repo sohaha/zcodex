@@ -1,6 +1,5 @@
 use codex_utils_home_dir::find_codex_home;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
-use codex_zmemory::tool_api::ZmemoryToolResult;
 use codex_zmemory::tool_api::run_zmemory_tool as exec_zmemory;
 use codex_zmemory::tool_api::zmemory_tool_output_schema;
 use rmcp::model::CallToolResult;

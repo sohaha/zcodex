@@ -19,8 +19,8 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 
-use crate::buddy::fallback_buddy_reaction;
 use crate::buddy::apply_state_update;
+use crate::buddy::fallback_buddy_reaction;
 use crate::buddy::generate_buddy_reaction_hybrid;
 use crate::buddy::generate_buddy_soul;
 use crate::buddy::persist_buddy_soul;
@@ -742,13 +742,7 @@ async fn handle_buddy_observer(
         strategy,
         &state_snapshot,
     )
-    .await
-    .unwrap_or_else(|| {
-        (
-            fallback_buddy_reaction(&turn_context.sub_id),
-            ReactionOutcome::None,
-        )
-    });
+    .await;
     let mut buddy_state = session.buddy_reaction_state().lock().await;
     apply_state_update(&mut buddy_state, outcome);
     drop(buddy_state);
@@ -757,7 +751,7 @@ async fn handle_buddy_observer(
             turn_context.as_ref(),
             EventMsg::BuddyReaction(BuddyReactionEvent {
                 thread_id: session.conversation_id.to_string(),
-                text: reaction,
+                text: reaction.unwrap_or_else(|| fallback_buddy_reaction(&turn_context.sub_id)),
             }),
         )
         .await;
