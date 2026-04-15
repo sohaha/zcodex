@@ -279,10 +279,14 @@ async fn process_sse(
                 return;
             }
             Ok(None) => {
-                let error = response_error.unwrap_or(ApiError::Stream(
-                    "stream closed before anthropic message_stop".to_string(),
-                ));
-                let _ = tx_event.send(Err(error)).await;
+                if state.response_id.is_some() && response_error.is_none() {
+                    let _ = state.finish(&tx_event).await;
+                } else {
+                    let error = response_error.unwrap_or(ApiError::Stream(
+                        "stream closed before anthropic message_stop".to_string(),
+                    ));
+                    let _ = tx_event.send(Err(error)).await;
+                }
                 return;
             }
             Err(_) => {

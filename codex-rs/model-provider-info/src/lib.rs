@@ -89,7 +89,8 @@ impl<'de> Deserialize<'de> for WireApi {
 #[schemars(deny_unknown_fields)]
 pub struct ModelProviderInfo {
     /// Friendly display name.
-    pub name: String,
+    #[serde(default)]
+    pub name: Option<String>,
     /// Optional fixed model override used by legacy configs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
