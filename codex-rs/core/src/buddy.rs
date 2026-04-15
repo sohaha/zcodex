@@ -15,6 +15,7 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use futures::StreamExt;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
@@ -63,25 +64,21 @@ struct BuddyReactionOutput {
     text: String,
 }
 
-/// Time utility for consistent time access.
-fn current_time_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-
-/// Select a random item from a slice using current time.
+/// Select a random item from a slice using thread-local RNG.
 fn select_random<T: Copy>(items: &[T]) -> T {
-    let idx = (current_time_ms() as usize) % items.len();
+    let idx = rand::rng().random_range(0..items.len());
     items[idx]
 }
 
 /// State tracked for buddy reaction decisions.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct BuddyReactionState {
+    /// Consecutive local-preset reactions since last AI reaction.
     pub(crate) consecutive_local_count: usize,
+    /// Timestamp of the last reaction (any mode), used for general throttling.
     pub(crate) last_reaction_time: Option<std::time::Instant>,
+    /// Timestamp of the last successful AI reaction, used for AI cooldown.
+    pub(crate) last_ai_reaction_time: Option<std::time::Instant>,
 }
 
 pub(crate) fn maybe_inject_companion_intro(config: &Config, base: &mut BaseInstructions) {
@@ -369,7 +366,7 @@ impl LocalReactionLibrary {
                     ReactionCategory::Refactor,
                     ReactionCategory::Review,
                 ];
-                let cat_idx = (current_time_ms() as usize) % categories.len();
+                let cat_idx = rand::rng().random_range(0..categories.len());
                 let items = match categories[cat_idx] {
                     ReactionCategory::Encouraging => self.encouraging,
                     ReactionCategory::Success => self.success,
@@ -563,6 +560,42 @@ fn is_critical_interaction(
     false
 }
 
+/// Maximum consecutive local reactions before forcing an AI attempt.
+const MAX_CONSECUTIVE_LOCAL: usize = 5;
+
+/// Check whether the last AI reaction is still within the configured cooldown.
+fn within_ai_cooldown(state: &BuddyReactionState, strategy: &BuddyReactionStrategy) -> bool {
+    state
+        .last_ai_reaction_time
+        .is_some_and(|last| last.elapsed().as_secs() < strategy.min_ai_interval_secs)
+}
+
+/// Select a local preset reaction.
+fn local_reaction(
+    last_user_message: Option<&str>,
+    last_agent_message: Option<&str>,
+    strategy: &BuddyReactionStrategy,
+) -> String {
+    let category = classify_reaction_context(last_user_message, last_agent_message);
+    let library = LocalReactionLibrary::default();
+    library
+        .select(category, strategy.local_preference)
+        .to_string()
+}
+
+/// Record a local reaction in state.
+fn record_local(state: &mut BuddyReactionState, now: std::time::Instant) {
+    state.consecutive_local_count += 1;
+    state.last_reaction_time = Some(now);
+}
+
+/// Record a successful AI reaction in state.
+fn record_ai(state: &mut BuddyReactionState, now: std::time::Instant) {
+    state.consecutive_local_count = 0;
+    state.last_reaction_time = Some(now);
+    state.last_ai_reaction_time = Some(now);
+}
+
 /// Hybrid buddy reaction generator using strategy config.
 pub(crate) async fn generate_buddy_reaction_hybrid(
     session: &Session,
@@ -571,37 +604,43 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
     last_user_message: Option<&str>,
     last_agent_message: Option<&str>,
     strategy: &BuddyReactionStrategy,
+    state: &mut BuddyReactionState,
 ) -> Option<String> {
     if last_user_message.is_none() && last_agent_message.is_none() {
         return None;
     }
 
+    let now = std::time::Instant::now();
+
     match strategy.mode {
         BuddyReactionMode::LocalOnly => {
-            let category = classify_reaction_context(last_user_message, last_agent_message);
-            let library = LocalReactionLibrary::default();
-            Some(
-                library
-                    .select(category, strategy.local_preference)
-                    .to_string(),
-            )
+            let reaction = local_reaction(last_user_message, last_agent_message, strategy);
+            record_local(state, now);
+            Some(reaction)
         }
-        BuddyReactionMode::AiOnly => generate_buddy_reaction_ai(
-            session,
-            turn_context,
-            soul,
-            last_user_message,
-            last_agent_message,
-        )
-        .await
-        .ok()
-        .flatten(),
+        BuddyReactionMode::AiOnly => {
+            let result = generate_buddy_reaction_ai(
+                session,
+                turn_context,
+                soul,
+                last_user_message,
+                last_agent_message,
+            )
+            .await
+            .ok()
+            .flatten();
+            if result.is_some() {
+                record_ai(state, now);
+            }
+            result
+        }
         BuddyReactionMode::Hybrid => {
             // Check if this is a critical interaction that should force AI
             if strategy.critical_scenarios_use_ai
                 && is_critical_interaction(last_user_message, last_agent_message)
+                && !within_ai_cooldown(state, strategy)
             {
-                return generate_buddy_reaction_ai(
+                let result = generate_buddy_reaction_ai(
                     session,
                     turn_context,
                     soul,
@@ -611,23 +650,25 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 .await
                 .ok()
                 .flatten();
+                if result.is_some() {
+                    record_ai(state, now);
+                    return result;
+                }
             }
 
             let agent_len = last_agent_message.map(str::len).unwrap_or(0);
             // Short replies use local presets
             if agent_len < strategy.min_reply_length {
-                let category = classify_reaction_context(last_user_message, last_agent_message);
-                let library = LocalReactionLibrary::default();
-                return Some(
-                    library
-                        .select(category, strategy.local_preference)
-                        .to_string(),
-                );
+                let reaction = local_reaction(last_user_message, last_agent_message, strategy);
+                record_local(state, now);
+                return Some(reaction);
             }
-            // Probability-based AI usage
-            let rand = (current_time_ms() as f64) / (u64::MAX as f64);
-            if rand < strategy.ai_probability {
-                generate_buddy_reaction_ai(
+
+            // After too many consecutive local reactions, try AI if cooldown allows
+            if state.consecutive_local_count >= MAX_CONSECUTIVE_LOCAL
+                && !within_ai_cooldown(state, strategy)
+            {
+                if let Some(result) = generate_buddy_reaction_ai(
                     session,
                     turn_context,
                     soul,
@@ -637,15 +678,35 @@ pub(crate) async fn generate_buddy_reaction_hybrid(
                 .await
                 .ok()
                 .flatten()
-            } else {
-                let category = classify_reaction_context(last_user_message, last_agent_message);
-                let library = LocalReactionLibrary::default();
-                Some(
-                    library
-                        .select(category, strategy.local_preference)
-                        .to_string(),
-                )
+                {
+                    record_ai(state, now);
+                    return Some(result);
+                }
             }
+
+            // Probability-based AI usage, respecting cooldown
+            let roll = rand::rng().random::<f64>();
+            if roll < strategy.ai_probability && !within_ai_cooldown(state, strategy) {
+                if let Some(result) = generate_buddy_reaction_ai(
+                    session,
+                    turn_context,
+                    soul,
+                    last_user_message,
+                    last_agent_message,
+                )
+                .await
+                .ok()
+                .flatten()
+                {
+                    record_ai(state, now);
+                    return Some(result);
+                }
+            }
+
+            // Fall back to local
+            let reaction = local_reaction(last_user_message, last_agent_message, strategy);
+            record_local(state, now);
+            Some(reaction)
         }
     }
 }
@@ -822,4 +883,168 @@ fn stable_hash(value: &str) -> u64 {
         hash = hash.wrapping_mul(1099511628211);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn default_strategy() -> BuddyReactionStrategy {
+        BuddyReactionStrategy {
+            mode: BuddyReactionMode::LocalOnly,
+            ai_probability: 0.2,
+            min_ai_interval_secs: 20,
+            min_reply_length: 100,
+            local_preference: LocalPreference::Contextual,
+            critical_scenarios_use_ai: true,
+        }
+    }
+
+    #[test]
+    fn within_ai_cooldown_false_when_no_prior_ai() {
+        let state = BuddyReactionState::default();
+        let strategy = default_strategy();
+        assert!(!within_ai_cooldown(&state, &strategy));
+    }
+
+    #[test]
+    fn within_ai_cooldown_true_within_window() {
+        let mut state = BuddyReactionState::default();
+        state.last_ai_reaction_time = Some(std::time::Instant::now());
+        let strategy = default_strategy();
+        assert!(within_ai_cooldown(&state, &strategy));
+    }
+
+    #[test]
+    fn within_ai_cooldown_false_after_window_expires() {
+        let mut state = BuddyReactionState::default();
+        state.last_ai_reaction_time = Some(std::time::Instant::now() - Duration::from_secs(30));
+        let strategy = default_strategy(); // min_ai_interval_secs = 20
+        assert!(!within_ai_cooldown(&state, &strategy));
+    }
+
+    #[test]
+    fn within_ai_cooldown_only_checks_ai_time_not_general_time() {
+        let mut state = BuddyReactionState::default();
+        // General reaction happened recently, but no AI reaction
+        state.last_reaction_time = Some(std::time::Instant::now());
+        let strategy = default_strategy();
+        assert!(!within_ai_cooldown(&state, &strategy));
+    }
+
+    #[test]
+    fn record_local_increments_count() {
+        let mut state = BuddyReactionState::default();
+        let now = std::time::Instant::now();
+        record_local(&mut state, now);
+        assert_eq!(state.consecutive_local_count, 1);
+        assert_eq!(state.last_reaction_time, Some(now));
+        assert_eq!(state.last_ai_reaction_time, None);
+        record_local(&mut state, now);
+        assert_eq!(state.consecutive_local_count, 2);
+    }
+
+    #[test]
+    fn record_ai_resets_count_and_sets_both_timestamps() {
+        let mut state = BuddyReactionState::default();
+        let now = std::time::Instant::now();
+        state.consecutive_local_count = 5;
+        record_ai(&mut state, now);
+        assert_eq!(state.consecutive_local_count, 0);
+        assert_eq!(state.last_reaction_time, Some(now));
+        assert_eq!(state.last_ai_reaction_time, Some(now));
+    }
+
+    #[test]
+    fn local_reaction_returns_non_empty_string() {
+        let strategy = default_strategy();
+        let result = local_reaction(Some("hello"), None, &strategy);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn classify_reaction_context_interactive_on_buddy_mention() {
+        let cat = classify_reaction_context(Some("hey codey what do you think"), None);
+        assert!(matches!(cat, ReactionCategory::Interactive));
+
+        let cat2 = classify_reaction_context(Some("小伙伴你在吗"), None);
+        assert!(matches!(cat2, ReactionCategory::Interactive));
+    }
+
+    #[test]
+    fn classify_reaction_context_commit_on_git_push() {
+        let cat = classify_reaction_context(None, Some("Changes committed and pushed to main"));
+        assert!(matches!(cat, ReactionCategory::Commit));
+    }
+
+    #[test]
+    fn classify_reaction_context_test_pass() {
+        let cat = classify_reaction_context(None, Some("All tests passed. 测试通过。"));
+        assert!(matches!(cat, ReactionCategory::TestPass));
+    }
+
+    #[test]
+    fn classify_reaction_context_success() {
+        let cat = classify_reaction_context(None, Some("任务完成了"));
+        assert!(matches!(cat, ReactionCategory::Success));
+    }
+
+    #[test]
+    fn classify_reaction_context_debugging_on_build() {
+        let cat = classify_reaction_context(None, Some("正在编译项目...build started"));
+        assert!(matches!(cat, ReactionCategory::Debugging));
+    }
+
+    #[test]
+    fn classify_reaction_context_error() {
+        let cat = classify_reaction_context(None, Some("出现错误: connection failed"));
+        assert!(matches!(cat, ReactionCategory::Error));
+    }
+
+    #[test]
+    fn classify_reaction_context_thinking_on_long_reply() {
+        let long_reply: String = "x".repeat(600);
+        let cat = classify_reaction_context(None, Some(&long_reply));
+        assert!(matches!(cat, ReactionCategory::Thinking));
+    }
+
+    #[test]
+    fn classify_reaction_context_encouraging_as_fallback() {
+        let cat = classify_reaction_context(Some("do something"), Some("ok"));
+        assert!(matches!(cat, ReactionCategory::Encouraging));
+    }
+
+    #[test]
+    fn fallback_buddy_reaction_deterministic() {
+        let a = fallback_buddy_reaction("seed-1");
+        let b = fallback_buddy_reaction("seed-1");
+        assert_eq!(a, b);
+
+        let _c = fallback_buddy_reaction("seed-2");
+        // Different seeds may or may not produce the same result,
+        // but same seed must be deterministic.
+        let a2 = fallback_buddy_reaction("seed-1");
+        assert_eq!(a, a2);
+    }
+
+    #[test]
+    fn sanitize_name_filters_non_ascii() {
+        assert_eq!(sanitize_name("Hello123").as_deref(), Some("Hello123"));
+        assert_eq!(sanitize_name("ab"), None); // too short
+        assert_eq!(sanitize_name("你好world").as_deref(), Some("world")); // only ascii kept
+    }
+
+    #[test]
+    fn sanitize_reaction_text_joins_lines() {
+        let input = "line one\n  line two  \n\nline three\n";
+        let result = sanitize_reaction_text(input).unwrap();
+        assert_eq!(result, "line one line two line three");
+    }
+
+    #[test]
+    fn stable_hash_deterministic() {
+        assert_eq!(stable_hash("hello"), stable_hash("hello"));
+        assert_ne!(stable_hash("hello"), stable_hash("world"));
+    }
 }

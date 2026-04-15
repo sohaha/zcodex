@@ -512,6 +512,18 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
+    /// Community fork config layer from $CODEX_HOME/zconfig.toml. This layer
+    /// sits above [ConfigLayerSource::User] and allows community forks to
+    /// ship their own default configuration values without modifying the
+    /// official config.toml.
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
+    ZConfig {
+        /// This is the path to the zconfig.toml file, though it is not
+        /// guaranteed to exist.
+        file: AbsolutePathBuf,
+    },
+
     /// Path to a .codex/ folder within a project. There could be multiple of
     /// these between `cwd` and the project/repo root.
     #[serde(rename_all = "camelCase")]
@@ -544,6 +556,7 @@ impl ConfigLayerSource {
             ConfigLayerSource::Mdm { .. } => 0,
             ConfigLayerSource::System { .. } => 10,
             ConfigLayerSource::User { .. } => 20,
+            ConfigLayerSource::ZConfig { .. } => 21,
             ConfigLayerSource::Project { .. } => 25,
             ConfigLayerSource::SessionFlags => 30,
             ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => 40,

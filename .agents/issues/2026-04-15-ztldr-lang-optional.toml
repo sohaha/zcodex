@@ -1,0 +1,41 @@
+plan = ".agents/plan/2026-04-15-ztldr-lang-optional.md"
+
+[[issue]]
+
+id = "a1"
+sequence = 10
+title = "CLI 子命令 --lang 改为可选 + 后缀推断"
+
+scope = """
+将 codex-rs/cli/src/tldr_cmd.rs 中 TldrAnalyzeCommand、TldrImportersCommand、TldrSemanticCommand、TldrChangeImpactCommand 的 --lang 字段从 CliLanguage（必需）改为 Option<CliLanguage>（可选）。\n\n改动后的推断逻辑：\n- 显式传递 --lang → 直接使用\n- 未传递 + 有路径参数 → SupportedLanguage::from_path() 推断\n- 未传递 + 无路径或推断失败 → 报错提示显式传 --lang\n\nChangeImpact 特殊：无 --lang 时从 paths[0] 推断。\n\n不修改工具 description、用法提示词、帮助文本中的描述性文案。"""
+
+touch_points = ["module:codex-cli", "command:tldr"]
+depends_on = []
+done_when = "所有四个 CLI struct 的 --lang 改为 Option<CliLanguage>，对应 run_* 函数处理 None 分支（从 path 推断或报错），cargo nextest run -p codex-cli --test tldr 通过"
+validate_by = "cargo nextest run -p codex-cli --test tldr"
+regress_by = "cargo nextest run -p codex-native-tldr"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
+
+[[issue]]
+
+id = "a2"
+sequence = 20
+title = "MCP 工具 language 解析统一为 resolve_language"
+
+scope = """
+将 codex-rs/native-tldr/src/tool_api.rs 中的 required_language 和 required_or_inferred_language 合并为单一函数 resolve_language(args, path_hint: Option<&str>) -> Result<SupportedLanguage>。\n\n推断逻辑：\n- args.language 显式传递 → 直接使用\n- path_hint 存在 → SupportedLanguage::from_path() 推断\n- 两者都没有或推断失败 → 报错\n\n所有 15 处调用点统一改为 resolve_language。\n\n不修改 TldrToolCallParam 结构体定义、不修改 MCP 工具 description。"""
+
+touch_points = ["module:codex-native-tldr", "module:codex-mcp-server"]
+depends_on = []
+done_when = "required_language 和 required_or_inferred_language 被移除，所有调用点改为 resolve_language；cargo nextest run -p codex-native-tldr 通过；cargo nextest run -p codex-mcp-server 通过"
+validate_by = "cargo nextest run -p codex-native-tldr && cargo nextest run -p codex-mcp-server"
+regress_by = "cargo nextest run -p codex-core"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "a1 和 a2 无硬依赖，可并行或按序执行"

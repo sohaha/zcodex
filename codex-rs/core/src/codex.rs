@@ -1446,6 +1446,11 @@ pub(crate) struct AppServerClientMetadata {
 }
 
 impl Session {
+    /// Access the buddy reaction state mutex for cross-turn tracking.
+    pub(crate) fn buddy_reaction_state(&self) -> &tokio::sync::Mutex<BuddyReactionState> {
+        &self.buddy_reaction_state
+    }
+
     pub(crate) async fn app_server_client_metadata(&self) -> AppServerClientMetadata {
         let state = self.state.lock().await;
         AppServerClientMetadata {

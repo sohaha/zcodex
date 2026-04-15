@@ -666,6 +666,9 @@ fn override_message(layer: &ConfigLayerSource) -> String {
         ConfigLayerSource::User { file } => {
             format!("Overridden by user config: {}", file.display())
         }
+        ConfigLayerSource::ZConfig { file } => {
+            format!("Overridden by zconfig: {}", file.display())
+        }
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
             format!(
                 "Overridden by legacy managed_config.toml: {}",

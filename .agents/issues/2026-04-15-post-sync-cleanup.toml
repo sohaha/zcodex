@@ -1,0 +1,83 @@
+plan = ".agents/plan/2026-04-15-post-sync-cleanup.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "清理 core/rewrite 与 buddy 相关 dead code warnings"
+scope = """
+负责清理 `codex-rs/core/src/tools/rewrite/`、`codex-rs/core/src/buddy.rs`、`codex-rs/core/src/codex.rs` 中同步后出现的 dead code / never read warnings。
+不负责修改任何用户可见行为，不重构 rewrite 或 buddy 架构；对无法确认是否存在动态调用的路径，优先通过 `#[allow(dead_code)]` 保持兼容，而不是直接删除实现。
+"""
+touch_points = [
+  "module:codex-core",
+  "codex-rs/core/src/tools/rewrite/auto_tldr.rs",
+  "codex-rs/core/src/tools/rewrite/decision.rs",
+  "codex-rs/core/src/tools/rewrite/engine.rs",
+  "codex-rs/core/src/tools/rewrite/read_gate.rs",
+  "codex-rs/core/src/tools/rewrite/tldr_routing.rs",
+  "codex-rs/core/src/buddy.rs",
+  "codex-rs/core/src/codex.rs",
+]
+depends_on = []
+done_when = "`cargo check -p codex-core` 不再报告 rewrite/buddy/codex.rs 相关 dead code 或 never read warnings，且保留 native-tldr、buddy、本地分叉功能的可编译性与入口。"
+validate_by = "cd codex-rs && RUSTC_WRAPPER= cargo check -p codex-core"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "如某些 rewrite 路由函数仍可能被间接或后续阶段调用，应保留实现并用显式注释说明 allow 原因。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "修复同步后 unused variables、imports 与 feature flag 残留引用"
+scope = """
+负责清理 `events.rs`、`shell.rs`、`status/helpers.rs`、测试文件等位置的 unused variable / unused import warnings，以及 `Feature::Sqlite` 等 Removed feature flag 的残留测试引用。
+需要评估 `Feature::WindowsSandbox` / `Feature::WindowsSandboxElevated` 的现状：若仅保留兼容读取逻辑，则补充注释并避免误判为活跃功能；若存在可安全删除的纯残留测试或调用，则一并清理。
+不负责变更 Windows sandbox 的真实行为路径。
+"""
+touch_points = [
+  "module:codex-core",
+  "module:codex-tui",
+  "module:codex-features",
+  "codex-rs/core/src/tools/events.rs",
+  "codex-rs/core/src/tools/handlers/shell.rs",
+  "codex-rs/tui/src/status/helpers.rs",
+  "codex-rs/core/src/windows_sandbox.rs",
+  "codex-rs/core/src/agent/control_tests.rs",
+  "codex-rs/core/tests/suite/agent_jobs.rs",
+]
+depends_on = ["a1"]
+done_when = "`cargo check --workspace` 不再报告 unused variable / unused import warnings，且 Removed feature flag 的残留引用已清理或明确标注为兼容保留。"
+validate_by = "cd codex-rs && RUSTC_WRAPPER= cargo check --workspace"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "若 `WindowsSandbox` 仍用于配置兼容读取，应保留但补充说明，不要误删 Windows 平台兼容分支。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "更新 TUI snapshots 并完成受影响 crate 验证"
+scope = """
+负责更新 `codex-rs/tui` 因同步与前序清理导致的 snapshots，并完成 `codex-core` 与 `codex-tui` 的定向验证。
+不负责全量 workspace 测试，也不处理与本轮清理无关的 snapshot 波动。
+"""
+touch_points = [
+  "module:codex-tui",
+  "module:codex-core",
+  "codex-rs/tui/src/bottom_pane/snapshots",
+  "codex-rs/tui/src/chatwidget/snapshots",
+]
+depends_on = ["a2"]
+done_when = "`cargo nextest run -p codex-core` 与 `cargo nextest run -p codex-tui` 通过，相关 `.snap` 文件已更新并与代码行为一致。"
+validate_by = "cd codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui"
+regress_by = "cd codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-core"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "若 snapshot 变更仅为文案或布局微调，需在执行阶段写明变化原因；如 `cargo-nextest` 不可用，则退化为 `cargo test -p <crate>` 并在 notes 中记录。"

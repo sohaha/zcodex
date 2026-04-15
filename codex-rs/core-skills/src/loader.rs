@@ -302,6 +302,7 @@ fn skill_roots_from_layer_stack_inner(
             }
             ConfigLayerSource::Mdm { .. }
             | ConfigLayerSource::SessionFlags
+            | ConfigLayerSource::ZConfig { .. }
             | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. }
             | ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {}
         }

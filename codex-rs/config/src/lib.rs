@@ -21,6 +21,8 @@ pub mod types;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 
+pub const ZCONFIG_TOML_FILE: &str = "zconfig.toml";
+
 pub use cloud_requirements::CloudRequirementsLoadError;
 pub use cloud_requirements::CloudRequirementsLoadErrorCode;
 pub use cloud_requirements::CloudRequirementsLoader;

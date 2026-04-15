@@ -177,7 +177,7 @@ pub struct TldrAnalyzeCommand {
     pub lang: CliLanguage,
 
     /// 目标符号名。
-    #[arg(value_name = "符号")]
+    #[arg(value_name = "符号", required = false)]
     pub symbol: Option<String>,
 
     /// 以 JSON 输出。

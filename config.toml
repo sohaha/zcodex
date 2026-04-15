@@ -1,0 +1,93 @@
+approval_policy = "never"
+disable_response_storage = true
+model = "gpt-5.4"
+model_provider = "glm"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+sandbox_mode = "danger-full-access"
+suppress_unstable_features_warning = true
+web_search = "live"
+
+[sandbox]
+default_sandbox = "danger-full-access"
+network_access = true
+
+[safety]
+backup_location = "~/.codex/backups"
+enable_backup = true
+exclude_patterns = ["*.log", "node_modules/", ".git/"]
+max_file_size = "10MB"
+
+[features]
+apply_patch_freeform = true
+multi_agent = true
+plan_tool = true
+rmcp_client = true
+streamable_shell = false
+unified_exec = false
+view_image_tool = true
+
+[model_providers.glm]
+# RUST_LOG=trace hapi codex -c model_provider=glm 
+api_key = "sk-2cb0e6183fc4d431c0895d46a5639192"
+base_url = "https://cch.zx.73zls.com/v1"
+model = "glm-5"
+name = "glm"
+requires_openai_auth = true
+wire_api = 'anthropic'
+
+[model_providers.chat]
+# RUST_LOG=trace codex -c model_provider=chat 
+api_key = "sk-2cb0e6183fc4d431c0895d46a5639192"
+base_url = "https://cch.zx.73zls.com/v1"
+model = "glm-5"
+name = "chat"
+wire_api = 'chat'
+
+[model_providers.mm]
+# RUST_LOG=trace codex -c model_provider=mm 
+api_key = "sk-cp-v0eDj0cHuI9RuBTkOQeRwsGcDwuEDszGK2WDgRnLBJECejIvpjkfXsyLYiTlqZexUKIH3XhWW7lgIvYepTmrGUmRR8E0VAmdSKIngZPGghHjvVTUSP-PY70"
+base_url = "https://api.minimaxi.com/anthropic/v1"
+model = "MiniMax-M2.7"
+name = "minmax"
+requires_openai_auth = false
+wire_api = 'anthropic'
+# 最大重试次数（默认4）
+request_max_retries = 8
+# 流重连次数（默认5）
+stream_idle_timeout_ms = 60000
+# 基础延迟改为 500ms
+retry_base_delay_ms = 500
+# 覆盖模型真实上下文大小
+model_context_window = 158000
+# 达到此 token 数触发 compact     
+model_auto_compact_token_limit = 148000
+
+[model_providers.cch]
+api_key = ""
+base_url = "https://cch.zx.73zls.com/v1"
+name = "cch"
+requires_openai_auth = true
+wire_api = "responses"
+
+[sandbox_workspace_write]
+network_access = true
+
+[notice]
+hide_full_access_warning = true
+
+[PermissionProfileToml]
+some_field = "value"
+
+[projects."/workspace"]
+trust_level = "trusted"
+
+[tui]
+show_buddy = true
+
+[tui.buddy.soul]
+name = "Codey"
+personality = "乐于助人的代码精灵"
+
+[notice.model_migrations]
+"gpt-5.1" = "gpt-5.2"

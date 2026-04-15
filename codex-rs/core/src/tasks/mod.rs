@@ -726,16 +726,20 @@ async fn handle_buddy_observer(
         return;
     }
 
+    let strategy = &turn_context.config.tui_buddy_reaction_strategy;
+    let mut buddy_state = session.buddy_reaction_state().lock().await;
     let reaction = generate_buddy_reaction_hybrid(
         session.as_ref(),
         turn_context.as_ref(),
         soul.as_ref(),
         last_user_message.as_deref(),
         last_agent_message.as_deref(),
-        &turn_context.config.tui_buddy_reaction_strategy,
+        strategy,
+        &mut buddy_state,
     )
     .await
     .unwrap_or_else(|| fallback_buddy_reaction(&turn_context.sub_id));
+    drop(buddy_state);
 
     session
         .send_event(

@@ -214,6 +214,7 @@ fn render_non_file_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>>
         }
         ConfigLayerSource::System { .. }
         | ConfigLayerSource::User { .. }
+        | ConfigLayerSource::ZConfig { .. }
         | ConfigLayerSource::Project { .. }
         | ConfigLayerSource::LegacyManagedConfigTomlFromFile { .. } => Vec::new(),
     }
@@ -323,6 +324,9 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
         }
         ConfigLayerSource::User { file } => {
             format!("user ({})", file.as_path().display())
+        }
+        ConfigLayerSource::ZConfig { file } => {
+            format!("zconfig ({})", file.as_path().display())
         }
         ConfigLayerSource::Project { dot_codex_folder } => {
             format!(

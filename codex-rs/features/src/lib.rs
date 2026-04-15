@@ -665,7 +665,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::GeneralAnalytics,
         key: "general_analytics",
         stage: Stage::Stable,
-        default_enabled: true,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::Sqlite,

@@ -9,6 +9,7 @@ use crate::config_loader::layer_io::LoadedConfigLayers;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigRequirementsWithSources;
+use codex_config::ZCONFIG_TOML_FILE;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_git_utils::resolve_root_git_project_for_trust;
@@ -181,7 +182,15 @@ pub async fn load_config_layers_state(
                 config_toml,
             )
         })
-        .await?;
+        .await?
+        .unwrap_or_else(|| {
+            ConfigLayerEntry::new(
+                ConfigLayerSource::System {
+                    file: system_config_toml_file.clone(),
+                },
+                TomlValue::Table(toml::map::Map::new()),
+            )
+        });
     layers.push(system_layer);
 
     // Add a layer for $CODEX_HOME/config.toml if it exists. Note if the file
@@ -196,8 +205,33 @@ pub async fn load_config_layers_state(
             config_toml,
         )
     })
-    .await?;
+    .await?
+    .unwrap_or_else(|| {
+        ConfigLayerEntry::new(
+            ConfigLayerSource::User {
+                file: user_file.clone(),
+            },
+            TomlValue::Table(toml::map::Map::new()),
+        )
+    });
     layers.push(user_layer);
+
+    // Add a layer for $CODEX_HOME/zconfig.toml if it exists. This allows
+    // community forks to ship fork-specific default values without modifying
+    // the user's config.toml. It has higher precedence than the User layer.
+    let zconfig_file = AbsolutePathBuf::resolve_path_against_base(ZCONFIG_TOML_FILE, codex_home);
+    if let Some(zconfig_layer) = load_config_toml_for_required_layer(&zconfig_file, |config_toml| {
+        ConfigLayerEntry::new(
+            ConfigLayerSource::ZConfig {
+                file: zconfig_file.clone(),
+            },
+            config_toml,
+        )
+    })
+    .await?
+    {
+        layers.push(zconfig_layer);
+    }
 
     if let Some(cwd) = cwd {
         let mut merged_so_far = TomlValue::Table(toml::map::Map::new());
@@ -314,15 +348,14 @@ pub async fn load_config_layers_state(
 
 /// Attempts to load a config.toml file from `config_toml`.
 /// - If the file exists and is valid TOML, passes the parsed `toml::Value` to
-///   `create_entry` and returns the resulting layer entry.
-/// - If the file does not exist, uses an empty `Table` with `create_entry` and
-///   returns the resulting layer entry.
+///   `create_entry` and returns `Some(entry)`.
+/// - If the file does not exist, returns `None`.
 /// - If there is an error reading the file or parsing the TOML, returns an
 ///   error.
 async fn load_config_toml_for_required_layer(
     config_toml: impl AsRef<Path>,
     create_entry: impl FnOnce(TomlValue) -> ConfigLayerEntry,
-) -> io::Result<ConfigLayerEntry> {
+) -> io::Result<Option<ConfigLayerEntry>> {
     let toml_file = config_toml.as_ref();
     let toml_value = match tokio::fs::read_to_string(toml_file).await {
         Ok(contents) => {
@@ -343,17 +376,17 @@ async fn load_config_toml_for_required_layer(
         }
         Err(e) => {
             if e.kind() == io::ErrorKind::NotFound {
-                Ok(TomlValue::Table(toml::map::Map::new()))
+                return Ok(None);
             } else {
-                Err(io::Error::new(
+                return Err(io::Error::new(
                     e.kind(),
                     format!("Failed to read config file {}: {e}", toml_file.display()),
-                ))
+                ));
             }
         }
     }?;
 
-    Ok(create_entry(toml_value))
+    Ok(Some(create_entry(toml_value)))
 }
 
 /// If available, apply requirements from the platform system
