@@ -571,7 +571,7 @@ pub struct Tui {
     /// Ordered list of status line item identifiers.
     ///
     /// When set, the TUI renders the selected items as the status line.
-    /// When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.
+    /// When unset, the TUI defaults to: `model-with-reasoning`, `git-branch`, `context-usage`, and `current-dir`.
     #[serde(default)]
     pub status_line: Option<Vec<String>>,
 
