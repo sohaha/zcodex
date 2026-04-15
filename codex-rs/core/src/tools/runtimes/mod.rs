@@ -60,7 +60,7 @@ pub(crate) fn build_sandbox_command(
 pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     command: &[String],
     session_shell: &Shell,
-    cwd: &Path,
+    cwd: &AbsolutePathBuf,
     explicit_env_overrides: &HashMap<String, String>,
     env: &HashMap<String, String>,
 ) -> Vec<String> {

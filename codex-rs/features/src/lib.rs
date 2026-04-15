@@ -129,13 +129,11 @@ pub enum Feature {
     /// Persist rollout metadata to a local SQLite database.
     Sqlite,
     /// Enable startup memory extraction and file-backed memory consolidation.
-    NativeMemories,
-    /// Enable the embedded zmemory tool and related runtime integration.
-    Zmemory,
+    MemoryTool,
+    /// Enable the Telepathy sidecar for passive screen-context memories.
+    Telepathy,
     /// Append additional AGENTS.md guidance to user instructions.
     ChildAgentsMd,
-    /// Allow the model to request `detail: "original"` image outputs on supported models.
-    ImageDetailOriginal,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
     EnableRequestCompression,
     /// Enable collab tools.
@@ -180,6 +178,9 @@ pub enum Feature {
     RealtimeConversation,
     /// Connect app-server to the ChatGPT remote control service.
     RemoteControl,
+    /// Removed compatibility flag retained as a no-op so old wrappers can
+    /// still pass `--enable image_detail_original`.
+    ImageDetailOriginal,
     /// Removed compatibility flag. The TUI now always uses the app-server implementation.
     TuiAppServer,
     /// Prevent idle system sleep while a turn is actively running.
@@ -190,6 +191,10 @@ pub enum Feature {
     ResponsesWebsocketsV2,
     /// Use the agent identity registration flow for ChatGPT-authenticated sessions.
     UseAgentIdentity,
+    /// Enable zmemory persistent memory tools.
+    Zmemory,
+    /// Enable native memories integration.
+    NativeMemories,
 }
 
 impl Feature {
@@ -361,6 +366,9 @@ impl Features {
                     );
                 }
                 "tui_app_server" => {
+                    continue;
+                }
+                "image_detail_original" => {
                     continue;
                 }
                 _ => {}
@@ -656,8 +664,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::GeneralAnalytics,
         key: "general_analytics",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::Sqlite,
@@ -678,19 +686,15 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::ChildAgentsMd,
-        key: "child_agents_md",
+        id: Feature::Telepathy,
+        key: "telepathy",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::ImageDetailOriginal,
-        key: "image_detail_original",
-        stage: Stage::Experimental {
-            name: "原始图像细节",
-            menu_description: "让模型在支持的模型上以完整分辨率检查工具输出的图像，而不是使用缩小后的近似图像。这只影响 `view_image` 等工具输出的图像，不影响直接附加在界面中的图像。它对本地化和精确 UI 定位、读取小字号文本以及推理精确布局尤其重要。",
-            announcement: "新功能：/experimental 中现已提供原始图像细节。启用后，工具可在支持的模型上为 CUA 和本地化任务请求完整分辨率的图像细节。",
-        },
+        id: Feature::ChildAgentsMd,
+        key: "child_agents_md",
+        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
@@ -881,6 +885,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::RemoteControl,
         key: "remote_control",
         stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ImageDetailOriginal,
+        key: "image_detail_original",
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

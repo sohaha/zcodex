@@ -6,6 +6,7 @@ use codex_api::Provider;
 use codex_api::RealtimeAudioFrame;
 use codex_api::RealtimeEvent;
 use codex_api::RealtimeEventParser;
+use codex_api::RealtimeOutputModality;
 use codex_api::RealtimeSessionConfig;
 use codex_api::RealtimeSessionMode;
 use codex_api::RealtimeWebsocketClient;
@@ -146,6 +147,7 @@ async fn realtime_ws_e2e_session_create_and_event_flow() {
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::V1,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Cove,
             },
             HeaderMap::new(),
@@ -249,6 +251,7 @@ async fn realtime_ws_connect_webrtc_sideband_retries_join_until_server_is_availa
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::RealtimeV2,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Marin,
             },
             "rtc_test",
@@ -320,6 +323,7 @@ async fn realtime_ws_e2e_send_while_next_event_waits() {
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::V1,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Cove,
             },
             HeaderMap::new(),
@@ -387,6 +391,7 @@ async fn realtime_ws_e2e_disconnected_emitted_once() {
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::V1,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Cove,
             },
             HeaderMap::new(),
@@ -450,6 +455,7 @@ async fn realtime_ws_e2e_ignores_unknown_text_events() {
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::V1,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Cove,
             },
             HeaderMap::new(),
@@ -516,6 +522,7 @@ async fn realtime_ws_e2e_realtime_v2_parser_emits_handoff_requested() {
                 session_id: Some("conv_123".to_string()),
                 event_parser: RealtimeEventParser::RealtimeV2,
                 session_mode: RealtimeSessionMode::Conversational,
+                output_modality: RealtimeOutputModality::Audio,
                 voice: RealtimeVoice::Marin,
             },
             HeaderMap::new(),

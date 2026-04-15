@@ -66,6 +66,10 @@ pub(crate) enum StatusLineItem {
     /// Percentage of context window remaining.
     ContextRemaining,
 
+    /// Percentage of context window remaining.
+    #[strum(to_string = "context-remaining-percent")]
+    ContextRemainingPercent,
+
     /// Percentage of context window used.
     ///
     /// Also accepts the legacy `context-usage` config value.
@@ -107,23 +111,38 @@ impl StatusLineItem {
     /// User-visible description shown in the popup.
     pub(crate) fn description(&self) -> &'static str {
         match self {
-            StatusLineItem::ModelName => "当前模型名称",
-            StatusLineItem::ModelWithReasoning => "当前模型名称及推理级别",
-            StatusLineItem::CurrentDir => "当前工作目录",
-            StatusLineItem::ProjectRoot => "项目根目录（不可用时省略）",
-            StatusLineItem::GitBranch => "当前 Git 分支（不可用时省略）",
-            StatusLineItem::ContextRemaining => "上下文窗口剩余比例（未知时省略）",
-            StatusLineItem::ContextUsed => "上下文窗口已用比例（未知时省略）",
-            StatusLineItem::FiveHourLimit => "5 小时用量限额剩余（不可用时省略）",
-            StatusLineItem::WeeklyLimit => "每周用量限额剩余（不可用时省略）",
-            StatusLineItem::CodexVersion => "Codex 应用版本",
-            StatusLineItem::ContextWindowSize => "上下文窗口总大小（token 数，未知时省略）",
-            StatusLineItem::UsedTokens => "会话中已用 token 总数（为零时省略）",
-            StatusLineItem::TotalInputTokens => "会话中已用输入 token 总数",
-            StatusLineItem::TotalOutputTokens => "会话中已用输出 token 总数",
-            StatusLineItem::SessionId => "当前会话标识符（会话开始前省略）",
-            StatusLineItem::FastMode => "Fast 模式是否启用",
-            StatusLineItem::ThreadTitle => "当前线程标题（仅在用户修改后显示）",
+            StatusLineItem::ModelName => "Current model name",
+            StatusLineItem::ModelWithReasoning => "Current model name with reasoning level",
+            StatusLineItem::CurrentDir => "Current working directory",
+            StatusLineItem::ProjectRoot => "Project root directory (omitted when unavailable)",
+            StatusLineItem::GitBranch => "Current Git branch (omitted when unavailable)",
+            StatusLineItem::ContextRemaining => {
+                "Percentage of context window remaining (omitted when unknown)"
+            }
+            StatusLineItem::ContextRemainingPercent => {
+                "Percentage of context window remaining (omitted when unknown)"
+            }
+            StatusLineItem::ContextUsed => {
+                "Percentage of context window used (omitted when unknown)"
+            }
+            StatusLineItem::FiveHourLimit => {
+                "Remaining usage on 5-hour usage limit (omitted when unavailable)"
+            }
+            StatusLineItem::WeeklyLimit => {
+                "Remaining usage on weekly usage limit (omitted when unavailable)"
+            }
+            StatusLineItem::CodexVersion => "Codex application version",
+            StatusLineItem::ContextWindowSize => {
+                "Total context window size in tokens (omitted when unknown)"
+            }
+            StatusLineItem::UsedTokens => "Total tokens used in session (omitted when zero)",
+            StatusLineItem::TotalInputTokens => "Total input tokens used in session",
+            StatusLineItem::TotalOutputTokens => "Total output tokens used in session",
+            StatusLineItem::SessionId => {
+                "Current session identifier (omitted until session starts)"
+            }
+            StatusLineItem::FastMode => "Whether Fast mode is currently active",
+            StatusLineItem::ThreadTitle => "Current thread title (omitted unless changed by user)",
         }
     }
 }
@@ -309,6 +328,18 @@ mod tests {
         assert_eq!(
             StatusLineItem::ContextRemaining.to_string(),
             "context-remaining"
+        );
+    }
+
+    #[test]
+    fn context_remaining_percent_is_separate_selectable_id() {
+        assert_eq!(
+            StatusLineItem::ContextRemainingPercent.to_string(),
+            "context-remaining-percent"
+        );
+        assert_eq!(
+            "context-remaining-percent".parse::<StatusLineItem>(),
+            Ok(StatusLineItem::ContextRemainingPercent)
         );
     }
 
