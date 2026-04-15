@@ -53,7 +53,7 @@ impl ToolHandler for ZmemoryHandler {
             .filter(|path| !path.is_empty())
         {
             Some(path) => crate::util::resolve_path(&turn.cwd, &PathBuf::from(path)),
-            None => session.codex_home().await,
+            None => session.codex_home().await.into_path_buf(),
         };
 
         let zmemory_config =

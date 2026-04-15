@@ -199,7 +199,12 @@ impl ActionKind {
                 let _ = fs::remove_file(&path);
                 let patch = build_add_file_patch(&patch_path, content);
                 let command = shell_apply_patch_command(&patch);
-                let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
+                let event = shell_event(
+                    call_id,
+                    &command,
+                    /*timeout_ms*/ 30_000,
+                    sandbox_permissions,
+                )?;
                 Ok((event, Some(command)))
             }
         }

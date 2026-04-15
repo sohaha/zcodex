@@ -108,43 +108,6 @@ instead of running with weaker enforcement.
 
 ### All Platforms
 
-Expects the binary containing `codex-core` to simulate the virtual `apply_patch` CLI when `arg1` is `--codex-run-as-apply-patch`. See the `codex-arg0` crate for details.
-
-## Embedded ZTOK shell routing
-
-`shell_command` no longer exposes model-visible `ztok_*` tools or a separate ZTOK
-prompt block. Instead, `codex-core` can transparently hard-route a narrow set of
-safe shell invocations through embedded `ztok ...` filtering before
-execution.
-
-Current behavior:
-
-- supported direct commands such as `git`, `cargo`, `grep`, `npm`, `pnpm`,
-  `pytest`, `docker`, `kubectl`, `aws`, `psql`, `curl`, and `wget` may be
-  rewritten to `ztok ...`
-- only the simple single-file forms of `cat`, `head`, and `tail` are rewritten
-  to `ztok read ...`
-- simple prefixes such as leading env assignments, `env`, `env --`, and
-  `command` are supported when the routed command shape stays unambiguous
-- safe wrapper variants such as `command -p git status` are normalized before
-  routing
-- common pre-command flag shapes such as `git -C repo status` and
-  `cargo --manifest-path Cargo.toml test -p codex-core` are routed as-is
-- unquoted shell syntax such as pipes, redirects, backgrounding, or command
-  substitution remains raw; quoted literal characters such as `grep 'a|b'`
-  stay eligible for routing
-- `sudo ...` is always kept raw
-- when a routed command finally executes, Codex resolves the physical process as
-  `<absolute-path-to-codex> ztok ...` instead of relying on `PATH` lookup for
-  `ztok`
-- login-shell bootstrap keeps explicit env overrides authoritative after shell
-  init, so injected values such as `PATH` are not lost when `bash -lc` /
-  `zsh -lc` loads user startup files
-
-Observability:
-
-- when a command is rewritten, the exec event carries the original input via
-  `interaction_input`, and the tool output includes both the original command
-  and the logical rewritten command shown to the model/user as `codex ztok ...`
-- when a command looks ZTOK-eligible but is intentionally kept raw, the tool
-  output includes an explicit skip reason
+Expects the binary containing `codex-core` to simulate the virtual
+`apply_patch` CLI when `arg1` is `--codex-run-as-apply-patch`. See the
+`codex-arg0` crate for details.

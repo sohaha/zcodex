@@ -61,7 +61,7 @@ async fn emit_js_repl_exec_begin(
     let emitter = ToolEmitter::shell(
         vec!["js_repl".to_string()],
         /*display_command*/ None,
-        turn.cwd.to_path_buf(),
+        turn.cwd.clone(),
         ExecCommandSource::Agent,
         /*freeform*/ false,
         /*interaction_input*/ None,
@@ -83,7 +83,7 @@ async fn emit_js_repl_exec_end(
     let emitter = ToolEmitter::shell(
         vec!["js_repl".to_string()],
         /*display_command*/ None,
-        turn.cwd.to_path_buf(),
+        turn.cwd.clone(),
         ExecCommandSource::Agent,
         /*freeform*/ false,
         /*interaction_input*/ None,

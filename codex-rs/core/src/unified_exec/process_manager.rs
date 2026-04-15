@@ -258,7 +258,7 @@ impl UnifiedExecProcessManager {
         );
         let emitter = ToolEmitter::unified_exec(
             &request.command,
-            cwd.to_path_buf(),
+            cwd.clone(),
             ExecCommandSource::UnifiedExecStartup,
             Some(request.process_id.to_string()),
         );
@@ -324,7 +324,7 @@ impl UnifiedExecProcessManager {
                     Arc::clone(&context.turn),
                     context.call_id.clone(),
                     request.command.clone(),
-                    cwd.to_path_buf(),
+                    cwd.clone(),
                     Some(request.process_id.to_string()),
                     Arc::clone(&transcript),
                     message.clone(),
@@ -367,7 +367,7 @@ impl UnifiedExecProcessManager {
                 Arc::clone(&context.turn),
                 context.call_id.clone(),
                 request.command.clone(),
-                cwd.to_path_buf(),
+                cwd.clone(),
                 Some(process_id.to_string()),
                 Arc::clone(&transcript),
                 text.clone(),
@@ -641,7 +641,7 @@ impl UnifiedExecProcessManager {
             Arc::clone(&context.turn),
             context.call_id.clone(),
             command.to_vec(),
-            cwd.to_path_buf(),
+            cwd,
             process_id,
             transcript,
             started_at,
