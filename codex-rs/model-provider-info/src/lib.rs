@@ -262,7 +262,7 @@ impl ModelProviderInfo {
         };
 
         Ok(ApiProvider {
-            name: self.name.clone(),
+            name: self.name.clone().unwrap_or_else(|| "unknown".to_string()),
             base_url,
             wire_api,
             query_params: self.query_params.clone(),
@@ -330,7 +330,7 @@ impl ModelProviderInfo {
 
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
-            name: OPENAI_PROVIDER_NAME.into(),
+            name: Some(OPENAI_PROVIDER_NAME.into()),
             model: None,
             base_url,
             env_key: None,
@@ -369,7 +369,7 @@ impl ModelProviderInfo {
     }
 
     pub fn is_openai(&self) -> bool {
-        if self.name == OPENAI_PROVIDER_NAME {
+        if self.name.as_deref() == Some(OPENAI_PROVIDER_NAME) {
             return true;
         }
         match self.base_url.as_deref() {
@@ -479,7 +479,7 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
 
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
-        name: "gpt-oss".into(),
+        name: Some("gpt-oss".into()),
         model: None,
         base_url: Some(base_url.into()),
         env_key: None,

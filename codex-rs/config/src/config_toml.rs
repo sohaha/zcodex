@@ -781,9 +781,9 @@ where
 {
     let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
     // Set default name from key if not provided
-    for (_, provider) in model_providers.iter_mut() {
+    for (key, provider) in model_providers.iter_mut() {
         if provider.name.is_none() {
-            provider.name = Some(provider.clone().name.unwrap_or_default());
+            provider.name = Some(key.clone());
         }
     }
     validate_model_providers(&model_providers).map_err(serde::de::Error::custom)?;
