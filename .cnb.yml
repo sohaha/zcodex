@@ -89,13 +89,13 @@ $:
             - name: restore codex home backup
               script: |
                 set -eu
-                codex_home="${HOME:-/root}/.codex"
-                backup_dir="/workspace/backup/codex"
-                backup_archive="$backup_dir/codex.tar.gz"
-                if [ -f "$backup_archive" ]; then
-                  mkdir -p "$codex_home"
-                  tar -xzf "$backup_archive" -C "$codex_home"
-                fi
+                # codex_home="${HOME:-/root}/.codex"
+                # backup_dir="/workspace/backup/codex"
+                # backup_archive="$backup_dir/codex.tar.gz"
+                # if [ -f "$backup_archive" ]; then
+                #   mkdir -p "$codex_home"
+                #   tar -xzf "$backup_archive" -C "$codex_home"
+                # fi
             - name: bootstrap rust speedup
               script: |
                 set -eu
