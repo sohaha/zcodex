@@ -1,8 +1,8 @@
 [package]
-name = "codex-mcp-server"
-version.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "codex-mcp-server"
+version.workspace = true
 
 [[bin]]
 name = "codex-mcp-server"
@@ -15,10 +15,6 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
-[features]
-default = []
-tldr = ["dep:codex-native-tldr"]
-
 [dependencies]
 anyhow = { workspace = true }
 codex-arg0 = { workspace = true }
@@ -28,7 +24,7 @@ codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
 codex-login = { workspace = true }
 codex-models-manager = { workspace = true }
-codex-native-tldr = { workspace = true, optional = true }
+codex-native-tldr = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-cli = { workspace = true }
 codex-utils-json-to-toml = { workspace = true }
@@ -49,8 +45,8 @@ tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
-codex-utils-absolute-path = { workspace = true }
 codex-shell-command = { workspace = true }
+codex-utils-absolute-path = { workspace = true }
 core_test_support = { workspace = true }
 mcp_test_support = { workspace = true }
 os_info = { workspace = true }

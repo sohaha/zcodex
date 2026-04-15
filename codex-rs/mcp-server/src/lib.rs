@@ -33,8 +33,8 @@ mod exec_approval;
 pub(crate) mod message_processor;
 mod outgoing_message;
 mod patch_approval;
-#[cfg(feature = "tldr")]
 mod tldr_tool;
+mod zmemory_tool;
 
 use crate::message_processor::MessageProcessor;
 use crate::outgoing_message::OutgoingJsonRpcMessage;

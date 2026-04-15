@@ -674,7 +674,7 @@ pub struct BuddyReactionStrategy {
     #[serde(default)]
     pub mode: BuddyReactionMode,
 
-    /// Probability of using AI in hybrid mode (0.0-1.0). Defaults to `0.2`.
+    /// Probability of using AI in hybrid mode (0.0-1.0). Defaults to `0.1`.
     #[serde(default = "default_ai_probability")]
     pub ai_probability: f64,
 

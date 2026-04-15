@@ -41,6 +41,8 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::tldr_tool::create_tool_for_tldr_tool_call_param;
 #[cfg(feature = "tldr")]
 use crate::tldr_tool::run_tldr_tool;
+use crate::zmemory_tool::create_tool_for_zmemory_tool_call_param;
+use crate::zmemory_tool::run_zmemory_tool;
 
 pub(crate) struct MessageProcessor {
     outgoing: Arc<OutgoingMessageSender>,
@@ -326,11 +328,13 @@ impl MessageProcessor {
             create_tool_for_codex_tool_call_param(),
             create_tool_for_codex_tool_call_reply_param(),
             create_tool_for_tldr_tool_call_param(),
+            create_tool_for_zmemory_tool_call_param(),
         ];
         #[cfg(not(feature = "tldr"))]
         let tools = vec![
             create_tool_for_codex_tool_call_param(),
             create_tool_for_codex_tool_call_reply_param(),
+            create_tool_for_zmemory_tool_call_param(),
         ];
         let result = rmcp::model::ListToolsResult {
             meta: None,
@@ -356,6 +360,10 @@ impl MessageProcessor {
             #[cfg(feature = "tldr")]
             "ztldr" => {
                 let result = run_tldr_tool(arguments).await;
+                self.outgoing.send_response(id, result).await;
+            }
+            "zmemory" => {
+                let result = run_zmemory_tool(arguments).await;
                 self.outgoing.send_response(id, result).await;
             }
             _ => {

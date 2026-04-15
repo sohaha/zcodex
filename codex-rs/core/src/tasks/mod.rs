@@ -20,6 +20,7 @@ use tracing::trace;
 use tracing::warn;
 
 use crate::buddy::fallback_buddy_reaction;
+use crate::buddy::apply_state_update;
 use crate::buddy::generate_buddy_reaction_hybrid;
 use crate::buddy::generate_buddy_soul;
 use crate::buddy::persist_buddy_soul;
@@ -667,7 +668,9 @@ impl Session {
 }
 
 fn should_run_buddy_observer(turn_context: &TurnContext) -> bool {
-    matches!(turn_context.session_source, SessionSource::Cli) && turn_context.config.tui_show_buddy
+    matches!(turn_context.session_source, SessionSource::Cli)
+        && turn_context.config.tui_show_buddy
+        && turn_context.config.tui_buddy_reactions_enabled
 }
 
 async fn handle_buddy_observer(
@@ -727,20 +730,28 @@ async fn handle_buddy_observer(
     }
 
     let strategy = &turn_context.config.tui_buddy_reaction_strategy;
-    let mut buddy_state = session.buddy_reaction_state().lock().await;
-    let reaction = generate_buddy_reaction_hybrid(
+    let buddy_state = session.buddy_reaction_state().lock().await;
+    let state_snapshot = buddy_state.clone();
+    drop(buddy_state);
+    let (reaction, outcome) = generate_buddy_reaction_hybrid(
         session.as_ref(),
         turn_context.as_ref(),
         soul.as_ref(),
         last_user_message.as_deref(),
         last_agent_message.as_deref(),
         strategy,
-        &mut buddy_state,
+        &state_snapshot,
     )
     .await
-    .unwrap_or_else(|| fallback_buddy_reaction(&turn_context.sub_id));
+    .unwrap_or_else(|| {
+        (
+            fallback_buddy_reaction(&turn_context.sub_id),
+            ReactionOutcome::None,
+        )
+    });
+    let mut buddy_state = session.buddy_reaction_state().lock().await;
+    apply_state_update(&mut buddy_state, outcome);
     drop(buddy_state);
-
     session
         .send_event(
             turn_context.as_ref(),
