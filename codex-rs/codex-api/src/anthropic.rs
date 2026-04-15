@@ -36,6 +36,18 @@ const ANTHROPIC_HIGH_THINKING_BUDGET_TOKENS: u64 = 4_096;
 const ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS: &str =
     "Respond with JSON only. It must strictly match this schema:";
 const TOOL_INPUT_FIELD: &str = "input";
+const THINK_START_TAGS: &[&str] = &["<think>"];
+const THINK_END_TAGS: &[&str] = &["</think>", "<\\/think>"];
+const TOOL_CALL_START_TAGS: &[&str] = &["<tool_call>"];
+const TOOL_CALL_END_TAGS: &[&str] = &["</tool_call>", "<\\/tool_call>"];
+const INLINE_TEXT_TAGS: &[&str] = &[
+    "<think>",
+    "</think>",
+    "<\\/think>",
+    "<tool_call>",
+    "</tool_call>",
+    "<\\/tool_call>",
+];
 
 pub(crate) fn build_request_body(request: &ResponsesApiRequest) -> Value {
     build_request_body_with_stream(request, /*stream*/ true)
@@ -383,8 +395,8 @@ struct AnthropicStreamState {
     /// Tracks whether we are currently inside an inline `<think>...</think>` block
     /// that some non-Anthropic endpoints embed inside `text_delta` events.
     in_inline_think: bool,
-    /// Buffer for partial `<think>` or `</think>` tag prefix that was split across chunks.
-    think_tag_buf: String,
+    /// Buffer for partial inline think/tool-call tag prefixes that were split across chunks.
+    inline_tag_buf: String,
     /// Buffer for inline `<tool_call>...</tool_call>` text emitted by models that
     /// cannot produce structured tool-use events.
     inline_tool_call_buf: Option<String>,
@@ -575,10 +587,10 @@ impl AnthropicStreamState {
         text: String,
         tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
     ) -> Result<(), ApiError> {
-        let combined = if self.think_tag_buf.is_empty() {
+        let combined = if self.inline_tag_buf.is_empty() {
             text
         } else {
-            let mut s = std::mem::take(&mut self.think_tag_buf);
+            let mut s = std::mem::take(&mut self.inline_tag_buf);
             s.push_str(&text);
             s
         };
@@ -588,37 +600,47 @@ impl AnthropicStreamState {
                 break;
             }
             if self.inline_tool_call_buf.is_some() {
-                if let Some(end) = remaining.find("</tool_call>") {
+                if let Some((end, end_tag)) = find_first_tag(remaining, TOOL_CALL_END_TAGS) {
                     let chunk = &remaining[..end];
                     self.inline_tool_call_buf.as_mut().unwrap().push_str(chunk);
-                    remaining = &remaining[end + "</tool_call>".len()..];
+                    remaining = &remaining[end + end_tag.len()..];
                     let buf = self.inline_tool_call_buf.take().unwrap();
                     let tool_index = self.tool_blocks.len();
                     if let Some(tool) = parse_inline_tool_call(&buf) {
                         self.tool_blocks.insert(tool_index, tool);
                     }
                 } else {
-                    self.inline_tool_call_buf
-                        .as_mut()
-                        .unwrap()
-                        .push_str(remaining);
+                    let tag_prefix = longest_tag_prefix(remaining, TOOL_CALL_END_TAGS);
+                    let chunk = &remaining[..remaining.len() - tag_prefix.len()];
+                    self.inline_tool_call_buf.as_mut().unwrap().push_str(chunk);
+                    if !tag_prefix.is_empty() {
+                        self.inline_tag_buf.push_str(tag_prefix);
+                    }
                     break;
                 }
             } else if self.in_inline_think {
-                if let Some(end) = remaining.find("</think>") {
+                if let Some((end, end_tag)) = find_first_tag(remaining, THINK_END_TAGS) {
                     let think_chunk = &remaining[..end];
                     if !think_chunk.is_empty() {
                         self.handle_reasoning_delta(index, think_chunk.to_string(), tx_event)
                             .await?;
                     }
                     self.in_inline_think = false;
-                    remaining = &remaining[end + "</think>".len()..];
+                    remaining = &remaining[end + end_tag.len()..];
                 } else {
-                    self.handle_reasoning_delta(index, remaining.to_string(), tx_event)
-                        .await?;
+                    let tag_prefix = longest_tag_prefix(remaining, THINK_END_TAGS);
+                    let think_chunk = &remaining[..remaining.len() - tag_prefix.len()];
+                    if !think_chunk.is_empty() {
+                        self.handle_reasoning_delta(index, think_chunk.to_string(), tx_event)
+                            .await?;
+                    }
+                    if !tag_prefix.is_empty() {
+                        self.inline_tag_buf.push_str(tag_prefix);
+                    }
                     break;
                 }
-            } else if let Some(start) = remaining.find("<tool_call>") {
+            } else if let Some((start, start_tag)) = find_first_tag(remaining, TOOL_CALL_START_TAGS)
+            {
                 let before = &remaining[..start];
                 if !before.is_empty() {
                     self.ensure_message_started(tx_event).await?;
@@ -626,11 +648,11 @@ impl AnthropicStreamState {
                     send_event(tx_event, ResponseEvent::OutputTextDelta(before.to_string()))
                         .await?;
                 }
-                let after = &remaining[start + "<tool_call>".len()..];
+                let after = &remaining[start + start_tag.len()..];
                 let after = after.trim_start_matches("<tool_call>");
                 self.inline_tool_call_buf = Some(String::new());
                 remaining = after;
-            } else if let Some(start) = remaining.find("<think>") {
+            } else if let Some((start, start_tag)) = find_first_tag(remaining, THINK_START_TAGS) {
                 let before = &remaining[..start];
                 if !before.is_empty() {
                     self.ensure_message_started(tx_event).await?;
@@ -639,10 +661,9 @@ impl AnthropicStreamState {
                         .await?;
                 }
                 self.in_inline_think = true;
-                remaining = &remaining[start + "<think>".len()..];
+                remaining = &remaining[start + start_tag.len()..];
             } else {
-                // Check if the tail of `remaining` could be a partial `<think>` or `</think>` tag.
-                let tag_prefix = longest_tag_prefix(remaining);
+                let tag_prefix = longest_tag_prefix(remaining, INLINE_TEXT_TAGS);
                 let emit = &remaining[..remaining.len() - tag_prefix.len()];
                 if !emit.is_empty() {
                     self.ensure_message_started(tx_event).await?;
@@ -650,7 +671,7 @@ impl AnthropicStreamState {
                     send_event(tx_event, ResponseEvent::OutputTextDelta(emit.to_string())).await?;
                 }
                 if !tag_prefix.is_empty() {
-                    self.think_tag_buf.push_str(tag_prefix);
+                    self.inline_tag_buf.push_str(tag_prefix);
                 }
                 break;
             }
@@ -806,12 +827,17 @@ fn anthropic_output_schema_instruction(output_schema: &Value) -> String {
     format!("{ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS} {schema}")
 }
 
-/// Returns the longest suffix of `s` that is a proper prefix of `"<think>"` or `"</think>"`.
+fn find_first_tag<'a>(s: &'a str, tags: &'a [&'a str]) -> Option<(usize, &'a str)> {
+    tags.iter()
+        .filter_map(|tag| s.find(tag).map(|index| (index, *tag)))
+        .min_by_key(|(index, _)| *index)
+}
+
+/// Returns the longest suffix of `s` that is a proper prefix of one of `tags`.
 /// Used to detect cross-chunk tag splits so the tag buffer can be held until the next delta.
-fn longest_tag_prefix(s: &str) -> &str {
-    const TAGS: &[&str] = &["<think>", "</think>"];
+fn longest_tag_prefix<'a>(s: &'a str, tags: &[&str]) -> &'a str {
     let bytes = s.as_bytes();
-    for tag in TAGS {
+    for tag in tags {
         let tag_bytes = tag.as_bytes();
         for len in (1..tag_bytes.len()).rev() {
             if bytes.len() >= len && &bytes[bytes.len() - len..] == &tag_bytes[..len] {
@@ -1581,6 +1607,140 @@ mod tests {
                             reasoning_output_tokens: 0,
                             total_tokens: 5,
                         })
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_state_tolerates_escaped_inline_closing_tags() {
+        let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(32);
+        let mut state = AnthropicStreamState::new(HashSet::new());
+        state.response_id = Some("msg_1".to_string());
+        state.message_id = Some("msg_1".to_string());
+        state.stop_reason = Some("end_turn".to_string());
+
+        state
+            .handle_text_delta(0, "<think>reasoning<\\/thi".to_string(), &tx)
+            .await
+            .expect("first delta");
+        state
+            .handle_text_delta(
+                0,
+                "nk>mid<tool_call>shell<arg_key>command</arg_key><arg_value>pwd</arg_value><\\/tool_"
+                    .to_string(),
+                &tx,
+            )
+            .await
+            .expect("second delta");
+        state
+            .handle_text_delta(0, "call>suffix".to_string(), &tx)
+            .await
+            .expect("third delta");
+        state.finish(&tx).await.expect("finish");
+        drop(tx);
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event.expect("event"));
+        }
+
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemAdded(ResponseItem::Reasoning {
+                id,
+                summary,
+                content,
+                encrypted_content,
+            }) if id == "msg_1"
+                && summary.is_empty()
+                && content.is_none()
+                && encrypted_content.is_none()
+        );
+        assert_matches!(
+            &events[1],
+            ResponseEvent::ReasoningSummaryPartAdded { summary_index } if *summary_index == 0
+        );
+        assert_matches!(
+            &events[2],
+            ResponseEvent::ReasoningSummaryDelta { delta, summary_index }
+                if delta == "reasoning" && *summary_index == 0
+        );
+        assert_matches!(
+            &events[3],
+            ResponseEvent::OutputItemDone(ResponseItem::Reasoning {
+                id,
+                summary,
+                content,
+                encrypted_content,
+            }) if id == "msg_1"
+                && summary
+                    == &vec![ReasoningItemReasoningSummary::SummaryText {
+                        text: "reasoning".to_string(),
+                    }]
+                && content
+                    == &Some(vec![ReasoningItemContent::ReasoningText {
+                        text: "reasoning".to_string(),
+                    }])
+                && encrypted_content.is_none()
+        );
+        assert_matches!(
+            &events[4],
+            ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id.as_deref() == Some("msg_1")
+                && role == "assistant"
+                && content.is_empty()
+                && end_turn.is_none()
+                && phase.is_none()
+        );
+        assert_matches!(
+            &events[5],
+            ResponseEvent::OutputTextDelta(text) if text == "mid"
+        );
+        assert_matches!(
+            &events[6],
+            ResponseEvent::OutputTextDelta(text) if text == "suffix"
+        );
+        assert_matches!(
+            &events[7],
+            ResponseEvent::OutputItemDone(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id.as_deref() == Some("msg_1")
+                && role == "assistant"
+                && *end_turn == Some(true)
+                && phase.is_none()
+                && content
+                    == &vec![ContentItem::OutputText {
+                        text: "midsuffix".to_string(),
+                    }]
+        );
+        assert_matches!(
+            &events[8],
+            ResponseEvent::OutputItemDone(ResponseItem::FunctionCall {
+                id,
+                name,
+                namespace,
+                arguments,
+                call_id,
+            }) if id.is_none()
+                && name == "shell"
+                && namespace.is_none()
+                && arguments == "{\"command\":\"pwd\"}"
+                && call_id == "anthropic_tool_0"
+        );
+        assert_matches!(
+            &events[9],
+            ResponseEvent::Completed {
+                response_id,
+                token_usage,
+            } if response_id == "msg_1" && token_usage.is_none()
         );
     }
 

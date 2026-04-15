@@ -165,6 +165,7 @@ impl ChatStreamState {
             tool_search_tool_names,
             local_shell_tool_names,
             in_inline_think: false,
+            think_tag_buf: String::new(),
             reasoning_text: String::new(),
             reasoning_item_started: false,
         }
@@ -593,6 +594,20 @@ async fn send_event(
         .send(Ok(event))
         .await
         .map_err(|err| ApiError::Stream(format!("failed to send chat completions event: {err}")))
+}
+
+fn longest_tag_prefix(s: &str) -> &str {
+    const TAGS: &[&str] = &["<think>", "</think>"];
+    let bytes = s.as_bytes();
+    for tag in TAGS {
+        let tag_bytes = tag.as_bytes();
+        for len in (1..tag_bytes.len()).rev() {
+            if bytes.len() >= len && &bytes[bytes.len() - len..] == &tag_bytes[..len] {
+                return &s[s.len() - len..];
+            }
+        }
+    }
+    ""
 }
 
 fn delta_content_text(content: Option<&Value>) -> Option<String> {
