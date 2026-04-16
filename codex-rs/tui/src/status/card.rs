@@ -684,7 +684,7 @@ impl HistoryCell for StatusHistoryCell {
 
 fn format_model_provider(config: &Config) -> Option<String> {
     let provider = &config.model_provider;
-    let name = provider.name.trim();
+    let name = provider.name.as_deref().unwrap_or("");
     let provider_name = if name.is_empty() {
         config.model_provider_id.as_str()
     } else {

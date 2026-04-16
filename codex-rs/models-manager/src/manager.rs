@@ -48,7 +48,7 @@ const MODELS_ENDPOINT: &str = "/models";
 
 fn provider_cache_key(provider: &ModelProviderInfo, api_provider: &codex_api::Provider) -> String {
     let mut parts = vec![
-        format!("name={}", provider.name),
+        format!("name={:?}", provider.name),
         format!("base_url={}", api_provider.base_url),
         format!("wire_api={:?}", api_provider.wire_api),
     ];

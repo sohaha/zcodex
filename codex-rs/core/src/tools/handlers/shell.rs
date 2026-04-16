@@ -574,7 +574,7 @@ impl ShellHandler {
             tool_name,
             exec_params,
             approval_command,
-            display_command,
+            display_command: _,
             interaction_input,
             model_output_prefix,
             additional_permissions,

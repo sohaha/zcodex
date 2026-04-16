@@ -1056,7 +1056,7 @@ impl ModelClientSession {
         level = "info",
         skip_all,
         fields(
-            provider = %self.client.state.provider.name,
+            provider = ?self.client.state.provider.name,
             wire_api = %self.client.state.provider.wire_api,
             transport = "responses_websocket",
             api.path = "responses",

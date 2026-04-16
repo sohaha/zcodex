@@ -164,7 +164,7 @@ impl ToolEmitter {
                     cwd,
                     source,
                     display_parsed_cmd,
-                    interaction_input,
+                    interaction_input: _,
                     ..
                 },
                 stage,

@@ -779,7 +779,7 @@ fn deserialize_model_providers<'de, D>(
 where
     D: serde::Deserializer<'de>,
 {
-    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
+    let mut model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
     // Set default name from key if not provided
     for (key, provider) in model_providers.iter_mut() {
         if provider.name.is_none() {

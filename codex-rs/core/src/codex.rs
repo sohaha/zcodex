@@ -2021,7 +2021,7 @@ impl Session {
         );
 
         session_telemetry.conversation_starts(
-            config.model_provider.name.as_str(),
+            config.model_provider.name.as_deref().unwrap_or("unknown"),
             session_configuration.collaboration_mode.reasoning_effort(),
             config
                 .model_reasoning_summary
@@ -7305,7 +7305,7 @@ async fn run_sampling_request(
                 &sampling_turn_context,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Provider request failed; retrying with fallback provider `{fallback_provider}` and model `{fallback_model}`. {err:#}"
+                        "Provider request failed; retrying with fallback provider `{fallback_provider:?}` and model `{fallback_model}`. {err:#}"
                     ),
                 }),
             )
