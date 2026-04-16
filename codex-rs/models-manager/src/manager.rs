@@ -247,7 +247,7 @@ impl ModelsManager {
         
         let remote_models = if let Some(ref catalog_slugs) = provider.model_catalog {
             tracing::warn!(
-                "MODEL_CATALOG_DEBUG: Checking if custom catalog slugs match default models; if not, will create new models. Filtering {} models by provider catalog: {:?}",
+                "MODEL_CATALOG_DEBUG: Filtering {} models by provider catalog: {:?}",
                 base_models.len(),
                 catalog_slugs
             );
@@ -531,7 +531,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
     // Apply model_catalog filtering for all wire_api types
     if let Some(ref catalog_slugs) = provider.model_catalog {
         tracing::warn!(
-            "MODEL_CATALOG_DEBUG: Checking if custom catalog slugs match default models; if not, will create new models. Filtering {} models by catalog: {:?}",
+            "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
             models.len(),
             catalog_slugs
         );
