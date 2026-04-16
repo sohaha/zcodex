@@ -174,7 +174,7 @@ use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 
-const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
+const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续.";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
 enum ThreadInteractiveRequest {
@@ -271,8 +271,8 @@ struct GuardianApprovalsMode {
     sandbox_policy: SandboxPolicy,
 }
 
-/// Enabling the Guardian Approvals experiment in the TUI should also switch the
-/// current `/approvals` settings to the matching Guardian Approvals mode. Users
+/// Enabling the 守护者审批 experiment in the TUI should also switch the
+/// current `/approvals` settings to the matching 守护者审批 mode. Users
 /// can still change `/approvals` afterward; this just assumes that opting into
 /// the experiment means they want guardian review enabled immediately.
 fn guardian_approvals_mode() -> GuardianApprovalsMode {
@@ -1250,7 +1250,7 @@ impl App {
         let mut approvals_reviewer_override = None;
         let mut sandbox_policy_override = None;
         let mut feature_updates_to_apply = Vec::with_capacity(updates.len());
-        // Guardian Approvals owns `approvals_reviewer`, but disabling the feature
+        // 守护者审批 owns `approvals_reviewer`, but disabling the feature
         // from inside a profile should not silently clear a value configured at
         // the root scope.
         let (root_approvals_reviewer_blocks_profile_disable, profile_approvals_reviewer_configured) = {
@@ -1283,7 +1283,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "无法在此配置文件中禁用 Guardian Approvals，因为 `approvals_reviewer` 是在活动配置文件之外配置的。".to_string(),
+                        "无法在此配置文件中禁用 守护者审批，因为 `approvals_reviewer` 是在活动配置文件之外配置的。".to_string(),
                     );
                 continue;
             }
@@ -1315,7 +1315,7 @@ impl App {
                             .into(),
                     });
                     if previous_approvals_reviewer != guardian_approvals_preset.approvals_reviewer {
-                        permissions_history_label = Some("Guardian Approvals");
+                        permissions_history_label = Some("守护者审批");
                     }
                 } else if !effective_enabled {
                     if profile_approvals_reviewer_configured || self.active_profile.is_none() {
@@ -1338,7 +1338,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "无法启用 Guardian Approvals",
+                    "无法启用 守护者审批",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1346,7 +1346,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "无法启用 Guardian Approvals",
+                    "无法启用 守护者审批",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1409,7 +1409,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("无法启用 Guardian Approvals: {err}"));
+                .add_error_message(format!("无法启用 守护者审批: {err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1812,7 +1812,7 @@ impl App {
                 entry.agent_role.as_deref(),
                 is_primary,
             );
-            if label == "Agent" {
+            if label == "AI 助手" {
                 let thread_id = thread_id.to_string();
                 let short_id: String = thread_id.chars().take(8).collect();
                 format!("{label} ({short_id})")
@@ -3081,7 +3081,7 @@ impl App {
             .collect();
 
         self.chat_widget.show_selection_view(SelectionViewParams {
-            title: Some("Subagents".to_string()),
+            title: Some("子代理".to_string()),
             subtitle: Some(AgentNavigationState::picker_subtitle()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -4007,7 +4007,7 @@ impl App {
             Err(err) => tracing::warn!("failed to load skills on startup: {err:#}"),
         }
 
-        // On startup, if Agent mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
+        // On startup, if AI 助手 mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
         #[cfg(target_os = "windows")]
         {
             let should_check = WindowsSandboxLevel::from_config(&app.config)
@@ -4403,9 +4403,8 @@ impl App {
                             .await;
                     }
                     None => {
-                        self.chat_widget.add_error_message(format!(
-                            "No saved chat found matching '{id_or_name}'."
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("未找到匹配 '{id_or_name}'."));
                     }
                 }
             }
@@ -4462,10 +4461,8 @@ impl App {
                         }
                     }
                 } else {
-                    self.chat_widget.add_error_message(
-                        "A thread must contain at least one turn before it can be forked."
-                            .to_string(),
-                    );
+                    self.chat_widget
+                        .add_error_message("线程在分叉前必须至少包含一轮对话.".to_string());
                 }
 
                 tui.frame_requester().schedule_frame();
@@ -4552,7 +4549,7 @@ impl App {
                 };
                 self.overlay = Some(Overlay::new_static_with_lines(
                     pager_lines,
-                    "D I F F".to_string(),
+                    "差 异".to_string(),
                 ));
                 tui.frame_requester().schedule_frame();
             }
@@ -4963,7 +4960,7 @@ impl App {
                 {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Granting sandbox read access to {path} ..."),
+                            format!("正在授予沙箱读取权限 {path} ..."),
                             /*hint*/ None,
                         ));
 
@@ -5010,7 +5007,7 @@ impl App {
                 None => {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Sandbox read access granted for {}", path.display()),
+                            format!("已授予沙箱读取权限 {}", path.display()),
                             /*hint*/ None,
                         ));
                 }
@@ -5139,8 +5136,8 @@ impl App {
                         let effort_label = effort
                             .map(|selected_effort| selected_effort.to_string())
                             .unwrap_or_else(|| "default".to_string());
-                        tracing::info!("Selected model: {model}, Selected effort: {effort_label}");
-                        let mut message = format!("Model changed to {model}");
+                        tracing::info!("已选择模型：{model}，已选择推理级别： {effort_label}");
+                        let mut message = format!("模型已更改为 {model}");
                         if let Some(label) = Self::reasoning_label_for(&model, effort) {
                             message.push(' ');
                             message.push_str(label);
@@ -5215,7 +5212,7 @@ impl App {
                 {
                     Ok(()) => {
                         let label = Self::personality_label(personality);
-                        let mut message = format!("Personality set to {label}");
+                        let mut message = format!("个性已设置为 {label}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -5250,7 +5247,7 @@ impl App {
                 {
                     Ok(()) => {
                         let status = if service_tier.is_some() { "on" } else { "off" };
-                        let mut message = format!("Fast mode set to {status}");
+                        let mut message = format!("快速模式已设置为 {status}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -5301,7 +5298,7 @@ impl App {
                         } else {
                             let selection = name.unwrap_or_else(|| "系统默认".to_string());
                             self.chat_widget.add_info_message(
-                                format!("Realtime {} set to {selection}", kind.noun()),
+                                format!("实时 {} 已设置为 {selection}", kind.noun()),
                                 /*hint*/ None,
                             );
                         }
@@ -5479,7 +5476,7 @@ impl App {
                         "failed to persist world-writable warning acknowledgement"
                     );
                     self.chat_widget
-                        .add_error_message(format!("无法保存 Agent 模式警告偏好: {err}"));
+                        .add_error_message(format!("无法保存 AI 助手 模式警告偏好: {err}"));
                 }
             }
             AppEvent::PersistBuddyVisibility(visible) => {
@@ -5674,7 +5671,7 @@ impl App {
                     let diff_summary = DiffSummary::new(changes, cwd);
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![diff_summary.into()],
-                        "P A T C H".to_string(),
+                        "补 丁".to_string(),
                     ));
                 }
                 ApprovalRequest::Exec { command, .. } => {
@@ -5683,7 +5680,7 @@ impl App {
                     let full_cmd_lines = highlight_bash_to_lines(&full_cmd);
                     self.overlay = Some(Overlay::new_static_with_lines(
                         full_cmd_lines,
-                        "E X E C".to_string(),
+                        "执 行".to_string(),
                     ));
                 }
                 ApprovalRequest::Permissions {
@@ -5704,7 +5701,7 @@ impl App {
                     }
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
-                        "P E R M I S S I O N S".to_string(),
+                        "权 限".to_string(),
                     ));
                 }
                 ApprovalRequest::McpElicitation {
@@ -5714,7 +5711,7 @@ impl App {
                 } => {
                     let _ = tui.enter_alt_screen();
                     let paragraph = Paragraph::new(vec![
-                        Line::from(vec!["Server: ".into(), server_name.bold()]),
+                        Line::from(vec!["服务器：".into(), server_name.bold()]),
                         Line::from(""),
                         Line::from(message),
                     ])
@@ -8124,7 +8121,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Subagents will be enabled in the next session."));
+        assert!(rendered.contains("子代理 will be enabled in the next session."));
         Ok(())
     }
 
@@ -8277,7 +8274,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Guardian Approvals"));
+        assert!(rendered.contains("权限已更新为 守护者审批"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -10959,7 +10956,7 @@ guardian_approval = true
                                     text_elements: Vec::new(),
                                 }],
                             },
-                            ThreadItem::AgentMessage {
+                            ThreadItem::AI 助手Message {
                                 id: "assistant-2".to_string(),
                                 text: "done".to_string(),
                                 phase: None,
@@ -11043,7 +11040,7 @@ guardian_approval = true
                         turn_id: "turn-1".to_string(),
                         item: ThreadItem::CollabAgentToolCall {
                             id: "wait-1".to_string(),
-                            tool: codex_app_server_protocol::CollabAgentTool::Wait,
+                            tool: codex_app_server_protocol::CollabAI 助手Tool::Wait,
                             status: codex_app_server_protocol::CollabAgentToolCallStatus::InProgress,
                             sender_thread_id: ThreadId::new().to_string(),
                             receiver_thread_ids: vec![receiver_thread_id.to_string()],

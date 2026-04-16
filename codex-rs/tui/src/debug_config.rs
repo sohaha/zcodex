@@ -24,7 +24,7 @@ pub(crate) fn new_debug_config_output(
 
     if let Some(proxy) = session_network_proxy {
         lines.push("".into());
-        lines.push("Session runtime:".bold().into());
+        lines.push("会话运行时：".bold().into());
         lines.push("  - network_proxy".into());
         let SessionNetworkProxyRuntime {
             http_addr,
@@ -88,7 +88,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     let requirements_toml = stack.requirements_toml();
 
     lines.push("".into());
-    lines.push("Requirements:".bold().into());
+    lines.push("要求：".bold().into());
     let mut requirement_lines = Vec::new();
 
     if let Some(policies) = requirements_toml.allowed_approval_policies.as_ref() {
@@ -542,7 +542,7 @@ mod tests {
         assert!(rendered.contains("(enabled)"));
         assert!(rendered.contains("(disabled)"));
         assert!(rendered.contains("原因： project is untrusted"));
-        assert!(rendered.contains("Requirements:"));
+        assert!(rendered.contains("要求："));
         assert!(rendered.contains("  <none>"));
     }
 
