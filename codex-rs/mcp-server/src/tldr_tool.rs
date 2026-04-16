@@ -230,6 +230,18 @@ fn error_result(text: String) -> CallToolResult {
 }
 
 fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
+    if let Some(reason) = invalid_regex_reason(text) {
+        return Some(serde_json::json!({
+            "structuredFailure": {
+                "error_type": "invalid_regex",
+                "reason": reason,
+                "retryable": true,
+                "retry_hint": "use matchMode=literal for exact text, or escape regex metacharacters like (, [, and {"
+            },
+            "degradedMode": serde_json::Value::Null
+        }));
+    }
+
     if text.contains("native-tldr daemon is unavailable for") {
         return Some(serde_json::json!({
             "structuredFailure": {
@@ -248,6 +260,11 @@ fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
     }
 
     None
+}
+
+fn invalid_regex_reason(text: &str) -> Option<&str> {
+    let reason = text.strip_prefix("ztldr tool failed: ").unwrap_or(text);
+    reason.contains("invalid regex pattern `").then_some(reason)
 }
 
 fn tldr_error_structured_content_for_project(
@@ -1327,6 +1344,7 @@ mod tests {
         let pattern = "auth".to_string();
         let response = codex_native_tldr::api::SearchResponse {
             pattern: pattern.clone(),
+            match_mode: codex_native_tldr::api::SearchMatchMode::Literal,
             indexed_files: 1,
             truncated: false,
             matches: vec![codex_native_tldr::api::SearchMatch {
@@ -1342,6 +1360,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: None,
                 query: Some(pattern.clone()),
+                match_mode: Some(codex_native_tldr::api::SearchMatchMode::Literal),
                 module: None,
                 path: None,
                 line: None,
@@ -1383,7 +1402,9 @@ mod tests {
             "search via daemon: 1 matches"
         );
         assert_eq!(structured["action"], "search");
+        assert_eq!(structured["matchMode"], "literal");
         assert_eq!(structured["search"]["pattern"], pattern);
+        assert_eq!(structured["search"]["match_mode"], "literal");
         assert_eq!(structured["search"]["matches"][0]["path"], "src/main.rs");
         assert_eq!(structured["search"]["matches"][0]["line"], 1);
     }
@@ -1947,6 +1968,45 @@ mod tests {
             text["structuredContent"]["degradedMode"]["mode"],
             "diagnostic_only"
         );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_surfaces_invalid_regex_error() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "resolveProjectAvatar(\n")
+            .expect("fixture should write");
+
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Search,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("resolveProjectAvatar(".to_string()),
+                match_mode: Some(codex_native_tldr::api::SearchMatchMode::Regex),
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
+        )
+        .await;
+
+        let text = serde_json::to_value(&result).expect("call tool result should serialize");
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            text["structuredContent"]["structuredFailure"]["error_type"],
+            "invalid_regex"
+        );
+        assert_eq!(
+            text["structuredContent"]["structuredFailure"]["retry_hint"],
+            "use matchMode=literal for exact text, or escape regex metacharacters like (, [, and {"
+        );
+        assert_eq!(text["structuredContent"]["degradedMode"], serde_json::Value::Null);
     }
 
     #[cfg(unix)]

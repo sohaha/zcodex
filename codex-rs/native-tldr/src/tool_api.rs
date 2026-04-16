@@ -5,6 +5,7 @@ use crate::api::DiagnosticsRequest;
 use crate::api::DoctorRequest;
 use crate::api::ImportersRequest;
 use crate::api::ImportsRequest;
+use crate::api::SearchMatchMode;
 use crate::api::SearchRequest;
 use crate::daemon::TldrDaemonCommand;
 use crate::daemon::TldrDaemonResponse;
@@ -405,10 +406,12 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
                 "source": { "type": "string" },
                 "message": { "type": "string" },
                 "pattern": { "type": "string" },
+                "matchMode": { "type": "string" },
                 "search": {
                   "type": "object",
                   "properties": {
                     "pattern": { "type": "string" },
+                    "match_mode": { "type": "string" },
                     "indexed_files": { "type": "integer" },
                     "truncated": { "type": "boolean" },
                     "matches": {
@@ -432,6 +435,7 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
                 "source",
                 "message",
                 "pattern",
+                "matchMode",
                 "search"
               ]
             },
@@ -721,6 +725,8 @@ pub struct TldrToolCallParam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_mode: Option<SearchMatchMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -748,6 +754,7 @@ impl Default for TldrToolCallParam {
             language: None,
             symbol: None,
             query: None,
+            match_mode: None,
             module: None,
             path: None,
             line: None,
@@ -817,8 +824,17 @@ where
                 .query
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("`query` is required for action=search"))?;
+            let match_mode = args.match_mode.unwrap_or_default();
             let language = args.language.map(Into::into);
-            run_search_tool(&project_root, language, pattern, &query, &ensure_running).await
+            run_search_tool(
+                &project_root,
+                language,
+                pattern,
+                match_mode,
+                &query,
+                &ensure_running,
+            )
+            .await
         }
         TldrToolAction::Extract => {
             let path = args
@@ -1323,6 +1339,7 @@ async fn run_search_tool<Q, E>(
     project_root: &Path,
     language: Option<SupportedLanguage>,
     pattern: String,
+    match_mode: SearchMatchMode,
     query: &Q,
     ensure_running: &E,
 ) -> Result<TldrToolResult>
@@ -1332,6 +1349,7 @@ where
 {
     let request = SearchRequest {
         pattern: pattern.clone(),
+        match_mode,
         language,
         max_results: 100,
     };
@@ -1368,6 +1386,7 @@ where
         "source": source,
         "message": message,
         "pattern": pattern,
+        "matchMode": match_mode.as_str(),
         "search": response,
     });
     let text = format!("search via {source}: {} matches", response.matches.len());

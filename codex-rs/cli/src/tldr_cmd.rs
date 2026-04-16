@@ -12,6 +12,7 @@ use codex_native_tldr::api::DiagnosticsRequest;
 use codex_native_tldr::api::DiagnosticsResponse;
 use codex_native_tldr::api::DoctorRequest;
 use codex_native_tldr::api::DoctorResponse;
+use codex_native_tldr::api::SearchMatchMode;
 use codex_native_tldr::api::SearchRequest;
 use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
@@ -166,6 +167,21 @@ impl From<CliLanguage> for SupportedLanguage {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum CliSearchMatchMode {
+    Literal,
+    Regex,
+}
+
+impl From<CliSearchMatchMode> for SearchMatchMode {
+    fn from(value: CliSearchMatchMode) -> Self {
+        match value {
+            CliSearchMatchMode::Literal => SearchMatchMode::Literal,
+            CliSearchMatchMode::Regex => SearchMatchMode::Regex,
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 pub struct TldrAnalyzeCommand {
     /// 项目根目录。
@@ -312,6 +328,10 @@ pub struct TldrSearchCommand {
     /// 匹配模式。
     #[arg(value_name = "模式")]
     pub pattern: String,
+
+    /// 匹配语义；默认按字面量匹配。
+    #[arg(long, value_enum, default_value_t = CliSearchMatchMode::Literal)]
+    pub match_mode: CliSearchMatchMode,
 
     /// 最多返回多少条结果。
     #[arg(long, default_value_t = 100)]
@@ -839,8 +859,10 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
     let project_root = cmd.project.canonicalize()?;
     let config = load_tldr_config(&project_root)?;
     let language = cmd.lang.map(Into::into);
+    let match_mode: SearchMatchMode = cmd.match_mode.into();
     let request = SearchRequest {
         pattern: cmd.pattern.clone(),
+        match_mode,
         language,
         max_results: cmd.max_results.max(1),
     };
@@ -874,6 +896,7 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
         "source": source,
         "message": message,
         "pattern": cmd.pattern,
+        "matchMode": match_mode.as_str(),
         "search": response,
     });
     if cmd.json {
@@ -883,6 +906,7 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
             source,
             payload.get("message").and_then(serde_json::Value::as_str),
             payload["pattern"].as_str().unwrap_or_default(),
+            payload["matchMode"].as_str().unwrap_or_default(),
             payload["search"]["indexed_files"]
                 .as_u64()
                 .unwrap_or_default() as usize,
@@ -1363,12 +1387,14 @@ fn render_search_response_text(
     source: &str,
     message: Option<&str>,
     pattern: &str,
+    match_mode: &str,
     indexed_files: usize,
     match_count: usize,
 ) -> Vec<String> {
     let mut lines = vec![
         format!("来源：{source}"),
         format!("模式：{pattern}"),
+        format!("匹配语义：{match_mode}"),
         format!("已索引文件数：{indexed_files}"),
         format!("匹配数：{match_count}"),
     ];

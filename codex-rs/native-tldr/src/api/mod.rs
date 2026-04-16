@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -178,9 +179,28 @@ pub struct ImportersResponse {
     pub matches: Vec<ImporterMatch>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchMatchMode {
+    #[default]
+    Literal,
+    Regex,
+}
+
+impl SearchMatchMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Literal => "literal",
+            Self::Regex => "regex",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SearchRequest {
     pub pattern: String,
+    #[serde(default)]
+    pub match_mode: SearchMatchMode,
     pub language: Option<SupportedLanguage>,
     pub max_results: usize,
 }
@@ -195,6 +215,8 @@ pub struct SearchMatch {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SearchResponse {
     pub pattern: String,
+    #[serde(default)]
+    pub match_mode: SearchMatchMode,
     pub indexed_files: usize,
     pub truncated: bool,
     #[serde(default)]

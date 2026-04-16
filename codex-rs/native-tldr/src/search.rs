@@ -1,4 +1,5 @@
 use crate::api::SearchMatch;
+use crate::api::SearchMatchMode;
 use crate::api::SearchRequest;
 use crate::api::SearchResponse;
 use crate::lang_support::SupportedLanguage;
@@ -11,7 +12,12 @@ pub(crate) fn search_project(
     project_root: &Path,
     request: SearchRequest,
 ) -> Result<SearchResponse> {
-    let pattern = Regex::new(&request.pattern)?;
+    let pattern = match request.match_mode {
+        SearchMatchMode::Literal => Regex::new(&regex::escape(&request.pattern))
+            .expect("escaped literal search pattern should always compile"),
+        SearchMatchMode::Regex => Regex::new(&request.pattern)
+            .map_err(|error| anyhow::anyhow!("invalid regex pattern `{}`: {error}", request.pattern))?,
+    };
     let mut matches = Vec::new();
     let mut indexed_files = 0usize;
     let limit = request.max_results.max(1);
@@ -51,6 +57,7 @@ pub(crate) fn search_project(
                 if matches.len() >= limit {
                     return Ok(SearchResponse {
                         pattern: request.pattern,
+                        match_mode: request.match_mode,
                         indexed_files,
                         truncated: true,
                         matches,
@@ -62,6 +69,7 @@ pub(crate) fn search_project(
 
     Ok(SearchResponse {
         pattern: request.pattern,
+        match_mode: request.match_mode,
         indexed_files,
         truncated: false,
         matches,
@@ -78,13 +86,14 @@ fn matches_language(path: &Path, language: Option<SupportedLanguage>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::search_project;
+    use crate::api::SearchMatchMode;
     use crate::api::SearchRequest;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
 
     #[test]
-    fn search_project_returns_regex_matches() {
+    fn search_project_returns_regex_matches_when_requested() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
         std::fs::write(
@@ -97,14 +106,78 @@ mod tests {
             tempdir.path(),
             SearchRequest {
                 pattern: "log(in|out)".to_string(),
+                match_mode: SearchMatchMode::Regex,
                 language: Some(SupportedLanguage::Rust),
                 max_results: 10,
             },
         )
         .expect("search should succeed");
 
+        assert_eq!(response.match_mode, SearchMatchMode::Regex);
         assert_eq!(response.indexed_files, 1);
         assert_eq!(response.matches.len(), 2);
         assert_eq!(response.matches[0].line, 1);
+    }
+
+    #[test]
+    fn search_project_defaults_to_literal_matching_for_regex_metacharacters() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "resolveProjectAvatar(\n[workspaces/get] start\n",
+        )
+        .expect("fixture should write");
+
+        let paren_response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "resolveProjectAvatar(".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("literal search should succeed");
+        let bracket_response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "[workspaces/get] start".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("literal search should succeed");
+
+        assert_eq!(paren_response.match_mode, SearchMatchMode::Literal);
+        assert_eq!(paren_response.matches.len(), 1);
+        assert_eq!(paren_response.matches[0].content, "resolveProjectAvatar(");
+        assert_eq!(bracket_response.matches.len(), 1);
+        assert_eq!(bracket_response.matches[0].content, "[workspaces/get] start");
+    }
+
+    #[test]
+    fn search_project_reports_invalid_regex_patterns() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "resolveProjectAvatar(\n")
+            .expect("fixture should write");
+
+        let error = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "resolveProjectAvatar(".to_string(),
+                match_mode: SearchMatchMode::Regex,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect_err("invalid regex should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid regex pattern `resolveProjectAvatar(`: regex parse error:\n    resolveProjectAvatar(\n                        ^\nerror: unclosed group"
+        );
     }
 }
