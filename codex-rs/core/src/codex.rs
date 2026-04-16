@@ -13,6 +13,7 @@ use crate::agent::Mailbox;
 use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
+use crate::agent_identity::AgentIdentityManager;
 use crate::apps::render_apps_section;
 use crate::buddy::BuddyReactionState;
 use crate::buddy::maybe_inject_companion_intro;
@@ -47,6 +48,7 @@ use crate::stream_events_utils::raw_assistant_output_text_from_item;
 use crate::stream_events_utils::record_completed_response_item;
 use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ToolRoutingDirectives;
+use crate::tools::router::ToolRouterParams;
 use crate::turn_metadata::TurnMetadataState;
 use crate::util::error_or_panic;
 use async_channel::Receiver;
@@ -96,6 +98,7 @@ use codex_otel::current_span_trace_id;
 use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::ThreadId;
+use codex_protocol::ToolName;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
@@ -140,6 +143,7 @@ use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationResponse;
+use codex_rollout::RolloutConfig;
 use codex_rollout::state_db;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
@@ -321,7 +325,6 @@ use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::rewrite::extract_tool_routing_directives;
-use crate::tools::router::ToolRouterParams;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::turn_timing::TurnTimingState;
@@ -2189,6 +2192,14 @@ impl Session {
             rollout: Mutex::new(rollout_recorder),
             user_shell: Arc::new(default_shell),
             shell_snapshot_tx,
+            agent_identity_manager: Arc::new(AgentIdentityManager::new(
+                config.as_ref(),
+                Arc::clone(&auth_manager),
+                session_configuration.session_source.clone(),
+            )),
+            thread_store: codex_thread_store::LocalThreadStore::new(RolloutConfig::from_view(
+                config.as_ref(),
+            )),
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             exec_policy,
             auth_manager: Arc::clone(&auth_manager),
@@ -2315,7 +2326,7 @@ impl Session {
             &session_configuration.approval_policy,
             INITIAL_SUBMIT_ID.to_owned(),
             tx_event.clone(),
-            sandbox_state,
+            sandbox_state.sandbox_policy.clone(),
             config.codex_home.clone().to_path_buf(),
             codex_apps_tools_cache_key(auth),
             tool_plugin_provenance,
@@ -2798,16 +2809,11 @@ impl Session {
                 sandbox_cwd: per_turn_config.cwd.to_path_buf(),
                 use_legacy_landlock: per_turn_config.features.use_legacy_landlock(),
             };
-            if let Err(e) = self
-                .services
+            self.services
                 .mcp_connection_manager
                 .read()
                 .await
-                .notify_sandbox_state_change(&sandbox_state)
-                .await
-            {
-                warn!("Failed to notify sandbox state change to MCP servers: {e:#}");
-            }
+                .set_sandbox_policy(&sandbox_state.sandbox_policy);
         }
 
         let model_info = self
@@ -4634,7 +4640,10 @@ impl Session {
             .mcp_connection_manager
             .read()
             .await
-            .resolve_tool_info(name, namespace)
+            .resolve_tool_info(&ToolName::namespaced(
+                namespace.unwrap_or_default().to_string(),
+                name.to_string(),
+            ))
             .await
     }
 
@@ -4716,7 +4725,7 @@ impl Session {
             &turn_context.config.permissions.approval_policy,
             turn_context.sub_id.clone(),
             self.get_tx_event(),
-            sandbox_state,
+            sandbox_state.sandbox_policy.clone(),
             config.codex_home.clone().to_path_buf(),
             codex_apps_tools_cache_key(auth.as_ref()),
             tool_plugin_provenance,
@@ -7633,6 +7642,7 @@ pub(crate) async fn built_tools(
         &turn_context.tools_config,
     );
     let direct_mcp_tools = has_mcp_servers.then_some(mcp_tool_exposure.direct_tools);
+    let unavailable_called_tools = Vec::new();
     let parallel_mcp_server_names = turn_context
         .config
         .mcp_servers
@@ -7653,6 +7663,7 @@ pub(crate) async fn built_tools(
             parallel_mcp_server_names,
             discoverable_tools,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            unavailable_called_tools,
         },
     )))
 }

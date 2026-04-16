@@ -3069,15 +3069,6 @@ impl CodexMessageProcessor {
             }
         };
 
-        if let Err(err) = state_db.reset_memory_data_for_fresh_start().await {
-            self.send_internal_error(
-                request_id,
-                format!("failed to reset memory rows in state db: {err}"),
-            )
-            .await;
-            return;
-        }
-
         let memory_root = self.config.codex_home.join("memories");
         let clear_memory_root_result: std::io::Result<()> = async {
             match tokio::fs::symlink_metadata(&memory_root).await {

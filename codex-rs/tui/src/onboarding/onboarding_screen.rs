@@ -123,6 +123,7 @@ impl OnboardingScreen {
         let highlighted = TrustDirectorySelection::Trust;
         if show_trust_screen {
             steps.push(Step::TrustDirectory(TrustDirectoryWidget {
+                trust_target: cwd.clone(),
                 cwd,
                 codex_home,
                 show_windows_create_sandbox_hint,

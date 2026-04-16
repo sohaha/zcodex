@@ -146,6 +146,15 @@ fn tool_search_is_under_development_and_disabled_by_default() {
 }
 
 #[test]
+fn unavailable_dummy_tools_is_under_development_and_disabled_by_default() {
+    assert_eq!(
+        Feature::UnavailableDummyTools.stage(),
+        Stage::UnderDevelopment
+    );
+    assert_eq!(Feature::UnavailableDummyTools.default_enabled(), false);
+}
+
+#[test]
 fn general_analytics_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::GeneralAnalytics.stage(), Stage::Stable);
     assert_eq!(Feature::GeneralAnalytics.default_enabled(), false);
@@ -193,6 +202,16 @@ fn remote_control_is_under_development() {
 fn use_agent_identity_is_under_development() {
     assert_eq!(Feature::UseAgentIdentity.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::UseAgentIdentity.default_enabled(), false);
+}
+
+#[test]
+fn workspace_dependencies_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::WorkspaceDependencies.stage(), Stage::Stable);
+    assert_eq!(Feature::WorkspaceDependencies.default_enabled(), true);
+    assert_eq!(
+        feature_for_key("workspace_dependencies"),
+        Some(Feature::WorkspaceDependencies)
+    );
 }
 
 #[test]

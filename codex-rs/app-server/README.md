@@ -6,7 +6,6 @@
 
 - [Protocol](#protocol)
 - [Message Schema](#message-schema)
-- [OpenAI-Compatible HTTP Server](#openai-compatible-http-server)
 - [Core Primitives](#core-primitives)
 - [Lifecycle Overview](#lifecycle-overview)
 - [Initialization](#initialization)
@@ -42,8 +41,11 @@ Security note:
 - Non-loopback websocket listeners currently allow unauthenticated connections by default during rollout. If you expose one remotely, configure websocket auth explicitly now.
 - Supported auth modes are app-server flags:
   - `--ws-auth capability-token --ws-token-file /absolute/path`
+  - `--ws-auth capability-token --ws-token-sha256 HEX`
   - `--ws-auth signed-bearer-token --ws-shared-secret-file /absolute/path` for HMAC-signed JWT/JWS bearer tokens, with optional `--ws-issuer`, `--ws-audience`, `--ws-max-clock-skew-seconds`
 - Clients present the credential as `Authorization: Bearer <token>` during the websocket handshake. Auth is enforced before JSON-RPC `initialize`.
+- When starting `codex app-server` manually, prefer `--ws-token-file` over passing raw bearer tokens on the command line. Store a high-entropy token in a file readable only by your user, then have your client present that token in the websocket `Authorization` header.
+- `--ws-token-sha256` is intended for clients that keep the raw token in a separate local secret store and only need the server to know the SHA-256 verifier. The hash may appear in process listings, but it is not sufficient to authenticate; clients still need the original raw token. Only use this mode with randomly generated high-entropy tokens, not passwords or other guessable values.
 
 Tracing/log output:
 
@@ -64,36 +66,6 @@ Currently, you can dump a TypeScript version of the schema using `codex app-serv
 codex app-server generate-ts --out DIR
 codex app-server generate-json-schema --out DIR
 ```
-
-## OpenAI-Compatible HTTP Server
-
-For local integrations that expect an OpenAI-style REST surface, Codex also exposes an experimental compatibility mode:
-
-```bash
-codex app-server openai-compat --listen 127.0.0.1:8080
-```
-
-Supported endpoints:
-
-- `GET /v1/models`
-- `POST /v1/responses`
-- `POST /v1/chat/completions`
-
-Notes:
-
-- The server is intended for local use and defaults to binding only to loopback.
-- This mode is a thin local HTTP proxy. It reuses the currently configured provider's `base_url`, auth, query params, and custom headers instead of starting an embedded Codex conversation runtime.
-- The selected provider must have an explicit `base_url`. `wire_api = "responses"` and `wire_api = "chat"` are supported; `wire_api = "anthropic"` is not.
-- Built-in provider IDs such as `openai` can be overridden in `config.toml`, so pointing `[model_providers.openai]` at `wire_api = "chat"` is supported when you want the default OpenAI provider to use Chat Completions.
-- Optional local bearer auth can be enabled with `--auth-token-env ENV_NAME`, which requires `Authorization: Bearer ...` on incoming requests.
-- For `wire_api = "responses"`, the proxy forwards `/v1/responses` and `/v1/chat/completions` to the upstream when available.
-- For `wire_api = "chat"`, the proxy forwards `/v1/chat/completions` directly. It also translates `/v1/responses` requests onto the chat upstream: non-streaming requests are mapped back into a Responses-style JSON payload, and streaming requests are mapped from chat completion SSE chunks into Responses-style SSE events. The translated SSE stream emits `response.created`, `response.output_text.delta`, `response.output_item.added`, `response.output_item.done`, `response.completed`, and `response.failed` as needed.
-- Named tool choice is preserved when translating `/v1/responses` to a chat upstream: `tool_choice = "required:<tool_name>"` becomes Chat Completions function tool choice for that tool.
-- Remote `/v1/models` refresh also works for `wire_api = "chat"` providers that authenticate via provider-supplied API keys, bearer tokens, or auth headers, not just ChatGPT login state.
-- The translated streaming envelopes also carry Responses-style metadata such as monotonically increasing `sequence_number` values plus `background`, `user`, and `metadata` fields on terminal `response.*` payloads so downstream consumers can treat the stream more like a native Responses SSE session.
-- Tool-call translation for `wire_api = "chat"` recognizes typed Responses items for `custom`, `tool_search`, and `local_shell`. The compatibility layer also accepts a few common upstream argument shapes when reconstructing those items, including wrapped `input` payloads, `tool_search.execution`, and `local_shell.action` objects with `type: "exec"` plus either `working_directory`/`workdir` and `timeout`/`timeout_ms`.
-- Hosted tools such as `web_search` and `image_generation` remain Responses-only upstream capabilities, and Chat Completions only allows image inputs on `user` messages.
-- For translated streaming `/v1/responses` requests, upstream non-2xx HTTP failures are forwarded as HTTP errors. If an upstream chat SSE chunk cannot be translated locally, the proxy terminates the translated stream with `response.failed`.
 
 ## Core Primitives
 
@@ -172,7 +144,7 @@ Example with notification opt-out:
 - `thread/read` — read a stored thread by id without resuming it; optionally include turns via `includeTurns`. The returned `thread` includes `status` (`ThreadStatus`), defaulting to `notLoaded` when the thread is not currently loaded.
 - `thread/metadata/update` — patch stored thread metadata in sqlite; currently supports updating persisted `gitInfo` fields and returns the refreshed `thread`.
 - `thread/memoryMode/set` — experimental; set a thread’s persisted memory eligibility to `"enabled"` or `"disabled"` for either a loaded thread or a stored rollout; returns `{}` on success.
-- `memory/reset` — experimental; clear the current `CODEX_HOME/memories` directory and reset persisted memory stage data in sqlite, disabling memory mode for existing enabled threads so old rollouts are not immediately regenerated; returns `{}` on success.
+- `memory/reset` — experimental; clear the current `CODEX_HOME/memories` directory and reset persisted memory stage data in sqlite while preserving existing thread memory modes; returns `{}` on success.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).
 - `thread/archive` — move a thread’s rollout file into the archived directory; returns `{}` on success and emits `thread/archived`.
 - `thread/unsubscribe` — unsubscribe this connection from thread turn/item events. If this was the last subscriber, the server keeps the thread loaded and unloads it only after it has had no subscribers and no thread activity for 30 minutes, then emits `thread/closed`.
@@ -228,8 +200,8 @@ Example with notification opt-out:
 - `windowsSandbox/setupStart` — start Windows sandbox setup for the selected mode (`elevated` or `unelevated`); accepts an optional absolute `cwd` to target setup for a specific workspace, returns `{ started: true }` immediately, and later emits `windowsSandbox/setupCompleted`.
 - `feedback/upload` — submit a feedback report (classification + optional reason/logs, conversation_id, and optional `extraLogFiles` attachments array); returns the tracking thread id.
 - `config/read` — fetch the effective config on disk after resolving config layering.
-- `externalAgentConfig/detect` — detect migratable external-agent artifacts with `includeHome` and optional `cwds`; each detected item includes `cwd` (`null` for home).
-- `externalAgentConfig/import` — apply selected external-agent migration items by passing explicit `migrationItems` with `cwd` (`null` for home).
+- `externalAgentConfig/detect` — detect migratable external-agent artifacts with `includeHome` and optional `cwds`; each detected item includes `cwd` (`null` for home), and plugin migration items may additionally include structured `details` grouping plugin ids under each detected marketplace name.
+- `externalAgentConfig/import` — apply selected external-agent migration items by passing explicit `migrationItems` with `cwd` (`null` for home) and any plugin `details` returned by detect.
 - `config/value/write` — write a single config key/value to the user's config.toml on disk.
 - `config/batchWrite` — apply multiple config edits atomically to the user's config.toml on disk, with optional `reloadUserConfig: true` to hot-reload loaded threads.
 - `configRequirements/read` — fetch loaded requirements constraints from `requirements.toml` and/or MDM (or `null` if none are configured), including allow-lists (`allowedApprovalPolicies`, `allowedSandboxModes`, `allowedWebSearchModes`), pinned feature values (`featureRequirements`), `enforceResidency`, and `network` constraints such as canonical domain/socket permissions plus `managedAllowedDomainsOnly`.
@@ -276,26 +248,13 @@ Start a fresh thread when you need a new Codex conversation.
 { "method": "thread/started", "params": { "thread": { … } } }
 ```
 
-`personality` 可选值为 `"friendly"`、`"pragmatic"`、`"none"`。选择 `"none"` 时，会用空字符串替换 personality 占位符。
+Valid `personality` values are `"friendly"`, `"pragmatic"`, and `"none"`. When `"none"` is selected, the personality placeholder is replaced with an empty string.
 
-要继续已存储的会话，请使用之前记录的 `thread.id` 调用 `thread/resume`。其响应结构与 `thread/start` 一致，并且不会额外发送通知。你也可以传入 `thread/start` 支持的配置覆盖项（包括 `approvalsReviewer`）。
+To continue a stored session, call `thread/resume` with the `thread.id` you previously recorded. The response shape matches `thread/start`, and no additional notifications are emitted. You can also pass the same configuration overrides supported by `thread/start`, including `approvalsReviewer`.
 
-默认情况下，resume 会使用该 thread 最新持久化的 `modelProvider`、`model` 和 `reasoningEffort`。可选配置 `resume_model_source = "current"` 会改为使用当前生效配置；`resume_model_source = "persisted"` 与默认安全行为一致；`resume_model_source = "disabled"` 或不填写时，保持当前默认行为。只要提供 `model`、`modelProvider`、`config.model` 或 `config.model_reasoning_effort` 其中任一字段，就会禁用该持久化回退，并改为使用显式覆盖与正常配置解析结果。
+By default, resume uses the latest persisted `model` and `reasoningEffort` values associated with the thread. Supplying any of `model`, `modelProvider`, `config.model`, or `config.model_reasoning_effort` disables that persisted fallback and uses the explicit overrides plus normal config resolution instead.
 
-`config.toml` 示例：
-
-```toml
-# 默认行为：继续使用 thread 持久化的模型元数据恢复
-resume_model_source = "disabled"
-
-# 显式写出“按持久化元数据恢复”
-# resume_model_source = "persisted"
-
-# 改为始终按当前配置恢复
-# resume_model_source = "current"
-```
-
-示例：
+Example:
 
 ```json
 { "method": "thread/resume", "id": 11, "params": {
@@ -458,7 +417,7 @@ Experimental: use `thread/memoryMode/set` to change whether a thread remains eli
 { "id": 26, "result": {} }
 ```
 
-Experimental: use `memory/reset` to clear local memory artifacts and sqlite-backed memory stage data for the current Codex home. This also disables memory mode for existing enabled threads to keep old rollouts from repopulating memories immediately.
+Experimental: use `memory/reset` to clear local memory artifacts and sqlite-backed memory stage data for the current Codex home. This preserves existing thread memory modes; use `thread/memoryMode/set` separately when a thread's future memory eligibility should change.
 
 ```json
 { "method": "memory/reset", "id": 27 }
@@ -1020,11 +979,6 @@ Because audio is intentionally separate from `ThreadItem`, clients can opt out o
 ### MCP server startup events
 
 - `mcpServer/startupStatus/updated` — `{ name, status, error }` when app-server observes an MCP server startup transition. `status` is one of `starting`, `ready`, `failed`, or `cancelled`. `error` is `null` except for `failed`.
-
-### Buddy events
-
-- `buddy/soulGenerated` — `{ threadId, name, personality }` when the buddy AI soul is generated and persisted.
-- `buddy/reaction` — `{ threadId, text }` when the buddy emits a reaction bubble.
 
 ### Turn events
 

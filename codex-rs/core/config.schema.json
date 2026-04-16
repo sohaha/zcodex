@@ -292,106 +292,6 @@
         }
       ]
     },
-    "AutoTldrRoutingMode": {
-      "enum": [
-        "off",
-        "safe",
-        "aggressive"
-      ],
-      "type": "string"
-    },
-    "BuddyReactionMode": {
-      "description": "Strategy mode for buddy reactions.",
-      "oneOf": [
-        {
-          "description": "Hybrid: use local presets most of the time, AI occasionally.",
-          "enum": [
-            "Hybrid"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Only use AI for reactions.",
-          "enum": [
-            "AiOnly"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Only use local presets.",
-          "enum": [
-            "LocalOnly"
-          ],
-          "type": "string"
-        }
-      ]
-    },
-    "BuddyReactionStrategy": {
-      "additionalProperties": false,
-      "description": "Configuration for buddy reaction strategy.",
-      "properties": {
-        "ai_probability": {
-          "default": 0.1,
-          "description": "Probability of using AI in hybrid mode (0.0-1.0, must be between 0.0 and 1.0). Defaults to `0.1`.",
-          "format": "double",
-          "type": "number"
-        },
-        "critical_scenarios_use_ai": {
-          "default": true,
-          "description": "Force AI for critical interactions (user mentions buddy, tool completion, etc).",
-          "type": "boolean"
-        },
-        "local_preference": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/LocalPreference"
-            }
-          ],
-          "default": "Contextual",
-          "description": "Local preset preference mode. Defaults to `Contextual`."
-        },
-        "min_ai_interval_secs": {
-          "default": 20,
-          "description": "Minimum time between AI reactions in seconds. Defaults to `20`.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "min_reply_length": {
-          "default": 100,
-          "description": "Minimum agent reply length to consider using AI. Defaults to `100`.",
-          "format": "uint",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/BuddyReactionMode"
-            }
-          ],
-          "default": "Hybrid",
-          "description": "Strategy mode. Defaults to `hybrid`."
-        }
-      },
-      "type": "object"
-    },
-    "BuddySoul": {
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "personality": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "personality"
-      ],
-      "type": "object"
-    },
     "BundledSkillsConfig": {
       "additionalProperties": false,
       "properties": {
@@ -513,14 +413,17 @@
             "js_repl_tools_only": {
               "type": "boolean"
             },
+            "memories": {
+              "type": "boolean"
+            },
+            "memory_tool": {
+              "type": "boolean"
+            },
             "multi_agent": {
               "type": "boolean"
             },
             "multi_agent_v2": {
               "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
-            },
-            "native_memories": {
-              "type": "boolean"
             },
             "personality": {
               "type": "boolean"
@@ -597,6 +500,9 @@
             "tui_app_server": {
               "type": "boolean"
             },
+            "unavailable_dummy_tools": {
+              "type": "boolean"
+            },
             "undo": {
               "type": "boolean"
             },
@@ -621,7 +527,7 @@
             "web_search_request": {
               "type": "boolean"
             },
-            "zmemory": {
+            "workspace_dependencies": {
               "type": "boolean"
             }
           },
@@ -722,23 +628,6 @@
           "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
         }
       },
-      "type": "object"
-    },
-    "FallbackProviderToml": {
-      "additionalProperties": false,
-      "properties": {
-        "model": {
-          "description": "Optional model slug to use with this fallback provider.",
-          "type": "string"
-        },
-        "provider": {
-          "description": "Provider to use from the model_providers map.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "provider"
-      ],
       "type": "object"
     },
     "FeatureToml_for_MultiAgentV2ConfigToml": {
@@ -887,29 +776,40 @@
         }
       ]
     },
-    "LocalPreference": {
-      "description": "Local preset preference mode.",
-      "oneOf": [
-        {
-          "description": "Use contextual category selection based on last message.",
-          "enum": [
-            "Contextual"
-          ],
+    "MarketplaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "last_updated": {
+          "default": null,
+          "description": "Last time Codex successfully added or refreshed this marketplace.",
           "type": "string"
         },
-        {
-          "description": "Use encouraging presets primarily.",
-          "enum": [
-            "Encouraging"
-          ],
+        "ref": {
+          "default": null,
+          "description": "Git ref to check out when `source_type` is `git`.",
           "type": "string"
         },
-        {
-          "description": "Cycle through all categories for variety.",
-          "enum": [
-            "Diverse"
-          ],
+        "source": {
+          "default": null,
+          "description": "Source location used when the marketplace was added.",
           "type": "string"
+        },
+        "source_type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MarketplaceSourceType"
+            }
+          ],
+          "default": null,
+          "description": "Source kind used to install this marketplace."
+        },
+        "sparse_paths": {
+          "default": null,
+          "description": "Sparse checkout paths used when `source_type` is `git`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"
@@ -1084,22 +984,6 @@
           "description": "Additional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and value.",
           "type": "object"
         },
-        "model": {
-          "description": "Optional fixed model override used by legacy configs.",
-          "type": "string"
-        },
-        "model_auto_compact_token_limit": {
-          "default": null,
-          "description": "Token usage threshold triggering auto-compaction of conversation history.",
-          "format": "int64",
-          "type": "integer"
-        },
-        "model_context_window": {
-          "default": null,
-          "description": "Size of the context window for the model, in tokens.",
-          "format": "int64",
-          "type": "integer"
-        },
         "name": {
           "description": "Friendly display name.",
           "type": "string"
@@ -1121,12 +1005,6 @@
           "default": false,
           "description": "Does this provider require an OpenAI API Key or ChatGPT login token? If true, user is presented with login screen on first run, and login preference and token/key are stored in auth.json. If false (which is the default), login screen is skipped, and API key (if needed) comes from the \"env_key\" environment variable.",
           "type": "boolean"
-        },
-        "retry_base_delay_ms": {
-          "description": "Base delay (in milliseconds) for retry backoff. The actual delay between retries will be this value multiplied by 2^(attempt-1) with jitter.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
         },
         "stream_idle_timeout_ms": {
           "description": "Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost.",
@@ -1783,32 +1661,6 @@
         }
       ]
     },
-    "ResumeModelSource": {
-      "description": "Controls how app-server `thread/resume` selects model metadata.",
-      "oneOf": [
-        {
-          "description": "Keep the existing default resume behavior, which uses persisted model metadata.",
-          "enum": [
-            "disabled"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Explicitly restore persisted model metadata from the thread record.",
-          "enum": [
-            "persisted"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Ignore persisted model metadata and use the current effective config.",
-          "enum": [
-            "current"
-          ],
-          "type": "string"
-        }
-      ]
-    },
     "SandboxMode": {
       "enum": [
         "read-only",
@@ -2030,20 +1882,6 @@
           "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
           "type": "boolean"
         },
-        "auto_compress_pasted_images": {
-          "default": true,
-          "description": "Automatically compress images pasted into the TUI composer with Ctrl+V. Defaults to `true`.",
-          "type": "boolean"
-        },
-        "buddy": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/TuiBuddy"
-            }
-          ],
-          "default": null,
-          "description": "Buddy-specific configuration."
-        },
         "model_availability_nux": {
           "allOf": [
             {
@@ -2080,40 +1918,14 @@
           "default": true,
           "description": "Enable desktop notifications from the TUI. Defaults to `true`."
         },
-        "pasted_image_jpeg_quality": {
-          "default": 85,
-          "description": "JPEG quality used when auto-compressing non-transparent pasted images. Defaults to `85`.",
-          "format": "uint8",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "pasted_image_max_height": {
-          "default": 720,
-          "description": "Maximum height for pasted images after auto compression. Defaults to `720`.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "pasted_image_max_width": {
-          "default": 1280,
-          "description": "Maximum width for pasted images after auto compression. Defaults to `1280`.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "show_buddy": {
-          "default": true,
-          "description": "Show the buddy widget in the TUI. Defaults to `true`.",
-          "type": "boolean"
-        },
         "show_tooltips": {
-          "default": false,
-          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `false`.",
+          "default": true,
+          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`.",
           "type": "boolean"
         },
         "status_line": {
           "default": null,
-          "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning`, `git-branch`, `context-usage`, and `current-dir`.",
+          "description": "Ordered list of status line item identifiers.\n\nWhen set, the TUI renders the selected items as the status line. When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.",
           "items": {
             "type": "string"
           },
@@ -2131,35 +1943,6 @@
           "default": null,
           "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
           "type": "string"
-        }
-      },
-      "type": "object"
-    },
-    "TuiBuddy": {
-      "additionalProperties": false,
-      "properties": {
-        "reaction_strategy": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/BuddyReactionStrategy"
-            }
-          ],
-          "default": null,
-          "description": "Reaction strategy configuration."
-        },
-        "reactions_enabled": {
-          "default": true,
-          "description": "Whether AI-driven buddy reactions are enabled. Defaults to `true`.",
-          "type": "boolean"
-        },
-        "soul": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/BuddySoul"
-            }
-          ],
-          "default": null,
-          "description": "Persisted AI soul for the buddy (global)."
         }
       },
       "type": "object"
@@ -2274,51 +2057,8 @@
             "responses"
           ],
           "type": "string"
-        },
-        {
-          "description": "Legacy Chat Completions API exposed by OpenAI at `/v1/chat/completions`.",
-          "enum": [
-            "chat"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "Anthropic Messages API exposed at `/v1/messages`.",
-          "enum": [
-            "anthropic"
-          ],
-          "type": "string"
         }
       ]
-    },
-    "ZmemoryToml": {
-      "additionalProperties": false,
-      "description": "Zmemory settings loaded from config.toml.",
-      "properties": {
-        "core_memory_uris": {
-          "description": "Optional boot anchor URIs for the current runtime profile.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "namespace": {
-          "description": "Optional namespace override for the current runtime profile.",
-          "type": "string"
-        },
-        "path": {
-          "description": "Optional override for the `zmemory` database path.\n\nKeep this as a raw `PathBuf` so relative paths can be resolved later by the zmemory path resolver against the repo root or cwd, rather than being forced through config-layer `AbsolutePathBuf` resolution.",
-          "type": "string"
-        },
-        "valid_domains": {
-          "description": "Optional writable memory domains for the current runtime profile.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
     }
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
@@ -2376,14 +2116,6 @@
       ],
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
-    },
-    "auto_tldr_routing": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AutoTldrRoutingMode"
-        }
-      ],
-      "description": "Runtime policy for automatically rewriting code-search tool calls to native tldr."
     },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
@@ -2457,22 +2189,6 @@
     },
     "experimental_use_unified_exec_tool": {
       "type": "boolean"
-    },
-    "fallback_model": {
-      "description": "Optional model slug to use with the fallback provider.",
-      "type": "string"
-    },
-    "fallback_provider": {
-      "description": "Optional provider to use when the primary provider request fails.",
-      "type": "string"
-    },
-    "fallback_providers": {
-      "default": [],
-      "description": "Ordered list of fallback providers to try for the current request.",
-      "items": {
-        "$ref": "#/definitions/FallbackProviderToml"
-      },
-      "type": "array"
     },
     "features": {
       "additionalProperties": false,
@@ -2560,14 +2276,17 @@
         "js_repl_tools_only": {
           "type": "boolean"
         },
+        "memories": {
+          "type": "boolean"
+        },
+        "memory_tool": {
+          "type": "boolean"
+        },
         "multi_agent": {
           "type": "boolean"
         },
         "multi_agent_v2": {
-          "type": "boolean"
-        },
-        "native_memories": {
-          "type": "boolean"
+          "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
         },
         "personality": {
           "type": "boolean"
@@ -2644,6 +2363,9 @@
         "tui_app_server": {
           "type": "boolean"
         },
+        "unavailable_dummy_tools": {
+          "type": "boolean"
+        },
         "undo": {
           "type": "boolean"
         },
@@ -2668,7 +2390,7 @@
         "web_search_request": {
           "type": "boolean"
         },
-        "zmemory": {
+        "workspace_dependencies": {
           "type": "boolean"
         }
       },
@@ -2764,6 +2486,14 @@
         }
       ],
       "description": "Directory where Codex writes log files, for example `codex-tui.log`. Defaults to `$CODEX_HOME/log`."
+    },
+    "marketplaces": {
+      "additionalProperties": {
+        "$ref": "#/definitions/MarketplaceConfig"
+      },
+      "default": {},
+      "description": "User-level marketplace entries keyed by marketplace name.",
+      "type": "object"
     },
     "mcp_oauth_callback_port": {
       "description": "Optional fixed port for the local HTTP callback server used during MCP OAuth login. When unset, Codex will bind to an ephemeral port chosen by the OS.",
@@ -2968,14 +2698,6 @@
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
     },
-    "resume_model_source": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ResumeModelSource"
-        }
-      ],
-      "description": "Controls whether thread resume should use persisted or current model metadata."
-    },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",
       "type": "string"
@@ -3093,14 +2815,6 @@
     "windows_wsl_setup_acknowledged": {
       "description": "Tracks whether the Windows onboarding screen has been acknowledged.",
       "type": "boolean"
-    },
-    "zmemory": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ZmemoryToml"
-        }
-      ],
-      "description": "Zmemory subsystem settings."
     },
     "zsh_path": {
       "allOf": [

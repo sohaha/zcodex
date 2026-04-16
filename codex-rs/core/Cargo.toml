@@ -45,6 +45,8 @@ codex-native-tldr = { workspace = true }
 codex-shell-command = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-git-utils = { workspace = true }
+ed25519-dalek = { workspace = true }
+codex-thread-store = { workspace = true }
 codex-hooks = { workspace = true }
 codex-instructions = { workspace = true }
 codex-network-proxy = { workspace = true }

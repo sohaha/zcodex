@@ -1,4 +1,6 @@
 use super::*;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use pretty_assertions::assert_eq;
 
 async fn process_compacted_history_with_test_session(
@@ -86,7 +88,7 @@ fn collect_user_messages_filters_session_prefix_entries() {
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
-                text: r#"# AGENTS.md 指令适用目录：project
+                text: r#"# AGENTS.md instructions for project
 
 <INSTRUCTIONS>
 do things
@@ -186,16 +188,15 @@ fn build_token_limited_compacted_history_appends_summary_message() {
 }
 
 #[test]
-fn should_use_remote_compact_task_for_anthropic_provider() {
-    let provider = crate::model_provider_info::ModelProviderInfo {
-        name: "Anthropic".to_string(),
-        model: None,
-        base_url: Some("https://anthropic.example/v1".to_string()),
-        env_key: None,
+fn should_use_remote_compact_task_for_azure_provider() {
+    let provider = ModelProviderInfo {
+        name: "Azure".into(),
+        base_url: Some("https://example.com/openai".into()),
+        env_key: Some("AZURE_OPENAI_API_KEY".into()),
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
-        wire_api: crate::model_provider_info::WireApi::Anthropic,
+        wire_api: WireApi::Responses,
         query_params: None,
         http_headers: None,
         env_http_headers: None,
@@ -203,67 +204,8 @@ fn should_use_remote_compact_task_for_anthropic_provider() {
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
         websocket_connect_timeout_ms: None,
-        retry_base_delay_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
-    };
-
-    assert!(should_use_remote_compact_task(&provider));
-}
-
-#[test]
-fn should_not_use_remote_compact_task_for_chat_providers() {
-    let provider = crate::model_provider_info::ModelProviderInfo {
-        name: "OpenAI".to_string(),
-        model: None,
-        base_url: Some(crate::model_provider_info::DEFAULT_OPENAI_BASE_URL.to_string()),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        wire_api: crate::model_provider_info::WireApi::Chat,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        retry_base_delay_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
-    };
-
-    assert!(!should_use_remote_compact_task(&provider));
-}
-
-#[test]
-fn should_use_remote_compact_task_for_openai_responses_compatible_provider() {
-    let provider = crate::model_provider_info::ModelProviderInfo {
-        name: "OpenAI".to_string(),
-        model: None,
-        base_url: Some("http://127.0.0.1:8080/v1".to_string()),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        wire_api: crate::model_provider_info::WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        retry_base_delay_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
     };
 
     assert!(should_use_remote_compact_task(&provider));
@@ -352,7 +294,7 @@ async fn process_compacted_history_drops_non_user_content_messages() {
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
-                text: r#"# AGENTS.md 指令适用目录：/repo
+                text: r#"# AGENTS.md instructions for /repo
 
 <INSTRUCTIONS>
 keep me updated

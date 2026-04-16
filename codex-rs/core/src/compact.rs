@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::Prompt;
-use crate::buddy::maybe_inject_companion_intro;
 use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 #[cfg(test)]
@@ -39,7 +38,7 @@ use codex_utils_output_truncation::truncate_text;
 use futures::prelude::*;
 use tracing::error;
 
-pub const SUMMARIZATION_PROMPT: &str = concat!(include_str!("../templates/compact/prompt.md"));
+pub const SUMMARIZATION_PROMPT: &str = include_str!("../templates/compact/prompt.md");
 pub const SUMMARY_PREFIX: &str = include_str!("../templates/compact/summary_prefix.md");
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
 
@@ -59,19 +58,7 @@ pub(crate) enum InitialContextInjection {
 }
 
 pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
-    if provider.wire_api == crate::model_provider_info::WireApi::Responses {
-        return provider.is_openai();
-    }
-    if provider.wire_api == crate::model_provider_info::WireApi::Anthropic {
-        // Only official Anthropic supports the remote compact messages endpoint;
-        // third-party Anthropic-compatible providers (e.g. MiniMax) should use inline compact.
-        let is_official_anthropic = match provider.base_url.as_deref() {
-            Some(url) => url.starts_with("https://api.anthropic.com"),
-            None => true,
-        };
-        return is_official_anthropic;
-    }
-    false
+    provider.supports_remote_compaction()
 }
 
 pub(crate) async fn run_inline_auto_compact_task(
@@ -192,11 +179,9 @@ async fn run_compact_task_inner_impl(
             .clone()
             .for_prompt(&turn_context.model_info.input_modalities);
         let turn_input_len = turn_input.len();
-        let mut base_instructions = sess.get_base_instructions().await;
-        maybe_inject_companion_intro(&turn_context.config, &mut base_instructions);
         let prompt = Prompt {
             input: turn_input,
-            base_instructions,
+            base_instructions: sess.get_base_instructions().await,
             personality: turn_context.personality,
             ..Default::default()
         };
@@ -301,7 +286,7 @@ async fn run_compact_task_inner_impl(
     sess.emit_turn_item_completed(&turn_context, compaction_item)
         .await;
     let warning = EventMsg::Warning(WarningEvent {
-        message: "提示：线程过长且多次压缩可能导致模型准确性下降。尽可能在条件允许时开启新线程，以保持线程简短且聚焦。".to_string(),
+        message: "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.".to_string(),
     });
     sess.send_event(&turn_context, warning).await;
     Ok(())

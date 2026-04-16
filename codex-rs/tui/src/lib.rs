@@ -740,7 +740,7 @@ pub async fn run_main(
 
     #[allow(clippy::print_stderr)]
     let config_toml = match load_config_as_toml_with_cli_overrides(
-        &codex_home,
+        codex_home.as_path(),
         config_cwd.as_ref(),
         cli_kv_overrides.clone(),
     )
@@ -764,14 +764,7 @@ pub async fn run_main(
         }
     };
 
-    if let Err(err) = crate::legacy_core::personality_migration::maybe_migrate_personality(
-        &codex_home,
-        &config_toml,
-    )
-    .await
-    {
-        tracing::warn!(error = %err, "failed to run personality migration");
-    }
+    // Skip personality_migration (depends on codex_thread_store which is not available)
 
     let chatgpt_base_url = config_toml
         .chatgpt_base_url

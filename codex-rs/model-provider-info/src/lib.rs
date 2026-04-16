@@ -378,6 +378,9 @@ impl ModelProviderInfo {
         }
     }
 
+    pub fn supports_remote_compaction(&self) -> bool {
+        self.is_openai()
+    }
     pub fn configured_bearer_token(&self) -> Option<&str> {
         self.experimental_bearer_token
             .as_deref()

@@ -327,32 +327,30 @@ impl GuardianReviewSessionManager {
         };
 
         if trunk.reuse_key != next_reuse_key {
-            return self
-                .run_ephemeral_review(
-                    params,
-                    next_reuse_key,
-                    deadline,
-                    /*fork_snapshot*/ None,
-                )
-                .await;
+            return Box::pin(self.run_ephemeral_review(
+                params,
+                next_reuse_key,
+                deadline,
+                /*fork_snapshot*/ None,
+            ))
+            .await;
         }
 
         let trunk_guard = match trunk.review_lock.try_lock() {
             Ok(trunk_guard) => trunk_guard,
             Err(_) => {
-                return self
-                    .run_ephemeral_review(
-                        params,
-                        next_reuse_key,
-                        deadline,
-                        trunk.fork_snapshot().await,
-                    )
-                    .await;
+                return Box::pin(self.run_ephemeral_review(
+                    params,
+                    next_reuse_key,
+                    deadline,
+                    trunk.fork_snapshot().await,
+                ))
+                .await;
             }
         };
 
         let (outcome, keep_review_session) =
-            run_review_on_session(trunk.as_ref(), &params, deadline).await;
+            Box::pin(run_review_on_session(trunk.as_ref(), &params, deadline)).await;
         if keep_review_session && matches!(outcome, GuardianReviewSessionOutcome::Completed(_)) {
             trunk.refresh_last_committed_fork_snapshot().await;
         }
@@ -488,7 +486,12 @@ impl GuardianReviewSessionManager {
         let mut cleanup =
             EphemeralReviewCleanup::new(Arc::clone(&self.state), Arc::clone(&review_session));
 
-        let (outcome, _) = run_review_on_session(review_session.as_ref(), &params, deadline).await;
+        let (outcome, _) = Box::pin(run_review_on_session(
+            review_session.as_ref(),
+            &params,
+            deadline,
+        ))
+        .await;
         if let Some(review_session) = self.take_active_ephemeral(&review_session).await {
             cleanup.disarm();
             review_session.shutdown_in_background();
@@ -512,7 +515,7 @@ async fn spawn_guardian_review_session(
         ),
         None => (None, 0, None),
     };
-    let codex = run_codex_thread_interactive(
+    let codex = Box::pin(run_codex_thread_interactive(
         spawn_config,
         params.parent_session.services.auth_manager.clone(),
         params.parent_session.services.models_manager.clone(),
@@ -521,7 +524,7 @@ async fn spawn_guardian_review_session(
         cancel_token.clone(),
         SubAgentSource::Other(GUARDIAN_REVIEWER_NAME.to_string()),
         initial_history,
-    )
+    ))
     .await?;
 
     Ok(GuardianReviewSession {
@@ -745,6 +748,7 @@ pub(crate) fn build_guardian_review_session_config(
     for feature in [
         Feature::SpawnCsv,
         Feature::Collab,
+        Feature::CodexHooks,
         Feature::WebSearchRequest,
         Feature::WebSearchCached,
     ] {
@@ -819,9 +823,9 @@ async fn interrupt_and_drain_turn(codex: &Codex) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn guardian_review_session_config_change_invalidates_cached_session() {
-        let parent_config = crate::config::test_config();
+    #[tokio::test]
+    async fn guardian_review_session_config_change_invalidates_cached_session() {
+        let parent_config = crate::config::test_config().await;
         let cached_spawn_config = build_guardian_review_session_config(
             &parent_config,
             /*live_network_config*/ None,
@@ -851,7 +855,26 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    #[tokio::test]
+    async fn guardian_review_session_config_disables_hooks() {
+        let mut parent_config = crate::config::test_config().await;
+        parent_config
+            .features
+            .enable(Feature::CodexHooks)
+            .expect("enable hooks on parent config");
+
+        let guardian_config = build_guardian_review_session_config(
+            &parent_config,
+            /*live_network_config*/ None,
+            "active-model",
+            /*reasoning_effort*/ None,
+        )
+        .expect("guardian config");
+
+        assert!(!guardian_config.features.enabled(Feature::CodexHooks));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
     async fn run_before_review_deadline_times_out_before_future_completes() {
         let outcome = run_before_review_deadline(
             tokio::time::Instant::now() + Duration::from_millis(10),
@@ -868,7 +891,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    #[tokio::test(flavor = "current_thread")]
     async fn run_before_review_deadline_aborts_when_cancelled() {
         let cancel_token = CancellationToken::new();
         let canceller = cancel_token.clone();
@@ -890,7 +913,7 @@ mod tests {
         ));
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    #[tokio::test(flavor = "current_thread")]
     async fn run_before_review_deadline_with_cancel_cancels_token_on_timeout() {
         let cancel_token = CancellationToken::new();
 
@@ -911,7 +934,7 @@ mod tests {
         assert!(cancel_token.is_cancelled());
     }
 
-    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    #[tokio::test(flavor = "current_thread")]
     async fn run_before_review_deadline_with_cancel_cancels_token_on_abort() {
         let external_cancel = CancellationToken::new();
         let external_canceller = external_cancel.clone();
