@@ -2,17 +2,24 @@
 
 - upstream_repo: https://github.com/openai/codex.git
 - upstream_branch: main
-- last_synced_sha: bc969b6516f2fb7a4817b665ab1507f4f4beedc2
-- last_synced_at_utc: 2026-04-16T09:30:00Z
+- last_synced_sha: bd61737e8
+- last_synced_at_utc: 2025-04-16T12:28:00Z
 - last_synced_base_branch: web
-- last_sync_commit: a7e3f8d6e
-- notes: 从 sync worktree 合并回 web。Cherry-pick 了 3 个上游 commit (7579d5ad7 memories API, 9402347f3 memories menu, bc969b651 dismiss stale requests)。保留本地 Buddy、memories、zmemory 和中文化。编译验证通过 (cargo check --workspace 0 errors)。
+- last_sync_commit: 401ce0855
+- notes: 完整合并上游 openai/main (bd61737e8) 到 web。包含 Async config loading (#18022)、memories API、memories menu、dismiss stale requests 功能。修复 30+ 文件编译错误，适配上游 API 变更。保留本地中文界面、同步 config loading、native-tldr 等分叉特性。
 - 本轮额外处理:
-  - 还原中文 README.md (上游覆盖)
-  - 还原中文 slash_command.rs (上游覆盖)
-  - 解决 memories_settings_view.rs 中 18 个合并冲突 (保留中文)
-  - 汉化 chatwidget.rs 新增上游消息 (计划/子代理/记忆相关 UI 常量)
-  - 汉化 history_cell.rs 新增上游消息 (审批/会话历史)
-  - 替换所有 openai/codex → sohaha/zcodex (install.sh, install.ps1, announcement_tip.toml, update_action.rs, codex-pr-body SKILL.md)
-  - 更新 update_prompt_modal 快照 URL
-  - 更新 session_header_indicates_yolo_mode 快照汉化
+  - URL 替换 openai/codex → sohaha/zcodex (install.sh, install.ps1, announcement_tip.toml, update_action.rs, codex-pr-body SKILL.md, TUI 快照)
+  - 保留本地中文 README.md 和 slash_command.rs
+  - 解决 memories_settings_view.rs 冲突（保留中文版）
+  - 汉化 chatwidget.rs/history_cell.rs 新增上游消息
+  - codex-core: 移除 UnavailableDummyTools、修复 MCP sandbox policy、resolve_mcp_tool_info
+  - codex-config: get_active_project 和 derive_sandbox_policy 改为同步（本地特性）
+  - codex-mcp: notify_sandbox_state_change → set_sandbox_policy
+  - codex-tui/exec/cli/app-server: 移除 codex-thread-store 依赖，使用本地 API
+  - codex-app-server: 移除 reset_memory_data_for_fresh_start、修复 Config::load_default_with_cli_overrides
+- 本地分叉保留:
+  - 中文界面完整汉化
+  - 同步配置加载（非 async）
+  - 本地 native-tldr（无 SearchMatchMode）
+  - 无 codex-thread-store（使用不同状态管理）
+  - 无 Buddy 功能
