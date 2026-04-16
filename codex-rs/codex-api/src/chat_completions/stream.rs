@@ -83,6 +83,12 @@ async fn process_sse(
                     let _ = state.complete(&tx_event).await;
                     return;
                 }
+                // Check for SSE error events before attempting to parse as ChatCompletionChunk
+                if let Some(error_response) = parse_sse_error(&event.data) {
+                    let _ = tx_event.send(Err(error_response)).await;
+                    return;
+                }
+
                 match serde_json::from_str::<ChatCompletionChunk>(&event.data) {
                     Ok(chunk) => {
                         if let Err(err) = state.process_chunk(chunk, &tx_event).await {
@@ -629,4 +635,35 @@ fn delta_content_text(content: Option<&Value>) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Parses SSE error events and returns an ApiError if the data contains an error object.
+/// Returns None if the data is not an error event.
+fn parse_sse_error(data: &str) -> Option<ApiError> {
+    let value: Value = serde_json::from_str(data).ok()?;
+    let error_obj = value.get("error")?;
+    let error_map = error_obj.as_object()?;
+
+    let code = error_map
+        .get("code")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let message = error_map
+        .get("message")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    // Check for server overloaded errors
+    if let Some(code_str) = code.as_deref() {
+        if matches!(
+            code_str,
+            "server_is_overloaded" | "slow_down" | "1305"
+        ) {
+            return Some(ApiError::ServerOverloaded);
+        }
+    }
+
+    // For other errors, return a generic stream error
+    let msg = message.unwrap_or_else(|| "SSE error event received".to_string());
+    Some(ApiError::Stream(msg))
 }
