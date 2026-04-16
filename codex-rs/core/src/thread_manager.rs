@@ -233,6 +233,12 @@ impl ThreadManager {
             .get(&config.model_provider_id)
             .cloned()
             .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
+
+        tracing::warn!(
+            "THREAD_MANAGER_DEBUG: provider_id={}, provider.model_catalog={:?}",
+            config.model_provider_id,
+            models_provider.model_catalog
+        );
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
             codex_home.to_path_buf(),
