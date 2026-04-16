@@ -535,10 +535,72 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
             models.len(),
             catalog_slugs
         );
-        models
-            .into_iter()
+        
+        // Try to find matching models in default list
+        let matching_models: Vec<_> = models
+            .iter()
             .filter(|model| catalog_slugs.contains(&model.slug))
-            .collect()
+            .cloned()
+            .collect();
+        
+        if !matching_models.is_empty() {
+            tracing::warn!("MODEL_CATALOG_DEBUG: Found {} matching models in default list", matching_models.len());
+            return matching_models;
+        }
+        
+        // If no matches, create models from catalog slugs
+        tracing::warn!("MODEL_CATALOG_DEBUG: No matches found, creating {} models from catalog slugs", catalog_slugs.len());
+        
+        // Use first model as template or create fallback
+        let template = models.first().cloned().unwrap_or_else(|| {
+            ModelInfo {
+                slug: String::from("fallback"),
+                display_name: String::from("Fallback Model"),
+                description: None,
+                default_reasoning_level: None,
+                supported_reasoning_levels: Vec::new(),
+                shell_type: codex_protocol::openai_models::ConfigShellToolType::Default,
+                visibility: codex_protocol::openai_models::ModelVisibility::None,
+                supported_in_api: true,
+                priority: 999,
+                additional_speed_tiers: Vec::new(),
+                availability_nux: None,
+                upgrade: None,
+                base_instructions: String::new(),
+                model_messages: None,
+                supports_reasoning_summaries: false,
+                default_reasoning_summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                support_verbosity: false,
+                default_verbosity: None,
+                apply_patch_tool_type: None,
+                web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
+                supports_search_tool: false,
+                truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(10000),
+                supports_parallel_tool_calls: false,
+                supports_image_detail_original: false,
+                context_window: None,
+                auto_compact_token_limit: None,
+                effective_context_window_percent: 90,
+                experimental_supported_tools: Vec::new(),
+                input_modalities: Vec::new(),
+                used_fallback_model_metadata: true,
+            }
+        });
+        
+        // Create models for each catalog slug
+        let custom_models: Vec<ModelInfo> = catalog_slugs
+            .iter()
+            .enumerate()
+            .map(|(i, slug)| {
+                let mut model = template.clone();
+                model.slug = slug.clone();
+                model.display_name = slug.clone();
+                model.priority = i as i32;
+                model
+            })
+            .collect();
+        
+        return custom_models;
     } else {
         models
     }
