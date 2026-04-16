@@ -70,9 +70,9 @@ fn format_unified_exec_interaction(command: &[String], input: Option<&str>) -> S
     match input {
         Some(data) if !data.is_empty() => {
             let preview = summarize_interaction_input(data);
-            format!("Interacted with `{command_display}`, sent `{preview}`")
+            format!("与 `{command_display}`，已发送 `{preview}`")
         }
-        _ => format!("Waited for `{command_display}`"),
+        _ => format!("等待 `{command_display}`"),
     }
 }
 
@@ -364,7 +364,7 @@ impl ExecCell {
 
     fn command_display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let [call] = &self.calls.as_slice() else {
-            panic!("Expected exactly one call in a command display cell");
+            panic!("命令显示单元格中预期恰好有一个调用");
         };
         let layout = EXEC_DISPLAY_LAYOUT;
         let success = call.output.as_ref().map(|o| o.exit_code == 0);

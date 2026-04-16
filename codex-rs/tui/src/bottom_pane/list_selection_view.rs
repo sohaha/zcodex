@@ -1046,15 +1046,15 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let items = vec![
             SelectionItem {
-                name: "Read Only".to_string(),
-                description: Some("Codex can read files".to_string()),
+                name: "只读".to_string(),
+                description: Some("Codex 可以读取文件".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "Full Access".to_string(),
-                description: Some("Codex can edit files".to_string()),
+                name: "完全访问".to_string(),
+                description: Some("Codex 可以编辑文件".to_string()),
                 is_current: false,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -1062,7 +1062,7 @@ mod tests {
         ];
         ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择审批模式".to_string()),
                 subtitle: subtitle.map(str::to_string),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1114,14 +1114,14 @@ mod tests {
     fn make_scrolling_width_items() -> Vec<SelectionItem> {
         let mut items: Vec<SelectionItem> = (1..=8)
             .map(|idx| SelectionItem {
-                name: format!("Item {idx}"),
+                name: format!("项目 {idx}"),
                 description: Some(format!("desc {idx}")),
                 dismiss_on_select: true,
                 ..Default::default()
             })
             .collect();
         items.push(SelectionItem {
-            name: "Item 9 with an intentionally much longer name".to_string(),
+            name: "项目 9 具有故意设置的更长名称".to_string(),
             description: Some("desc 9".to_string()),
             dismiss_on_select: true,
             ..Default::default()
@@ -1134,7 +1134,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: make_scrolling_width_items(),
                 col_width_mode,
                 ..Default::default()
@@ -1162,7 +1162,7 @@ mod tests {
 
     #[test]
     fn renders_blank_line_between_subtitle_and_items() {
-        let view = make_selection_view(Some("Switch between Codex approval presets"));
+        let view = make_selection_view(Some("在 Codex 审批预设之间切换"));
         assert_snapshot!("list_selection_spacing_with_subtitle", render_lines(&view));
     }
 
@@ -1203,7 +1203,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: vec![SelectionItem {
                     name: "Item 1".to_string(),
                     dismiss_on_select: true,
@@ -1245,20 +1245,20 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
-            description: Some("Codex can read files".to_string()),
+            name: "只读".to_string(),
+            description: Some("Codex 可以读取文件".to_string()),
             is_current: true,
             dismiss_on_select: true,
             ..Default::default()
         }];
         let footer_note = Line::from(vec![
-            "Note: ".dim(),
-            "Use /setup-default-sandbox".cyan(),
+            "注意： ".dim(),
+            "使用 /setup-default-sandbox".cyan(),
             " to allow network access.".dim(),
         ]);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择审批模式".to_string()),
                 footer_note: Some(footer_note),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1277,19 +1277,19 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
-            description: Some("Codex can read files".to_string()),
+            name: "只读".to_string(),
+            description: Some("Codex 可以读取文件".to_string()),
             is_current: false,
             dismiss_on_select: true,
             ..Default::default()
         }];
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择审批模式".to_string()),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
                 is_searchable: true,
-                search_placeholder: Some("Type to search branches".to_string()),
+                search_placeholder: Some("输入以搜索分支".to_string()),
                 ..Default::default()
             },
             tx,
@@ -1310,7 +1310,7 @@ mod tests {
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
-                    name: "Read Only".to_string(),
+                    name: "只读".to_string(),
                     dismiss_on_select: true,
                     ..Default::default()
                 }],
@@ -1465,7 +1465,7 @@ mod tests {
         let desc = "x".repeat(10);
         let items: Vec<SelectionItem> = (1..=3)
             .map(|idx| SelectionItem {
-                name: format!("Item {idx}"),
+                name: format!("项目 {idx}"),
                 description: Some(desc.clone()),
                 dismiss_on_select: true,
                 ..Default::default()
@@ -1473,7 +1473,7 @@ mod tests {
             .collect();
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1540,7 +1540,7 @@ mod tests {
         let desc = "x".repeat(10);
         let items: Vec<SelectionItem> = (1..=3)
             .map(|idx| SelectionItem {
-                name: format!("Item {idx}"),
+                name: format!("项目 {idx}"),
                 description: Some(desc.clone()),
                 dismiss_on_select: true,
                 ..Default::default()
@@ -1548,7 +1548,7 @@ mod tests {
             .collect();
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1591,7 +1591,7 @@ mod tests {
 
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: make_scrolling_width_items(),
                 col_width_mode: ColumnWidthMode::AutoAllRows,
                 ..Default::default()
@@ -1606,7 +1606,7 @@ mod tests {
         let after_scroll = render_lines_with_width(&view, /*width*/ 96);
 
         assert!(
-            after_scroll.contains("9. Item 9 with an intentionally much longer name"),
+            after_scroll.contains("9. 项目 9 具有故意设置的更长名称"),
             "expected the scrolled view to include the longer row:\n{after_scroll}"
         );
 
@@ -1625,7 +1625,7 @@ mod tests {
         let width = 96;
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: make_scrolling_width_items(),
                 col_width_mode: ColumnWidthMode::Fixed,
                 ..Default::default()
@@ -1710,7 +1710,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: vec![SelectionItem {
                     name: "Item 1".to_string(),
                     dismiss_on_select: true,
@@ -1748,7 +1748,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: vec![SelectionItem {
                     name: "Item 1".to_string(),
                     dismiss_on_select: true,
@@ -1807,7 +1807,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Debug".to_string()),
+                title: Some("调试".to_string()),
                 items: vec![SelectionItem {
                     name: "Item 1".to_string(),
                     dismiss_on_select: true,

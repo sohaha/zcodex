@@ -1116,12 +1116,12 @@ async fn thread_session_state_from_thread_response(
     config: &Config,
 ) -> Result<ThreadSessionState, String> {
     let thread_id = ThreadId::from_string(thread_id)
-        .map_err(|err| format!("thread id `{thread_id}` is invalid: {err}"))?;
+        .map_err(|err| format!("线程 ID `{thread_id}` 无效： {err}"))?;
     let forked_from_id = forked_from_id
         .as_deref()
         .map(ThreadId::from_string)
         .transpose()
-        .map_err(|err| format!("forked_from_id is invalid: {err}"))?;
+        .map_err(|err| format!("forked_from_id 无效： {err}"))?;
     let (history_log_id, history_entry_count) = message_history_metadata(config).await;
     let history_entry_count = u64::try_from(history_entry_count).unwrap_or(u64::MAX);
 

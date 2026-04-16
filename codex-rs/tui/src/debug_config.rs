@@ -79,7 +79,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
             lines.push(format!("  {}. {source} ({status})", index + 1).into());
             lines.extend(render_non_file_layer_details(layer));
             if let Some(reason) = &layer.disabled_reason {
-                lines.push(format!("     reason: {reason}").dim().into());
+                lines.push(format!("     原因： {reason}").dim().into());
             }
         }
     }
@@ -240,15 +240,15 @@ fn render_mdm_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
         .map(ToString::to_string)
         .unwrap_or_else(|| format_toml_value(&layer.config));
     if value.is_empty() {
-        return vec!["     MDM value: <empty>".dim().into()];
+        return vec!["     MDM 值： <empty>".dim().into()];
     }
 
     if value.contains('\n') {
-        let mut lines = vec!["     MDM value:".into()];
+        let mut lines = vec!["     MDM 值：".into()];
         lines.extend(value.lines().map(|line| format!("       {line}").into()));
         lines
     } else {
-        vec![format!("     MDM value: {value}").into()]
+        vec![format!("     MDM 值： {value}").into()]
     }
 }
 
@@ -289,7 +289,7 @@ fn requirement_line(
     let source = source
         .map(ToString::to_string)
         .unwrap_or_else(|| "<unspecified>".to_string());
-    format!("  - {name}: {value} (source: {source})").into()
+    format!("  - {name}: {value} (来源: {source})").into()
 }
 
 fn join_or_empty(values: Vec<String>) -> String {
@@ -320,10 +320,10 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
             format!("MDM ({domain}:{key})")
         }
         ConfigLayerSource::System { file } => {
-            format!("system ({})", file.as_path().display())
+            format!("系统 ({})", file.as_path().display())
         }
         ConfigLayerSource::User { file } => {
-            format!("user ({})", file.as_path().display())
+            format!("用户 ({})", file.as_path().display())
         }
         ConfigLayerSource::ZConfig { file } => {
             format!("zconfig ({})", file.as_path().display())
@@ -336,10 +336,10 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
         }
         ConfigLayerSource::SessionFlags => "session-flags".to_string(),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!("legacy managed_config.toml ({})", file.as_path().display())
+            format!("旧版 managed_config.toml ({})", file.as_path().display())
         }
         ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "legacy managed_config.toml (MDM)".to_string()
+            "旧版 managed_config.toml (MDM)".to_string()
         }
     }
 }
@@ -541,7 +541,7 @@ mod tests {
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(rendered.contains("(enabled)"));
         assert!(rendered.contains("(disabled)"));
-        assert!(rendered.contains("reason: project is untrusted"));
+        assert!(rendered.contains("原因： project is untrusted"));
         assert!(rendered.contains("Requirements:"));
         assert!(rendered.contains("  <none>"));
     }
@@ -650,30 +650,29 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_approval_policies: on-request (source: cloud requirements)")
+            rendered.contains("allowed_approval_policies: on-request (来源: cloud requirements)")
         );
         assert!(rendered.contains(
-            "allowed_approvals_reviewers: guardian_subagent (source: MDM managed_config.toml (legacy))"
+            "allowed_approvals_reviewers: guardian_subagent (来源: MDM managed_config.toml (legacy))"
         ));
         assert!(
             rendered.contains(
                 format!(
-                    "allowed_sandbox_modes: read-only (source: {})",
+                    "allowed_sandbox_modes: read-only (来源: {})",
                     requirements_file.as_path().display()
                 )
                 .as_str(),
             )
         );
         assert!(
-            rendered.contains(
-                "allowed_web_search_modes: cached, disabled (source: cloud requirements)"
-            )
+            rendered
+                .contains("allowed_web_search_modes: cached, disabled (来源: cloud requirements)")
         );
-        assert!(rendered.contains("features: guardian_approval=true (source: cloud requirements)"));
-        assert!(rendered.contains("mcp_servers: docs (source: MDM managed_config.toml (legacy))"));
-        assert!(rendered.contains("enforce_residency: us (source: cloud requirements)"));
+        assert!(rendered.contains("features: guardian_approval=true (来源: cloud requirements)"));
+        assert!(rendered.contains("mcp_servers: docs (来源: MDM managed_config.toml (legacy))"));
+        assert!(rendered.contains("enforce_residency: us (来源: cloud requirements)"));
         assert!(rendered.contains(
-            "experimental_network: enabled=true, domains={example.com=allow} (source: cloud requirements)"
+            "experimental_network: enabled=true, domains={example.com=allow} (来源: cloud requirements)"
         ));
         assert!(!rendered.contains("  - rules:"));
     }
@@ -696,7 +695,7 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(rendered.contains(
-            "allowed_approvals_reviewers: guardian_subagent (source: MDM managed_config.toml (legacy))"
+            "allowed_approvals_reviewers: guardian_subagent (来源: MDM managed_config.toml (legacy))"
         ));
         assert!(!rendered.contains("Requirements:\n  <none>"));
     }
@@ -731,7 +730,7 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(rendered.contains(
-            "experimental_network: unix_sockets={/tmp/blocked.sock=none, /tmp/codex.sock=allow} (source: cloud requirements)"
+            "experimental_network: unix_sockets={/tmp/blocked.sock=none, /tmp/codex.sock=allow} (来源: cloud requirements)"
         ));
     }
 
@@ -786,8 +785,8 @@ approval_policy = "never"
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("legacy managed_config.toml (MDM) (enabled)"));
-        assert!(rendered.contains("MDM value:"));
+        assert!(rendered.contains("旧版 managed_config.toml (MDM) (enabled)"));
+        assert!(rendered.contains("MDM 值："));
         assert!(rendered.contains("# managed by MDM"));
         assert!(rendered.contains("model = \"managed_model\""));
         assert!(rendered.contains("approval_policy = \"never\""));
@@ -822,7 +821,7 @@ approval_policy = "never"
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_web_search_modes: disabled (source: cloud requirements)")
+            rendered.contains("allowed_web_search_modes: disabled (来源: cloud requirements)")
         );
     }
 

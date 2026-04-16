@@ -2186,7 +2186,7 @@ impl Config {
             .collect();
         let active_project = cfg
             .get_active_project(resolved_cwd.as_path())
-            
+
             .unwrap_or(ProjectConfig { trust_level: None });
         let permission_config_syntax = resolve_permission_config_syntax(
             &config_layer_stack,

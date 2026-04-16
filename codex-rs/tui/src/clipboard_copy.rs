@@ -91,8 +91,8 @@ fn copy_to_clipboard_with(
         // useless. Use OSC 52, which travels through the SSH tunnel to the
         // local terminal emulator.
         return osc52_copy_fn(text).map(|()| None).map_err(|osc_err| {
-            tracing::warn!("OSC 52 clipboard copy failed over SSH: {osc_err}");
-            format!("OSC 52 clipboard copy failed over SSH: {osc_err}")
+            tracing::warn!("通过 SSH 复制到剪贴板失败: {osc_err}");
+            format!("通过 SSH 复制到剪贴板失败: {osc_err}")
         });
     }
 
@@ -111,7 +111,7 @@ fn copy_to_clipboard_with(
                         );
                         return osc52_copy_fn(text).map(|()| None).map_err(|osc_err| {
                             format!(
-                                "native clipboard: {native_err}; WSL fallback: {wsl_err}; OSC 52 fallback: {osc_err}"
+                                "本地剪贴板： {native_err}; WSL fallback: {wsl_err}; OSC 52 备用方案： {osc_err}"
                             )
                         });
                     }
@@ -119,7 +119,7 @@ fn copy_to_clipboard_with(
             }
             tracing::warn!("native clipboard copy failed: {native_err}, falling back to OSC 52");
             osc52_copy_fn(text).map(|()| None).map_err(|osc_err| {
-                format!("native clipboard: {native_err}; OSC 52 fallback: {osc_err}")
+                format!("本地剪贴板： {native_err}; OSC 52 备用方案： {osc_err}")
             })
         }
     }
@@ -154,11 +154,10 @@ fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
         .lock()
         .map_err(|_| "stderr suppression lock poisoned".to_string())?;
     let _guard = SuppressStderr::new();
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("clipboard unavailable: {e}"))?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用： {e}"))?;
     clipboard
         .set_text(text)
-        .map_err(|e| format!("failed to set clipboard text: {e}"))?;
+        .map_err(|e| format!("设置剪贴板文本失败： {e}"))?;
     Ok(None)
 }
 
@@ -170,11 +169,10 @@ fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
 #[cfg(target_os = "linux")]
 fn arboard_copy(text: &str) -> Result<Option<ClipboardLease>, String> {
     let _guard = SuppressStderr::new();
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("clipboard unavailable: {e}"))?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("剪贴板不可用： {e}"))?;
     clipboard
         .set_text(text)
-        .map_err(|e| format!("failed to set clipboard text: {e}"))?;
+        .map_err(|e| format!("设置剪贴板文本失败： {e}"))?;
     Ok(Some(ClipboardLease::native_linux(clipboard)))
 }
 
@@ -196,7 +194,7 @@ fn wsl_clipboard_copy(text: &str) -> Result<(), String> {
             "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; $text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text",
         ])
         .spawn()
-        .map_err(|e| format!("failed to spawn powershell.exe: {e}"))?;
+        .map_err(|e| format!("无法启动 powershell.exe： {e}"))?;
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
@@ -207,14 +205,14 @@ fn wsl_clipboard_copy(text: &str) -> Result<(), String> {
     if let Err(err) = stdin.write_all(text.as_bytes()) {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!("failed to write to powershell.exe: {err}"));
+        return Err(format!("写入 powershell.exe 失败： {err}"));
     }
 
     drop(stdin);
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("failed to wait for powershell.exe: {e}"))?;
+        .map_err(|e| format!("等待 powershell.exe 失败： {e}"))?;
 
     if output.status.success() {
         Ok(())
@@ -222,9 +220,9 @@ fn wsl_clipboard_copy(text: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
             let status = output.status;
-            Err(format!("powershell.exe exited with status {status}"))
+            Err(format!("powershell.exe 退出状态为 {status}"))
         } else {
-            Err(format!("powershell.exe failed: {stderr}"))
+            Err(format!("powershell.exe 失败: {stderr}"))
         }
     }
 }
@@ -315,10 +313,10 @@ fn osc52_copy(text: &str) -> Result<(), String> {
 fn write_osc52_to_writer(mut writer: impl Write, sequence: &str) -> Result<(), String> {
     writer
         .write_all(sequence.as_bytes())
-        .map_err(|e| format!("failed to write OSC 52: {e}"))?;
+        .map_err(|e| format!("写入 OSC 52 失败： {e}"))?;
     writer
         .flush()
-        .map_err(|e| format!("failed to flush OSC 52: {e}"))
+        .map_err(|e| format!("刷新 OSC 52 失败： {e}"))
 }
 
 fn osc52_sequence(text: &str, tmux: bool) -> Result<String, String> {
@@ -444,7 +442,7 @@ mod tests {
         let Err(error) = result else {
             panic!("expected OSC 52 error");
         };
-        assert_eq!(error, "OSC 52 clipboard copy failed over SSH: blocked");
+        assert_eq!(error, "通过 SSH 复制到剪贴板失败: blocked");
         assert_eq!(osc_calls.get(), 1);
         assert_eq!(native_calls.get(), 0);
         assert_eq!(wsl_calls.get(), 0);
@@ -594,7 +592,7 @@ mod tests {
         };
         assert_eq!(
             error,
-            "native clipboard: native unavailable; OSC 52 fallback: osc blocked"
+            "本地剪贴板： native unavailable; OSC 52 备用方案： osc blocked"
         );
         assert_eq!(osc_calls.get(), 1);
         assert_eq!(native_calls.get(), 1);
@@ -629,7 +627,7 @@ mod tests {
         };
         assert_eq!(
             error,
-            "native clipboard: native unavailable; WSL fallback: powershell unavailable; OSC 52 fallback: osc blocked"
+            "本地剪贴板： native unavailable; WSL fallback: powershell unavailable; OSC 52 备用方案： osc blocked"
         );
         assert_eq!(osc_calls.get(), 1);
         assert_eq!(native_calls.get(), 1);
