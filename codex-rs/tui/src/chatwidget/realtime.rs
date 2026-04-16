@@ -340,7 +340,7 @@ impl ChatWidget {
             RealtimeEvent::ConversationItemDone { .. } => {}
             RealtimeEvent::HandoffRequested(_) => {}
             RealtimeEvent::Error(message) => {
-                self.fail_realtime_conversation(format!("Realtime voice error: {message}"));
+                self.fail_realtime_conversation(format!("实时语音错误： {message}"));
             }
         }
     }
@@ -360,10 +360,7 @@ impl ChatWidget {
             && let Some(reason) = reason
             && reason != "error"
         {
-            self.add_info_message(
-                format!("Realtime voice mode closed: {reason}"),
-                /*hint*/ None,
-            );
+            self.add_info_message(format!("实时语音模式已关闭： {reason}"), /*hint*/ None);
         }
         self.request_redraw();
     }

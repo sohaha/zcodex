@@ -2713,7 +2713,7 @@ impl HistoryCell for FinalMessageSeparator {
             .filter(|seconds| *seconds > 60)
             .map(super::status_indicator_widget::fmt_elapsed_compact)
         {
-            label_parts.push(format!("Worked for {elapsed_seconds}"));
+            label_parts.push(format!("工作了 {elapsed_seconds}"));
         }
         if let Some(metrics_label) = self.runtime_metrics.and_then(runtime_metrics_label) {
             label_parts.push(metrics_label);
@@ -4630,7 +4630,7 @@ mod tests {
                 "Investigate failures under {note_url} immediately."
             )),
             plan: vec![PlanItemArg {
-                step: format!("Validate callbacks under {step_url} before rollout."),
+                step: format!("在推出之前验证 {step_url} 下的回调。"),
                 status: StepStatus::InProgress,
             }],
         };
