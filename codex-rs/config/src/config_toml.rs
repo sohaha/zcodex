@@ -266,11 +266,6 @@ pub struct ConfigToml {
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
     pub model_catalog_json: Option<AbsolutePathBuf>,
 
-    #[serde(default)]
-    /// Optional list of model slugs to restrict available models.
-    /// When set, only these models will be shown in the model picker.
-    pub model_catalog: Option<Vec<String>>,
-
     /// Optionally specify a personality for the model
     pub personality: Option<Personality>,
     /// Optional explicit service tier preference for new turns (`fast` or `flex`).

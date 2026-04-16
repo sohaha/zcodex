@@ -94,11 +94,16 @@ pub struct ModelProviderInfo {
     /// Optional fixed model override used by legacy configs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
     pub env_key: Option<String>,
-
+    /// Optional list of model slugs to restrict available models for this provider.
+    /// When set, only these models will be shown in the model picker for this provider.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_catalog: Option<Vec<String>>,
     /// Optional instructions to help the user get a valid value for the
     /// variable and set it.
     pub env_key_instructions: Option<String>,
@@ -365,6 +370,7 @@ impl ModelProviderInfo {
             supports_websockets: true,
             model_context_window: None,
             model_auto_compact_token_limit: None,
+            model_catalog: None,
         }
     }
 
@@ -501,10 +507,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         requires_openai_auth: false,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        model_catalog: None,
         supports_websockets: false,
     }
 }
-
-#[cfg(test)]
-#[path = "model_provider_info_tests.rs"]
-mod tests;

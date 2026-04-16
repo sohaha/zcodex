@@ -565,6 +565,10 @@ impl ModelsManager {
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
+        // Filter models by provider-specific model_catalog if configured
+        if let Some(ref catalog_slugs) = self.provider.model_catalog {
+            presets.retain(|preset| catalog_slugs.contains(&preset.model));
+        }
         let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));
         presets = ModelPreset::filter_by_auth(presets, chatgpt_mode);
 
@@ -572,7 +576,6 @@ impl ModelsManager {
 
         presets
     }
-
     async fn get_remote_models(&self) -> Vec<ModelInfo> {
         self.remote_models.read().await.clone()
     }

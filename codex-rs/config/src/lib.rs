@@ -1,6 +1,7 @@
 mod cloud_requirements;
 mod config_requirements;
 pub mod config_toml;
+pub use config_toml::ConfigToml;
 mod constraint;
 mod diagnostics;
 mod fingerprint;
