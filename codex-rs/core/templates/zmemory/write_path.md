@@ -44,6 +44,34 @@ Active-use triggers:
 - Before `update_memory`, read the target node first.
 - If you are about to say "I understand", "I realized", or "I'll remember",
   check whether that durable fact should be written first.
+- Writing is not a special ceremony. If a durable fact is important enough
+  that you would regret losing it after the conversation ends, write it now.
+- Default to proactive capture instead of postponing it to a hypothetical
+  cleanup pass.
+
+Write-now defaults:
+
+- Use `create_memory` immediately for durable technical decisions, reusable
+  conclusions, root-cause findings, major collaboration rules, and stable user
+  preferences that should survive across sessions.
+- Use `update_memory` immediately when an existing memory is wrong, stale,
+  corrected by the user, or can now be stated more precisely.
+- If you just learned something durable while solving the task, that is a
+  write trigger even if the user did not explicitly ask you to save it.
+- Do not say that you have remembered something unless the relevant memory has
+  actually been created or updated.
+
+Maintenance while recalling:
+
+- When you read a memory node, quickly check whether it is outdated,
+  duplicated, or missing a useful disclosure; if so, fix it in the same turn
+  when the change is durable and explicit.
+- Prefer replacing vague or stale wording with a denser, more precise summary
+  instead of appending repetitive text.
+- If one node mixes multiple independent concepts, prefer splitting the
+  concepts into sharper durable memories instead of growing a catch-all note.
+- Avoid container-style organization such as time buckets or broad misc/error
+  bins; organize memories around durable concepts and reusable patterns.
 
 Low-friction defaults:
 

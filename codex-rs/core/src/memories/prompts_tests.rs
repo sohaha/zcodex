@@ -100,6 +100,15 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("`system://workspace.bootRoles`"));
     assert!(instructions.contains("`system://workspace.unassignedUris`"));
     assert!(instructions.contains("Default to silent recall"));
+    assert!(instructions.contains("Write-now defaults:"));
+    assert!(instructions.contains("If a durable fact is important enough"));
+    assert!(instructions.contains("Default to proactive capture"));
+    assert!(instructions.contains("Use `create_memory` immediately"));
+    assert!(instructions.contains("Use `update_memory` immediately"));
+    assert!(instructions.contains("Do not say that you have remembered something"));
+    assert!(instructions.contains("Maintenance while recalling:"));
+    assert!(instructions.contains("When you read a memory node"));
+    assert!(instructions.contains("Avoid container-style organization"));
     assert!(instructions.contains("`missingUris`"));
     assert!(instructions.contains("`presentUris`"));
     assert!(instructions.contains("`bootHealthy`"));

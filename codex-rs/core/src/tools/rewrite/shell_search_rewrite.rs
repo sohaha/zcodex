@@ -371,6 +371,18 @@ mod tests {
     }
 
     #[test]
+    fn generic_symbol_queries_stay_on_shell_exact_text_path() {
+        let interception = maybe_intercept_shell_search(
+            "rg createOrAttach src",
+            "ztok grep createOrAttach src",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives::default(),
+        );
+
+        assert_eq!(interception.is_some(), false);
+    }
+
+    #[test]
     fn factual_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg default_timeout src",

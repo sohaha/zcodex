@@ -1386,7 +1386,7 @@ where
         "source": source,
         "message": message,
         "pattern": pattern,
-        "matchMode": match_mode.as_str(),
+        "matchMode": response.match_mode.as_str(),
         "search": response,
     });
     let text = format!("search via {source}: {} matches", response.matches.len());
@@ -1868,6 +1868,7 @@ mod tests {
     use super::action_name;
     use super::query_daemon_with_hooks_detailed;
     use super::run_tldr_tool_with_hooks;
+    use crate::api::SearchMatchMode;
     use crate::daemon::DegradedMode;
     use crate::daemon::DegradedModeKind;
     use crate::daemon::StructuredFailure;
@@ -2143,9 +2144,11 @@ mod tests {
         .await
         .expect_err("invalid regex should fail");
 
-        assert!(error
-            .to_string()
-            .contains("invalid regex pattern `resolveProjectAvatar(`"));
+        assert!(
+            error
+                .to_string()
+                .contains("invalid regex pattern `resolveProjectAvatar(`")
+        );
     }
 
     #[tokio::test]

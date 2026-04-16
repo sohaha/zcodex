@@ -896,7 +896,7 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
         "source": source,
         "message": message,
         "pattern": cmd.pattern,
-        "matchMode": match_mode.as_str(),
+        "matchMode": response.match_mode.as_str(),
         "search": response,
     });
     if cmd.json {
@@ -2786,14 +2786,9 @@ mod parse_tests {
 
     #[test]
     fn search_command_parses_regex_match_mode() {
-        let cli = TldrCli::try_parse_from([
-            "codex",
-            "search",
-            "--match-mode",
-            "regex",
-            "log(in|out)",
-        ])
-        .expect("search args should parse");
+        let cli =
+            TldrCli::try_parse_from(["codex", "search", "--match-mode", "regex", "log(in|out)"])
+                .expect("search args should parse");
 
         let TldrSubcommand::Search(command) = cli.subcommand else {
             panic!("expected search subcommand");

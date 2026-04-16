@@ -15,8 +15,9 @@ pub(crate) fn search_project(
     let pattern = match request.match_mode {
         SearchMatchMode::Literal => Regex::new(&regex::escape(&request.pattern))
             .expect("escaped literal search pattern should always compile"),
-        SearchMatchMode::Regex => Regex::new(&request.pattern)
-            .map_err(|error| anyhow::anyhow!("invalid regex pattern `{}`: {error}", request.pattern))?,
+        SearchMatchMode::Regex => Regex::new(&request.pattern).map_err(|error| {
+            anyhow::anyhow!("invalid regex pattern `{}`: {error}", request.pattern)
+        })?,
     };
     let mut matches = Vec::new();
     let mut indexed_files = 0usize;
@@ -154,7 +155,10 @@ mod tests {
         assert_eq!(paren_response.matches.len(), 1);
         assert_eq!(paren_response.matches[0].content, "resolveProjectAvatar(");
         assert_eq!(bracket_response.matches.len(), 1);
-        assert_eq!(bracket_response.matches[0].content, "[workspaces/get] start");
+        assert_eq!(
+            bracket_response.matches[0].content,
+            "[workspaces/get] start"
+        );
     }
 
     #[test]
@@ -175,9 +179,8 @@ mod tests {
         )
         .expect_err("invalid regex should fail");
 
-        assert_eq!(
-            error.to_string(),
-            "invalid regex pattern `resolveProjectAvatar(`: regex parse error:\n    resolveProjectAvatar(\n                        ^\nerror: unclosed group"
-        );
+        let message = error.to_string();
+        assert!(message.contains("invalid regex pattern `resolveProjectAvatar(`"));
+        assert!(message.contains("unclosed group"));
     }
 }

@@ -96,6 +96,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         language: Some(language),
         symbol,
         query,
+        match_mode: None,
         module: None,
         path: None,
         line: None,
@@ -262,6 +263,32 @@ mod tests {
             panic!("expected passthrough");
         };
         assert_eq!(reason, "raw_pattern_regex");
+        assert_eq!(passthrough.tool_name, call.tool_name);
+    }
+
+    #[tokio::test]
+    async fn keeps_generic_symbol_grep_queries_on_exact_text_path() {
+        let (_, turn) = make_session_and_context().await;
+        let call = grep_tool_call("call-generic", "createOrAttach", Some("*.rs"));
+
+        let decision = rewrite_grep_files_to_tldr(
+            &turn,
+            call.clone(),
+            ToolRoutingDirectives::default(),
+            AutoTldrRoutingMode::Safe,
+        )
+        .await;
+
+        assert_eq!(decision.signal(), None);
+        let ToolRewriteDecision::Passthrough {
+            call: passthrough,
+            reason,
+            ..
+        } = decision
+        else {
+            panic!("expected passthrough");
+        };
+        assert_eq!(reason, "generic_symbol_exact_text");
         assert_eq!(passthrough.tool_name, call.tool_name);
     }
 

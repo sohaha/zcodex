@@ -207,6 +207,7 @@ async fn try_issue_first_structural_warm_with_hooks<Q, E>(
         language: args.language,
         symbol: None,
         query: None,
+        match_mode: None,
         module: None,
         path: None,
         line: None,

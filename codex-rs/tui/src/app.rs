@@ -428,7 +428,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
     let error_count = errors.len();
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         crate::history_cell::new_warning_event(format!(
-            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
+            "由于 SKILL.md 文件无效，跳过了加载 {error_count} 个技能。"
         )),
     )));
 
@@ -436,7 +436,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
         let path = error.path.display();
         let message = error.message.as_str();
         app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            crate::history_cell::new_warning_event(format!("{path}: {message}")),
+            crate::history_cell::new_warning_event(format!("{path}：{message}")),
         )));
     }
 }
@@ -460,7 +460,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
                 .disabled_reason
                 .as_ref()
                 .map(ToString::to_string)
-                .unwrap_or_else(|| "config.toml is disabled.".to_string()),
+                .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
         ));
     }
 
@@ -469,7 +469,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
     }
 
     let mut message = concat!(
-        "Project config.toml files are disabled in the following folders. ",
+        "以下文件夹中的项目 config.toml 文件已被禁用。 ",
         "Settings in those files are ignored, but skills and exec policies still load.\n",
     )
     .to_string();

@@ -66,6 +66,9 @@ pub(crate) fn classify_search_route(
     if pattern.is_empty() {
         return Err("unknown_passthrough");
     }
+    if !directives.force_tldr && should_passthrough_generic_symbol(pattern) {
+        return Err("generic_symbol_exact_text");
+    }
 
     let Some(signal) = classify_search_signal(pattern) else {
         return Err("raw_pattern_regex");
@@ -210,6 +213,15 @@ fn classify_search_signal(pattern: &str) -> Option<SearchSignal> {
     }
 }
 
+fn should_passthrough_generic_symbol(pattern: &str) -> bool {
+    let Some(symbol) = context_symbol_candidate(pattern) else {
+        return false;
+    };
+    !has_symbol_wrapper(pattern)
+        && !symbol.contains(['.', '#', ':'])
+        && looks_like_generic_symbol(symbol)
+}
+
 fn is_context_signal(signal: SearchSignal) -> bool {
     matches!(
         signal,
@@ -281,6 +293,96 @@ fn looks_like_symbol(pattern: &str) -> bool {
     chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':' | '.' | '#'))
 }
 
+fn looks_like_generic_symbol(pattern: &str) -> bool {
+    const GENERIC_SYMBOL_TOKENS: &[&str] = &[
+        "add",
+        "and",
+        "apply",
+        "attach",
+        "build",
+        "by",
+        "check",
+        "clear",
+        "close",
+        "connect",
+        "convert",
+        "create",
+        "delete",
+        "detach",
+        "disconnect",
+        "execute",
+        "fetch",
+        "find",
+        "for",
+        "from",
+        "get",
+        "handle",
+        "init",
+        "insert",
+        "list",
+        "load",
+        "make",
+        "merge",
+        "mount",
+        "off",
+        "on",
+        "open",
+        "or",
+        "parse",
+        "read",
+        "remove",
+        "render",
+        "reset",
+        "resolve",
+        "run",
+        "save",
+        "send",
+        "set",
+        "start",
+        "stop",
+        "sync",
+        "to",
+        "unmount",
+        "update",
+        "use",
+        "with",
+        "write",
+    ];
+
+    let tokens = split_symbol_tokens(pattern);
+    !tokens.is_empty()
+        && tokens
+            .iter()
+            .all(|token| GENERIC_SYMBOL_TOKENS.contains(&token.as_str()))
+}
+
+fn split_symbol_tokens(pattern: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut prev_is_lower_or_digit = false;
+
+    for ch in pattern.chars() {
+        if matches!(ch, '_' | ':' | '.' | '#') {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            prev_is_lower_or_digit = false;
+            continue;
+        }
+        if ch.is_ascii_uppercase() && prev_is_lower_or_digit && !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+        current.push(ch.to_ascii_lowercase());
+        prev_is_lower_or_digit = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::SearchRoute;
@@ -309,6 +411,31 @@ mod tests {
         let classification =
             classify_search_route("create_tldr_tool", &ToolRoutingDirectives::default())
                 .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.signal, SearchSignal::BareSymbol);
+    }
+
+    #[test]
+    fn search_route_keeps_generic_symbol_queries_on_exact_text_path() {
+        let reason = classify_search_route("createOrAttach", &ToolRoutingDirectives::default())
+            .expect_err("generic symbol should passthrough");
+        assert_eq!(reason, "generic_symbol_exact_text");
+        assert_eq!(
+            context_symbol("createOrAttach"),
+            Some("createOrAttach".to_string())
+        );
+    }
+
+    #[test]
+    fn search_route_respects_force_tldr_for_generic_symbols() {
+        let classification = classify_search_route(
+            "createOrAttach",
+            &ToolRoutingDirectives {
+                force_tldr: true,
+                ..Default::default()
+            },
+        )
+        .expect("forced generic symbol should classify");
         assert_eq!(classification.route, SearchRoute::ContextSymbol);
         assert_eq!(classification.signal, SearchSignal::BareSymbol);
     }

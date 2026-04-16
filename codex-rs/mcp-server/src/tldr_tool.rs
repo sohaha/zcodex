@@ -2006,7 +2006,10 @@ mod tests {
             text["structuredContent"]["structuredFailure"]["retry_hint"],
             "use matchMode=literal for exact text, or escape regex metacharacters like (, [, and {"
         );
-        assert_eq!(text["structuredContent"]["degradedMode"], serde_json::Value::Null);
+        assert_eq!(
+            text["structuredContent"]["degradedMode"],
+            serde_json::Value::Null
+        );
     }
 
     #[cfg(unix)]
