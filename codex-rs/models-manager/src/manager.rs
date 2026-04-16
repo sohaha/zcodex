@@ -517,33 +517,43 @@ impl ModelsManager {
                 existing_models[existing_index] = model;
             } else {
                 existing_models.push(model);
-            }
         }
-        *self.remote_models.write().await = existing_models;
     }
+    *self.remote_models.write().await = existing_models;
 
 fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+    // If user configured a custom model_catalog, create model info directly from those slugs
+    if let Some(ref catalog_slugs) = provider.model_catalog {
+        tracing::warn!(
+            "MODEL_CATALOG_DEBUG: Creating {} models from custom catalog: {:?}",
+            catalog_slugs.len(),
+            catalog_slugs
+        );
+        return catalog_slugs
+            .iter()
+            .enumerate()
+            .map(|(i, slug)| ModelInfo {
+                slug: slug.clone(),
+                display_name: slug.clone(),
+                description: format!("Custom model {}", slug),
+                priority: i as i32,
+                default_reasoning_effort: None,
+                supports_tool_use: true,
+                supports_search_tool: true,
+                used_fallback_model_metadata: true,
+            })
+            .collect();
+    }
+    
+    // Otherwise, load default models based on wire_api
     let models = match provider.wire_api {
         WireApi::Anthropic => model_info::anthropic_model_catalog(),
         _ => Self::load_remote_models_from_file().unwrap_or_default(),
     };
     
-    // Apply model_catalog filtering for all wire_api types
-    if let Some(ref catalog_slugs) = provider.model_catalog {
-        tracing::warn!(
-            "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
-            models.len(),
-            catalog_slugs
-        );
-        models
-            .into_iter()
-            .filter(|model| catalog_slugs.contains(&model.slug))
-            .collect()
-    } else {
-        models
-    }
-}
+    models
 
+}
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
         Ok(crate::bundled_models_response()?.models)
     }
