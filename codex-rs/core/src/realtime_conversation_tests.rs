@@ -1,11 +1,8 @@
 use super::RealtimeHandoffState;
 use super::RealtimeSessionKind;
-use super::realtime_api_key;
 use super::realtime_text_from_handoff_request;
-use crate::ModelProviderInfo;
-use crate::WireApi;
+use super::wrap_realtime_delegation_input;
 use async_channel::bounded;
-use codex_login::CodexAuth;
 use codex_protocol::protocol::RealtimeHandoffRequested;
 use codex_protocol::protocol::RealtimeTranscriptEntry;
 use pretty_assertions::assert_eq;
@@ -59,84 +56,19 @@ fn ignores_empty_handoff_request_input_transcript() {
 }
 
 #[test]
-fn realtime_api_key_ignores_empty_configured_bearer_token() {
-    let provider = ModelProviderInfo {
-        name: "OpenAI compatible".to_string(),
-        model: None,
-        base_url: Some("https://example.com/v1".to_string()),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: Some(String::new()),
-        auth: None,
-        wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        retry_base_delay_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
-    };
-
-    let api_key = realtime_api_key(Some(&CodexAuth::from_api_key("auth-json-key")), &provider)
-        .expect("realtime api key should fall back to auth");
-    assert_eq!(api_key, "auth-json-key");
+fn wraps_realtime_delegation_input() {
+    assert_eq!(
+        wrap_realtime_delegation_input("hello"),
+        "<realtime_delegation>\n  <input>hello</input>\n</realtime_delegation>"
+    );
 }
 
 #[test]
-fn realtime_api_key_uses_openai_env_fallback_for_official_chat_provider() {
-    const SUBPROCESS_ENV: &str = "CODEX_TEST_REALTIME_API_KEY_SUBPROCESS";
-
-    if std::env::var_os(SUBPROCESS_ENV).is_none() {
-        let output = std::process::Command::new(
-            std::env::current_exe().expect("test binary path should resolve"),
-        )
-        .arg("--exact")
-        .arg("realtime_conversation::tests::realtime_api_key_uses_openai_env_fallback_for_official_chat_provider")
-        .env(SUBPROCESS_ENV, "1")
-        .env("OPENAI_API_KEY", "openai-env-key")
-        .output()
-        .expect("subprocess should run");
-
-        assert!(
-            output.status.success(),
-            "subprocess failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return;
-    }
-
-    let provider = ModelProviderInfo {
-        name: "OpenAI Compatible".to_string(),
-        model: None,
-        base_url: Some(crate::model_provider_info::DEFAULT_OPENAI_BASE_URL.to_string()),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        wire_api: WireApi::Chat,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        retry_base_delay_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
-    };
-
-    let api_key = realtime_api_key(None, &provider).expect("official endpoint should use env key");
-    assert_eq!(api_key, "openai-env-key");
+fn wraps_realtime_delegation_input_with_xml_escaping() {
+    assert_eq!(
+        wrap_realtime_delegation_input("use a < b && c > d"),
+        "<realtime_delegation>\n  <input>use a &lt; b &amp;&amp; c &gt; d</input>\n</realtime_delegation>"
+    );
 }
 
 #[tokio::test]

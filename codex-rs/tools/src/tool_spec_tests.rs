@@ -1,12 +1,13 @@
 use super::ConfiguredToolSpec;
+use super::ResponsesApiNamespace;
 use super::ResponsesApiWebSearchFilters;
 use super::ResponsesApiWebSearchUserLocation;
 use super::ToolSpec;
-use super::create_tldr_tool;
 use crate::AdditionalProperties;
 use crate::FreeformTool;
 use crate::FreeformToolFormat;
 use crate::JsonSchema;
+use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
 use crate::create_tools_json_for_responses_api;
 use codex_protocol::config_types::WebSearchContextSize;
@@ -34,6 +35,15 @@ fn tool_spec_name_covers_all_variants() {
         })
         .name(),
         "lookup_order"
+    );
+    assert_eq!(
+        ToolSpec::Namespace(ResponsesApiNamespace {
+            name: "mcp__demo__".to_string(),
+            description: "Demo tools".to_string(),
+            tools: Vec::new(),
+        })
+        .name(),
+        "mcp__demo__"
     );
     assert_eq!(
         ToolSpec::ToolSearch {
@@ -106,28 +116,6 @@ fn configured_tool_spec_name_delegates_to_tool_spec() {
 }
 
 #[test]
-fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
-    let ToolSpec::Function(tool) = create_tldr_tool() else {
-        panic!("expected function tool");
-    };
-
-    assert_eq!(tool.name, "ztldr");
-    assert_eq!(
-        tool.description,
-        "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
-    );
-    let JsonSchema::Object { properties, .. } = tool.parameters else {
-        panic!("expected object schema");
-    };
-    assert_eq!(
-        properties["action"],
-        JsonSchema::String {
-            description: Some("Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, diagnostics, doctor. Daemon: ping, warm, snapshot, status, notify.".to_string()),
-        }
-    );
-}
-
-#[test]
 fn web_search_config_converts_to_responses_api_types() {
     assert_eq!(
         ResponsesApiWebSearchFilters::from(ConfigWebSearchFilters {
@@ -187,70 +175,47 @@ fn create_tools_json_for_responses_api_includes_top_level_name() {
 }
 
 #[test]
-fn create_tools_json_for_responses_api_flattens_top_level_one_of_to_object() {
+fn namespace_tool_spec_serializes_expected_wire_shape() {
     assert_eq!(
-        create_tools_json_for_responses_api(&[ToolSpec::Function(ResponsesApiTool {
-            name: "demo".to_string(),
-            description: "A demo tool".to_string(),
-            strict: false,
-            defer_loading: None,
-            parameters: JsonSchema::OneOf {
-                variants: vec![
-                    JsonSchema::Object {
-                        properties: BTreeMap::from([
-                            (
-                                "action".to_string(),
-                                JsonSchema::LiteralString {
-                                    value: "read".to_string(),
-                                    description: None,
-                                },
-                            ),
-                            ("uri".to_string(), JsonSchema::String { description: None },),
-                        ]),
-                        required: Some(vec!["action".to_string(), "uri".to_string()]),
-                        additional_properties: Some(AdditionalProperties::Boolean(false)),
+        serde_json::to_value(ToolSpec::Namespace(ResponsesApiNamespace {
+            name: "mcp__demo__".to_string(),
+            description: "Demo tools".to_string(),
+            tools: vec![ResponsesApiNamespaceTool::Function(ResponsesApiTool {
+                name: "lookup_order".to_string(),
+                description: "Look up an order".to_string(),
+                strict: false,
+                defer_loading: None,
+                parameters: JsonSchema::object(
+                    BTreeMap::from([(
+                        "order_id".to_string(),
+                        JsonSchema::string(/*description*/ None),
+                    )]),
+                    /*required*/ None,
+                    /*additional_properties*/ None,
+                ),
+                output_schema: None,
+            })],
+        }))
+        .expect("serialize namespace tool"),
+        json!({
+            "type": "namespace",
+            "name": "mcp__demo__",
+            "description": "Demo tools",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "lookup_order",
+                    "description": "Look up an order",
+                    "strict": false,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "order_id": { "type": "string" },
+                        },
                     },
-                    JsonSchema::Object {
-                        properties: BTreeMap::from([
-                            (
-                                "action".to_string(),
-                                JsonSchema::LiteralString {
-                                    value: "stats".to_string(),
-                                    description: None,
-                                },
-                            ),
-                            (
-                                "limit".to_string(),
-                                JsonSchema::Integer { description: None },
-                            ),
-                        ]),
-                        required: Some(vec!["action".to_string()]),
-                        additional_properties: Some(AdditionalProperties::Boolean(false)),
-                    },
-                ],
-            },
-            output_schema: None,
-        })])
-        .expect("serialize tools"),
-        vec![json!({
-            "type": "function",
-            "name": "demo",
-            "description": "A demo tool",
-            "strict": false,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {
-                        "type": "string",
-                        "enum": ["read", "stats"],
-                    },
-                    "uri": { "type": "string" },
-                    "limit": { "type": "integer" },
                 },
-                "required": ["action"],
-                "additionalProperties": false,
-            },
-        })]
+            ],
+        })
     );
 }
 

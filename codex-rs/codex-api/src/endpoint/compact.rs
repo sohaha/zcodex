@@ -236,9 +236,7 @@ mod tests {
     struct DummyAuth;
 
     impl AuthProvider for DummyAuth {
-        fn bearer_token(&self) -> Option<String> {
-            None
-        }
+        fn add_auth_headers(&self, _headers: &mut HeaderMap) {}
     }
 
     #[derive(Clone)]

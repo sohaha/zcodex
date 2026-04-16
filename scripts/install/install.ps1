@@ -1,57 +1,92 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$Version = 'latest',
-    [string]$InstallDir = $(if ($env:CODEX_INSTALL_DIR) { $env:CODEX_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\zcodex\bin' })
+    [string]$Release = "latest"
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-$BaseUrl = $env:CODEX_BASE_URL
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
 function Write-Step {
-    param([string]$Message)
+    param(
+        [string]$Message
+    )
+
     Write-Host "==> $Message"
 }
 
-function Normalize-Version {
-    param([string]$RawVersion)
+function Write-WarningStep {
+    param(
+        [string]$Message
+    )
 
-    if ([string]::IsNullOrWhiteSpace($RawVersion) -or $RawVersion -eq 'latest') {
-        return 'latest'
+    Write-Warning $Message
+}
+
+function Prompt-YesNo {
+    param(
+        [string]$Prompt
+    )
+
+    if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
+        return $false
     }
 
-    if ($RawVersion.StartsWith('v')) {
+    $choice = Read-Host "$Prompt [y/N]"
+    return $choice -match "^(?i:y(?:es)?)$"
+}
+
+function Normalize-Version {
+    param(
+        [string]$RawVersion
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RawVersion) -or $RawVersion -eq "latest") {
+        return "latest"
+    }
+
+    if ($RawVersion.StartsWith("rust-v")) {
+        return $RawVersion.Substring(6)
+    }
+
+    if ($RawVersion.StartsWith("v")) {
         return $RawVersion.Substring(1)
     }
 
     return $RawVersion
 }
 
-function Resolve-Version {
-    $normalized = Normalize-Version -RawVersion $Version
-    if ($normalized -ne 'latest') {
-        return $normalized
+function Get-ReleaseAssetMetadata {
+    param(
+        [string]$AssetName,
+        [string]$ResolvedVersion
+    )
+
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/sohaha/zcodex/releases/tags/rust-v$ResolvedVersion"
+    $asset = $release.assets | Where-Object { $_.name -eq $AssetName } | Select-Object -First 1
+    if ($null -eq $asset) {
+        throw "Could not find release asset $AssetName for Codex $ResolvedVersion."
     }
 
-    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/sohaha/zcodex/releases/latest'
-    if (-not $release.tag_name) {
-        throw 'Failed to resolve the latest zcodex release version.'
+    $digestMatch = [regex]::Match([string]$asset.digest, "^sha256:([0-9a-fA-F]{64})$")
+    if (-not $digestMatch.Success) {
+        throw "Could not find SHA-256 digest for release asset $AssetName."
     }
 
-    return (Normalize-Version -RawVersion $release.tag_name)
+    return [PSCustomObject]@{
+        Url = $asset.browser_download_url
+        Sha256 = $digestMatch.Groups[1].Value.ToLowerInvariant()
+    }
 }
 
-function Get-Architecture {
-    $runtimeInfo = 'System.Runtime.InteropServices.RuntimeInformation' -as [type]
-    if ($runtimeInfo -and $runtimeInfo::OSArchitecture) {
-        return [string]$runtimeInfo::OSArchitecture
-    }
+function Test-ArchiveDigest {
+    param(
+        [string]$ArchivePath,
+        [string]$ExpectedDigest
+    )
 
-    switch ($env:PROCESSOR_ARCHITECTURE) {
-        'ARM64' { return 'Arm64' }
-        'AMD64' { return 'X64' }
-        default { throw "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
+    $actualDigest = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualDigest -ne $ExpectedDigest) {
+        throw "Downloaded Codex archive checksum did not match release metadata. Expected $ExpectedDigest but got $actualDigest."
     }
 }
 
@@ -65,9 +100,9 @@ function Path-Contains {
         return $false
     }
 
-    $needle = $Entry.TrimEnd('\\')
-    foreach ($segment in $PathValue.Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)) {
-        if ($segment.TrimEnd('\\') -ieq $needle) {
+    $needle = $Entry.TrimEnd("\")
+    foreach ($segment in $PathValue.Split(";", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+        if ($segment.TrimEnd("\") -ieq $needle) {
             return $true
         }
     }
@@ -75,239 +110,641 @@ function Path-Contains {
     return $false
 }
 
-function Release-Url-For-Asset {
+function Invoke-WithInstallLock {
     param(
-        [string]$AssetName,
-        [string]$ResolvedVersion
+        [string]$LockPath,
+        [scriptblock]$Script
     )
 
-    if (-not [string]::IsNullOrWhiteSpace($BaseUrl)) {
-        return "{0}/{1}" -f $BaseUrl.TrimEnd('/'), $AssetName
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LockPath) | Out-Null
+    $lock = $null
+    while ($null -eq $lock) {
+        try {
+            $lock = [System.IO.File]::Open(
+                $LockPath,
+                [System.IO.FileMode]::OpenOrCreate,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+        } catch [System.IO.IOException] {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    try {
+        & $Script
+    } finally {
+        $lock.Dispose()
+    }
+}
+
+function Remove-StaleInstallArtifacts {
+    param(
+        [string]$ReleasesDir
+    )
+
+    if (Test-Path -LiteralPath $ReleasesDir -PathType Container) {
+        Get-ChildItem -LiteralPath $ReleasesDir -Force -Directory -Filter ".staging.*" -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Resolve-Version {
+    $normalizedVersion = Normalize-Version -RawVersion $Release
+    if ($normalizedVersion -ne "latest") {
+        return $normalizedVersion
     }
 
-    return "https://github.com/sohaha/zcodex/releases/download/v{0}/{1}" -f $ResolvedVersion, $AssetName
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/sohaha/zcodex/releases/latest"
+    if (-not $release.tag_name) {
+        Write-Error "Failed to resolve the latest Codex release version."
+        exit 1
+    }
+
+    return (Normalize-Version -RawVersion $release.tag_name)
 }
 
-function Download-File {
+function Get-VersionFromBinary {
     param(
-        [string]$Url,
-        [string]$Destination
+        [string]$CodexPath
     )
 
-    Invoke-WebRequest -Uri $Url -OutFile $Destination
-}
+    if (-not (Test-Path -LiteralPath $CodexPath -PathType Leaf)) {
+        return $null
+    }
 
-function Download-First-Available-Asset {
-    param(
-        [string]$ResolvedVersion,
-        [string[]]$AssetNames,
-        [string]$Destination
-    )
+    try {
+        $versionOutput = & $CodexPath --version 2>$null
+    } catch {
+        return $null
+    }
 
-    foreach ($assetName in $AssetNames) {
-        $url = Release-Url-For-Asset -AssetName $assetName -ResolvedVersion $ResolvedVersion
-        try {
-            Invoke-WebRequest -Uri $url -Method Head | Out-Null
-            Download-File -Url $url -Destination $Destination
-            return $assetName
-        } catch {
-            continue
-        }
+    if ($versionOutput -match '([0-9][0-9A-Za-z.+-]*)$') {
+        return $matches[1]
     }
 
     return $null
 }
 
-function Copy-Installed-File {
+function Get-CurrentInstalledVersion {
     param(
-        [string]$SourcePath,
-        [string]$DestinationPath
+        [string]$StandaloneCurrentDir
     )
 
-    if (-not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+    $standaloneVersion = Get-VersionFromBinary -CodexPath (Join-Path $StandaloneCurrentDir "codex.exe")
+    if (-not [string]::IsNullOrWhiteSpace($standaloneVersion)) {
+        return $standaloneVersion
+    }
+
+    return $null
+}
+
+function Test-OldStandaloneBinLayout {
+    param(
+        [string]$VisibleBinDir,
+        [string]$DefaultVisibleBinDir
+    )
+
+    if (-not $VisibleBinDir.Equals($DefaultVisibleBinDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+    }
+    if (-not (Test-Path -LiteralPath $VisibleBinDir -PathType Container)) {
         return $false
     }
 
-    Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force
+    $item = Get-Item -LiteralPath $VisibleBinDir -Force
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        return $false
+    }
+
+    $requiredFiles = @("codex.exe", "rg.exe")
+    foreach ($fileName in $requiredFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path $VisibleBinDir $fileName) -PathType Leaf)) {
+            return $false
+        }
+    }
+
+    $knownFiles = @(
+        "codex.exe",
+        "rg.exe",
+        "codex-command-runner.exe",
+        "codex-windows-sandbox.exe",
+        "codex-windows-sandbox-setup.exe"
+    )
+    foreach ($child in Get-ChildItem -LiteralPath $VisibleBinDir -Force) {
+        if ($child.PSIsContainer) {
+            return $false
+        }
+        if ($knownFiles -notcontains $child.Name) {
+            return $false
+        }
+    }
+
     return $true
 }
 
-function Install-From-NpmPackage {
+function Move-OldStandaloneBinIfApproved {
     param(
-        [string]$ArchivePath,
-        [string]$ExtractDir,
-        [string]$VendorTarget,
-        [string]$InstallDirPath
+        [string]$VisibleBinDir,
+        [string]$DefaultVisibleBinDir
     )
 
-    tar -xzf $ArchivePath -C $ExtractDir
+    if (-not (Test-OldStandaloneBinLayout -VisibleBinDir $VisibleBinDir -DefaultVisibleBinDir $DefaultVisibleBinDir)) {
+        return $null
+    }
 
-    $codexDir = Join-Path $ExtractDir "package/vendor/$VendorTarget/codex"
-    $pathDir = Join-Path $ExtractDir "package/vendor/$VendorTarget/path"
-    $assets = @(
-        @{ Source = (Join-Path $codexDir 'codex.exe'); Destination = 'codex.exe'; Required = $true },
-        @{ Source = (Join-Path $codexDir 'codex-command-runner.exe'); Destination = 'codex-command-runner.exe'; Required = $false },
-        @{ Source = (Join-Path $codexDir 'codex-windows-sandbox-setup.exe'); Destination = 'codex-windows-sandbox-setup.exe'; Required = $false },
-        @{ Source = (Join-Path $pathDir 'rg.exe'); Destination = 'rg.exe'; Required = $false }
-    )
+    Write-Step "We found an older Codex install at $VisibleBinDir"
+    Write-WarningStep "To continue, Codex needs to update the install at this path."
+    if (-not (Prompt-YesNo "Replace it with the current Codex setup now?")) {
+        throw "Cannot replace older standalone install without confirmation: $VisibleBinDir"
+    }
 
-    foreach ($asset in $assets) {
-        $destination = Join-Path $InstallDirPath $asset.Destination
-        if (-not (Copy-Installed-File -SourcePath $asset.Source -DestinationPath $destination) -and $asset.Required) {
-            throw "Downloaded npm package does not contain required file '$($asset.Destination)'."
+    $backupDir = "$VisibleBinDir.backup.$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()).$PID"
+    Write-Step "Moving older standalone install to $backupDir"
+    Move-Item -LiteralPath $VisibleBinDir -Destination $backupDir
+    return $backupDir
+}
+
+function Add-JunctionSupportType {
+    if (([System.Management.Automation.PSTypeName]'CodexInstaller.Junction').Type) {
+        return
+    }
+
+    Add-Type -TypeDefinition @"
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
+namespace CodexInstaller
+{
+    public static class Junction
+    {
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint FILE_SHARE_READ = 0x00000001;
+        private const uint FILE_SHARE_WRITE = 0x00000002;
+        private const uint FILE_SHARE_DELETE = 0x00000004;
+        private const uint OPEN_EXISTING = 3;
+        private const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+        private const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+        private const uint FSCTL_SET_REPARSE_POINT = 0x000900A4;
+        private const uint IO_REPARSE_TAG_MOUNT_POINT = 0xA0000003;
+        private const int HeaderLength = 20;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool DeviceIoControl(
+            SafeFileHandle hDevice,
+            uint dwIoControlCode,
+            byte[] lpInBuffer,
+            int nInBufferSize,
+            IntPtr lpOutBuffer,
+            int nOutBufferSize,
+            out int lpBytesReturned,
+            IntPtr lpOverlapped);
+
+        public static void SetTarget(string linkPath, string targetPath)
+        {
+            string substituteName = "\\??\\" + Path.GetFullPath(targetPath);
+            byte[] substituteNameBytes = Encoding.Unicode.GetBytes(substituteName);
+            if (substituteNameBytes.Length > ushort.MaxValue - HeaderLength) {
+                throw new ArgumentException("Junction target path is too long.", "targetPath");
+            }
+
+            byte[] reparseBuffer = new byte[substituteNameBytes.Length + HeaderLength];
+            WriteUInt32(reparseBuffer, 0, IO_REPARSE_TAG_MOUNT_POINT);
+            WriteUInt16(reparseBuffer, 4, checked((ushort)(substituteNameBytes.Length + 12)));
+            WriteUInt16(reparseBuffer, 8, 0);
+            WriteUInt16(reparseBuffer, 10, checked((ushort)substituteNameBytes.Length));
+            WriteUInt16(reparseBuffer, 12, checked((ushort)(substituteNameBytes.Length + 2)));
+            WriteUInt16(reparseBuffer, 14, 0);
+            Buffer.BlockCopy(substituteNameBytes, 0, reparseBuffer, 16, substituteNameBytes.Length);
+
+            using (SafeFileHandle handle = CreateFileW(
+                linkPath,
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                IntPtr.Zero,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                IntPtr.Zero))
+            {
+                if (handle.IsInvalid) {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+
+                int bytesReturned;
+                if (!DeviceIoControl(
+                    handle,
+                    FSCTL_SET_REPARSE_POINT,
+                    reparseBuffer,
+                    reparseBuffer.Length,
+                    IntPtr.Zero,
+                    0,
+                    out bytesReturned,
+                    IntPtr.Zero))
+                {
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                }
+            }
+        }
+
+        private static void WriteUInt16(byte[] buffer, int offset, ushort value)
+        {
+            buffer[offset] = (byte)value;
+            buffer[offset + 1] = (byte)(value >> 8);
+        }
+
+        private static void WriteUInt32(byte[] buffer, int offset, uint value)
+        {
+            buffer[offset] = (byte)value;
+            buffer[offset + 1] = (byte)(value >> 8);
+            buffer[offset + 2] = (byte)(value >> 16);
+            buffer[offset + 3] = (byte)(value >> 24);
         }
     }
 }
+"@
+}
 
-function Install-From-ZipBundle {
+function Set-JunctionTarget {
     param(
-        [string]$ArchivePath,
-        [string]$ExtractDir,
-        [string]$InstallDirPath
+        [string]$LinkPath,
+        [string]$TargetPath
     )
 
-    tar -xf $ArchivePath -C $ExtractDir
+    Add-JunctionSupportType
+    [CodexInstaller.Junction]::SetTarget($LinkPath, $TargetPath)
+}
 
-    $required = Join-Path $ExtractDir 'codex.exe'
-    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw 'Downloaded archive does not contain codex.exe.'
+function Test-IsJunction {
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
     }
 
-    foreach ($fileName in @('codex.exe', 'codex-command-runner.exe', 'codex-windows-sandbox-setup.exe', 'rg.exe')) {
-        $source = Join-Path $ExtractDir $fileName
-        if (Test-Path -LiteralPath $source -PathType Leaf) {
-            Copy-Item -LiteralPath $source -Destination (Join-Path $InstallDirPath $fileName) -Force
+    $item = Get-Item -LiteralPath $Path -Force
+    return ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and $item.LinkType -eq "Junction"
+}
+
+function Ensure-Junction {
+    param(
+        [string]$LinkPath,
+        [string]$TargetPath,
+        [string]$InstallerOwnedTargetPrefix
+    )
+
+    if (-not (Test-Path -LiteralPath $LinkPath)) {
+        New-Item -ItemType Junction -Path $LinkPath -Target $TargetPath | Out-Null
+        return
+    }
+
+    $item = Get-Item -LiteralPath $LinkPath -Force
+    if (Test-IsJunction -Path $LinkPath) {
+        $existingTarget = [string]$item.Target
+        if (-not [string]::IsNullOrWhiteSpace($InstallerOwnedTargetPrefix)) {
+            $ownedTargetPrefix = $InstallerOwnedTargetPrefix.TrimEnd("\\")
+            if (-not $existingTarget.StartsWith($ownedTargetPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Refusing to retarget junction at $LinkPath because it is not managed by this installer."
+            }
         }
+        if ($existingTarget.Equals($TargetPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return
+        }
+
+        # Keep the path itself in place and only retarget the junction. That
+        # avoids a gap where current or the visible bin path disappears during
+        # an update.
+        Set-JunctionTarget -LinkPath $LinkPath -TargetPath $TargetPath
+        return
     }
+
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "Refusing to replace non-junction reparse point at $LinkPath."
+    }
+
+    if ($item.PSIsContainer) {
+        if ((Get-ChildItem -LiteralPath $LinkPath -Force | Select-Object -First 1) -ne $null) {
+            throw "Refusing to replace non-empty directory at $LinkPath with a junction."
+        }
+
+        Remove-Item -LiteralPath $LinkPath -Force
+        New-Item -ItemType Junction -Path $LinkPath -Target $TargetPath | Out-Null
+        return
+    }
+
+    throw "Refusing to replace file at $LinkPath with a junction."
 }
 
-function Install-Legacy-Binaries {
+function Test-ReleaseIsComplete {
     param(
-        [string]$ResolvedVersion,
-        [Object[]]$Assets,
-        [string]$InstallDirPath
+        [string]$ReleaseDir,
+        [string]$ExpectedVersion,
+        [string]$ExpectedTarget
     )
 
-    foreach ($asset in $Assets) {
-        $url = Release-Url-For-Asset -AssetName $asset.Name -ResolvedVersion $ResolvedVersion
-        $destination = Join-Path $InstallDirPath $asset.Destination
-        Write-Step "Downloading $($asset.Name)"
-        Download-File -Url $url -Destination $destination
+    if (-not (Test-Path -LiteralPath $ReleaseDir -PathType Container)) {
+        return $false
     }
-}
 
-function Test-IsPortableExecutable {
-    param([string]$Path)
-
-    $stream = [System.IO.File]::OpenRead($Path)
-    try {
-        if ($stream.Length -lt 2) {
+    $expectedFiles = @(
+        "codex.exe",
+        "codex-resources\codex-command-runner.exe",
+        "codex-resources\codex-windows-sandbox-setup.exe",
+        "codex-resources\rg.exe"
+    )
+    foreach ($name in $expectedFiles) {
+        if (-not (Test-Path -LiteralPath (Join-Path $ReleaseDir $name) -PathType Leaf)) {
             return $false
         }
+    }
 
-        return ($stream.ReadByte() -eq 0x4D -and $stream.ReadByte() -eq 0x5A)
-    } finally {
-        $stream.Dispose()
+    return (Split-Path -Leaf $ReleaseDir) -eq "$ExpectedVersion-$ExpectedTarget"
+}
+
+function Get-ExistingCodexCommand {
+    $existing = Get-Command codex -ErrorAction SilentlyContinue
+    if ($null -eq $existing) {
+        return $null
+    }
+
+    return $existing.Source
+}
+
+function Get-ExistingCodexManager {
+    param(
+        [string]$ExistingPath,
+        [string]$VisibleBinDir
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ExistingPath)) {
+        return $null
+    }
+
+    if ($ExistingPath.StartsWith($VisibleBinDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $null
+    }
+
+    if ($ExistingPath -match "\\.bun\\") {
+        return "bun"
+    }
+
+    if ($ExistingPath -match "node_modules" -or $ExistingPath -match "\\npm\\") {
+        return "npm"
+    }
+
+    return $null
+}
+
+function Get-ConflictingInstall {
+    param(
+        [string]$VisibleBinDir
+    )
+
+    $existingPath = Get-ExistingCodexCommand
+    $manager = Get-ExistingCodexManager -ExistingPath $existingPath -VisibleBinDir $VisibleBinDir
+    if ($null -eq $manager) {
+        return $null
+    }
+
+    Write-Step "Detected existing $manager-managed Codex at $existingPath"
+    Write-WarningStep "Multiple managed Codex installs can be ambiguous because PATH order decides which one runs."
+
+    return [PSCustomObject]@{
+        Manager = $manager
+        Path = $existingPath
     }
 }
 
-if ($env:OS -ne 'Windows_NT') {
-    throw 'codex-install.ps1 supports Windows only.'
+function Maybe-HandleConflictingInstall {
+    param(
+        [object]$Conflict
+    )
+
+    if ($null -eq $Conflict) {
+        return
+    }
+
+    $manager = $Conflict.Manager
+
+    $uninstallArgs = if ($manager -eq "bun") {
+        @("remove", "-g", "@sohaha/zcodex")
+    } else {
+        @("uninstall", "-g", "@sohaha/zcodex")
+    }
+    $uninstallCommand = if ($manager -eq "bun") { "bun" } else { "npm" }
+
+    if (Prompt-YesNo "Uninstall the existing $manager-managed Codex now?") {
+        Write-Step "Running: $uninstallCommand $($uninstallArgs -join ' ')"
+        try {
+            & $uninstallCommand @uninstallArgs
+        } catch {
+            Write-WarningStep "Failed to uninstall the existing $manager-managed Codex. Continuing with the standalone install."
+        }
+    } else {
+        Write-WarningStep "Leaving the existing $manager-managed Codex installed. PATH order will determine which codex runs."
+    }
+}
+
+function Test-VisibleCodexCommand {
+    param(
+        [string]$VisibleBinDir
+    )
+
+    $codexCommand = Join-Path $VisibleBinDir "codex.exe"
+    & $codexCommand --version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installed Codex command failed verification: $codexCommand --version"
+    }
+}
+
+if ($env:OS -ne "Windows_NT") {
+    Write-Error "install.ps1 supports Windows only. Use install.sh on macOS or Linux."
+    exit 1
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) {
-    throw 'zcodex requires a 64-bit version of Windows.'
+    Write-Error "Codex requires a 64-bit version of Windows."
+    exit 1
 }
 
-$arch = Get-Architecture
-switch ($arch) {
-    'Arm64' {
-        $target = 'aarch64-pc-windows-msvc'
-        $npmTag = 'win32-arm64'
-        $platformLabel = 'Windows (ARM64)'
+$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+$target = $null
+$platformLabel = $null
+$npmTag = $null
+switch ($architecture) {
+    "Arm64" {
+        $target = "aarch64-pc-windows-msvc"
+        $platformLabel = "Windows (ARM64)"
+        $npmTag = "win32-arm64"
     }
-    'X64' {
-        $target = 'x86_64-pc-windows-msvc'
-        $npmTag = 'win32-x64'
-        $platformLabel = 'Windows (x64)'
+    "X64" {
+        $target = "x86_64-pc-windows-msvc"
+        $platformLabel = "Windows (x64)"
+        $npmTag = "win32-x64"
     }
     default {
-        throw "Unsupported architecture: $arch"
+        Write-Error "Unsupported architecture: $architecture"
+        exit 1
     }
 }
 
+$codexHome = if ([string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
+    Join-Path $env:USERPROFILE ".codex"
+} else {
+    $env:CODEX_HOME
+}
+$standaloneRoot = Join-Path $codexHome "packages\standalone"
+$releasesDir = Join-Path $standaloneRoot "releases"
+$currentDir = Join-Path $standaloneRoot "current"
+$lockPath = Join-Path $standaloneRoot "install.lock"
+
+$defaultVisibleBinDir = Join-Path $env:LOCALAPPDATA "Programs\OpenAI\Codex\bin"
+if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALL_DIR)) {
+    $visibleBinDir = $defaultVisibleBinDir
+} else {
+    $visibleBinDir = $env:CODEX_INSTALL_DIR
+}
+
+$currentVersion = Get-CurrentInstalledVersion -StandaloneCurrentDir $currentDir
 $resolvedVersion = Resolve-Version
-$npmAsset = "codex-npm-$npmTag-$resolvedVersion.tgz"
-$fallbackZipAsset = "codex-$target.exe.zip"
-$legacyAssets = @(
-    @{ Name = "codex-$target.exe"; Destination = 'codex.exe' },
-    @{ Name = "codex-command-runner-$target.exe"; Destination = 'codex-command-runner.exe' },
-    @{ Name = "codex-windows-sandbox-setup-$target.exe"; Destination = 'codex-windows-sandbox-setup.exe' }
-)
+$releaseName = "$resolvedVersion-$target"
+$releaseDir = Join-Path $releasesDir $releaseName
 
-Write-Step "Installing zcodex v$resolvedVersion"
+if (-not [string]::IsNullOrWhiteSpace($currentVersion) -and $currentVersion -ne $resolvedVersion) {
+    Write-Step "Updating Codex CLI from $currentVersion to $resolvedVersion"
+} elseif (-not [string]::IsNullOrWhiteSpace($currentVersion)) {
+    Write-Step "Updating Codex CLI"
+} else {
+    Write-Step "Installing Codex CLI"
+}
 Write-Step "Detected platform: $platformLabel"
-Write-Step "Install directory: $InstallDir"
+Write-Step "Resolved version: $resolvedVersion"
 
-New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+$conflictingInstall = Get-ConflictingInstall -VisibleBinDir $visibleBinDir
+$oldStandaloneBackup = $null
 
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-install-" + [System.Guid]::NewGuid().ToString())
-$extractDir = Join-Path $tempRoot 'extract'
-$archivePath = Join-Path $tempRoot 'downloaded-asset'
-New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+$packageAsset = "codex-npm-$npmTag-$resolvedVersion.tgz"
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-install-" + [System.Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
 try {
-    Write-Step 'Downloading Codex CLI'
-    $downloadedAsset = Download-First-Available-Asset -ResolvedVersion $resolvedVersion -AssetNames @($npmAsset) -Destination $archivePath
-    if ($downloadedAsset) {
-        Write-Step "Using release asset: $downloadedAsset"
-        Install-From-NpmPackage -ArchivePath $archivePath -ExtractDir $extractDir -VendorTarget $target -InstallDirPath $InstallDir
-    } else {
-        $downloadedAsset = Download-First-Available-Asset -ResolvedVersion $resolvedVersion -AssetNames @($fallbackZipAsset) -Destination $archivePath
-        if ($downloadedAsset) {
-            Write-Step "Using fallback release asset: $downloadedAsset"
-            Install-From-ZipBundle -ArchivePath $archivePath -ExtractDir $extractDir -InstallDirPath $InstallDir
-        } else {
-            Write-Step 'Falling back to legacy Windows release assets'
-            Install-Legacy-Binaries -ResolvedVersion $resolvedVersion -Assets $legacyAssets -InstallDirPath $InstallDir
+    Invoke-WithInstallLock -LockPath $lockPath -Script {
+        Remove-StaleInstallArtifacts -ReleasesDir $releasesDir
+
+        if (-not (Test-ReleaseIsComplete -ReleaseDir $releaseDir -ExpectedVersion $resolvedVersion -ExpectedTarget $target)) {
+            if (Test-Path -LiteralPath $releaseDir) {
+                Write-WarningStep "Found incomplete existing release at $releaseDir. Reinstalling."
+            }
+
+            $archivePath = Join-Path $tempDir $packageAsset
+            $extractDir = Join-Path $tempDir "extract"
+            $stagingDir = Join-Path $releasesDir ".staging.$releaseName.$PID"
+            $assetMetadata = Get-ReleaseAssetMetadata -AssetName $packageAsset -ResolvedVersion $resolvedVersion
+
+            Write-Step "Downloading Codex CLI"
+            Invoke-WebRequest -Uri $assetMetadata.Url -OutFile $archivePath
+            Test-ArchiveDigest -ArchivePath $archivePath -ExpectedDigest $assetMetadata.Sha256
+
+            New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+            New-Item -ItemType Directory -Force -Path $releasesDir | Out-Null
+            if (Test-Path -LiteralPath $stagingDir) {
+                Remove-Item -LiteralPath $stagingDir -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $stagingDir | Out-Null
+            tar -xzf $archivePath -C $extractDir
+
+            $vendorRoot = Join-Path $extractDir "package/vendor/$target"
+            $resourcesDir = Join-Path $stagingDir "codex-resources"
+            New-Item -ItemType Directory -Force -Path $resourcesDir | Out-Null
+            $copyMap = @{
+                "codex/codex.exe" = "codex.exe"
+                "codex/codex-command-runner.exe" = "codex-resources\codex-command-runner.exe"
+                "codex/codex-windows-sandbox-setup.exe" = "codex-resources\codex-windows-sandbox-setup.exe"
+                "path/rg.exe" = "codex-resources\rg.exe"
+            }
+
+            foreach ($relativeSource in $copyMap.Keys) {
+                Copy-Item -LiteralPath (Join-Path $vendorRoot $relativeSource) -Destination (Join-Path $stagingDir $copyMap[$relativeSource])
+            }
+
+            if (Test-Path -LiteralPath $releaseDir) {
+                Remove-Item -LiteralPath $releaseDir -Recurse -Force
+            }
+            Move-Item -LiteralPath $stagingDir -Destination $releaseDir
+        }
+
+        New-Item -ItemType Directory -Force -Path $standaloneRoot | Out-Null
+        Ensure-Junction -LinkPath $currentDir -TargetPath $releaseDir -InstallerOwnedTargetPrefix $releasesDir
+
+        $visibleParent = Split-Path -Parent $visibleBinDir
+        New-Item -ItemType Directory -Force -Path $visibleParent | Out-Null
+        $oldStandaloneBackup = Move-OldStandaloneBinIfApproved -VisibleBinDir $visibleBinDir -DefaultVisibleBinDir $defaultVisibleBinDir
+        try {
+            Ensure-Junction -LinkPath $visibleBinDir -TargetPath $currentDir -InstallerOwnedTargetPrefix $standaloneRoot
+            Test-VisibleCodexCommand -VisibleBinDir $visibleBinDir
+        } catch {
+            if ($null -ne $oldStandaloneBackup -and (Test-Path -LiteralPath $oldStandaloneBackup)) {
+                if (Test-Path -LiteralPath $visibleBinDir) {
+                    Remove-Item -LiteralPath $visibleBinDir -Recurse -Force
+                }
+                Move-Item -LiteralPath $oldStandaloneBackup -Destination $visibleBinDir
+            }
+            throw
+        }
+        if ($null -ne $oldStandaloneBackup) {
+            Remove-Item -LiteralPath $oldStandaloneBackup -Recurse -Force
         }
     }
 } finally {
-    if (Test-Path -LiteralPath $tempRoot) {
-        Remove-Item -LiteralPath $tempRoot -Recurse -Force
-    }
+    Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
 }
 
-$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not (Path-Contains -PathValue $userPath -Entry $InstallDir)) {
-    $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $InstallDir } else { "$InstallDir;$userPath" }
-    if ($PSCmdlet.ShouldProcess('User PATH', "Add $InstallDir")) {
-        [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
+Maybe-HandleConflictingInstall -Conflict $conflictingInstall
+
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (-not (Path-Contains -PathValue $userPath -Entry $visibleBinDir)) {
+    if ([string]::IsNullOrWhiteSpace($userPath)) {
+        $newUserPath = $visibleBinDir
+    } else {
+        $newUserPath = "$visibleBinDir;$userPath"
     }
-    $env:Path = "$InstallDir;$env:Path"
-    Write-Step 'Added install directory to user PATH. Open a new shell if needed.'
-}
 
-$codexPath = Join-Path $InstallDir 'codex.exe'
-if (-not (Test-Path -LiteralPath $codexPath -PathType Leaf)) {
-    throw "codex.exe was not installed to $InstallDir"
-}
-
-if (Test-IsPortableExecutable -Path $codexPath) {
-    Write-Step "Verifying $codexPath"
-    if ($PSCmdlet.ShouldProcess($codexPath, 'codex --version')) {
-        & $codexPath --version
-        if ($LASTEXITCODE -ne 0) {
-            throw "codex --version failed with exit code $LASTEXITCODE"
-        }
-
-        & $codexPath ztldr languages | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "codex ztldr languages failed with exit code $LASTEXITCODE"
-        }
-    }
-} elseif (-not [string]::IsNullOrWhiteSpace($BaseUrl)) {
-    Write-Step 'Skipping executable smoke test for custom CODEX_BASE_URL assets.'
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+    Write-Step "PATH updated for future PowerShell sessions."
+} elseif (Path-Contains -PathValue $env:Path -Entry $visibleBinDir) {
+    Write-Step "$visibleBinDir is already on PATH."
 } else {
-    throw 'Downloaded codex.exe is not a valid Windows executable.'
+    Write-Step "PATH is already configured for future PowerShell sessions."
+}
+
+if (-not (Path-Contains -PathValue $env:Path -Entry $visibleBinDir)) {
+    if ([string]::IsNullOrWhiteSpace($env:Path)) {
+        $env:Path = $visibleBinDir
+    } else {
+        $env:Path = "$visibleBinDir;$env:Path"
+    }
+}
+
+Write-Step "Current PowerShell session: codex"
+Write-Step "Future PowerShell windows: open a new PowerShell window and run: codex"
+Write-Host "Codex CLI $resolvedVersion installed successfully."
+
+$codexCommand = Join-Path $visibleBinDir "codex.exe"
+if (Prompt-YesNo "Start Codex now?") {
+    Write-Step "Launching Codex"
+    & $codexCommand
 }

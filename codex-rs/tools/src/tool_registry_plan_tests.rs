@@ -5,12 +5,17 @@ use crate::DiscoverablePluginInfo;
 use crate::DiscoverableTool;
 use crate::FreeformTool;
 use crate::JsonSchema;
+use crate::JsonSchemaPrimitiveType;
+use crate::JsonSchemaType;
+use crate::ResponsesApiNamespaceTool;
 use crate::ResponsesApiTool;
 use crate::ResponsesApiWebSearchFilters;
 use crate::ResponsesApiWebSearchUserLocation;
 use crate::ToolHandlerSpec;
+use crate::ToolName;
 use crate::ToolNamespace;
 use crate::ToolRegistryPlanDeferredTool;
+use crate::ToolRegistryPlanMcpTool;
 use crate::ToolsConfigParams;
 use crate::WaitAgentTimeoutOptions;
 use crate::mcp_call_tool_result_output_schema;
@@ -54,7 +59,6 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &config,
@@ -84,9 +88,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         }),
         create_write_stdin_tool(),
         create_update_plan_tool(),
-        create_tldr_tool(),
         request_user_input_tool_spec(/*default_mode_request_user_input*/ false),
-        create_zmemory_tool(),
         create_apply_patch_freeform_tool(),
         ToolSpec::WebSearch {
             external_web_access: Some(true),
@@ -99,9 +101,6 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
             can_request_original_image_detail: config.can_request_original_image_detail,
         }),
     ] {
-        expected.insert(spec.name().to_string(), spec);
-    }
-    for spec in create_zmemory_mcp_tools() {
         expected.insert(spec.name().to_string(), spec);
     }
     let collab_specs = if config.multi_agent_v2 {
@@ -162,7 +161,6 @@ fn test_build_specs_collab_tools_enabled() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -203,7 +201,6 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -347,7 +344,6 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -383,7 +379,6 @@ fn view_image_tool_omits_detail_without_original_detail_support() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -414,7 +409,6 @@ fn view_image_tool_includes_detail_with_original_detail_support() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -453,7 +447,6 @@ fn disabled_environment_omits_environment_backed_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     })
     .with_has_environment(/*has_environment*/ false);
     tools_config
@@ -494,7 +487,6 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         )),
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -532,7 +524,6 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -556,7 +547,6 @@ fn request_user_input_description_reflects_default_mode_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -585,7 +575,6 @@ fn request_permissions_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -606,7 +595,6 @@ fn request_permissions_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -636,7 +624,6 @@ fn request_permissions_tool_is_independent_from_additional_permissions() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -663,7 +650,6 @@ fn js_repl_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -698,7 +684,6 @@ fn js_repl_enabled_adds_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -730,7 +715,6 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (default_tools, _) = build_specs(
         &default_tools_config,
@@ -754,7 +738,6 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (supported_tools, _) = build_specs(
         &supported_tools_config,
@@ -781,7 +764,6 @@ fn image_generation_tools_require_feature_and_supported_model() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -812,7 +794,6 @@ fn web_search_mode_cached_sets_external_web_access_false() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -849,7 +830,6 @@ fn web_search_mode_live_sets_external_web_access_true() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -899,7 +879,6 @@ fn web_search_config_is_forwarded_to_tool_spec() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     })
     .with_web_search_config(Some(web_search_config.clone()));
     let (tools, _) = build_specs(
@@ -942,7 +921,6 @@ fn web_search_tool_type_text_and_image_sets_search_content_types() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -978,7 +956,6 @@ fn mcp_resource_tools_are_hidden_without_mcp_servers() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1010,7 +987,6 @@ fn mcp_resource_tools_are_included_when_mcp_servers_are_present() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1045,7 +1021,6 @@ fn test_parallel_support_flags() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1073,7 +1048,6 @@ fn test_test_model_info_includes_sync_tool() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1100,12 +1074,11 @@ fn test_build_specs_mcp_tools_converted() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
         Some(HashMap::from([(
-            "test_server/do_something_cool".to_string(),
+            ToolName::namespaced("test_server/", "do_something_cool"),
             mcp_tool(
                 "do_something_cool",
                 "Do something cool",
@@ -1131,11 +1104,11 @@ fn test_build_specs_mcp_tools_converted() {
         &[],
     );
 
-    let tool = find_tool(&tools, "test_server/do_something_cool");
+    let tool = find_namespace_function_tool(&tools, "test_server/", "do_something_cool");
     assert_eq!(
-        &tool.spec,
-        &ToolSpec::Function(ResponsesApiTool {
-            name: "test_server/do_something_cool".to_string(),
+        tool,
+        &ResponsesApiTool {
+            name: "do_something_cool".to_string(),
             parameters: JsonSchema::object(
                 BTreeMap::from([
                     (
@@ -1174,7 +1147,47 @@ fn test_build_specs_mcp_tools_converted() {
             strict: false,
             output_schema: Some(mcp_call_tool_result_output_schema(serde_json::json!({}))),
             defer_loading: None,
-        })
+        }
+    );
+}
+
+#[test]
+fn test_build_specs_mcp_namespace_description_falls_back_when_missing() {
+    let model_info = model_info();
+    let mut features = Features::with_defaults();
+    features.enable(Feature::UnifiedExec);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        image_generation_tool_auth_allowed: true,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, _) = build_specs(
+        &tools_config,
+        Some(HashMap::from([(
+            ToolName::namespaced("test_server/", "do_something_cool"),
+            mcp_tool(
+                "do_something_cool",
+                "Do something cool",
+                serde_json::json!({"type": "object"}),
+            ),
+        )])),
+        /*deferred_mcp_tools*/ None,
+        &[],
+    );
+
+    let namespace_tool = find_tool(&tools, "test_server/");
+    let ToolSpec::Namespace(namespace) = &namespace_tool.spec else {
+        panic!("expected namespace tool");
+    };
+    assert_eq!(
+        namespace.description,
+        "Tools in the test_server/ namespace."
     );
 }
 
@@ -1193,21 +1206,20 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let tools_map = HashMap::from([
         (
-            "test_server/do".to_string(),
-            mcp_tool("a", "a", serde_json::json!({"type": "object"})),
+            ToolName::namespaced("test_server/", "do"),
+            mcp_tool("do", "a", serde_json::json!({"type": "object"})),
         ),
         (
-            "test_server/something".to_string(),
-            mcp_tool("b", "b", serde_json::json!({"type": "object"})),
+            ToolName::namespaced("test_server/", "something"),
+            mcp_tool("something", "b", serde_json::json!({"type": "object"})),
         ),
         (
-            "test_server/cool".to_string(),
-            mcp_tool("c", "c", serde_json::json!({"type": "object"})),
+            ToolName::namespaced("test_server/", "cool"),
+            mcp_tool("cool", "c", serde_json::json!({"type": "object"})),
         ),
     ]);
 
@@ -1218,17 +1230,14 @@ fn test_build_specs_mcp_tools_sorted_by_name() {
         &[],
     );
 
-    let mcp_names: Vec<_> = tools
-        .iter()
-        .map(|tool| tool.name().to_string())
-        .filter(|name| name.starts_with("test_server/"))
-        .collect();
-    let expected = vec![
-        "test_server/cool".to_string(),
-        "test_server/do".to_string(),
-        "test_server/something".to_string(),
-    ];
-    assert_eq!(mcp_names, expected);
+    assert_eq!(
+        namespace_function_names(&tools, "test_server/"),
+        vec![
+            "cool".to_string(),
+            "do".to_string(),
+            "something".to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -1247,14 +1256,13 @@ fn search_tool_description_lists_each_mcp_source_once() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, handlers) = build_specs(
         &tools_config,
         Some(HashMap::from([
             (
-                "mcp__codex_apps__calendar_create_event".to_string(),
+                ToolName::namespaced("mcp__codex_apps__calendar", "_create_event"),
                 mcp_tool(
                     "calendar_create_event",
                     "Create calendar event",
@@ -1262,7 +1270,7 @@ fn search_tool_description_lists_each_mcp_source_once() {
                 ),
             ),
             (
-                "mcp__rmcp__echo".to_string(),
+                ToolName::namespaced("mcp__rmcp__", "echo"),
                 mcp_tool("echo", "Echo", serde_json::json!({"type": "object"})),
             ),
         ])),
@@ -1350,7 +1358,6 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1369,7 +1376,6 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1390,7 +1396,6 @@ fn search_tool_requires_model_capability_and_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -1419,7 +1424,6 @@ fn tool_suggest_is_not_registered_without_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs_with_discoverable_tools(
         &tools_config,
@@ -1460,7 +1464,6 @@ fn tool_suggest_can_be_registered_without_search_tool() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs_with_discoverable_tools(
         &tools_config,
@@ -1507,7 +1510,6 @@ fn tool_suggest_description_lists_discoverable_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let discoverable_tools = vec![
@@ -1610,13 +1612,12 @@ fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
         &tools_config,
         Some(HashMap::from([(
-            "mcp__sample__echo".to_string(),
+            ToolName::namespaced("mcp__sample__", "echo"),
             mcp_tool(
                 "echo",
                 "Echo text",
@@ -1634,11 +1635,8 @@ fn code_mode_augments_mcp_tool_descriptions_with_namespaced_sample() {
         &[],
     );
 
-    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
-        &find_tool(&tools, "mcp__sample__echo").spec
-    else {
-        panic!("expected function tool");
-    };
+    let ResponsesApiTool { description, .. } =
+        find_namespace_function_tool(&tools, "mcp__sample__", "echo");
 
     assert_eq!(
         description,
@@ -1667,13 +1665,12 @@ fn code_mode_preserves_nullable_and_literal_mcp_input_shapes() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
         &tools_config,
         Some(HashMap::from([(
-            "mcp__sample__fn".to_string(),
+            ToolName::namespaced("mcp__sample__", "fn"),
             mcp_tool(
                 "fn",
                 "Sample fn",
@@ -1724,20 +1721,14 @@ fn code_mode_preserves_nullable_and_literal_mcp_input_shapes() {
         &[],
     );
 
-    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
-        &find_tool(&tools, "mcp__sample__fn").spec
-    else {
-        panic!("expected function tool");
-    };
+    let ResponsesApiTool { description, .. } =
+        find_namespace_function_tool(&tools, "mcp__sample__", "fn");
 
-    assert!(description.contains("exec tool declaration:"));
-    assert!(description.contains("declare const tools: { mcp__sample__fn(args: {"));
-    assert!(
-        description.contains("open?: Array<{ lineno?: number | null; ref_id: string; }> | null;")
-    );
-    assert!(description.contains("response_length?: string;"));
     assert!(description.contains(
-        r#"tagged_list?: Array<{ kind: "tagged"; scope: string; variant: string; }> | null;"#
+        r#"exec tool declaration:
+```ts
+declare const tools: { mcp__sample__fn(args: { open?: Array<{ lineno?: number | null; ref_id: string; }> | null; response_length?: "short" | "medium" | "long"; tagged_list?: Array<{ kind: "tagged"; scope: "one" | "two"; variant: "alpha" | "beta"; }> | null; }): Promise<CallToolResult>; };
+```"#
     ));
 }
 
@@ -1757,7 +1748,6 @@ fn code_mode_augments_builtin_tool_descriptions_with_typed_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1794,7 +1784,6 @@ fn code_mode_only_exec_description_includes_full_nested_tool_details() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1832,7 +1821,6 @@ fn code_mode_exec_description_omits_nested_tool_details_when_not_code_mode_only(
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1897,7 +1885,7 @@ fn search_capable_model_info() -> ModelInfo {
 
 fn build_specs<'a>(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, rmcp::model::Tool>>,
+    mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
     deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> (Vec<ConfiguredToolSpec>, Vec<ToolHandlerSpec>) {
@@ -1912,7 +1900,7 @@ fn build_specs<'a>(
 
 fn build_specs_with_discoverable_tools<'a>(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, rmcp::model::Tool>>,
+    mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
     deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
@@ -1929,16 +1917,25 @@ fn build_specs_with_discoverable_tools<'a>(
 
 fn build_specs_with_optional_tool_namespaces<'a>(
     config: &ToolsConfig,
-    mcp_tools: Option<HashMap<String, rmcp::model::Tool>>,
+    mcp_tools: Option<HashMap<ToolName, rmcp::model::Tool>>,
     deferred_mcp_tools: Option<Vec<ToolRegistryPlanDeferredTool<'a>>>,
     tool_namespaces: Option<HashMap<String, ToolNamespace>>,
     discoverable_tools: Option<Vec<DiscoverableTool>>,
     dynamic_tools: &[DynamicToolSpec],
 ) -> (Vec<ConfiguredToolSpec>, Vec<ToolHandlerSpec>) {
+    let mcp_tool_inputs = mcp_tools.as_ref().map(|mcp_tools| {
+        mcp_tools
+            .iter()
+            .map(|(name, tool)| ToolRegistryPlanMcpTool {
+                name: name.clone(),
+                tool,
+            })
+            .collect::<Vec<_>>()
+    });
     let plan = build_tool_registry_plan(
         config,
         ToolRegistryPlanParams {
-            mcp_tools: mcp_tools.as_ref(),
+            mcp_tools: mcp_tool_inputs.as_deref(),
             deferred_mcp_tools: deferred_mcp_tools.as_deref(),
             tool_namespaces: tool_namespaces.as_ref(),
             discoverable_tools: discoverable_tools.as_deref(),
@@ -1981,7 +1978,6 @@ fn code_mode_augments_mcp_tool_descriptions_with_structured_output_sample() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
-        wire_api: WireApi::Responses,
     });
 
     let mut tool = mcp_tool(
@@ -2015,16 +2011,16 @@ fn code_mode_augments_mcp_tool_descriptions_with_structured_output_sample() {
 
     let (tools, _) = build_specs(
         &tools_config,
-        Some(HashMap::from([("mcp__sample__echo".to_string(), tool)])),
+        Some(HashMap::from([(
+            ToolName::namespaced("mcp__sample__", "echo"),
+            tool,
+        )])),
         /*deferred_mcp_tools*/ None,
         &[],
     );
 
-    let ToolSpec::Function(ResponsesApiTool { description, .. }) =
-        &find_tool(&tools, "mcp__sample__echo").spec
-    else {
-        panic!("expected function tool");
-    };
+    let ResponsesApiTool { description, .. } =
+        find_namespace_function_tool(&tools, "mcp__sample__", "echo");
 
     assert_eq!(
         description,
@@ -2064,8 +2060,7 @@ fn deferred_mcp_tool<'a>(
     connector_description: Option<&'a str>,
 ) -> ToolRegistryPlanDeferredTool<'a> {
     ToolRegistryPlanDeferredTool {
-        tool_name,
-        tool_namespace,
+        name: ToolName::namespaced(tool_namespace, tool_name),
         server_name,
         connector_name,
         connector_description,
@@ -2136,64 +2131,79 @@ fn find_tool<'a>(tools: &'a [ConfiguredToolSpec], expected_name: &str) -> &'a Co
         .unwrap_or_else(|| panic!("expected tool {expected_name}"))
 }
 
+fn find_namespace_function_tool<'a>(
+    tools: &'a [ConfiguredToolSpec],
+    expected_namespace: &str,
+    expected_name: &str,
+) -> &'a ResponsesApiTool {
+    let namespace_tool = find_tool(tools, expected_namespace);
+    let ToolSpec::Namespace(namespace) = &namespace_tool.spec else {
+        panic!("expected namespace tool {expected_namespace}");
+    };
+    namespace
+        .tools
+        .iter()
+        .find_map(|tool| match tool {
+            ResponsesApiNamespaceTool::Function(tool) if tool.name == expected_name => Some(tool),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("expected tool {expected_namespace}{expected_name} in namespace"))
+}
+
+fn namespace_function_names(tools: &[ConfiguredToolSpec], expected_namespace: &str) -> Vec<String> {
+    let namespace_tool = find_tool(tools, expected_namespace);
+    let ToolSpec::Namespace(namespace) = &namespace_tool.spec else {
+        panic!("expected namespace tool {expected_namespace}");
+    };
+    namespace
+        .tools
+        .iter()
+        .map(|tool| match tool {
+            ResponsesApiNamespaceTool::Function(tool) => tool.name.clone(),
+        })
+        .collect()
+}
+
 fn expect_object_schema(
     schema: &JsonSchema,
 ) -> (&BTreeMap<String, JsonSchema>, Option<&Vec<String>>) {
-    match schema {
-        JsonSchema::Object {
-            properties,
-            required,
-            ..
-        } => (properties, required.as_ref()),
-        _ => panic!("expected object schema, got {schema:?}"),
-    }
+    assert_eq!(
+        schema.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::Object))
+    );
+    let properties = schema
+        .properties
+        .as_ref()
+        .expect("expected object properties");
+    (properties, schema.required.as_ref())
 }
 
 fn expect_string_description(schema: &JsonSchema) -> &str {
-    match schema {
-        JsonSchema::String { description } | JsonSchema::LiteralString { description, .. } => {
-            description.as_deref().expect("expected description")
-        }
-        _ => panic!("expected string schema, got {schema:?}"),
-    }
+    assert_eq!(
+        schema.schema_type,
+        Some(JsonSchemaType::Single(JsonSchemaPrimitiveType::String))
+    );
+    schema.description.as_deref().expect("expected description")
 }
 
 fn strip_descriptions_schema(schema: &mut JsonSchema) {
-    match schema {
-        JsonSchema::Boolean { description }
-        | JsonSchema::String { description }
-        | JsonSchema::Number { description }
-        | JsonSchema::Integer { description }
-        | JsonSchema::Null { description } => {
-            *description = None;
-        }
-        JsonSchema::LiteralString { description, .. } => {
-            *description = None;
-        }
-        JsonSchema::Array { items, description } => {
-            strip_descriptions_schema(items);
-            *description = None;
-        }
-        JsonSchema::Object {
-            properties,
-            additional_properties,
-            ..
-        } => {
-            for value in properties.values_mut() {
-                strip_descriptions_schema(value);
-            }
-            if let Some(AdditionalProperties::Schema(schema)) = additional_properties {
-                strip_descriptions_schema(schema);
-            }
-        }
-        JsonSchema::OneOf { variants }
-        | JsonSchema::AnyOf { variants }
-        | JsonSchema::AllOf { variants } => {
-            for variant in variants {
-                strip_descriptions_schema(variant);
-            }
+    if let Some(variants) = &mut schema.any_of {
+        for variant in variants {
+            strip_descriptions_schema(variant);
         }
     }
+    if let Some(items) = &mut schema.items {
+        strip_descriptions_schema(items);
+    }
+    if let Some(properties) = &mut schema.properties {
+        for value in properties.values_mut() {
+            strip_descriptions_schema(value);
+        }
+    }
+    if let Some(AdditionalProperties::Schema(schema)) = &mut schema.additional_properties {
+        strip_descriptions_schema(schema);
+    }
+    schema.description = None;
 }
 
 fn strip_descriptions_tool(spec: &mut ToolSpec) {
@@ -2201,6 +2211,17 @@ fn strip_descriptions_tool(spec: &mut ToolSpec) {
         ToolSpec::ToolSearch { parameters, .. } => strip_descriptions_schema(parameters),
         ToolSpec::Function(ResponsesApiTool { parameters, .. }) => {
             strip_descriptions_schema(parameters);
+        }
+        ToolSpec::Namespace(namespace) => {
+            for tool in &mut namespace.tools {
+                match tool {
+                    ResponsesApiNamespaceTool::Function(ResponsesApiTool {
+                        parameters, ..
+                    }) => {
+                        strip_descriptions_schema(parameters);
+                    }
+                }
+            }
         }
         ToolSpec::Freeform(FreeformTool { .. })
         | ToolSpec::LocalShell {}

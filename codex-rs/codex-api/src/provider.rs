@@ -95,7 +95,7 @@ impl Provider {
     }
 
     pub fn is_azure_responses_endpoint(&self) -> bool {
-        is_azure_responses_wire_base_url(&self.name, Some(&self.base_url))
+        is_azure_responses_provider(&self.name, Some(&self.base_url))
     }
 
     pub fn websocket_url_for_path(&self, path: &str) -> Result<Url, url::ParseError> {
@@ -112,7 +112,7 @@ impl Provider {
     }
 }
 
-pub fn is_azure_responses_wire_base_url(name: &str, base_url: Option<&str>) -> bool {
+pub fn is_azure_responses_provider(name: &str, base_url: Option<&str>) -> bool {
     if name.eq_ignore_ascii_case("azure") {
         return true;
     }
@@ -153,12 +153,12 @@ mod tests {
 
         for base_url in positive_cases {
             assert!(
-                is_azure_responses_wire_base_url("test", Some(base_url)),
+                is_azure_responses_provider("test", Some(base_url)),
                 "expected {base_url} to be detected as Azure"
             );
         }
 
-        assert!(is_azure_responses_wire_base_url(
+        assert!(is_azure_responses_provider(
             "Azure",
             Some("https://example.com")
         ));
@@ -171,7 +171,7 @@ mod tests {
 
         for base_url in negative_cases {
             assert!(
-                !is_azure_responses_wire_base_url("test", Some(base_url)),
+                !is_azure_responses_provider("test", Some(base_url)),
                 "expected {base_url} not to be detected as Azure"
             );
         }

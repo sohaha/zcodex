@@ -13,7 +13,10 @@ use crate::agent::Mailbox;
 use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
+use crate::agent_identity::AgentIdentityManager;
 use crate::apps::render_apps_section;
+use codex_thread_store::LocalThreadStore;
+use codex_rollout::RolloutConfig;
 use crate::buddy::BuddyReactionState;
 use crate::buddy::maybe_inject_companion_intro;
 use crate::commit_attribution::commit_message_trailer_instruction;
@@ -48,6 +51,7 @@ use crate::stream_events_utils::record_completed_response_item;
 use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::turn_metadata::TurnMetadataState;
+use crate::unavailable_tool::collect_unavailable_called_tools;
 use crate::util::error_or_panic;
 use async_channel::Receiver;
 use async_channel::Sender;
@@ -2189,6 +2193,12 @@ impl Session {
             rollout: Mutex::new(rollout_recorder),
             user_shell: Arc::new(default_shell),
             shell_snapshot_tx,
+            agent_identity_manager: Arc::new(AgentIdentityManager::new(
+                config.as_ref(),
+                Arc::clone(&auth_manager),
+                session_configuration.session_source.clone(),
+            )),
+            thread_store: codex_thread_store::LocalThreadStore::new(RolloutConfig::from_view(config.as_ref())),
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             exec_policy,
             auth_manager: Arc::clone(&auth_manager),
@@ -7633,6 +7643,7 @@ pub(crate) async fn built_tools(
         &turn_context.tools_config,
     );
     let direct_mcp_tools = has_mcp_servers.then_some(mcp_tool_exposure.direct_tools);
+    let unavailable_called_tools = if turn_context.config.features.enabled(Feature::UnavailableDummyTools) { let exposed_tool_names = direct_mcp_tools.iter().chain(mcp_tool_exposure.deferred_tools.iter()).flat_map(|tools| tools.keys().map(String::as_str)).collect::<HashSet<_>>(); collect_unavailable_called_tools(input, &exposed_tool_names) } else { Vec::new() };
     let parallel_mcp_server_names = turn_context
         .config
         .mcp_servers
@@ -7653,6 +7664,7 @@ pub(crate) async fn built_tools(
             parallel_mcp_server_names,
             discoverable_tools,
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
+            unavailable_called_tools,
         },
     )))
 }

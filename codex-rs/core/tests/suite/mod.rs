@@ -85,8 +85,6 @@ mod rmcp_client;
 mod rollout_list_find;
 mod safety_check_downgrade;
 mod search_tool;
-mod seatbelt;
-mod server_overloaded;
 mod shell_command;
 mod shell_serialization;
 mod shell_snapshot;
@@ -112,5 +110,3 @@ mod view_image;
 mod web_search;
 mod websocket_fallback;
 mod window_headers;
-#[cfg(not(target_os = "windows"))]
-mod zmemory_e2e;
