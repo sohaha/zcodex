@@ -298,8 +298,8 @@ fn queued_message_edit_binding_for_terminal(terminal_info: TerminalInfo) -> KeyB
     }
 }
 
-use crate::app_event::AppEvent;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app_event::AppEvent;
 
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event::ExitMode;
@@ -316,10 +316,10 @@ use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
 use crate::bottom_pane::ExperimentalFeatureItem;
 use crate::bottom_pane::ExperimentalFeaturesView;
-use crate::bottom_pane::MemoriesSettingsView;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::McpServerElicitationFormRequest;
+use crate::bottom_pane::MemoriesSettingsView;
 use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::QUIT_SHORTCUT_TIMEOUT;
 use crate::bottom_pane::SelectionAction;
@@ -2635,9 +2635,7 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: MEMORIES_ENABLE_YES.to_string(),
-                description: Some(
-                    "立即保存设置，需要开启新会话后才能使用。".to_string(),
-                ),
+                description: Some("立即保存设置，需要开启新会话后才能使用。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::UpdateFeatureFlags {
                         updates: vec![(Feature::MemoryTool, true)],

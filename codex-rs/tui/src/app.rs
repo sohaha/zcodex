@@ -1573,7 +1573,6 @@ impl App {
     }
 
     async fn update_memory_settings_with_app_server(
-
         &mut self,
         app_server: &mut AppServerSession,
         use_memories: bool,
