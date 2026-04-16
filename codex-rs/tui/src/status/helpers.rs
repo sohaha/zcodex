@@ -305,7 +305,7 @@ mod tests {
             &config,
             &[
                 global_agents_path.clone().abs(),
-                project_agents_path.clone().abs(),
+                global_agents_path.clone().abs(),
             ],
         );
         let mut paths = summary.split(", ");
