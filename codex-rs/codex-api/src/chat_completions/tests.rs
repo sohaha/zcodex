@@ -604,7 +604,9 @@ async fn chat_stream_errors_when_connection_closes_before_finish_reason() {
         events.push(event);
     }
 
-    assert!(matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before chat completions finish_reason"));
+    assert!(
+        matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before chat completions finish_reason")
+    );
 }
 
 #[tokio::test]

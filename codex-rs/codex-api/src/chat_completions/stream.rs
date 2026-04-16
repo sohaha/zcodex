@@ -674,10 +674,7 @@ fn parse_sse_error(data: &str) -> Option<ApiError> {
 
     // Check for server overloaded errors
     if let Some(code_str) = code.as_deref() {
-        if matches!(
-            code_str,
-            "server_is_overloaded" | "slow_down" | "1305"
-        ) {
+        if matches!(code_str, "server_is_overloaded" | "slow_down" | "1305") {
             return Some(ApiError::ServerOverloaded);
         }
     }

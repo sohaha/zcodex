@@ -1865,7 +1865,9 @@ mod tests {
             events.push(event);
         }
 
-        assert!(matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before anthropic message_stop"));
+        assert!(
+            matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before anthropic message_stop")
+        );
     }
 
     #[tokio::test]
