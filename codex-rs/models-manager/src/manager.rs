@@ -507,12 +507,27 @@ impl ModelsManager {
         *self.remote_models.write().await = existing_models;
     }
 
-    fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
-        match provider.wire_api {
-            WireApi::Anthropic => model_info::anthropic_model_catalog(),
-            _ => Self::load_remote_models_from_file().unwrap_or_default(),
-        }
+fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+    let models = match provider.wire_api {
+        WireApi::Anthropic => model_info::anthropic_model_catalog(),
+        _ => Self::load_remote_models_from_file().unwrap_or_default(),
+    };
+    
+    // Apply model_catalog filtering for all wire_api types
+    if let Some(ref catalog_slugs) = provider.model_catalog {
+        tracing::warn!(
+            "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
+            models.len(),
+            catalog_slugs
+        );
+        models
+            .into_iter()
+            .filter(|model| catalog_slugs.contains(&model.slug))
+            .collect()
+    } else {
+        models
     }
+}
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
         Ok(crate::bundled_models_response()?.models)
