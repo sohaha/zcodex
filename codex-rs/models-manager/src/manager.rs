@@ -566,6 +566,7 @@ impl ModelsManager {
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
         // Filter models by provider-specific model_catalog if configured
+        tracing::warn!("MODEL_CATALOG_DEBUG: provider.model_catalog = {:?}, remote_models count = {}", self.provider.model_catalog, presets.len());
         if let Some(ref catalog_slugs) = self.provider.model_catalog {
             presets.retain(|preset| catalog_slugs.contains(&preset.model));
         }
