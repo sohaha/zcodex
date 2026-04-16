@@ -2480,7 +2480,7 @@ pub(crate) struct ProposedPlanStreamCell {
 impl HistoryCell for ProposedPlanCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(vec!["• ".dim(), "Proposed Plan".bold()].into());
+        lines.push(vec!["• ".dim(), "建议计划".bold()].into());
         lines.push(Line::from(" "));
 
         let mut plan_lines: Vec<Line<'static>> = vec![Line::from(" ")];
@@ -2639,7 +2639,7 @@ pub(crate) fn new_image_generation_call(
         let saved_path = Url::from_file_path(saved_path.as_path())
             .map(|url| url.to_string())
             .unwrap_or_else(|_| saved_path.display().to_string());
-        lines.push(vec!["  └ ".dim(), "Saved to: ".dim(), saved_path.into()].into());
+        lines.push(vec!["  └ ".dim(), "保存到：".dim(), saved_path.into()].into());
     }
 
     PlainHistoryCell { lines }
@@ -3030,7 +3030,7 @@ mod tests {
     fn image_generation_call_renders_saved_path() {
         let saved_path = test_path_buf("/tmp/generated-image.png").abs();
         let expected_saved_path = format!(
-            "  └ Saved to: {}",
+            "  └ 保存到：{}",
             Url::from_file_path(saved_path.as_path())
                 .expect("test path should convert to file URL")
         );
@@ -4577,15 +4577,15 @@ mod tests {
             ),
             plan: vec![
                 PlanItemArg {
-                    step: "Investigate existing error paths and logging around HTTP timeouts".into(),
+                    step: "调查现有的 HTTP 超时错误路径和日志记录".into(),
                     status: StepStatus::Completed,
                 },
                 PlanItemArg {
-                    step: "Harden Grafana client error handling with retry/backoff and user‑friendly messages".into(),
+                    step: "通过重试/退避和用户友好消息加强 Grafana 客户端错误处理".into(),
                     status: StepStatus::InProgress,
                 },
                 PlanItemArg {
-                    step: "Add tests for transient failure scenarios and surfacing to the UI".into(),
+                    step: "为瞬态故障场景添加测试并在 UI 中显示".into(),
                     status: StepStatus::Pending,
                 },
             ],
@@ -4604,11 +4604,11 @@ mod tests {
             explanation: None,
             plan: vec![
                 PlanItemArg {
-                    step: "Define error taxonomy".into(),
+                    step: "定义错误分类".into(),
                     status: StepStatus::InProgress,
                 },
                 PlanItemArg {
-                    step: "Implement mapping to user messages".into(),
+                    step: "实现到用户消息的映射".into(),
                     status: StepStatus::Pending,
                 },
             ],

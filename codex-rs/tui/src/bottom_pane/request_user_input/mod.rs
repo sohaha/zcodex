@@ -1422,7 +1422,7 @@ mod tests {
             is_secret: false,
             options: Some(vec![
                 RequestUserInputQuestionOption {
-                    label: "Job: running/completed/failed/expired; Run/Experiment: succeeded/failed/unknown (Recommended when triaging long-running background work and status transitions)".to_string(),
+                    label: "Job: running/completed/failed/expired; Run/Experiment: succeeded/failed/unknown (在排查长时间运行的后台工作和状态转换时推荐使用)".to_string(),
                     description: "Keep async job statuses for progress tracking and include enough context for debugging retries, stale workers, and unexpected expiration paths.".to_string(),
                 },
                 RequestUserInputQuestionOption {
@@ -1444,7 +1444,7 @@ mod tests {
             is_secret: false,
             options: Some(vec![
                 RequestUserInputQuestionOption {
-                    label: "Use Detailed Hint A (Recommended)".to_string(),
+                    label: "使用详细提示 A（推荐）".to_string(),
                     description: "Select this if you want a deliberately overextended explanatory hint that reads like a miniature specification, including context, rationale, expected behavior, and an explicit statement that this choice is mainly for testing how gracefully the interface wraps, truncates, and preserves readability under unusually verbose helper text conditions.".to_string(),
                 },
                 RequestUserInputQuestionOption {
@@ -2842,7 +2842,7 @@ mod tests {
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "Discuss a code change (Recommended)".to_string(),
+                            label: "讨论代码更改（推荐）".to_string(),
                             description: "Walk through a plan and edit code together.".to_string(),
                         },
                         RequestUserInputQuestionOption {
@@ -2894,7 +2894,7 @@ mod tests {
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "Discuss a code change (Recommended)".to_string(),
+                            label: "讨论代码更改（推荐）".to_string(),
                             description: "Walk through a plan and edit code together.".to_string(),
                         },
                         RequestUserInputQuestionOption {
