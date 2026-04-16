@@ -226,6 +226,8 @@ impl ThreadManager {
         environment_manager: Arc<EnvironmentManager>,
         analytics_events_client: Option<AnalyticsEventsClient>,
     ) -> Self {
+
+        tracing::warn!("THREAD_MANAGER_DEBUG: config.model_providers keys = {:?}", config.model_providers.keys().collect::<Vec<_>>());
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
         let models_provider = config
