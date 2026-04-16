@@ -62,6 +62,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-14-upstream-sync-tui-localization-snapshot-loop.md`：上游同步时，TUI 中文化输出要和断言、snapshot 一起按同一收敛面回归。
 - `.agents/llmdoc/memory/reflections/2026-04-14-cli-lifecycle-daemon-lock-probe-race.md`：CLI lifecycle 双 contender 场景里，daemon-lock 探测不能在 launcher owner 的最终 spawn 入口重复做一次，否则会把同伴的瞬时抢锁误判成真实 owner。
 - `.agents/llmdoc/memory/reflections/2026-04-14-anthropic-tool-result-history-merge.md`：Anthropic 兼容 provider 若报 `tool call result does not follow tool call`，先检查 `tool_result` 与后续同角色消息是否被错误拆成多条 history message。
+- `.agents/llmdoc/memory/reflections/2026-04-16-wire-api-terminal-signal-gating.md`：`wire_api = "anthropic"` / `"chat"` 的流式 parser 只能在收到 `stop_reason` / `finish_reason` 后把断流视为正常完成。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。
