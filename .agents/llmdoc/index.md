@@ -63,6 +63,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-14-cli-lifecycle-daemon-lock-probe-race.md`：CLI lifecycle 双 contender 场景里，daemon-lock 探测不能在 launcher owner 的最终 spawn 入口重复做一次，否则会把同伴的瞬时抢锁误判成真实 owner。
 - `.agents/llmdoc/memory/reflections/2026-04-14-anthropic-tool-result-history-merge.md`：Anthropic 兼容 provider 若报 `tool call result does not follow tool call`，先检查 `tool_result` 与后续同角色消息是否被错误拆成多条 history message。
 - `.agents/llmdoc/memory/reflections/2026-04-16-wire-api-terminal-signal-gating.md`：`wire_api = "anthropic"` / `"chat"` 的流式 parser 需要区分“已有可收敛输出的断流”和“无有效输出的提前关闭”，不能只靠终止信号或连接关闭单独判定。
+- `.agents/llmdoc/memory/reflections/2026-04-16-anthropic-compat-done-and-top-level-error.md`：Anthropic 兼容 provider 可能用顶层 `error` 和 `[DONE]` 代替标准 `error` 事件与 `message_stop`，parser 需要显式识别这两类兼容信号。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。

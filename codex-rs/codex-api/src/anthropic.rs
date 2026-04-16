@@ -308,6 +308,18 @@ async fn process_sse(
         };
 
         trace!(raw_sse_data = %sse.data, "anthropic raw SSE");
+        if let Some(error) = parse_sse_error(&sse.data) {
+            let _ = tx_event.send(Err(error)).await;
+            return;
+        }
+        if sse.data == "[DONE]" {
+            if let Some(error) = response_error.take() {
+                let _ = tx_event.send(Err(error)).await;
+            } else if let Err(err) = state.finish(&tx_event).await {
+                let _ = tx_event.send(Err(err)).await;
+            }
+            return;
+        }
         let event: AnthropicStreamEvent = match serde_json::from_str(&sse.data) {
             Ok(event) => event,
             Err(err) => {
@@ -385,6 +397,8 @@ struct AnthropicUsage {
 struct AnthropicErrorPayload {
     #[serde(rename = "type")]
     error_type: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
     #[serde(default)]
     message: Option<String>,
 }
@@ -1312,6 +1326,12 @@ fn map_stream_error(error: Option<AnthropicErrorPayload>) -> ApiError {
     let message = error
         .message
         .unwrap_or_else(|| "anthropic stream error".to_string());
+    if matches!(
+        error.code.as_deref(),
+        Some("1305" | "server_is_overloaded" | "slow_down")
+    ) {
+        return ApiError::ServerOverloaded;
+    }
     match error.error_type.as_deref() {
         Some("invalid_request_error") => {
             if is_context_window_error_message(&message) {
@@ -1335,6 +1355,12 @@ fn map_stream_error(error: Option<AnthropicErrorPayload>) -> ApiError {
         },
         _ => ApiError::Stream(message),
     }
+}
+
+fn parse_sse_error(data: &str) -> Option<ApiError> {
+    let value: Value = serde_json::from_str(data).ok()?;
+    let error = serde_json::from_value(value.get("error")?.clone()).ok()?;
+    Some(map_stream_error(Some(error)))
 }
 
 async fn send_event(
@@ -1921,6 +1947,80 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn anthropic_stream_completes_on_done_without_message_stop() {
+        let payload = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"done\"}}\n\n",
+            "data: [DONE]\n\n"
+        );
+
+        let mut builder = IoBuilder::new();
+        builder.read(payload.as_bytes());
+        let reader = builder.build();
+        let stream =
+            ReaderStream::new(reader).map_err(|err| TransportError::Network(err.to_string()));
+        let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(16);
+
+        tokio::spawn(process_sse(
+            Box::pin(stream),
+            tx,
+            Duration::from_secs(5),
+            None,
+            HashSet::new(),
+        ));
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event.expect("event"));
+        }
+
+        assert_matches!(&events[0], ResponseEvent::Created);
+        assert_matches!(
+            &events[1],
+            ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id == &Some("msg_1".to_string())
+                && role == "assistant"
+                && content.is_empty()
+                && end_turn.is_none()
+                && phase.is_none()
+        );
+        assert_matches!(
+            &events[2],
+            ResponseEvent::OutputTextDelta(text) if text == "done"
+        );
+        assert_matches!(
+            &events[3],
+            ResponseEvent::OutputItemDone(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id == &Some("msg_1".to_string())
+                && role == "assistant"
+                && *end_turn == None
+                && phase.is_none()
+                && content
+                    == &vec![ContentItem::OutputText {
+                        text: "done".to_string(),
+                    }]
+        );
+        assert_matches!(
+            &events[4],
+            ResponseEvent::Completed {
+                response_id,
+                token_usage,
+            } if response_id == "msg_1" && token_usage.is_none()
+        );
+    }
+
+    #[tokio::test]
     async fn anthropic_stream_errors_when_connection_closes_before_any_output() {
         let payload = "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}}\n\n";
 
@@ -1948,6 +2048,36 @@ mod tests {
         assert!(
             matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before anthropic message_stop")
         );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_maps_top_level_overload_error_payload() {
+        let payload = concat!(
+            "data: {\"error\":{\"code\":\"1305\",\"message\":\"The service may be temporarily overloaded, please try again later\"},\"request_id\":\"req_1\"}\n\n",
+            "data: [DONE]\n\n"
+        );
+
+        let mut builder = IoBuilder::new();
+        builder.read(payload.as_bytes());
+        let reader = builder.build();
+        let stream =
+            ReaderStream::new(reader).map_err(|err| TransportError::Network(err.to_string()));
+        let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(16);
+
+        tokio::spawn(process_sse(
+            Box::pin(stream),
+            tx,
+            Duration::from_secs(5),
+            None,
+            HashSet::new(),
+        ));
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+
+        assert_matches!(events.as_slice(), [Err(ApiError::ServerOverloaded)]);
     }
 
     #[tokio::test]
@@ -1984,6 +2114,7 @@ mod tests {
     fn map_stream_error_maps_context_window_invalid_request() {
         let error = AnthropicErrorPayload {
             error_type: Some("invalid_request_error".to_string()),
+            code: None,
             message: Some("prompt is too long: 220000 tokens > 200000 max".to_string()),
         };
 
@@ -1997,6 +2128,7 @@ mod tests {
     fn map_stream_error_keeps_regular_invalid_requests() {
         let error = AnthropicErrorPayload {
             error_type: Some("invalid_request_error".to_string()),
+            code: None,
             message: Some("prompt is too long for tool name validation".to_string()),
         };
 
@@ -2005,6 +2137,19 @@ mod tests {
             ApiError::InvalidRequest { message }
                 if message == "prompt is too long for tool name validation"
         );
+    }
+
+    #[test]
+    fn map_stream_error_maps_legacy_overload_code() {
+        let error = AnthropicErrorPayload {
+            error_type: None,
+            code: Some("1305".to_string()),
+            message: Some(
+                "The service may be temporarily overloaded, please try again later".to_string(),
+            ),
+        };
+
+        assert_matches!(map_stream_error(Some(error)), ApiError::ServerOverloaded);
     }
 
     #[test]
