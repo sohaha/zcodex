@@ -94,6 +94,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                match_mode: None,
                 module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,

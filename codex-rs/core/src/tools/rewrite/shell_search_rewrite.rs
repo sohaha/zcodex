@@ -42,6 +42,7 @@ pub(crate) fn maybe_intercept_shell_search(
         language: infer_language(query.paths.iter().map(String::as_str)),
         symbol,
         query: query_text,
+        match_mode: None,
         module: None,
         path: None,
         line: None,

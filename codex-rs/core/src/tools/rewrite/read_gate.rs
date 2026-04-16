@@ -94,6 +94,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         language: Some(language),
         symbol: None,
         query: None,
+        match_mode: None,
         module: None,
         path: Some(resolved_path.display().to_string()),
         line,
