@@ -35,6 +35,16 @@ model = "glm-5"
 name = "glm"
 requires_openai_auth = true
 wire_api = 'anthropic'
+# 最大重试次数（默认4）
+request_max_retries = 8
+# 流重连次数（默认5）
+stream_idle_timeout_ms = 60000
+# 基础延迟改为 500ms
+retry_base_delay_ms = 500
+# 覆盖模型真实上下文大小
+model_context_window = 158000
+# 达到此 token 数触发 compact     
+model_auto_compact_token_limit = 148000
 
 [model_providers.chat]
 # RUST_LOG=trace codex -c model_provider=chat 

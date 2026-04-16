@@ -294,6 +294,15 @@ impl Default for LocalReactionLibrary {
                 "加油解决！",
                 "错误也是经验~",
                 "先看 stack trace。",
+                "网络问题？检查下连接。",
+                "接口超时了，重试一下。",
+                "请求失败了，看看状态码。",
+                "连接断开了，重连试试。",
+                "服务器可能挂了，稍后再试。",
+                "网络不稳定，多试几次。",
+                "检查下代理设置？",
+                "DNS 解析有问题？",
+                "防火墙可能拦截了。",
             ],
             waiting: &[
                 "稍等...",
@@ -546,6 +555,16 @@ fn classify_reaction_context(
             || msg.contains("警告")
             || msg.contains("panic")
             || msg.contains("异常")
+            || msg.contains("请求失败")
+            || msg.contains("接口失败")
+            || msg.contains("连接失败")
+            || msg.contains("connection failed")
+            || msg.contains("request failed")
+            || msg.contains("network error")
+            || msg.contains("超时")
+            || msg.contains("timeout")
+            || msg.contains("无法连接")
+            || msg.contains("unreachable")
         {
             return ReactionCategory::Error;
         }
@@ -1040,6 +1059,37 @@ mod tests {
     fn classify_reaction_context_error() {
         let cat = classify_reaction_context(None, Some("出现错误: connection failed"));
         assert!(matches!(cat, ReactionCategory::Error));
+    }
+
+    #[test]
+    fn classify_reaction_context_error_on_request_failures() {
+        let samples = [
+            "请求失败，接口超时了",
+            "连接失败，无法连接到上游",
+            "network error while calling provider",
+            "request failed: upstream timeout",
+            "服务 unreachable",
+        ];
+
+        for sample in samples {
+            let cat = classify_reaction_context(None, Some(sample));
+            assert!(matches!(cat, ReactionCategory::Error), "{sample}");
+        }
+    }
+
+    #[test]
+    fn local_reaction_library_includes_network_error_copy() {
+        let library = LocalReactionLibrary::default();
+        let expected = [
+            "网络问题？检查下连接。",
+            "接口超时了，重试一下。",
+            "请求失败了，看看状态码。",
+            "连接断开了，重连试试。",
+        ];
+
+        for sample in expected {
+            assert!(library.error.contains(&sample), "{sample}");
+        }
     }
 
     #[test]

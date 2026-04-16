@@ -80,7 +80,7 @@ pub fn create_tldr_tool() -> ToolSpec {
             "action".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, diagnostics, doctor. Daemon: ping, warm, snapshot, status, notify."
+                    "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify."
                         .to_string(),
                 ),
             },
@@ -122,7 +122,7 @@ pub fn create_tldr_tool() -> ToolSpec {
             "path".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Path for action=extract/imports/slice, or changed path for action=notify."
+                    "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify."
                         .to_string(),
                 ),
             },

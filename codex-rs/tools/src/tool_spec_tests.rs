@@ -122,7 +122,7 @@ fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
     assert_eq!(
         properties["action"],
         JsonSchema::String {
-            description: Some("Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, diagnostics, doctor. Daemon: ping, warm, snapshot, status, notify.".to_string()),
+            description: Some("Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify.".to_string()),
         }
     );
 }
