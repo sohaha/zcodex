@@ -820,9 +820,7 @@ approval_policy = "never"
             .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(
-            rendered.contains("allowed_web_search_modes: disabled (来源: cloud requirements)")
-        );
+        assert!(rendered.contains("allowed_web_search_modes: disabled (来源: cloud requirements)"));
     }
 
     #[test]

@@ -64,6 +64,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-14-anthropic-tool-result-history-merge.md`：Anthropic 兼容 provider 若报 `tool call result does not follow tool call`，先检查 `tool_result` 与后续同角色消息是否被错误拆成多条 history message。
 - `.agents/llmdoc/memory/reflections/2026-04-16-wire-api-terminal-signal-gating.md`：`wire_api = "anthropic"` / `"chat"` 的流式 parser 需要区分“已有可收敛输出的断流”和“无有效输出的提前关闭”，不能只靠终止信号或连接关闭单独判定。
 - `.agents/llmdoc/memory/reflections/2026-04-16-anthropic-compat-done-and-top-level-error.md`：Anthropic 兼容 provider 可能用顶层 `error` 和 `[DONE]` 代替标准 `error` 事件与 `message_stop`，parser 需要显式识别这两类兼容信号。
+- `.agents/llmdoc/memory/reflections/2026-04-16-ztldr-literal-search-and-generic-symbol-routing.md`：`ztldr search` 默认 literal、非法 regex 结构化失败，以及通用 symbol 回退 exact-text 路由的反思。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。

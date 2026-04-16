@@ -59,7 +59,7 @@ impl MemoriesSettingsView {
         app_event_tx: AppEventSender,
     ) -> Self {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Memories".bold()));
+        header.push(Line::from("记忆".bold()));
         header.push(Line::from(
             "选择 Codex 如何使用和生成记忆。更改将保存到 config.toml。".dim(),
         ));
@@ -323,7 +323,7 @@ impl Renderable for MemoriesSettingsView {
 
 fn memories_settings_hint_line() -> Line<'static> {
     Line::from(vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
         " to toggle; ".into(),
         key_hint::plain(KeyCode::Enter).into(),

@@ -79,6 +79,16 @@ pub struct Cli {
     )]
     pub oss: bool,
 
+    /// 快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，但
+    /// 优先级低于显式的 `-c model_provider=...`。
+    #[arg(
+        short = 'z',
+        long = "provider",
+        value_name = "PROVIDER",
+        help = "快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，优先级低于显式的 `-c model_provider=...`。"
+    )]
+    pub provider: Option<String>,
+
     /// 指定要使用的本地提供方（lmstudio 或 ollama）。
     /// 如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择。
     #[arg(

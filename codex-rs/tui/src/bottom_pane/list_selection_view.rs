@@ -1439,7 +1439,7 @@ mod tests {
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Model and Effort".to_string()),
+                title: Some("选择模型和推理级别".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1521,7 +1521,7 @@ mod tests {
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Model and Effort".to_string()),
+                title: Some("选择模型和推理级别".to_string()),
                 items,
                 ..Default::default()
             },

@@ -2395,7 +2395,7 @@ mod tests {
             "properties": {
                 "confirmed": {
                     "type": "boolean",
-                    "title": "Confirm",
+                    "title": "确认",
                 }
             },
         });

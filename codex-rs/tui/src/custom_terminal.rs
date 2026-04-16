@@ -170,7 +170,7 @@ where
         if self.hidden_cursor
             && let Err(err) = self.show_cursor()
         {
-            eprintln!("Failed to show the cursor: {err}");
+            eprintln!("显示光标失败： {err}");
         }
     }
 }

@@ -3498,7 +3498,7 @@ impl App {
                         lines.push(usage_line.into());
                     }
                     if let Some(command) = summary.resume_command {
-                        let spans = vec!["To continue this session, run ".into(), command.cyan()];
+                        let spans = vec!["要继续此会话，请运行 ".into(), command.cyan()];
                         lines.push(spans.into());
                     }
                     self.chat_widget.add_plain_history_lines(lines);
@@ -3913,7 +3913,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to fork session from {target_label}")
+                        format!("无法从以下目标分叉会话： {target_label}")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -4294,8 +4294,7 @@ impl App {
                                 lines.push(usage_line.into());
                             }
                             if let Some(command) = summary.resume_command {
-                                let spans =
-                                    vec!["To continue this session, run ".into(), command.cyan()];
+                                let spans = vec!["要继续此会话，请运行 ".into(), command.cyan()];
                                 lines.push(spans.into());
                             }
                             self.chat_widget.add_plain_history_lines(lines);
@@ -4441,7 +4440,7 @@ impl App {
                                         }
                                         if let Some(command) = summary.resume_command {
                                             let spans = vec![
-                                                "To continue this session, run ".into(),
+                                                "要继续此会话，请运行 ".into(),
                                                 command.cyan(),
                                             ];
                                             lines.push(spans.into());
@@ -4547,7 +4546,7 @@ impl App {
                 // Enter alternate screen using TUI helper and build pager lines
                 let _ = tui.enter_alt_screen();
                 let pager_lines: Vec<ratatui::text::Line<'static>> = if text.trim().is_empty() {
-                    vec!["No changes detected.".italic().into()]
+                    vec!["未检测到更改。".italic().into()]
                 } else {
                     text.lines().map(ansi_escape_line).collect()
                 };
@@ -5006,7 +5005,7 @@ impl App {
             AppEvent::WindowsSandboxGrantReadRootCompleted { path, error } => match error {
                 Some(err) => {
                     self.chat_widget
-                        .add_to_history(history_cell::new_error_event(format!("Error: {err}")));
+                        .add_to_history(history_cell::new_error_event(format!("错误：{err}")));
                 }
                 None => {
                     self.chat_widget
@@ -5695,16 +5694,13 @@ impl App {
                     let _ = tui.enter_alt_screen();
                     let mut lines = Vec::new();
                     if let Some(reason) = reason {
-                        lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
+                        lines.push(Line::from(vec!["原因：".into(), reason.italic()]));
                         lines.push(Line::from(""));
                     }
                     if let Some(rule_line) =
                         crate::bottom_pane::format_requested_permissions_rule(&permissions)
                     {
-                        lines.push(Line::from(vec![
-                            "Permission rule: ".into(),
-                            rule_line.cyan(),
-                        ]));
+                        lines.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
                     }
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],

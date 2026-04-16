@@ -529,7 +529,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
             line!["Run ", update_action.command_str().cyan(), " to update."]
         } else {
             line![
-                "See ",
+                "请参阅 ",
                 "https://github.com/openai/codex".cyan().underlined(),
                 " for installation options."
             ]
@@ -544,7 +544,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
             ],
             update_instruction,
             "",
-            "See full release notes:",
+            "请参阅完整发布说明：",
             "https://github.com/openai/codex/releases/latest"
                 .cyan()
                 .underlined(),
@@ -1398,9 +1398,9 @@ impl HistoryCell for SessionHeaderHistoryCell {
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
-        const PERMISSIONS_LABEL: &str = "permissions:";
+        const CHANGE_MODEL_HINT_EXPLANATION: &str = " 切换模型";
+        const DIR_LABEL: &str = "目录：";
+        const PERMISSIONS_LABEL: &str = "权限：";
         let label_width = if self.yolo_mode {
             DIR_LABEL.len().max(PERMISSIONS_LABEL.len())
         } else {
@@ -1409,7 +1409,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
 
         let model_label = format!(
             "{model_label:<label_width$}",
-            model_label = "model:",
+            model_label = "模型：",
             label_width = label_width
         );
         let reasoning_label = self.reasoning_label();
@@ -1636,7 +1636,7 @@ impl HistoryCell for McpToolCallCell {
                 }
                 Err(err) => {
                     let err_text = format_and_truncate_tool_result(
-                        &format!("Error: {err}"),
+                        &format!("错误：{err}"),
                         TOOL_CALL_MAX_LINES,
                         width as usize,
                     );
@@ -2617,7 +2617,7 @@ pub(crate) fn new_view_image_tool_call(path: AbsolutePathBuf, cwd: &Path) -> Pla
     let display_path = display_path_for(path.as_path(), cwd);
 
     let lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Viewed Image".bold()].into(),
+        vec!["• ".dim(), "已查看图片".bold()].into(),
         vec!["  └ ".dim(), display_path.dim()].into(),
     ];
 

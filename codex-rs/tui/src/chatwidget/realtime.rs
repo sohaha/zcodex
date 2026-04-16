@@ -377,7 +377,7 @@ impl ChatWidget {
         };
 
         if let Err(err) = handle.apply_answer_sdp(sdp) {
-            self.fail_realtime_conversation(format!("Failed to connect realtime WebRTC: {err}"));
+            self.fail_realtime_conversation(format!("连接实时 WebRTC 失败： {err}"));
         }
     }
 
@@ -397,7 +397,7 @@ impl ChatWidget {
         let offer = match result {
             Ok(offer) => offer,
             Err(err) => {
-                self.fail_realtime_conversation(format!("Failed to start realtime WebRTC: {err}"));
+                self.fail_realtime_conversation(format!("启动实时 WebRTC 失败： {err}"));
                 return;
             }
         };
