@@ -275,11 +275,15 @@ async fn process_sse(
             Ok(Some(Ok(sse))) => sse,
             Ok(Some(Err(err))) => {
                 debug!("SSE Error: {err:#}");
-                let _ = tx_event.send(Err(ApiError::Stream(err.to_string()))).await;
+                if state.can_finish_after_disconnect() && response_error.is_none() {
+                    let _ = state.finish(&tx_event).await;
+                } else {
+                    let _ = tx_event.send(Err(ApiError::Stream(err.to_string()))).await;
+                }
                 return;
             }
             Ok(None) => {
-                if state.response_id.is_some() && response_error.is_none() {
+                if state.can_finish_after_disconnect() && response_error.is_none() {
                     let _ = state.finish(&tx_event).await;
                 } else {
                     let error = response_error.unwrap_or(ApiError::Stream(
@@ -792,6 +796,10 @@ impl AnthropicStreamState {
             },
         )
         .await
+    }
+
+    fn can_finish_after_disconnect(&self) -> bool {
+        self.stop_reason.is_some()
     }
 
     fn message_end_turn(&self) -> Option<bool> {
@@ -1746,6 +1754,118 @@ mod tests {
                 token_usage,
             } if response_id == "msg_1" && token_usage.is_none()
         );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_completes_when_connection_closes_after_stop_reason() {
+        let payload = concat!(
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"done\"}}\n\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"input_tokens\":2,\"output_tokens\":1}}\n\n"
+        );
+
+        let mut builder = IoBuilder::new();
+        builder.read(payload.as_bytes());
+        let reader = builder.build();
+        let stream =
+            ReaderStream::new(reader).map_err(|err| TransportError::Network(err.to_string()));
+        let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(16);
+
+        tokio::spawn(process_sse(
+            Box::pin(stream),
+            tx,
+            Duration::from_secs(5),
+            None,
+            HashSet::new(),
+        ));
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event.expect("event"));
+        }
+
+        assert_matches!(
+            &events[0],
+            ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id.is_none()
+                && role == "assistant"
+                && content.is_empty()
+                && end_turn.is_none()
+                && phase.is_none()
+        );
+        assert_matches!(
+            &events[1],
+            ResponseEvent::OutputTextDelta(text) if text == "done"
+        );
+        assert_matches!(
+            &events[2],
+            ResponseEvent::OutputItemDone(ResponseItem::Message {
+                id,
+                role,
+                content,
+                end_turn,
+                phase,
+            }) if id.is_none()
+                && role == "assistant"
+                && *end_turn == Some(true)
+                && phase.is_none()
+                && content
+                    == &vec![ContentItem::OutputText {
+                        text: "done".to_string(),
+                    }]
+        );
+        assert_matches!(
+            &events[3],
+            ResponseEvent::Completed {
+                response_id,
+                token_usage,
+            }
+                if response_id == "anthropic-response"
+                    && token_usage
+                        == &Some(TokenUsage {
+                            input_tokens: 2,
+                            cached_input_tokens: 0,
+                            output_tokens: 1,
+                            reasoning_output_tokens: 0,
+                            total_tokens: 3,
+                        })
+        );
+    }
+
+    #[tokio::test]
+    async fn anthropic_stream_errors_when_connection_closes_before_stop_reason() {
+        let payload = concat!(
+            "data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\"}}\n\n",
+            "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"dangling\"}}\n\n"
+        );
+
+        let mut builder = IoBuilder::new();
+        builder.read(payload.as_bytes());
+        let reader = builder.build();
+        let stream =
+            ReaderStream::new(reader).map_err(|err| TransportError::Network(err.to_string()));
+        let (tx, mut rx) = mpsc::channel::<Result<ResponseEvent, ApiError>>(16);
+
+        tokio::spawn(process_sse(
+            Box::pin(stream),
+            tx,
+            Duration::from_secs(5),
+            None,
+            HashSet::new(),
+        ));
+
+        let mut events = Vec::new();
+        while let Some(event) = rx.recv().await {
+            events.push(event);
+        }
+
+        assert!(matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before anthropic message_stop"));
     }
 
     #[tokio::test]

@@ -531,6 +531,83 @@ async fn chat_stream_maps_custom_tool_calls() {
 }
 
 #[tokio::test]
+async fn chat_stream_completes_when_connection_closes_after_finish_reason() {
+    let chunks = vec![
+        Ok(bytes::Bytes::from(
+            "data: {\"id\":\"chatcmpl-3\",\"model\":\"gpt-test\",\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}\n\n",
+        )),
+        Err(codex_client::TransportError::Network(
+            "socket closed".to_string(),
+        )),
+    ];
+    let stream_response = StreamResponse {
+        status: http::StatusCode::OK,
+        headers: http::HeaderMap::new(),
+        bytes: Box::pin(stream::iter(chunks)),
+    };
+
+    let mut stream = spawn_response_stream(
+        stream_response,
+        Duration::from_secs(1),
+        None,
+        None,
+        HashSet::new(),
+        HashSet::new(),
+        HashSet::new(),
+    );
+    let mut events = Vec::new();
+    while let Some(event) = stream.rx_event.recv().await {
+        let event = event.expect("event ok");
+        let done = matches!(event, ResponseEvent::Completed { .. });
+        events.push(event);
+        if done {
+            break;
+        }
+    }
+
+    assert!(matches!(
+        &events[5],
+        ResponseEvent::Completed {
+            response_id,
+            token_usage: Some(TokenUsage {
+                input_tokens: 3,
+                cached_input_tokens: 0,
+                output_tokens: 1,
+                reasoning_output_tokens: 0,
+                total_tokens: 4,
+            }),
+        } if response_id == "chatcmpl-3"
+    ));
+}
+
+#[tokio::test]
+async fn chat_stream_errors_when_connection_closes_before_finish_reason() {
+    let stream_response = StreamResponse {
+        status: http::StatusCode::OK,
+        headers: http::HeaderMap::new(),
+        bytes: Box::pin(stream::iter(vec![Ok(bytes::Bytes::from(
+            "data: {\"id\":\"chatcmpl-4\",\"model\":\"gpt-test\",\"choices\":[{\"delta\":{\"content\":\"dangling\"}}]}\n\n",
+        ))])),
+    };
+
+    let mut stream = spawn_response_stream(
+        stream_response,
+        Duration::from_secs(1),
+        None,
+        None,
+        HashSet::new(),
+        HashSet::new(),
+        HashSet::new(),
+    );
+    let mut events = Vec::new();
+    while let Some(event) = stream.rx_event.recv().await {
+        events.push(event);
+    }
+
+    assert!(matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before chat completions finish_reason"));
+}
+
+#[tokio::test]
 async fn chat_stream_reports_decode_errors() {
     let stream_response = StreamResponse {
         status: http::StatusCode::OK,

@@ -108,15 +108,27 @@ async fn process_sse(
                 }
             }
             Ok(Some(Err(err))) => {
-                let _ = tx_event
-                    .send(Err(ApiError::Stream(format!(
-                        "chat completions stream error: {err}"
-                    ))))
-                    .await;
+                if state.can_finish_after_disconnect() {
+                    let _ = state.complete(&tx_event).await;
+                } else {
+                    let _ = tx_event
+                        .send(Err(ApiError::Stream(format!(
+                            "chat completions stream error: {err}"
+                        ))))
+                        .await;
+                }
                 return;
             }
             Ok(None) => {
-                let _ = state.complete(&tx_event).await;
+                if state.can_finish_after_disconnect() {
+                    let _ = state.complete(&tx_event).await;
+                } else {
+                    let _ = tx_event
+                        .send(Err(ApiError::Stream(
+                            "stream closed before chat completions finish_reason".to_string(),
+                        )))
+                        .await;
+                }
                 return;
             }
             Err(_) => {
@@ -141,6 +153,7 @@ struct ChatStreamState {
     message_item_started: bool,
     tool_calls: BTreeMap<u32, PendingToolCall>,
     completed: bool,
+    saw_finish_reason: bool,
     token_usage: Option<TokenUsage>,
     custom_tool_names: HashSet<String>,
     tool_search_tool_names: HashSet<String>,
@@ -166,6 +179,7 @@ impl ChatStreamState {
             message_item_started: false,
             tool_calls: BTreeMap::new(),
             completed: false,
+            saw_finish_reason: false,
             token_usage: None,
             custom_tool_names,
             tool_search_tool_names,
@@ -208,6 +222,7 @@ impl ChatStreamState {
             }
 
             if choice.finish_reason.is_some() {
+                self.saw_finish_reason = true;
                 self.flush_output_items(tx_event).await?;
             }
         }
@@ -434,6 +449,10 @@ impl ChatStreamState {
         .await?;
         self.completed = true;
         Ok(())
+    }
+
+    fn can_finish_after_disconnect(&self) -> bool {
+        self.saw_finish_reason
     }
 }
 
