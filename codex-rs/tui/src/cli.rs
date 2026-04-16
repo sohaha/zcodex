@@ -82,7 +82,7 @@ pub struct Cli {
     /// 快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，但
     /// 优先级低于显式的 `-c model_provider=...`。
     #[arg(
-        short = 'z',
+        short = 'P',
         long = "provider",
         value_name = "PROVIDER",
         help = "快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，优先级低于显式的 `-c model_provider=...`。"

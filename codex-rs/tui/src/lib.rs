@@ -705,7 +705,7 @@ pub async fn run_main(
 
     // When using `--oss`, let the bootstrapper pick the model (defaulting to
     // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
-    // Inject `-z` / `--provider` as a low-priority model_provider override.
+    // Inject `-P` / `--provider` as a low-priority model_provider override.
     // Prepend so that any explicit `-c model_provider=...` appended later wins.
     if let Some(provider) = &cli.provider {
         cli.config_overrides
