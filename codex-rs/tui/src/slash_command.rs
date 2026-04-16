@@ -21,6 +21,7 @@ pub enum SlashCommand {
     #[strum(serialize = "sandbox-add-read-dir")]
     SandboxReadRoot,
     Experimental,
+    Memories,
     Skills,
     Review,
     Rename,
@@ -109,6 +110,7 @@ impl SlashCommand {
             SlashCommand::ElevateSandbox => "设置提权 Agent 沙盒",
             SlashCommand::SandboxReadRoot => "让沙盒读取一个目录：/sandbox-add-read-dir <绝对路径>",
             SlashCommand::Experimental => "切换实验性功能",
+            SlashCommand::Memories => "配置记忆功能的使用和生成",
             SlashCommand::Mcp => "列出已配置的 MCP 工具",
             SlashCommand::Apps => "管理应用",
             SlashCommand::Plugins => "浏览插件",
@@ -155,6 +157,7 @@ impl SlashCommand {
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
             | SlashCommand::Experimental
+            | SlashCommand::Memories
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear
