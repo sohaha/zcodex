@@ -240,12 +240,27 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        let remote_models = model_catalog
+        // Always apply per-provider model_catalog filtering, regardless of global model_catalog
+        let base_models = model_catalog
             .map(|catalog| catalog.models)
             .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider));
+        
+        let remote_models = if let Some(ref catalog_slugs) = provider.model_catalog {
+            tracing::warn!(
+                "MODEL_CATALOG_DEBUG: Filtering {} models by provider catalog: {:?}",
+                base_models.len(),
+                catalog_slugs
+            );
+            base_models
+                .into_iter()
+                .filter(|model| catalog_slugs.contains(&model.slug))
+                .collect()
+        } else {
+            base_models
+        };
         Self {
-            remote_models: RwLock::new(remote_models),
             catalog_mode,
+            remote_models: RwLock::new(remote_models),
             collaboration_modes_config,
             auth_manager,
             etag: RwLock::new(None),
