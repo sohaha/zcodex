@@ -31,10 +31,11 @@ view_image_tool = true
 # RUST_LOG=trace hapi codex -c model_provider=glm 
 api_key = "sk-2cb0e6183fc4d431c0895d46a5639192"
 base_url = "https://cch.zx.73zls.com/v1"
-model = "glm-5"
+# model = "glm-5"  # 注释掉固定模型，使用 model_catalog 过滤
 name = "glm"
 requires_openai_auth = true
-wire_api = 'anthropic'
+model_catalog = ["glm-5", "glm-4"]  # 只显示这两个模型
+wire_api = "responses"  # 改为 responses 协议以支持远程模型加载
 # 最大重试次数（默认4）
 request_max_retries = 8
 # 流重连次数（默认5）
@@ -50,7 +51,7 @@ model_auto_compact_token_limit = 148000
 # RUST_LOG=trace codex -c model_provider=chat 
 api_key = "sk-2cb0e6183fc4d431c0895d46a5639192"
 base_url = "https://cch.zx.73zls.com/v1"
-model = "glm-5"
+# model = "glm-5"  # 注释掉固定模型，使用 model_catalog 过滤
 name = "chat"
 wire_api = 'chat'
 
@@ -61,7 +62,7 @@ base_url = "https://api.minimaxi.com/anthropic/v1"
 model = "MiniMax-M2.7"
 name = "minmax"
 requires_openai_auth = false
-wire_api = 'anthropic'
+wire_api = "responses"  # 改为 responses 协议以支持远程模型加载
 # 最大重试次数（默认4）
 request_max_retries = 8
 # 流重连次数（默认5）
@@ -78,6 +79,7 @@ api_key = ""
 base_url = "https://cch.zx.73zls.com/v1"
 name = "cch"
 requires_openai_auth = true
+model_catalog = ["glm-5", "glm-4"]  # 只显示这两个模型
 wire_api = "responses"
 
 [sandbox_workspace_write]
