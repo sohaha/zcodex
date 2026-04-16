@@ -2077,6 +2077,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_hooks_defaults_search_to_literal_mode() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "resolveProjectAvatar(\n[workspaces/get] start\n",
+        )
+        .expect("fixture should write");
+
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Search,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("resolveProjectAvatar(".to_string()),
+                match_mode: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("search tool should succeed");
+
+        assert_eq!(result.text, "search via local: 1 matches");
+        assert_eq!(result.structured_content["action"], "search");
+        assert_eq!(result.structured_content["matchMode"], "literal");
+        assert_eq!(result.structured_content["search"]["match_mode"], "literal");
+        assert_eq!(
+            result.structured_content["search"]["matches"][0]["content"],
+            "resolveProjectAvatar("
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_surfaces_invalid_regex_patterns() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "resolveProjectAvatar(\n")
+            .expect("fixture should write");
+
+        let error = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Search,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("resolveProjectAvatar(".to_string()),
+                match_mode: Some(SearchMatchMode::Regex),
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect_err("invalid regex should fail");
+
+        assert!(error
+            .to_string()
+            .contains("invalid regex pattern `resolveProjectAvatar(`"));
+    }
+
+    #[tokio::test]
     async fn run_tldr_tool_with_hooks_preserves_snapshot_payload_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
         let result = run_tldr_tool_with_hooks(

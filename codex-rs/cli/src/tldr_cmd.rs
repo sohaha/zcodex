@@ -167,7 +167,7 @@ impl From<CliLanguage> for SupportedLanguage {
     }
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 pub enum CliSearchMatchMode {
     Literal,
     Regex,
@@ -2593,6 +2593,30 @@ mod output_tests {
     }
 
     #[test]
+    fn render_search_response_text_includes_match_mode() {
+        let lines = render_search_response_text(
+            "local",
+            Some("search ready"),
+            "resolveProjectAvatar(",
+            "literal",
+            1,
+            1,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "来源：local".to_string(),
+                "模式：resolveProjectAvatar(".to_string(),
+                "匹配语义：literal".to_string(),
+                "已索引文件数：1".to_string(),
+                "匹配数：1".to_string(),
+                "消息：search ready".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn daemon_action_and_command_maps_notify() {
         let path = PathBuf::from("src/lib.rs");
         let (action, command) =
@@ -2697,6 +2721,7 @@ mod output_tests {
 
 #[cfg(test)]
 mod parse_tests {
+    use super::CliSearchMatchMode;
     use super::TldrCli;
     use super::TldrSubcommand;
     use clap::Parser;
@@ -2746,6 +2771,34 @@ mod parse_tests {
         assert_eq!(command.only_tools, vec!["cargo-clippy".to_string()]);
         assert_eq!(command.no_install_hints, true);
         assert!(command.lang.is_some());
+    }
+
+    #[test]
+    fn search_command_defaults_to_literal_match_mode() {
+        let cli = TldrCli::try_parse_from(["codex", "search", "resolveProjectAvatar("])
+            .expect("search args should parse");
+
+        let TldrSubcommand::Search(command) = cli.subcommand else {
+            panic!("expected search subcommand");
+        };
+        assert_eq!(command.match_mode, CliSearchMatchMode::Literal);
+    }
+
+    #[test]
+    fn search_command_parses_regex_match_mode() {
+        let cli = TldrCli::try_parse_from([
+            "codex",
+            "search",
+            "--match-mode",
+            "regex",
+            "log(in|out)",
+        ])
+        .expect("search args should parse");
+
+        let TldrSubcommand::Search(command) = cli.subcommand else {
+            panic!("expected search subcommand");
+        };
+        assert_eq!(command.match_mode, CliSearchMatchMode::Regex);
     }
 }
 
