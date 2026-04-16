@@ -1,25 +1,29 @@
-# wire_api 非 Responses 流式关闭要靠终止信号判定
+# wire_api 非 Responses 断流兼容要区分无输出和可收敛输出
 
 ## 背景
 - 用户在 `wire_api = "anthropic"` 的兼容 provider 上遇到 `stream disconnected before completion: stream closed before anthropic message_stop`。
-- 这轮顺手检查了 `wire_api = "chat"` 的流式 parser，发现它在 SSE 连接直接关闭时会无条件完成；而 `anthropic` 侧又过度依赖 `message_stop`，两边的“正常收尾 vs 异常断流”判定都不稳。
+- 之前刚收紧过一次逻辑，把 `anthropic` / `chat` 都改成“只有看到 `stop_reason` / `finish_reason` 才允许正常完成”，结果对一些正文已完整、只是尾部终止事件缺失的兼容 provider 仍然过严。
 
 ## 这次修复
 - `codex-rs/codex-api/src/anthropic.rs`
-  - 只在已经看到 `message_delta.stop_reason` 时，才把 transport close / SSE error 视为正常完成。
-  - 若连接在 stop reason 之前关闭，继续显式报 `stream closed before anthropic message_stop`，不再因为已有局部文本就静默吞掉截断。
+  - 把 EOF / transport error 的正常完成条件放宽为：已经看到 `message_delta.stop_reason`，或已经积累出可收敛的文本 / reasoning / tool 输出。
+  - 若 best-effort `finish()` 自己报错，不再静默吞掉，而是继续上抛流错误。
+  - 对完全没有有效输出的提前关闭，仍显式报 `stream closed before anthropic message_stop`。
 - `codex-rs/codex-api/src/chat_completions/stream.rs`
-  - 新增 `saw_finish_reason`，只有在 provider 已经给出 `finish_reason` 时，才允许把连接关闭或尾部 transport error 当成正常完成。
-  - 对没有 `finish_reason` 就结束的流，改为显式报 `stream closed before chat completions finish_reason`。
+  - 把 EOF / transport error 的正常完成条件放宽为：已经看到 `finish_reason`，或已经积累出可收敛的文本 / reasoning / tool 输出。
+  - 若 best-effort `complete()` 自己报错，不再静默吞掉，而是继续上抛流错误。
+  - 对完全没有有效输出的提前关闭，仍显式报 `stream closed before chat completions finish_reason`。
 - 补了回归测试，分别覆盖：
   - 终止信号后断流仍应成功完成；
-  - 终止信号前断流必须保留错误。
+  - 没有终止信号但已有可收敛输出时，断流仍应 best-effort 完成；
+  - 完全没有有效输出时，断流必须保留错误。
 
 ## 关键收获
-- 对 `wire_api = "anthropic"` / `"chat"` 这类非 Responses 流式协议，不能把“连接断开”本身当成完成条件；真正可靠的是 provider 已经发出的终止信号（`stop_reason` / `finish_reason`）。
-- 兼容 provider 常见的问题不是正文流不出来，而是尾部 `message_stop` / `[DONE]` 缺失；这种情况应该在“已看到终止信号”时降级为正常完成，而不是一刀切重试或报错。
-- 反过来，如果连终止信号都没看到，就算已经收到了部分文本，也应保留错误，这样上层才能走 stream retry，而不是把截断响应误判成成功。
+- 对 `wire_api = "anthropic"` / `"chat"` 这类非 Responses 流式协议，“连接断开”不是完成条件；完成判断要看 parser 手里是否已经有足够收敛成最终 `ResponseEvent` 的状态。
+- 终止信号仍然是最强证据，但不是唯一证据。兼容 provider 常见的问题是正文和工具调用都已发完，只丢了尾部 `message_stop` / `[DONE]`；这时应做 best-effort complete，而不是把本可用输出一律打成错误。
+- 反过来，如果还没有任何有效输出，只凭 response id、空 `content_block_start` 或连接自然关闭，仍不足以判定成功。
+- 放宽断流兼容时，不能吞掉补完路径本身的解析错误；否则会把“协议不完整”误伪装成“正常结束”。
 
 ## 后续建议
-- 以后改 `codex-api` 的任何流式 parser，都把“终止信号是否已出现”当成显式状态位，而不是只看 response id、是否收到了文本，或连接有没有自然关闭。
-- 新增兼容 provider 时，优先补“终止信号后断流”“终止信号前断流”这对回归测试，避免再次在 parser 里把 transport 语义和协议终止语义混在一起。
+- 以后改 `codex-api` 的任何流式 parser，都同时维护两类显式状态：终止信号是否已出现，以及当前是否已有可收敛输出。
+- 新增兼容 provider 时，优先补三类回归测试：终止信号后断流、已有输出但无终止信号的断流、完全无输出的提前关闭。

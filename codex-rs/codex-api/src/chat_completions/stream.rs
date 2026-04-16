@@ -109,7 +109,9 @@ async fn process_sse(
             }
             Ok(Some(Err(err))) => {
                 if state.can_finish_after_disconnect() {
-                    let _ = state.complete(&tx_event).await;
+                    if let Err(err) = state.complete(&tx_event).await {
+                        let _ = tx_event.send(Err(err)).await;
+                    }
                 } else {
                     let _ = tx_event
                         .send(Err(ApiError::Stream(format!(
@@ -121,7 +123,9 @@ async fn process_sse(
             }
             Ok(None) => {
                 if state.can_finish_after_disconnect() {
-                    let _ = state.complete(&tx_event).await;
+                    if let Err(err) = state.complete(&tx_event).await {
+                        let _ = tx_event.send(Err(err)).await;
+                    }
                 } else {
                     let _ = tx_event
                         .send(Err(ApiError::Stream(
@@ -452,7 +456,13 @@ impl ChatStreamState {
     }
 
     fn can_finish_after_disconnect(&self) -> bool {
-        self.saw_finish_reason
+        self.saw_finish_reason || self.has_finishable_output()
+    }
+
+    fn has_finishable_output(&self) -> bool {
+        !self.output_text.is_empty()
+            || !self.reasoning_text.is_empty()
+            || !self.tool_calls.is_empty()
     }
 }
 

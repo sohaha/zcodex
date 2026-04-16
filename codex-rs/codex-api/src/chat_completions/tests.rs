@@ -5,6 +5,7 @@ use crate::common::TextControls;
 use crate::common::TextFormat;
 use crate::common::TextFormatType;
 use crate::error::ApiError;
+use assert_matches::assert_matches;
 use codex_client::StreamResponse;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ReasoningItemContent;
@@ -581,7 +582,7 @@ async fn chat_stream_completes_when_connection_closes_after_finish_reason() {
 }
 
 #[tokio::test]
-async fn chat_stream_errors_when_connection_closes_before_finish_reason() {
+async fn chat_stream_completes_when_connection_closes_after_text_without_finish_reason() {
     let stream_response = StreamResponse {
         status: http::StatusCode::OK,
         headers: http::HeaderMap::new(),
@@ -601,9 +602,87 @@ async fn chat_stream_errors_when_connection_closes_before_finish_reason() {
     );
     let mut events = Vec::new();
     while let Some(event) = stream.rx_event.recv().await {
+        events.push(event.expect("event ok"));
+    }
+
+    assert_matches!(&events[0], ResponseEvent::Created);
+    assert_matches!(
+        &events[1],
+        ResponseEvent::ServerModel(model) if model == "gpt-test"
+    );
+    assert_matches!(
+        &events[2],
+        ResponseEvent::OutputItemAdded(ResponseItem::Message {
+            id,
+            role,
+            content,
+            end_turn,
+            phase,
+        }) if id.is_none()
+            && role == "assistant"
+            && content.is_empty()
+            && end_turn.is_none()
+            && phase.is_none()
+    );
+    assert_matches!(
+        &events[3],
+        ResponseEvent::OutputTextDelta(text) if text == "dangling"
+    );
+    assert_matches!(
+        &events[4],
+        ResponseEvent::OutputItemDone(ResponseItem::Message {
+            id,
+            role,
+            content,
+            end_turn,
+            phase,
+        }) if id.is_none()
+            && role == "assistant"
+            && *end_turn == None
+            && phase.is_none()
+            && content
+                == &vec![ContentItem::OutputText {
+                    text: "dangling".to_string(),
+                }]
+    );
+    assert_matches!(
+        &events[5],
+        ResponseEvent::Completed {
+            response_id,
+            token_usage,
+        } if response_id == "chatcmpl-4" && token_usage.is_none()
+    );
+}
+
+#[tokio::test]
+async fn chat_stream_errors_when_connection_closes_before_any_output() {
+    let stream_response = StreamResponse {
+        status: http::StatusCode::OK,
+        headers: http::HeaderMap::new(),
+        bytes: Box::pin(stream::iter(vec![Ok(bytes::Bytes::from(
+            "data: {\"id\":\"chatcmpl-4\",\"model\":\"gpt-test\",\"choices\":[{}]}\n\n",
+        ))])),
+    };
+
+    let mut stream = spawn_response_stream(
+        stream_response,
+        Duration::from_secs(1),
+        None,
+        None,
+        HashSet::new(),
+        HashSet::new(),
+        HashSet::new(),
+    );
+    let mut events = Vec::new();
+    while let Some(event) = stream.rx_event.recv().await {
         events.push(event);
     }
 
+    assert_matches!(&events[0], Ok(ResponseEvent::Created));
+    assert_matches!(
+        &events[1],
+        Ok(ResponseEvent::ServerModel(model)) if model == "gpt-test"
+    );
     assert!(
         matches!(events.last(), Some(Err(ApiError::Stream(message))) if message == "stream closed before chat completions finish_reason")
     );
