@@ -36,8 +36,12 @@ pub struct ConfigProfile {
     pub model_verbosity: Option<Verbosity>,
     /// Optional path to a JSON model catalog (applied on startup only).
     pub model_catalog_json: Option<AbsolutePathBuf>,
-    pub personality: Option<Personality>,
+    #[serde(default)]
+    /// Optional list of model slugs to restrict available models.
+    /// When set, only these models will be shown in the model picker.
+    pub model_catalog: Option<Vec<String>>,
     pub chatgpt_base_url: Option<String>,
+    pub personality: Option<Personality>,
     /// Optional path to a file containing model instructions.
     pub model_instructions_file: Option<AbsolutePathBuf>,
     pub js_repl_node_path: Option<AbsolutePathBuf>,

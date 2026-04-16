@@ -77,6 +77,7 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::ModelsManagerConfig;
+use codex_models_manager::bundled_models_response;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::Personality;
@@ -999,6 +1000,40 @@ fn load_model_catalog(
         .transpose()
 }
 
+fn filter_model_catalog_by_slugs(
+    model_catalog_slugs: Option<Vec<String>>,
+) -> std::io::Result<Option<ModelsResponse>> {
+    let Some(slugs) = model_catalog_slugs else {
+        return Ok(None);
+    };
+    if slugs.is_empty() {
+        return Ok(None);
+    }
+    // Load bundled models and filter by slugs
+    let bundled = crate::bundled_models_response()?;
+    let filtered_models: Vec<_> = bundled
+        .models
+        .into_iter()
+        .filter(|model| slugs.contains(&model.slug))
+        .collect();
+    if filtered_models.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "model_catalog list does not match any available models. Available models: {}",
+                bundled
+                    .models
+                    .iter()
+                    .map(|m| &m.slug)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
+    Ok(Some(ModelsResponse {
+        models: filtered_models,
+    }))
+}
 fn filter_mcp_servers_by_requirements(
     mcp_servers: &mut HashMap<String, McpServerConfig>,
     mcp_requirements: Option<&Sourced<BTreeMap<String, McpServerRequirement>>>,
@@ -1480,6 +1515,9 @@ pub struct ConfigToml {
     pub model_catalog_json: Option<AbsolutePathBuf>,
 
     /// Optionally specify a personality for the model
+    /// Optional list of model slugs to restrict available models.
+    /// When set, only these models will be shown in the model picker.
+    pub model_catalog: Option<Vec<String>>,
     pub personality: Option<Personality>,
 
     /// Optional explicit service tier preference for new turns (`fast` or `flex`).
@@ -2640,6 +2678,20 @@ impl Config {
                 .clone()
                 .or(cfg.model_catalog_json.clone()),
         )?;
+        // Also filter by model_catalog slugs if provided
+        let model_catalog = match (model_catalog, filter_model_catalog_by_slugs(
+            config_profile.model_catalog.clone().or(cfg.model_catalog.clone())
+        )?) {
+            (Some(json_catalog), Some(slug_catalog)) => {
+                // Merge both catalogs, preferring slug_catalog
+                Some(ModelsResponse {
+                    models: slug_catalog.models,
+                })
+            }
+            (Some(json_catalog), None) => Some(json_catalog),
+            (None, Some(slug_catalog)) => Some(slug_catalog),
+            (None, None) => None,
+        };
 
         let log_dir = cfg
             .log_dir
