@@ -17,4 +17,4 @@ expression: normalized_backend_snapshot(terminal.backend())
 "                                                                                "
 "› Ask Codex to do anything                                                      "
 "                                                                                "
-"  gpt-5.3-codex 默认 · 上下文 [     ] · /tmp/project                            " Hidden by multi-width symbols: [(17, " "), (19, " "), (24, " "), (26, " "), (28, " ")]
+"  gpt-5.3-codex 默认 · 已用 0% · /tmp/project                            " Hidden by multi-width symbols: [(17, " "), (19, " "), (24, " "), (26, " "), (28, " ")]

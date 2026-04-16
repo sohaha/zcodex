@@ -26,4 +26,4 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 › Ask Codex to do anything
 
-  gpt-5.3-codex 默认 · 上下文 [     ] · /tmp/project
+  gpt-5.3-codex 默认 · 已用 0% · /tmp/project
