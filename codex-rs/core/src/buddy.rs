@@ -996,11 +996,11 @@ mod tests {
     fn record_local_increments_count() {
         let mut state = BuddyReactionState::default();
         let now = std::time::Instant::now();
-        record_local(&mut state, now);
+        state.record_local(now);
         assert_eq!(state.consecutive_local_count, 1);
         assert_eq!(state.last_reaction_time, Some(now));
         assert_eq!(state.last_ai_reaction_time, None);
-        record_local(&mut state, now);
+        state.record_local(now);
         assert_eq!(state.consecutive_local_count, 2);
     }
 
@@ -1009,7 +1009,7 @@ mod tests {
         let mut state = BuddyReactionState::default();
         let now = std::time::Instant::now();
         state.consecutive_local_count = 5;
-        record_ai(&mut state, now);
+        state.record_ai(now);
         assert_eq!(state.consecutive_local_count, 0);
         assert_eq!(state.last_reaction_time, Some(now));
         assert_eq!(state.last_ai_reaction_time, Some(now));
