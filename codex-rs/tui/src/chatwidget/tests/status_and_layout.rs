@@ -881,10 +881,7 @@ async fn status_line_context_remaining_renders_labeled_percent() {
 
     chat.refresh_status_line();
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some("剩余 100%".to_string())
-    );
+    assert_eq!(status_line_text(&chat), Some("剩余 100%".to_string()));
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "context-remaining should remain a valid status line item"
@@ -914,10 +911,7 @@ async fn status_line_context_remaining_percent_renders_labeled_percent() {
 
     chat.refresh_status_line();
 
-    assert_eq!(
-        status_line_text(&chat),
-        Some("剩余 100%".to_string())
-    );
+    assert_eq!(status_line_text(&chat), Some("剩余 100%".to_string()));
     assert!(
         drain_insert_history(&mut rx).is_empty(),
         "context-remaining-percent should remain a valid status line item"

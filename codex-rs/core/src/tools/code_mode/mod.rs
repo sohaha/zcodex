@@ -308,26 +308,29 @@ async fn call_nested_tool(
         )));
     }
 
-    let (tool_call_name, payload) =
-        if let Some(tool_info) = exec.session.resolve_mcp_tool_info(&tool_name).await {
-            let raw_arguments = match serialize_function_tool_arguments(&tool_name, input) {
-                Ok(raw_arguments) => raw_arguments,
-                Err(error) => return Err(FunctionCallError::RespondToModel(error)),
-            };
-            (
-                tool_info.canonical_tool_name(),
-                ToolPayload::Mcp {
-                    server: tool_info.server_name,
-                    tool: tool_info.tool.name.to_string(),
-                    raw_arguments,
-                },
-            )
-        } else {
-            match build_nested_tool_payload(tool_runtime.find_spec(&tool_name), &tool_name, input) {
-                Ok(payload) => (tool_name, payload),
-                Err(error) => return Err(FunctionCallError::RespondToModel(error)),
-            }
+    let (tool_call_name, payload) = if let Some(tool_info) = exec
+        .session
+        .resolve_mcp_tool_info(tool_name.as_str(), None)
+        .await
+    {
+        let raw_arguments = match serialize_function_tool_arguments(&tool_name, input) {
+            Ok(raw_arguments) => raw_arguments,
+            Err(error) => return Err(FunctionCallError::RespondToModel(error)),
         };
+        (
+            tool_info.canonical_tool_name(),
+            ToolPayload::Mcp {
+                server: tool_info.server_name,
+                tool: tool_info.tool.name.to_string(),
+                raw_arguments,
+            },
+        )
+    } else {
+        match build_nested_tool_payload(tool_runtime.find_spec(&tool_name), &tool_name, input) {
+            Ok(payload) => (tool_name, payload),
+            Err(error) => return Err(FunctionCallError::RespondToModel(error)),
+        }
+    };
 
     let call = ToolCall {
         tool_name: tool_call_name,

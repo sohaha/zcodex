@@ -147,15 +147,13 @@ async fn load_recent_threads(sess: &Session) -> Vec<StoredThread> {
 async fn build_recent_work_section(cwd: &Path, recent_threads: &[StoredThread]) -> Option<String> {
     let mut groups: HashMap<PathBuf, Vec<&StoredThread>> = HashMap::new();
     for entry in recent_threads {
-        let group = resolve_root_git_project_for_trust(&entry.cwd)
-            .await
-            .unwrap_or_else(|| entry.cwd.clone());
+        let group =
+            resolve_root_git_project_for_trust(&entry.cwd).unwrap_or_else(|| entry.cwd.clone());
         groups.entry(group).or_default().push(entry);
     }
 
-    let current_group = resolve_root_git_project_for_trust(cwd)
-        .await
-        .unwrap_or_else(|| cwd.to_path_buf());
+    let current_group =
+        resolve_root_git_project_for_trust(cwd).unwrap_or_else(|| cwd.to_path_buf());
     let mut groups = groups.into_iter().collect::<Vec<_>>();
     groups.sort_by(|(left_group, left_entries), (right_group, right_entries)| {
         let left_latest = left_entries
@@ -311,7 +309,7 @@ async fn build_workspace_section_with_user_root(
     cwd: &Path,
     user_root: Option<PathBuf>,
 ) -> Option<String> {
-    let git_root = resolve_root_git_project_for_trust(cwd).await;
+    let git_root = resolve_root_git_project_for_trust(cwd);
     let cwd_tree = render_tree(cwd);
     let git_root_tree = git_root
         .as_ref()
@@ -473,10 +471,7 @@ async fn format_thread_group(
     entries: Vec<&StoredThread>,
 ) -> Option<String> {
     let latest = entries.first()?;
-    let group_label = if resolve_root_git_project_for_trust(latest.cwd.as_path())
-        .await
-        .is_some()
-    {
+    let group_label = if resolve_root_git_project_for_trust(latest.cwd.as_path()).is_some() {
         format!("### Git repo: {}", group.display())
     } else {
         format!("### Directory: {}", group.display())

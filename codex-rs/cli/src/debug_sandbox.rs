@@ -19,10 +19,7 @@ use codex_protocol::config_types::SandboxMode;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::landlock::create_linux_sandbox_command_args_for_policies;
 #[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::CreateSeatbeltCommandArgsParams;
-#[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::create_seatbelt_command_args;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_sandboxing::seatbelt::create_seatbelt_command_args_for_policies;
 use codex_utils_cli::CliConfigOverrides;
 use tokio::process::Child;
 use tokio::process::Command as TokioCommand;
@@ -43,7 +40,6 @@ pub async fn run_command_under_seatbelt(
 ) -> anyhow::Result<()> {
     let SeatbeltCommand {
         full_auto,
-        allow_unix_sockets,
         log_denials,
         config_overrides,
         command,
@@ -55,7 +51,6 @@ pub async fn run_command_under_seatbelt(
         codex_linux_sandbox_exe,
         SandboxType::Seatbelt,
         log_denials,
-        &allow_unix_sockets,
     )
     .await
 }
@@ -84,7 +79,6 @@ pub async fn run_command_under_landlock(
         codex_linux_sandbox_exe,
         SandboxType::Landlock,
         /*log_denials*/ false,
-        &[],
     )
     .await
 }
@@ -105,7 +99,6 @@ pub async fn run_command_under_windows(
         codex_linux_sandbox_exe,
         SandboxType::Windows,
         /*log_denials*/ false,
-        &[],
     )
     .await
 }
@@ -124,8 +117,6 @@ async fn run_command_under_sandbox(
     codex_linux_sandbox_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
-    allow_unix_sockets: &[AbsolutePathBuf],
 ) -> anyhow::Result<()> {
     let config = load_debug_sandbox_config(
         config_overrides
@@ -267,15 +258,14 @@ async fn run_command_under_sandbox(
     let mut child = match sandbox_type {
         #[cfg(target_os = "macos")]
         SandboxType::Seatbelt => {
-            let args = create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
+            let args = create_seatbelt_command_args_for_policies(
                 command,
-                file_system_sandbox_policy: &config.permissions.file_system_sandbox_policy,
-                network_sandbox_policy: config.permissions.network_sandbox_policy,
-                sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
-                enforce_managed_network: false,
-                network: network.as_ref(),
-                extra_allow_unix_sockets: allow_unix_sockets,
-            });
+                &config.permissions.file_system_sandbox_policy,
+                config.permissions.network_sandbox_policy,
+                sandbox_policy_cwd.as_path(),
+                /*enforce_managed_network*/ false,
+                network.as_ref(),
+            );
             let network_policy = config.permissions.network_sandbox_policy;
             spawn_debug_sandbox_child(
                 PathBuf::from("/usr/bin/sandbox-exec"),

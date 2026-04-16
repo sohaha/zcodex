@@ -1,9 +1,10 @@
+pub mod ctf_cmd;
+pub mod ctf_config;
 pub(crate) mod debug_sandbox;
 mod exit_status;
 pub(crate) mod login;
 
 use clap::Parser;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
 
 pub use debug_sandbox::run_command_under_landlock;
@@ -19,55 +20,46 @@ pub use login::run_logout;
 
 #[derive(Debug, Parser)]
 pub struct SeatbeltCommand {
-    /// Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)
+    /// 便捷别名：低摩擦沙箱自动执行（禁用网络、可写入当前工作目录和 TMPDIR 的沙箱）。
     #[arg(long = "full-auto", default_value_t = false)]
     pub full_auto: bool,
 
-    /// Allow the sandboxed command to bind/connect AF_UNIX sockets rooted at this path. Relative paths are resolved against the current directory. Repeat to allow multiple paths.
-    #[arg(long = "allow-unix-socket", value_parser = parse_allow_unix_socket_path)]
-    pub allow_unix_sockets: Vec<AbsolutePathBuf>,
-
-    /// While the command runs, capture macOS sandbox denials via `log stream` and print them after exit
+    /// 命令运行期间，通过 macOS 的 `log stream` 命令捕获沙箱拒绝记录，并在退出后打印。
     #[arg(long = "log-denials", default_value_t = false)]
     pub log_denials: bool,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 
-    /// Full command args to run under seatbelt.
+    /// 要在 Seatbelt 沙箱下运行的完整命令参数。
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
 
-fn parse_allow_unix_socket_path(raw: &str) -> Result<AbsolutePathBuf, String> {
-    AbsolutePathBuf::relative_to_current_dir(raw)
-        .map_err(|err| format!("invalid path {raw}: {err}"))
-}
-
 #[derive(Debug, Parser)]
 pub struct LandlockCommand {
-    /// Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)
+    /// 便捷别名：低摩擦沙箱自动执行（禁用网络、可写入当前工作目录和 TMPDIR 的沙箱）。
     #[arg(long = "full-auto", default_value_t = false)]
     pub full_auto: bool,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 
-    /// Full command args to run under the Linux sandbox.
+    /// 要在 Linux 沙箱下运行的完整命令参数。
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }
 
 #[derive(Debug, Parser)]
 pub struct WindowsCommand {
-    /// Convenience alias for low-friction sandboxed automatic execution (network-disabled sandbox that can write to cwd and TMPDIR)
+    /// 便捷别名：低摩擦沙箱自动执行（禁用网络、可写入当前工作目录和 TMPDIR 的沙箱）。
     #[arg(long = "full-auto", default_value_t = false)]
     pub full_auto: bool,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 
-    /// Full command args to run under Windows restricted token sandbox.
+    /// 要在 Windows 受限令牌沙箱下运行的完整命令参数。
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
 }

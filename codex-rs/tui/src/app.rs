@@ -428,7 +428,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
     let error_count = errors.len();
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         crate::history_cell::new_warning_event(format!(
-            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
+            "由于 SKILL.md 文件无效，跳过了加载 {error_count} 个技能。"
         )),
     )));
 
@@ -436,7 +436,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
         let path = error.path.display();
         let message = error.message.as_str();
         app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            crate::history_cell::new_warning_event(format!("{path}: {message}")),
+            crate::history_cell::new_warning_event(format!("{path}：{message}")),
         )));
     }
 }
@@ -460,7 +460,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
                 .disabled_reason
                 .as_ref()
                 .map(ToString::to_string)
-                .unwrap_or_else(|| "config.toml is disabled.".to_string()),
+                .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
         ));
     }
 
@@ -469,8 +469,8 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
     }
 
     let mut message = concat!(
-        "Project config.toml files are disabled in the following folders. ",
-        "Settings in those files are ignored, but skills and exec policies still load.\n",
+        "以下文件夹中的项目 config.toml 文件已被禁用。 ",
+        "这些文件中的设置将被忽略，但技能和执行策略仍会加载。\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -1123,7 +1123,7 @@ impl App {
             .harness_overrides(overrides)
             .build()
             .await
-            .wrap_err_with(|| format!("Failed to rebuild config for cwd {cwd_display}"))
+            .wrap_err_with(|| format!("无法为工作目录 {cwd_display} 重建配置"))
     }
 
     async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
@@ -1174,17 +1174,15 @@ impl App {
             && let Err(err) = config.permissions.approval_policy.set(*policy)
         {
             tracing::warn!(%err, "failed to carry forward approval policy override");
-            self.chat_widget.add_error_message(format!(
-                "Failed to carry forward approval policy override: {err}"
-            ));
+            self.chat_widget
+                .add_error_message(format!("无法传递审批策略覆盖： {err}"));
         }
         if let Some(policy) = self.runtime_sandbox_policy_override.as_ref()
             && let Err(err) = config.permissions.sandbox_policy.set(policy.clone())
         {
             tracing::warn!(%err, "failed to carry forward sandbox policy override");
-            self.chat_widget.add_error_message(format!(
-                "Failed to carry forward sandbox policy override: {err}"
-            ));
+            self.chat_widget
+                .add_error_message(format!("无法传递沙箱策略覆盖： {err}"));
         }
     }
 
@@ -1285,7 +1283,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "Cannot disable Guardian Approvals in this profile because `approvals_reviewer` is configured outside the active profile.".to_string(),
+                        "无法在此配置文件中禁用 Guardian Approvals，因为 `approvals_reviewer` 是在活动配置文件之外配置的。".to_string(),
                     );
                 continue;
             }
@@ -1296,9 +1294,8 @@ impl App {
                     feature = feature_key,
                     "failed to update constrained feature flags"
                 );
-                self.chat_widget.add_error_message(format!(
-                    "Failed to update experimental feature `{feature_key}`: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("无法更新实验性功能 `{feature_key}`: {err}"));
                 continue;
             }
             let effective_enabled = feature_config.features.enabled(feature);
@@ -1341,7 +1338,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "Failed to enable Guardian Approvals",
+                    "无法启用 Guardian Approvals",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1349,7 +1346,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "Failed to enable Guardian Approvals",
+                    "无法启用 Guardian Approvals",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1380,7 +1377,7 @@ impl App {
         if let Err(err) = builder.apply().await {
             tracing::error!(error = %err, "failed to persist feature flags");
             self.chat_widget
-                .add_error_message(format!("Failed to update experimental features: {err}"));
+                .add_error_message(format!("无法更新实验性功能s: {err}"));
             return;
         }
 
@@ -1412,7 +1409,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("Failed to enable Guardian Approvals: {err}"));
+                .add_error_message(format!("无法启用 Guardian Approvals: {err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1471,10 +1468,8 @@ impl App {
         }
 
         if let Some(label) = permissions_history_label {
-            self.chat_widget.add_info_message(
-                format!("Permissions updated to {label}"),
-                /*hint*/ None,
-            );
+            self.chat_widget
+                .add_info_message(format!("权限已更新为 {label}"), /*hint*/ None);
         }
     }
 
@@ -1514,7 +1509,7 @@ impl App {
         {
             tracing::error!(error = %err, "failed to persist memory settings");
             self.chat_widget
-                .add_error_message(format!("Failed to save memory settings: {err}"));
+                .add_error_message(format!("无法保存记忆设置: {err}"));
             return false;
         }
 
@@ -1573,7 +1568,6 @@ impl App {
     }
 
     async fn update_memory_settings_with_app_server(
-
         &mut self,
         app_server: &mut AppServerSession,
         use_memories: bool,
@@ -1603,21 +1597,20 @@ impl App {
 
         if let Err(err) = app_server.thread_memory_mode_set(thread_id, mode).await {
             tracing::error!(error = %err, %thread_id, "failed to update thread memory mode");
-            self.chat_widget.add_error_message(format!(
-                "Saved memory settings, but failed to update the current thread: {err}"
-            ));
+            self.chat_widget
+                .add_error_message(format!("记忆设置已保存，但无法更新当前线程: {err}"));
         }
     }
 
     fn open_url_in_browser(&mut self, url: String) {
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
-                .add_error_message(format!("Failed to open browser for {url}: {err}"));
+                .add_error_message(format!("无法为以下地址打开浏览器 {url}: {err}"));
             return;
         }
 
         self.chat_widget
-            .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
+            .add_info_message(format!("已在浏览器中打开 {url}."), /*hint*/ None);
     }
 
     fn clear_ui_header_lines_with_version(
@@ -1807,11 +1800,11 @@ impl App {
     fn thread_label(&self, thread_id: ThreadId) -> String {
         let is_primary = self.primary_thread_id == Some(thread_id);
         let fallback_label = if is_primary {
-            "Main [default]".to_string()
+            "主线程（默认）".to_string()
         } else {
             let thread_id = thread_id.to_string();
             let short_id: String = thread_id.chars().take(8).collect();
-            format!("Agent ({short_id})")
+            format!("代理（{short_id}）")
         };
         if let Some(entry) = self.agent_navigation.get(&thread_id) {
             let label = format_agent_picker_item_name(
@@ -1850,7 +1843,7 @@ impl App {
         };
 
         self.chat_widget.add_info_message(
-            format!("Already viewing {}.", target_session.display_label()),
+            format!("正在查看 {}.", target_session.display_label()),
             /*hint*/ None,
         );
         true
@@ -1996,7 +1989,7 @@ impl App {
     ) -> Result<()> {
         let Some(thread_id) = self.active_thread_id else {
             self.chat_widget
-                .add_error_message("No active thread is available.".to_string());
+                .add_error_message("没有可用的活动线程.".to_string());
             return Ok(());
         };
 
@@ -2034,7 +2027,7 @@ impl App {
         }
 
         self.chat_widget
-            .add_error_message(format!("Not available in TUI yet for thread {thread_id}."));
+            .add_error_message(format!("线程在 TUI 中尚不可用 {thread_id}."));
         Ok(())
     }
 
@@ -2123,7 +2116,7 @@ impl App {
             let plugin_name_for_event = plugin_name.clone();
             let result = fetch_plugin_install(request_handle, marketplace_path, plugin_name)
                 .await
-                .map_err(|err| format!("Failed to install plugin: {err}"));
+                .map_err(|err| format!("无法安装插件: {err}"));
             app_event_tx.send(AppEvent::PluginInstallLoaded {
                 cwd: cwd_for_event,
                 marketplace_path: marketplace_path_for_event,
@@ -2148,7 +2141,7 @@ impl App {
             let plugin_id_for_event = plugin_id.clone();
             let result = fetch_plugin_uninstall(request_handle, plugin_id)
                 .await
-                .map_err(|err| format!("Failed to uninstall plugin: {err}"));
+                .map_err(|err| format!("无法卸载插件: {err}"));
             app_event_tx.send(AppEvent::PluginUninstallLoaded {
                 cwd: cwd_for_event,
                 plugin_id: plugin_id_for_event,
@@ -2230,7 +2223,7 @@ impl App {
             Err(err) => self
                 .chat_widget
                 .add_to_history(history_cell::new_error_event(format!(
-                    "Failed to upload feedback: {err}"
+                    "无法上传反馈: {err}"
                 ))),
         }
     }
@@ -2312,7 +2305,7 @@ impl App {
             Ok(statuses) => statuses,
             Err(err) => {
                 self.chat_widget
-                    .add_error_message(format!("Failed to load MCP inventory: {err}"));
+                    .add_error_message(format!("无法加载 MCP 清单: {err}"));
                 return;
             }
         };
@@ -2628,9 +2621,8 @@ impl App {
                 Ok(true)
             }
             Err(err) => {
-                self.chat_widget.add_error_message(format!(
-                    "Failed to resolve app-server request for thread {thread_id}: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("无法解析线程的应用服务器请求 {thread_id}: {err}"));
                 Ok(false)
             }
         }
@@ -3051,7 +3043,7 @@ impl App {
 
         if self.agent_navigation.is_empty() {
             self.chat_widget
-                .add_info_message("No agents available yet.".to_string(), /*hint*/ None);
+                .add_info_message("尚无可用代理.".to_string(), /*hint*/ None);
             return;
         }
 
@@ -3296,7 +3288,7 @@ impl App {
                     // A `thread/read` fallback without turns would create a blank local replay
                     // channel with no live listener attached, which blocks later real re-attach.
                     return Err(color_eyre::eyre::eyre!(
-                        "Agent thread {thread_id} is not yet available for replay or live attach."
+                        "代理线程 {thread_id} 尚不可用于回放或实时连接."
                     ));
                 }
                 let mut session = self.session_state_for_thread_read(thread_id, &thread).await;
@@ -3353,7 +3345,7 @@ impl App {
             .await
         {
             self.chat_widget
-                .add_error_message(format!("Agent thread {thread_id} is no longer available."));
+                .add_error_message(format!("代理线程 {thread_id} 不再可用."));
             return Ok(());
         }
 
@@ -3374,15 +3366,14 @@ impl App {
                     }
                 }
                 Err(err) => {
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to attach to agent thread {thread_id}: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法连接到代理线程 {thread_id}: {err}"));
                     return Ok(());
                 }
             }
         } else if !self.thread_event_channels.contains_key(&thread_id) && is_replay_only {
             self.chat_widget
-                .add_error_message(format!("Agent thread {thread_id} is no longer available."));
+                .add_error_message(format!("代理线程 {thread_id} 不再可用."));
             return Ok(());
         }
 
@@ -3392,7 +3383,7 @@ impl App {
         let Some((receiver, mut snapshot)) = self.activate_thread_for_replay(thread_id).await
         else {
             self.chat_widget
-                .add_error_message(format!("Agent thread {thread_id} is already active."));
+                .add_error_message(format!("代理线程 {thread_id} 已处于活动状态."));
             if let Some(previous_thread_id) = previous_thread_id {
                 self.activate_thread_channel(previous_thread_id).await;
             }
@@ -3417,11 +3408,9 @@ impl App {
         self.replay_thread_snapshot(snapshot, !is_replay_only);
         if is_replay_only {
             let message = if attached_replay_only {
-                format!(
-                    "Agent thread {thread_id} could not be resumed live. Replaying saved transcript."
-                )
+                format!("代理线程 {thread_id} 无法实时恢复. 正在回放已保存的记录.")
             } else {
-                format!("Agent thread {thread_id} is closed. Replaying saved transcript.")
+                format!("代理线程 {thread_id} 已关闭. 正在回放已保存的记录.")
             };
             self.chat_widget.add_info_message(message, /*hint*/ None);
         }
@@ -3501,9 +3490,8 @@ impl App {
                     .replace_chat_widget_with_app_server_thread(tui, app_server, started)
                     .await
                 {
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to attach to fresh app-server thread: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法连接到新的应用服务器线程: {err}"));
                 } else if let Some(summary) = summary {
                     let mut lines: Vec<Line<'static>> = Vec::new();
                     if let Some(usage_line) = summary.usage_line {
@@ -3517,9 +3505,8 @@ impl App {
                 }
             }
             Err(err) => {
-                self.chat_widget.add_error_message(format!(
-                    "Failed to start a fresh session through the app server: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("无法通过应用服务器启动新会话: {err}"));
                 self.config.model = Some(model);
             }
         }
@@ -3887,7 +3874,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to resume session from {target_label}")
+                        format!("无法从以下位置恢复会话 {target_label}")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -4271,9 +4258,8 @@ impl App {
         {
             Ok(cfg) => cfg,
             Err(err) => {
-                self.chat_widget.add_error_message(format!(
-                    "Failed to rebuild configuration for resume: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("无法重建配置以恢复: {err}"));
                 return Ok(AppRunControl::Continue);
             }
         };
@@ -4316,17 +4302,15 @@ impl App {
                         }
                     }
                     Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to attach to resumed app-server thread: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法连接到已恢复的应用服务器线程: {err}"));
                     }
                 }
             }
             Err(err) => {
                 let path_display = target_session.display_label();
-                self.chat_widget.add_error_message(format!(
-                    "Failed to resume session from {path_display}: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("无法从以下位置恢复会话 {path_display}: {err}"));
             }
         }
 
@@ -4373,9 +4357,8 @@ impl App {
                 {
                     Ok(app_server) => app_server,
                     Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to start TUI session picker: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法启动 TUI 会话选择器: {err}"));
                         return Ok(AppRunControl::Continue);
                     }
                 };
@@ -4468,14 +4451,14 @@ impl App {
                                 }
                                 Err(err) => {
                                     self.chat_widget.add_error_message(format!(
-                                        "Failed to attach to forked app-server thread: {err}"
+                                        "无法连接到分叉的应用服务器线程: {err}"
                                     ));
                                 }
                             }
                         }
                         Err(err) => {
                             self.chat_widget.add_error_message(format!(
-                                "Failed to fork current session through the app server: {err}"
+                                "无法通过应用服务器分叉当前会话: {err}"
                             ));
                         }
                     }
@@ -5122,11 +5105,10 @@ impl App {
                                     .send(AppEvent::UpdateSandboxPolicy(preset.sandbox.clone()));
                                 let _ = mode;
                                 self.chat_widget.add_plain_history_lines(vec![
-                                    Line::from(vec!["• ".dim(), "Sandbox ready".into()]),
+                                    Line::from(vec!["• ".dim(), "沙箱已就绪".into()]),
                                     Line::from(vec![
                                         "  ".into(),
-                                        "Codex can now safely edit files and execute commands in your computer"
-                                            .dark_gray(),
+                                        "Codex 现在可以安全地编辑文件并执行命令".dark_gray(),
                                     ]),
                                 ]);
                             }
@@ -5136,9 +5118,8 @@ impl App {
                                 error = %err,
                                 "failed to enable Windows sandbox feature"
                             );
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to enable the Windows sandbox feature: {err}"
-                            ));
+                            self.chat_widget
+                                .add_error_message(format!("无法启用 Windows 沙箱功能: {err}"));
                         }
                     }
                 }
@@ -5179,11 +5160,11 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "Failed to save model for profile `{profile}`: {err}"
+                                "无法保存配置文件的模型 `{profile}`: {err}"
                             ));
                         } else {
                             self.chat_widget
-                                .add_error_message(format!("Failed to save default model: {err}"));
+                                .add_error_message(format!("无法保存默认模型: {err}"));
                         }
                     }
                 }
@@ -5250,12 +5231,11 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "Failed to save personality for profile `{profile}`: {err}"
+                                "无法保存配置文件的个性化设置 `{profile}`: {err}"
                             ));
                         } else {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save default personality: {err}"
-                            ));
+                            self.chat_widget
+                                .add_error_message(format!("无法保存默认个性化设置: {err}"));
                         }
                     }
                 }
@@ -5283,12 +5263,11 @@ impl App {
                         tracing::error!(error = %err, "failed to persist fast mode selection");
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "Failed to save Fast mode for profile `{profile}`: {err}"
+                                "无法保存配置文件的 Fast 模式 `{profile}`: {err}"
                             ));
                         } else {
-                            self.chat_widget.add_error_message(format!(
-                                "Failed to save default Fast mode: {err}"
-                            ));
+                            self.chat_widget
+                                .add_error_message(format!("无法保存默认 Fast 模式: {err}"));
                         }
                     }
                 }
@@ -5321,7 +5300,7 @@ impl App {
                         if self.chat_widget.realtime_conversation_is_live() {
                             self.chat_widget.open_realtime_audio_restart_prompt(kind);
                         } else {
-                            let selection = name.unwrap_or_else(|| "System default".to_string());
+                            let selection = name.unwrap_or_else(|| "系统默认".to_string());
                             self.chat_widget.add_info_message(
                                 format!("Realtime {} set to {selection}", kind.noun()),
                                 /*hint*/ None,
@@ -5333,10 +5312,8 @@ impl App {
                             error = %err,
                             "failed to persist realtime audio selection"
                         );
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save realtime {}: {err}",
-                            kind.noun()
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法保存实时 {}: {err}", kind.noun()));
                     }
                 }
             }
@@ -5348,7 +5325,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set approval policy",
+                    "无法设置审批策略",
                     "failed to set approval policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5372,7 +5349,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set sandbox policy",
+                    "无法设置沙箱策略",
                     "failed to set sandbox policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5381,7 +5358,7 @@ impl App {
                 if let Err(err) = self.chat_widget.set_sandbox_policy(policy_for_chat) {
                     tracing::warn!(%err, "failed to set sandbox policy on chat config");
                     self.chat_widget
-                        .add_error_message(format!("Failed to set sandbox policy: {err}"));
+                        .add_error_message(format!("无法设置沙箱策略: {err}"));
                     return Ok(AppRunControl::Continue);
                 }
                 self.runtime_sandbox_policy_override =
@@ -5444,7 +5421,7 @@ impl App {
                         "failed to persist approvals reviewer update"
                     );
                     self.chat_widget
-                        .add_error_message(format!("Failed to save approvals reviewer: {err}"));
+                        .add_error_message(format!("无法保存审批审查者: {err}"));
                 }
             }
             AppEvent::UpdateFeatureFlags { updates } => {
@@ -5488,9 +5465,8 @@ impl App {
                         error = %err,
                         "failed to persist full access warning acknowledgement"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save full access confirmation preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法保存完全访问确认偏好: {err}"));
                 }
             }
             AppEvent::PersistWorldWritableWarningAcknowledged => {
@@ -5503,9 +5479,8 @@ impl App {
                         error = %err,
                         "failed to persist world-writable warning acknowledgement"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save Agent mode warning preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法保存 Agent 模式警告偏好: {err}"));
                 }
             }
             AppEvent::PersistBuddyVisibility(visible) => {
@@ -5524,9 +5499,8 @@ impl App {
                         error = %err,
                         "failed to persist rate limit switch prompt preference"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save rate limit reminder preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法保存速率限制提醒偏好: {err}"));
                 }
             }
             AppEvent::PersistPlanModeReasoningEffort(effort) => {
@@ -5559,12 +5533,11 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "Failed to save Plan mode reasoning effort for profile `{profile}`: {err}"
+                            "无法保存配置文件的 Plan 模式推理强度 `{profile}`: {err}"
                         ));
                     } else {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save Plan mode reasoning effort: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法保存 Plan 模式推理强度: {err}"));
                     }
                 }
             }
@@ -5581,9 +5554,8 @@ impl App {
                         error = %err,
                         "failed to persist model migration prompt acknowledgement"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save model migration prompt preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法保存模型迁移提示偏好: {err}"));
                 }
             }
             AppEvent::OpenApprovalsPopup => {
@@ -5622,9 +5594,8 @@ impl App {
                     }
                     Err(err) => {
                         let path_display = path.display();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update skill config for {path_display}: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法更新技能配置 {path_display}: {err}"));
                     }
                 }
             }
@@ -5671,9 +5642,8 @@ impl App {
                         self.chat_widget.submit_op(AppCommand::reload_user_config());
                     }
                     Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update app config for {id}: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法更新应用配置 {id}: {err}"));
                     }
                 }
             }
@@ -5786,7 +5756,7 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist status line items; keeping previous selection");
                         self.chat_widget
-                            .add_error_message(format!("Failed to save status line items: {err}"));
+                            .add_error_message(format!("无法保存状态栏项目: {err}"));
                     }
                 }
             }
@@ -5812,9 +5782,8 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist terminal title items; keeping previous selection");
                         self.chat_widget.revert_terminal_title_setup_preview();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save terminal title items: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("无法保存终端标题项目: {err}"));
                     }
                 }
             }
@@ -5848,7 +5817,7 @@ impl App {
                         self.restore_runtime_theme_from_config();
                         tracing::error!(error = %err, "failed to persist theme selection");
                         self.chat_widget
-                            .add_error_message(format!("Failed to save theme: {err}"));
+                            .add_error_message(format!("无法保存主题: {err}"));
                     }
                 }
             }
@@ -6007,15 +5976,13 @@ impl App {
                 .await?;
             if self.active_thread_id == Some(primary_thread_id) {
                 self.chat_widget.add_info_message(
-                    format!(
-                        "Agent thread {closed_thread_id} closed. Switched back to main thread."
-                    ),
+                    format!("代理线程 {closed_thread_id} 已关闭。已切换回主线程."),
                     /*hint*/ None,
                 );
             } else {
                 self.clear_active_thread().await;
                 self.chat_widget.add_error_message(format!(
-                    "Agent thread {closed_thread_id} closed. Failed to switch back to main thread {primary_thread_id}.",
+                    "代理线程 {closed_thread_id} 已关闭。无法切换回主线程 {primary_thread_id}.",
                 ));
             }
             return Ok(());
@@ -6109,16 +6076,15 @@ impl App {
             Err(external_editor::EditorError::MissingEditor) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(
-                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Codex."
-                        .to_string(),
-                ));
+                        "无法打开外部编辑器：请在启动 Codex 前设置 $VISUAL 或 $EDITOR.".to_string(),
+                    ));
                 self.reset_external_editor_state(tui);
                 return;
             }
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "Failed to open editor: {err}",
+                        "无法打开编辑器: {err}",
                     )));
                 self.reset_external_editor_state(tui);
                 return;
@@ -6142,7 +6108,7 @@ impl App {
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "Failed to open editor: {err}",
+                        "无法打开编辑器: {err}",
                     )));
             }
         }
@@ -6234,7 +6200,7 @@ impl App {
                 if let Err(err) = self.clear_terminal_ui(tui, /*redraw_header*/ false) {
                     tracing::warn!(error = %err, "failed to clear terminal UI");
                     self.chat_widget
-                        .add_error_message(format!("Failed to clear terminal UI: {err}"));
+                        .add_error_message(format!("无法清除终端 UI: {err}"));
                 } else {
                     self.reset_app_ui_state_after_clear();
                     self.queue_clear_ui_header(tui);
@@ -6853,10 +6819,7 @@ mod tests {
             other => panic!("expected info message after same-thread resume, saw {other:?}"),
         };
         let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-        assert!(rendered.contains(&format!(
-            "Already viewing {}.",
-            test_path_display("/tmp/project")
-        )));
+        assert!(rendered.contains(&format!("正在查看 {}.", test_path_display("/tmp/project"))));
     }
 
     #[tokio::test]
@@ -8048,7 +8011,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            format!("Agent thread {thread_id} is not yet available for replay or live attach.")
+            format!("代理线程 {thread_id} 尚不可用于回放或实时连接.")
         );
         assert!(!app.thread_event_channels.contains_key(&thread_id));
         Ok(())
@@ -8080,7 +8043,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            format!("Agent thread {thread_id} is not yet available for replay or live attach.")
+            format!("代理线程 {thread_id} 尚不可用于回放或实时连接.")
         );
         assert!(!app.thread_event_channels.contains_key(&thread_id));
         Ok(())
@@ -8318,7 +8281,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Guardian Approvals"));
+        assert!(rendered.contains("权限已更新为 Guardian Approvals"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -8409,7 +8372,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8691,7 +8654,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8757,7 +8720,7 @@ guardian_approval = true
                 AppEvent::InsertHistoryCell(cell) => cell
                     .display_lines(/*width*/ 120)
                     .iter()
-                    .any(|line| line.to_string().contains("Permissions updated to")),
+                    .any(|line| line.to_string().contains("权限已更新为")),
                 _ => false,
             }),
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"
@@ -10058,7 +10021,7 @@ guardian_approval = true
         };
         assert_eq!(
             lines_to_single_string(&cell.display_lines(/*width*/ 120)),
-            "■ Failed to upload feedback: boom"
+            "■ 无法上传反馈: boom"
         );
     }
 
@@ -11469,7 +11432,7 @@ guardian_approval = true
             session_summary(usage, Some(conversation), /*thread_name*/ None).expect("summary");
         assert_eq!(
             summary.usage_line,
-            Some("Token usage: total=12 input=10 output=2".to_string())
+            Some("令牌使用量: 总计=12 输入=10 输出=2".to_string())
         );
         assert_eq!(
             summary.resume_command,

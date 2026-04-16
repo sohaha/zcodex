@@ -174,7 +174,10 @@ impl ToolRouter {
                 ..
             } => {
                 let tool_name = ToolName::new(namespace, name);
-                if let Some(tool_info) = session.resolve_mcp_tool_info(&tool_name).await {
+                if let Some(tool_info) = session
+                    .resolve_mcp_tool_info(tool_name.as_str(), None)
+                    .await
+                {
                     Ok(Some(ToolCall {
                         tool_name: tool_info.canonical_tool_name(),
                         call_id,

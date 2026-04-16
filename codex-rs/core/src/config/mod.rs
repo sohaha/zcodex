@@ -2186,7 +2186,7 @@ impl Config {
             .collect();
         let active_project = cfg
             .get_active_project(resolved_cwd.as_path())
-            .await
+            
             .unwrap_or(ProjectConfig { trust_level: None });
         let permission_config_syntax = resolve_permission_config_syntax(
             &config_layer_stack,
@@ -2284,7 +2284,7 @@ impl Config {
                     resolved_cwd.as_path(),
                     Some(&constrained_sandbox_policy),
                 )
-                .await;
+                ;
             if let SandboxPolicy::WorkspaceWrite { writable_roots, .. } = &mut sandbox_policy {
                 for path in &additional_writable_roots {
                     if !writable_roots.iter().any(|existing| existing == path) {

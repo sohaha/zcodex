@@ -185,8 +185,7 @@ async fn test_collect_git_info_git_repository() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await;
 
-    let git_info = collect_git_info(&repo_path)
-        .expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
 
     // Should have commit hash
     assert!(git_info.commit_hash.is_some());
@@ -220,8 +219,7 @@ async fn test_collect_git_info_with_remote() {
         .output()
         .expect("Failed to add remote");
 
-    let git_info = collect_git_info(&repo_path)
-        .expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
 
     let remote_url_output = Command::new("git")
         .args(["remote", "get-url", "origin"])
@@ -259,8 +257,7 @@ async fn test_collect_git_info_detached_head() {
         .output()
         .expect("Failed to checkout commit");
 
-    let git_info = collect_git_info(&repo_path)
-        .expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
 
     // Should have commit hash
     assert!(git_info.commit_hash.is_some());
@@ -280,8 +277,7 @@ async fn test_collect_git_info_with_branch() {
         .output()
         .expect("Failed to create branch");
 
-    let git_info = collect_git_info(&repo_path)
-        .expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
 
     // Should have the new branch name
     assert_eq!(git_info.branch, Some("feature-branch".to_string()));
@@ -333,8 +329,7 @@ async fn test_get_git_working_tree_state_clean_repo() {
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path)
-        .expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.is_empty());
 }
@@ -358,8 +353,7 @@ async fn test_get_git_working_tree_state_with_changes() {
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path)
-        .expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.contains("test.txt"));
     assert!(state.diff.contains("untracked.txt"));
@@ -397,18 +391,14 @@ async fn test_get_git_working_tree_state_branch_fallback() {
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path)
-        .expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
 }
 
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_returns_none_outside_repo() {
     let tmp = TempDir::new().expect("tempdir");
-    assert!(
-        resolve_root_git_project_for_trust(tmp.path())
-            .is_none()
-    );
+    assert!(resolve_root_git_project_for_trust(tmp.path()).is_none());
 }
 
 #[tokio::test]
@@ -423,10 +413,7 @@ async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     );
     let nested = repo_path.join("sub/dir");
     std::fs::create_dir_all(&nested).unwrap();
-    assert_eq!(
-        resolve_root_git_project_for_trust(&nested),
-        Some(expected)
-    );
+    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
 }
 
 #[tokio::test]
@@ -449,13 +436,13 @@ async fn resolve_root_git_project_for_trust_detects_worktree_and_returns_main_ro
         .expect("git worktree add");
 
     let expected = std::fs::canonicalize(&repo_path).ok();
-    let got = resolve_root_git_project_for_trust(&wt_root)
-        .and_then(|p| std::fs::canonicalize(p).ok());
+    let got =
+        resolve_root_git_project_for_trust(&wt_root).and_then(|p| std::fs::canonicalize(p).ok());
     assert_eq!(got, expected);
     let nested = wt_root.join("nested/sub");
     std::fs::create_dir_all(&nested).unwrap();
-    let got_nested = resolve_root_git_project_for_trust(&nested)
-        .and_then(|p| std::fs::canonicalize(p).ok());
+    let got_nested =
+        resolve_root_git_project_for_trust(&nested).and_then(|p| std::fs::canonicalize(p).ok());
     assert_eq!(got_nested, expected);
 }
 
@@ -503,10 +490,7 @@ async fn resolve_root_git_project_for_trust_non_worktrees_gitdir_returns_none() 
     .unwrap();
 
     assert!(resolve_root_git_project_for_trust(&proj).is_none());
-    assert!(
-        resolve_root_git_project_for_trust(&proj.join("nested"))
-            .is_none()
-    );
+    assert!(resolve_root_git_project_for_trust(&proj.join("nested")).is_none());
 }
 
 #[tokio::test]
@@ -536,8 +520,7 @@ async fn test_get_git_working_tree_state_unpushed_commit() {
         .output()
         .expect("Failed to commit");
 
-    let state = git_diff_to_remote(&repo_path)
-        .expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.contains("updated"));
 }

@@ -462,7 +462,7 @@ pub async fn run_main_with_transport(
     }
     for warning in &config.startup_warnings {
         config_warnings.push(ConfigWarningNotification {
-            summary: warning.clone(),
+            summary: warning.to_string(),
             details: None,
             path: None,
             range: None,

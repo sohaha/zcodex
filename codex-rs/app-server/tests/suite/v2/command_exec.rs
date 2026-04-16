@@ -456,14 +456,11 @@ async fn command_exec_streaming_does_not_buffer_output() -> Result<()> {
         })
         .await?;
 
-    let output = collect_command_exec_output_until(
-        CommandExecDeltaReader::Mcp(&mut mcp),
-        process_id.as_str(),
-        "capped stdout",
-        |_output, delta| delta.stream == CommandExecOutputStream::Stdout && delta.cap_reached,
-    )
-    .await?;
-    assert_eq!(output.stdout, "abcde");
+    let delta = read_command_exec_delta(&mut mcp).await?;
+    assert_eq!(delta.process_id, process_id.as_str());
+    assert_eq!(delta.stream, CommandExecOutputStream::Stdout);
+    assert_eq!(STANDARD.decode(&delta.delta_base64)?, b"abcde");
+    assert!(delta.cap_reached);
     let terminate_request_id = mcp
         .send_command_exec_terminate_request(CommandExecTerminateParams {
             process_id: process_id.clone(),
@@ -524,13 +521,21 @@ async fn command_exec_pipe_streams_output_and_accepts_write() -> Result<()> {
         })
         .await?;
 
-    wait_for_command_exec_outputs_contains(
-        &mut mcp,
-        process_id.as_str(),
-        "out-start\n",
-        "err-start\n",
-    )
-    .await?;
+    let first_stdout = read_command_exec_delta(&mut mcp).await?;
+    let first_stderr = read_command_exec_delta(&mut mcp).await?;
+    let seen = [first_stdout, first_stderr];
+    assert!(
+        seen.iter()
+            .all(|delta| delta.process_id == process_id.as_str())
+    );
+    assert!(seen.iter().any(|delta| {
+        delta.stream == CommandExecOutputStream::Stdout
+            && delta.delta_base64 == STANDARD.encode("out-start\n")
+    }));
+    assert!(seen.iter().any(|delta| {
+        delta.stream == CommandExecOutputStream::Stderr
+            && delta.delta_base64 == STANDARD.encode("err-start\n")
+    }));
 
     let write_request_id = mcp
         .send_command_exec_write_request(CommandExecWriteParams {
@@ -544,13 +549,21 @@ async fn command_exec_pipe_streams_output_and_accepts_write() -> Result<()> {
         .await?;
     assert_eq!(write_response.result, serde_json::json!({}));
 
-    wait_for_command_exec_outputs_contains(
-        &mut mcp,
-        process_id.as_str(),
-        "out:hello\n",
-        "err:hello\n",
-    )
-    .await?;
+    let next_delta = read_command_exec_delta(&mut mcp).await?;
+    let final_delta = read_command_exec_delta(&mut mcp).await?;
+    let seen = [next_delta, final_delta];
+    assert!(
+        seen.iter()
+            .all(|delta| delta.process_id == process_id.as_str())
+    );
+    assert!(seen.iter().any(|delta| {
+        delta.stream == CommandExecOutputStream::Stdout
+            && delta.delta_base64 == STANDARD.encode("out:hello\n")
+    }));
+    assert!(seen.iter().any(|delta| {
+        delta.stream == CommandExecOutputStream::Stderr
+            && delta.delta_base64 == STANDARD.encode("err:hello\n")
+    }));
 
     let response = mcp
         .read_stream_until_response_message(RequestId::Integer(command_request_id))
@@ -604,13 +617,17 @@ async fn command_exec_tty_implies_streaming_and_reports_pty_output() -> Result<(
         })
         .await?;
 
-    wait_for_command_exec_output_contains(
+    let started_text = read_command_exec_output_until_contains(
         &mut mcp,
         process_id.as_str(),
         CommandExecOutputStream::Stdout,
         "tty\n",
     )
     .await?;
+    assert!(
+        started_text.contains("tty\n"),
+        "expected TTY startup output, got {started_text:?}"
+    );
 
     let write_request_id = mcp
         .send_command_exec_write_request(CommandExecWriteParams {
@@ -624,13 +641,17 @@ async fn command_exec_tty_implies_streaming_and_reports_pty_output() -> Result<(
         .await?;
     assert_eq!(write_response.result, serde_json::json!({}));
 
-    wait_for_command_exec_output_contains(
+    let echoed_text = read_command_exec_output_until_contains(
         &mut mcp,
         process_id.as_str(),
         CommandExecOutputStream::Stdout,
         "echo:world\n",
     )
     .await?;
+    assert!(
+        echoed_text.contains("echo:world\n"),
+        "expected TTY echo output, got {echoed_text:?}"
+    );
 
     let response = mcp
         .read_stream_until_response_message(RequestId::Integer(command_request_id))
@@ -682,13 +703,17 @@ async fn command_exec_tty_supports_initial_size_and_resize() -> Result<()> {
         })
         .await?;
 
-    wait_for_command_exec_output_contains(
+    let started_text = read_command_exec_output_until_contains(
         &mut mcp,
         process_id.as_str(),
         CommandExecOutputStream::Stdout,
         "start:31 101\n",
     )
     .await?;
+    assert!(
+        started_text.contains("start:31 101\n"),
+        "unexpected initial size output: {started_text:?}"
+    );
 
     let resize_request_id = mcp
         .send_command_exec_resize_request(CommandExecResizeParams {
@@ -716,13 +741,17 @@ async fn command_exec_tty_supports_initial_size_and_resize() -> Result<()> {
         .await?;
     assert_eq!(write_response.result, serde_json::json!({}));
 
-    wait_for_command_exec_output_contains(
+    let resized_text = read_command_exec_output_until_contains(
         &mut mcp,
         process_id.as_str(),
         CommandExecOutputStream::Stdout,
         "after:45 132\n",
     )
     .await?;
+    assert!(
+        resized_text.contains("after:45 132\n"),
+        "unexpected resized output: {resized_text:?}"
+    );
 
     let response = mcp
         .read_stream_until_response_message(RequestId::Integer(command_request_id))
@@ -780,13 +809,11 @@ async fn command_exec_process_ids_are_connection_scoped_and_disconnect_terminate
     )
     .await?;
 
-    collect_command_exec_output_until(
-        CommandExecDeltaReader::Websocket(&mut ws1),
-        "shared-process",
-        "websocket ready output",
-        |output, _delta| output.stdout.contains("ready\n"),
-    )
-    .await?;
+    let delta = read_command_exec_delta_ws(&mut ws1).await?;
+    assert_eq!(delta.process_id, "shared-process");
+    assert_eq!(delta.stream, CommandExecOutputStream::Stdout);
+    let delta_text = String::from_utf8(STANDARD.decode(&delta.delta_base64)?)?;
+    assert!(delta_text.contains("ready"));
     wait_for_process_marker(&marker, /*should_exist*/ true).await?;
 
     send_request(
@@ -834,98 +861,31 @@ async fn read_command_exec_delta(
     decode_delta_notification(notification)
 }
 
-async fn wait_for_command_exec_output_contains(
+async fn read_command_exec_output_until_contains(
     mcp: &mut McpProcess,
     process_id: &str,
     stream: CommandExecOutputStream,
     expected: &str,
-) -> Result<()> {
-    let stream_name = match stream {
-        CommandExecOutputStream::Stdout => "stdout",
-        CommandExecOutputStream::Stderr => "stderr",
-    };
-    collect_command_exec_output_until(
-        CommandExecDeltaReader::Mcp(mcp),
-        process_id,
-        format!("{stream_name} containing {expected:?}"),
-        |output, _delta| match stream {
-            CommandExecOutputStream::Stdout => output.stdout.contains(expected),
-            CommandExecOutputStream::Stderr => output.stderr.contains(expected),
-        },
-    )
-    .await?;
-    Ok(())
-}
-
-async fn wait_for_command_exec_outputs_contains(
-    mcp: &mut McpProcess,
-    process_id: &str,
-    stdout_expected: &str,
-    stderr_expected: &str,
-) -> Result<()> {
-    collect_command_exec_output_until(
-        CommandExecDeltaReader::Mcp(mcp),
-        process_id,
-        format!("stdout containing {stdout_expected:?} and stderr containing {stderr_expected:?}"),
-        |output, _delta| {
-            output.stdout.contains(stdout_expected) && output.stderr.contains(stderr_expected)
-        },
-    )
-    .await?;
-    Ok(())
-}
-
-enum CommandExecDeltaReader<'a> {
-    Mcp(&'a mut McpProcess),
-    Websocket(&'a mut super::connection_handling_websocket::WsClient),
-}
-
-#[derive(Default)]
-struct CollectedCommandExecOutput {
-    stdout: String,
-    stderr: String,
-}
-
-async fn collect_command_exec_output_until(
-    mut reader: CommandExecDeltaReader<'_>,
-    process_id: &str,
-    waiting_for: impl Into<String>,
-    mut should_stop: impl FnMut(
-        &CollectedCommandExecOutput,
-        &CommandExecOutputDeltaNotification,
-    ) -> bool,
-) -> Result<CollectedCommandExecOutput> {
-    let waiting_for = waiting_for.into();
+) -> Result<String> {
     let deadline = Instant::now() + DEFAULT_READ_TIMEOUT;
-    let mut output = CollectedCommandExecOutput::default();
+    let mut collected = String::new();
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let delta = timeout(remaining, async {
-            match &mut reader {
-                CommandExecDeltaReader::Mcp(mcp) => read_command_exec_delta(mcp).await,
-                CommandExecDeltaReader::Websocket(stream) => {
-                    read_command_exec_delta_ws(stream).await
-                }
-            }
-        })
-        .await
-        .with_context(|| {
-            format!(
-                "timed out waiting for {waiting_for} in command/exec output for {process_id}; collected stdout={:?}, stderr={:?}",
-                output.stdout, output.stderr
-            )
-        })??;
+        let delta = timeout(remaining, read_command_exec_delta(mcp))
+            .await
+            .with_context(|| {
+                format!(
+                    "timed out waiting for {expected:?} in command/exec output for {process_id}; collected {collected:?}"
+                )
+            })??;
         assert_eq!(delta.process_id, process_id);
+        assert_eq!(delta.stream, stream);
 
         let delta_text = String::from_utf8(STANDARD.decode(&delta.delta_base64)?)?;
-        let delta_text = delta_text.replace('\r', "");
-        match delta.stream {
-            CommandExecOutputStream::Stdout => output.stdout.push_str(&delta_text),
-            CommandExecOutputStream::Stderr => output.stderr.push_str(&delta_text),
-        }
-        if should_stop(&output, &delta) {
-            return Ok(output);
+        collected.push_str(&delta_text.replace('\r', ""));
+        if collected.contains(expected) {
+            return Ok(collected);
         }
     }
 }
