@@ -22,4 +22,17 @@
   - 同步配置加载（非 async）
   - 本地 native-tldr（无 SearchMatchMode）
   - 无 codex-thread-store（使用不同状态管理）
+  - URL 替换 openai/codex → sohaha/zcodex
+  - 保留本地中文 README.md 和 slash_command.rs
+  - 解决 memories_settings_view.rs 冲突（保留中文版）
+  - 汉化 chatwidget.rs/history_cell.rs 新增上游消息
+  - codex-core: 移除 UnavailableDummyTools、修复 MCP sandbox policy
+  - codex-config: get_active_project 和 derive_sandbox_policy 改为同步
+  - codex-mcp: notify_sandbox_state_change → set_sandbox_policy
+  - codex-tui/exec/cli/app-server: 移除 codex-thread-store 依赖
+- 本地分叉保留:
+  - 中文界面完整汉化
+  - 同步配置加载
+  - 本地 native-tldr
+  - 无 codex-thread-store
   - 无 Buddy 功能
