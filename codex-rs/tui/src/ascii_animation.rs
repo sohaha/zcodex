@@ -29,7 +29,7 @@ impl AsciiAnimation {
     ) -> Self {
         assert!(
             !variants.is_empty(),
-            "AsciiAnimation requires at least one animation variant",
+            "AsciiAnimation 至少需要一个动画变体",
         );
         let clamped_idx = variant_idx.min(variants.len() - 1);
         Self {

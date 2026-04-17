@@ -2117,7 +2117,7 @@ mod tests {
     //
     //         frame.render_widget_ref(
     //             Line::from(vec![
-    //                 "Resume a previous session".bold().cyan(),
+    //                 "恢复之前的会话".bold().cyan(),
     //                 "  ".into(),
     //                 "排序：".dim(),
     //                 " ".into(),

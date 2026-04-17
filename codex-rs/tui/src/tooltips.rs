@@ -465,11 +465,11 @@ target_app = "cli"
 version_regex = "^0\\.0\\.0$"
 
 [[announcements]]
-content = "This is a test announcement"
+content = "这是一条测试公告"
         "#;
 
         assert_eq!(
-            Some("This is a test announcement".to_string()),
+            Some("这是一条测试公告".to_string()),
             parse_announcement_tip_toml(toml, /*plan*/ None)
         );
     }
