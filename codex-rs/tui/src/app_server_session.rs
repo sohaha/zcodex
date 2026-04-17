@@ -154,7 +154,8 @@ enum ThreadParamsMode {
 impl ThreadParamsMode {
     fn model_provider_from_config(self, config: &Config) -> Option<String> {
         match self {
-            Self::Embedded | Self::Remote => Some(config.model_provider_id.clone()),
+            Self::Embedded => Some(config.model_provider_id.clone()),
+            Self::Remote => None,
         }
     }
 }
@@ -1272,12 +1273,9 @@ mod tests {
         assert_eq!(start.cwd, None);
         assert_eq!(resume.cwd, None);
         assert_eq!(fork.cwd, None);
-        assert_eq!(start.model_provider, Some(config.model_provider_id.clone()));
-        assert_eq!(
-            resume.model_provider,
-            Some(config.model_provider_id.clone())
-        );
-        assert_eq!(fork.model_provider, Some(config.model_provider_id));
+        assert_eq!(start.model_provider, None);
+        assert_eq!(resume.model_provider, None);
+        assert_eq!(fork.model_provider, None);
     }
 
     #[tokio::test]
@@ -1309,9 +1307,9 @@ mod tests {
         assert_eq!(start.cwd.as_deref(), Some("repo/on/server"));
         assert_eq!(resume.cwd.as_deref(), Some("repo/on/server"));
         assert_eq!(fork.cwd.as_deref(), Some("repo/on/server"));
-        assert_eq!(start.model_provider, Some("openai".to_string()));
-        assert_eq!(resume.model_provider, Some("openai".to_string()));
-        assert_eq!(fork.model_provider, Some("openai".to_string()));
+        assert_eq!(start.model_provider, None);
+        assert_eq!(resume.model_provider, None);
+        assert_eq!(fork.model_provider, None);
     }
 
     #[tokio::test]
