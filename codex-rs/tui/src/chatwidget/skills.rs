@@ -33,8 +33,8 @@ impl ChatWidget {
     pub(crate) fn open_skills_menu(&mut self) {
         let items = vec![
             SelectionItem {
-                name: "List skills".to_string(),
-                description: Some("Tip: press $ to open this list directly.".to_string()),
+                name: "列出技能".to_string(),
+                description: Some("提示：按 $ 直接打开此列表".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenSkillsList);
                 })],
@@ -53,8 +53,8 @@ impl ChatWidget {
         ];
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Skills".to_string()),
-            subtitle: Some("Choose an action".to_string()),
+            title: Some("技能".to_string()),
+            subtitle: Some("选择一个操作".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()

@@ -251,6 +251,18 @@ fn rewrite_rg(rest: &[String]) -> Option<String> {
             if is_unsupported_rg_flag(arg) {
                 return None;
             }
+            if is_rg_flag_with_value(arg) {
+                let value = rest.get(index + 1)?;
+                extra_args.push(arg.clone());
+                extra_args.push(value.clone());
+                index += 2;
+                continue;
+            }
+            if is_rg_flag_with_inline_value(arg) {
+                extra_args.push(arg.clone());
+                index += 1;
+                continue;
+            }
             if matches_rg_short_flag_cluster(arg) || is_supported_rg_flag(arg) {
                 extra_args.push(arg.clone());
                 index += 1;
@@ -268,6 +280,11 @@ fn rewrite_rg(rest: &[String]) -> Option<String> {
                     .strip_prefix("-g")
                     .is_some_and(|value| !value.is_empty())
             {
+                extra_args.push(arg.clone());
+                index += 1;
+                continue;
+            }
+            if is_rg_long_flag_with_equals_value(arg) {
                 extra_args.push(arg.clone());
                 index += 1;
                 continue;
@@ -342,6 +359,22 @@ fn is_supported_rg_flag(arg: &str) -> bool {
             | "-u"
             | "-w"
             | "-x"
+            | "-c"
+            | "-l"
+            | "-v"
+            | "-h"
+            | "-L"
+            | "-E"
+            | "-0"
+            | "--count"
+            | "--files-with-matches"
+            | "--files"
+            | "--invert-match"
+            | "--no-filename"
+            | "--follow"
+            | "--binary"
+            | "--no-binary"
+            | "--null"
             | "--case-sensitive"
             | "--crlf"
             | "--fixed-strings"
@@ -357,11 +390,78 @@ fn is_supported_rg_flag(arg: &str) -> bool {
             | "--text"
             | "--trim"
             | "--word-regexp"
+            | "--vimgrep"
+            | "--no-line-number"
+            | "--column"
+            | "--no-column"
+            | "--with-filename"
+            | "--heading"
+            | "--no-heading"
     )
 }
 
 fn is_unsupported_rg_flag(arg: &str) -> bool {
     arg == "-r" || arg.starts_with("-r") || arg == "--replace" || arg.starts_with("--replace=")
+}
+
+/// rg flags that consume the next positional token as their value.
+fn is_rg_flag_with_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-A" | "-B"
+            | "-C"
+            | "-m"
+            | "--after-context"
+            | "--before-context"
+            | "--context"
+            | "--max-count"
+    ) || matches!(
+        arg,
+        "-j" | "--threads" | "-t" | "--type" | "-T" | "--type-not" | "--sort"
+    ) || matches!(
+        arg,
+        "--sortr" | "--dfa-size-limit" | "--regex-size-limit" | "--max-filesize" | "--encoding"
+    )
+}
+
+/// Short rg flags with an inline value (e.g. `-A3`, `-B2`, `-C5`, `-m10`).
+fn is_rg_flag_with_inline_value(arg: &str) -> bool {
+    let Some(rest) = arg.strip_prefix('-') else {
+        return false;
+    };
+    if rest.is_empty() || rest.starts_with('-') {
+        return false;
+    }
+    let first = rest.as_bytes()[0];
+    if !matches!(first, b'A' | b'B' | b'C' | b'm' | b'j' | b't' | b'T') {
+        return false;
+    }
+    // Must have at least one digit after the flag letter.
+    rest[1..].bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Long rg flags in `--flag=value` form (value is inline after `=`).
+fn is_rg_long_flag_with_equals_value(arg: &str) -> bool {
+    matches!(arg, _)
+        && arg.contains('=')
+        && arg.split_once('=').is_some_and(|(flag, _)| {
+            matches!(
+                flag,
+                "--after-context"
+                    | "--before-context"
+                    | "--context"
+                    | "--max-count"
+                    | "--max-filesize"
+                    | "--dfa-size-limit"
+                    | "--regex-size-limit"
+                    | "--threads"
+                    | "--sort"
+                    | "--sortr"
+                    | "--encoding"
+                    | "--type"
+                    | "--type-not"
+            )
+        })
 }
 
 fn matches_rg_short_flag_cluster(arg: &str) -> bool {
@@ -1031,6 +1131,35 @@ mod tests {
                 "rg --glob='*.rs' needle src/main.rs",
                 Some("ztok grep needle src/main.rs '--glob=*.rs'"),
             ),
+            (
+                "rg -n -A 3 needle src/main.rs",
+                Some("ztok grep needle src/main.rs -n -A 3"),
+            ),
+            (
+                "rg -n -B 2 needle src/main.rs",
+                Some("ztok grep needle src/main.rs -n -B 2"),
+            ),
+            (
+                "rg -n -C 5 needle src/main.rs",
+                Some("ztok grep needle src/main.rs -n -C 5"),
+            ),
+            (
+                "rg -n -A 3 -B 2 needle src/main.rs",
+                Some("ztok grep needle src/main.rs -n -A 3 -B 2"),
+            ),
+            (
+                "rg -n -B2 -A5 needle src",
+                Some("ztok grep needle src -n -B2 -A5"),
+            ),
+            (
+                "rg --after-context=3 needle src",
+                Some("ztok grep needle src --after-context=3"),
+            ),
+            (
+                "rg -c needle src/main.rs",
+                Some("ztok grep needle src/main.rs -c"),
+            ),
+            ("rg -l needle src", Some("ztok grep needle src -l")),
         ]);
     }
 
