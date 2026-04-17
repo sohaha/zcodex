@@ -430,7 +430,6 @@ pub struct ModelsResponse {
 // convert ModelInfo to ModelPreset
 impl From<ModelInfo> for ModelPreset {
     fn from(info: ModelInfo) -> Self {
-        tracing::warn!("ModelPreset::from ModelInfo: slug={}, skip_reasoning_popup={}", info.slug, info.skip_reasoning_popup);
         let supports_personality = info.supports_personality();
         ModelPreset {
             id: info.slug.clone(),
