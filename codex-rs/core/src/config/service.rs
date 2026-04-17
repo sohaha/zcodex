@@ -1,5 +1,4 @@
 use super::deserialize_config_toml_with_base;
-use crate::config::ConfigToml;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::managed_features::validate_explicit_feature_settings_in_config_toml;
@@ -29,6 +28,8 @@ use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::OverriddenMetadata;
 use codex_app_server_protocol::WriteStatus;
 use codex_config::CONFIG_TOML_FILE;
+use codex_config::config_toml::ConfigToml;
+use codex_exec_server::LOCAL_FS;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::Value as JsonValue;
 use std::borrow::Cow;
@@ -424,6 +425,7 @@ impl ConfigService {
     async fn load_thread_agnostic_config(&self) -> std::io::Result<ConfigLayerStack> {
         let cwd: Option<AbsolutePathBuf> = None;
         load_config_layers_state(
+            LOCAL_FS.as_ref(),
             &self.codex_home,
             cwd,
             &self.cli_overrides,
@@ -663,11 +665,9 @@ fn override_message(layer: &ConfigLayerSource) -> String {
             dot_codex_folder.display(),
         ),
         ConfigLayerSource::SessionFlags => "Overridden by session flags".to_string(),
+        ConfigLayerSource::ZConfig { .. } => "Overridden by ZConfig".to_string(),
         ConfigLayerSource::User { file } => {
             format!("Overridden by user config: {}", file.display())
-        }
-        ConfigLayerSource::ZConfig { file } => {
-            format!("Overridden by zconfig: {}", file.display())
         }
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
             format!(

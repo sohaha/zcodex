@@ -111,7 +111,7 @@ INSERT INTO jobs (
     cmd.args(["debug", "clear-memories"])
         .assert()
         .success()
-        .stdout(contains("已清除"));
+        .stdout(contains("Cleared memory state"));
 
     let pool = SqlitePool::connect(&format!("sqlite://{}", db_path.display())).await?;
     let stage1_outputs_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stage1_outputs")
@@ -125,13 +125,8 @@ INSERT INTO jobs (
     .fetch_one(&pool)
     .await?;
     assert_eq!(memory_jobs_count, 0);
-
-    let memory_mode: String = sqlx::query_scalar("SELECT memory_mode FROM threads WHERE id = ?")
-        .bind(thread_id)
-        .fetch_one(&pool)
-        .await?;
-    assert_eq!(memory_mode, "disabled");
-    assert!(!memory_root.exists());
+    assert!(memory_root.exists());
+    assert_eq!(std::fs::read_dir(memory_root)?.count(), 0);
 
     Ok(())
 }

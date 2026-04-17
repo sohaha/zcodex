@@ -1,11 +1,9 @@
-use crate::anthropic;
-use crate::auth::AuthProvider;
+use crate::auth::SharedAuthProvider;
 use crate::common::ResponseStream;
 use crate::common::ResponsesApiRequest;
 use crate::endpoint::session::EndpointSession;
 use crate::error::ApiError;
 use crate::provider::Provider;
-use crate::provider::WireApi;
 use crate::requests::Compression;
 use crate::requests::attach_item_ids;
 use crate::requests::headers::build_conversation_headers;
@@ -25,8 +23,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use tracing::instrument;
 
-pub struct ResponsesClient<T: HttpTransport, A: AuthProvider> {
-    session: EndpointSession<T, A>,
+pub struct ResponsesClient<T: HttpTransport> {
+    session: EndpointSession<T>,
     sse_telemetry: Option<Arc<dyn SseTelemetry>>,
 }
 
@@ -39,8 +37,8 @@ pub struct ResponsesOptions {
     pub turn_state: Option<Arc<OnceLock<String>>>,
 }
 
-impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
-    pub fn new(transport: T, provider: Provider, auth: A) -> Self {
+impl<T: HttpTransport> ResponsesClient<T> {
+    pub fn new(transport: T, provider: Provider, auth: SharedAuthProvider) -> Self {
         Self {
             session: EndpointSession::new(transport, provider, auth),
             sse_telemetry: None,
@@ -73,10 +71,6 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         request: ResponsesApiRequest,
         options: ResponsesOptions,
     ) -> Result<ResponseStream, ApiError> {
-        if self.session.provider().wire_api == WireApi::Anthropic {
-            return self.stream_anthropic_request(request, options).await;
-        }
-
         let ResponsesOptions {
             conversation_id,
             session_source,
@@ -101,48 +95,6 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         }
 
         self.stream(body, headers, compression, turn_state).await
-    }
-
-    async fn stream_anthropic_request(
-        &self,
-        request: ResponsesApiRequest,
-        options: ResponsesOptions,
-    ) -> Result<ResponseStream, ApiError> {
-        let ResponsesOptions {
-            conversation_id,
-            session_source,
-            mut extra_headers,
-            compression: _,
-            turn_state,
-        } = options;
-
-        if let Some(ref conv_id) = conversation_id {
-            insert_header(&mut extra_headers, "x-client-request-id", conv_id);
-        }
-        extra_headers.extend(build_conversation_headers(conversation_id));
-        if let Some(subagent) = subagent_header(&session_source) {
-            insert_header(&mut extra_headers, "x-openai-subagent", &subagent);
-        }
-
-        let freeform_tool_names = anthropic::freeform_tool_names(&request.tools);
-        let body = anthropic::build_request_body(&request);
-        let stream_response = self
-            .session
-            .stream_with(Method::POST, "messages", extra_headers, Some(body), |req| {
-                req.headers.insert(
-                    http::header::ACCEPT,
-                    HeaderValue::from_static("text/event-stream"),
-                );
-            })
-            .await?;
-
-        Ok(anthropic::spawn_response_stream(
-            stream_response,
-            self.session.provider().stream_idle_timeout,
-            self.sse_telemetry.clone(),
-            turn_state,
-            freeform_tool_names,
-        ))
     }
 
     fn path() -> &'static str {

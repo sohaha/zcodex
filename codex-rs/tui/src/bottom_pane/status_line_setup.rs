@@ -66,10 +66,6 @@ pub(crate) enum StatusLineItem {
     /// Percentage of context window remaining.
     ContextRemaining,
 
-    /// Percentage of context window remaining.
-    #[strum(to_string = "context-remaining-percent")]
-    ContextRemainingPercent,
-
     /// Percentage of context window used.
     ///
     /// Also accepts the legacy `context-usage` config value.
@@ -117,7 +113,6 @@ impl StatusLineItem {
             StatusLineItem::ProjectRoot => "项目根目录（不可用时省略）",
             StatusLineItem::GitBranch => "当前 Git 分支（不可用时省略）",
             StatusLineItem::ContextRemaining => "上下文窗口剩余百分比（未知时省略）",
-            StatusLineItem::ContextRemainingPercent => "上下文窗口剩余百分比（未知时省略）",
             StatusLineItem::ContextUsed => "上下文窗口已用百分比（未知时省略）",
             StatusLineItem::FiveHourLimit => "5 小时用量限额剩余（不可用时省略）",
             StatusLineItem::WeeklyLimit => "每周用量限额剩余（不可用时省略）",
@@ -306,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn context_remaining_is_separate_selectable_id() {
+    fn context_remaining_is_selectable_id() {
         assert_eq!(
             "context-remaining".parse::<StatusLineItem>(),
             Ok(StatusLineItem::ContextRemaining)
@@ -314,18 +309,6 @@ mod tests {
         assert_eq!(
             StatusLineItem::ContextRemaining.to_string(),
             "context-remaining"
-        );
-    }
-
-    #[test]
-    fn context_remaining_percent_is_separate_selectable_id() {
-        assert_eq!(
-            StatusLineItem::ContextRemainingPercent.to_string(),
-            "context-remaining-percent"
-        );
-        assert_eq!(
-            "context-remaining-percent".parse::<StatusLineItem>(),
-            Ok(StatusLineItem::ContextRemainingPercent)
         );
     }
 

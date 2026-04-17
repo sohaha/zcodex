@@ -1,4 +1,4 @@
-use crate::auth::AuthProvider;
+use crate::auth::SharedAuthProvider;
 use crate::chat_completions;
 use crate::common::ResponseStream;
 use crate::common::ResponsesApiRequest;
@@ -18,13 +18,13 @@ use http::Method;
 use std::sync::Arc;
 use tracing::instrument;
 
-pub struct ChatCompletionsClient<T: HttpTransport, A: AuthProvider> {
-    session: EndpointSession<T, A>,
+pub struct ChatCompletionsClient<T: HttpTransport> {
+    session: EndpointSession<T>,
     sse_telemetry: Option<Arc<dyn SseTelemetry>>,
 }
 
-impl<T: HttpTransport, A: AuthProvider> ChatCompletionsClient<T, A> {
-    pub fn new(transport: T, provider: Provider, auth: A) -> Self {
+impl<T: HttpTransport> ChatCompletionsClient<T> {
+    pub fn new(transport: T, provider: Provider, auth: SharedAuthProvider) -> Self {
         Self {
             session: EndpointSession::new(transport, provider, auth),
             sse_telemetry: None,

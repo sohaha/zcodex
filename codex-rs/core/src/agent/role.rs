@@ -9,7 +9,6 @@
 use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigOverrides;
-use crate::config::ConfigToml;
 use crate::config::agent_roles::parse_agent_role_file_contents;
 use crate::config::deserialize_config_toml_with_base;
 use crate::config_loader::ConfigLayerEntry;
@@ -18,6 +17,8 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::resolve_relative_paths_in_config_toml;
 use anyhow::anyhow;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_config::config_toml::ConfigToml;
+use codex_exec_server::LOCAL_FS;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -168,6 +169,7 @@ mod reload {
         }
 
         let mut next_config = Config::load_config_with_layer_stack(
+            LOCAL_FS.as_ref(),
             merged_config,
             reload_overrides(config, preserve_current_provider),
             config.codex_home.clone(),

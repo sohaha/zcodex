@@ -17,7 +17,7 @@ exec *args:
 # Start `codex exec-server` and run codex-tui.
 [no-cd]
 tui-with-exec-server *args:
-    ./scripts/run_tui_with_exec_server.sh "$@"
+    {{ justfile_directory() }}/scripts/run_tui_with_exec_server.sh "$@"
 
 # Run the CLI version of the file-search crate.
 file-search *args:
@@ -64,18 +64,18 @@ bazel-lock-update:
 
 [no-cd]
 bazel-lock-check:
-    ./scripts/check-module-bazel-lock.sh
+    {{ justfile_directory() }}/scripts/check-module-bazel-lock.sh
 
 bazel-test:
     bazel test --test_tag_filters=-argument-comment-lint //... --keep_going
 
 [no-cd]
 bazel-clippy:
-    bazel_targets="$(./scripts/list-bazel-clippy-targets.sh)" && bazel build --config=clippy -- ${bazel_targets}
+    bazel_targets="$({{ justfile_directory() }}/scripts/list-bazel-clippy-targets.sh)" && bazel build --config=clippy -- ${bazel_targets}
 
 [no-cd]
 bazel-argument-comment-lint:
-    bazel build --config=argument-comment-lint -- $(./tools/argument-comment-lint/list-bazel-targets.sh)
+    bazel build --config=argument-comment-lint -- $({{ justfile_directory() }}/tools/argument-comment-lint/list-bazel-targets.sh)
 
 bazel-remote-test:
     bazel test --test_tag_filters=-argument-comment-lint //... --config=remote --platforms=//:rbe --keep_going
@@ -97,7 +97,7 @@ write-app-server-schema *args:
 
 [no-cd]
 write-hooks-schema:
-    cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
+    cargo run --manifest-path {{ justfile_directory() }}/codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
 
 TARGET_WINDOWS_GNU := "x86_64-pc-windows-gnullvm"
 TARGET_WINDOWS_MSVC := "x86_64-pc-windows-msvc"
@@ -146,14 +146,14 @@ windows-cross-check *args:
 [no-cd]
 argument-comment-lint *args:
     if [ "$#" -eq 0 ]; then \
-      bazel build --config=argument-comment-lint -- $(./tools/argument-comment-lint/list-bazel-targets.sh); \
+      bazel build --config=argument-comment-lint -- $({{ justfile_directory() }}/tools/argument-comment-lint/list-bazel-targets.sh); \
     else \
-      ./tools/argument-comment-lint/run-prebuilt-linter.py "$@"; \
+      {{ justfile_directory() }}/tools/argument-comment-lint/run-prebuilt-linter.py "$@"; \
     fi
 
 [no-cd]
 argument-comment-lint-from-source *args:
-    ./tools/argument-comment-lint/run.py "$@"
+    {{ justfile_directory() }}/tools/argument-comment-lint/run.py "$@"
 
 # Tail logs from the state SQLite database
 log *args:

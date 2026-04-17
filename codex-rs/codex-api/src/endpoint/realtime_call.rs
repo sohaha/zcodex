@@ -1,4 +1,4 @@
-use crate::auth::AuthProvider;
+use crate::auth::SharedAuthProvider;
 use crate::endpoint::realtime_websocket::RealtimeSessionConfig;
 use crate::endpoint::realtime_websocket::session_update_session_json;
 use crate::endpoint::session::EndpointSession;
@@ -24,8 +24,8 @@ use tracing::trace;
 const MULTIPART_BOUNDARY: &str = "codex-realtime-call-boundary";
 const MULTIPART_CONTENT_TYPE: &str = "multipart/form-data; boundary=codex-realtime-call-boundary";
 
-pub struct RealtimeCallClient<T: HttpTransport, A: AuthProvider> {
-    session: EndpointSession<T, A>,
+pub struct RealtimeCallClient<T: HttpTransport> {
+    session: EndpointSession<T>,
 }
 
 /// Answer from creating a WebRTC Realtime call.
@@ -44,8 +44,8 @@ struct BackendRealtimeCallRequest<'a> {
     session: &'a Value,
 }
 
-impl<T: HttpTransport, A: AuthProvider> RealtimeCallClient<T, A> {
-    pub fn new(transport: T, provider: Provider, auth: A) -> Self {
+impl<T: HttpTransport> RealtimeCallClient<T> {
+    pub fn new(transport: T, provider: Provider, auth: SharedAuthProvider) -> Self {
         Self {
             session: EndpointSession::new(transport, provider, auth),
         }
@@ -221,6 +221,7 @@ fn decode_call_id_from_location(headers: &HeaderMap) -> Result<String, ApiError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::AuthProvider;
     use crate::endpoint::realtime_websocket::RealtimeEventParser;
     use crate::endpoint::realtime_websocket::RealtimeOutputModality;
     use crate::endpoint::realtime_websocket::RealtimeSessionMode;
@@ -329,7 +330,7 @@ mod tests {
         let client = RealtimeCallClient::new(
             transport.clone(),
             provider("https://api.openai.com/v1"),
-            DummyAuth,
+            Arc::new(DummyAuth),
         );
 
         let response = client
@@ -372,7 +373,7 @@ mod tests {
         let client = RealtimeCallClient::new(
             transport.clone(),
             provider("https://chatgpt.com/backend-api/codex"),
-            DummyAuth,
+            Arc::new(DummyAuth),
         );
 
         let response = client
@@ -406,7 +407,7 @@ mod tests {
         let client = RealtimeCallClient::new(
             transport.clone(),
             provider("https://api.openai.com/v1"),
-            DummyAuth,
+            Arc::new(DummyAuth),
         );
 
         let response = client
@@ -468,7 +469,7 @@ mod tests {
         let client = RealtimeCallClient::new(
             transport.clone(),
             provider("https://chatgpt.com/backend-api/codex"),
-            DummyAuth,
+            Arc::new(DummyAuth),
         );
 
         let response = client
@@ -514,8 +515,11 @@ mod tests {
     #[tokio::test]
     async fn errors_when_location_is_missing() {
         let transport = CapturingTransport::without_location();
-        let client =
-            RealtimeCallClient::new(transport, provider("https://api.openai.com/v1"), DummyAuth);
+        let client = RealtimeCallClient::new(
+            transport,
+            provider("https://api.openai.com/v1"),
+            Arc::new(DummyAuth),
+        );
 
         let err = client
             .create("v=offer\r\n".to_string())

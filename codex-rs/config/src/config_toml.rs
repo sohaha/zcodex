@@ -10,6 +10,8 @@ use crate::types::AnalyticsConfigToml;
 use crate::types::ApprovalsReviewer;
 use crate::types::AppsConfigToml;
 use crate::types::AuthCredentialsStoreMode;
+use crate::types::BuddyReactionStrategy;
+use crate::types::BuddySoul;
 use crate::types::FeedbackConfigToml;
 use crate::types::History;
 use crate::types::MarketplaceConfig;
@@ -27,10 +29,10 @@ use crate::types::ToolSuggestConfig;
 use crate::types::Tui;
 use crate::types::UriBasedFileOpener;
 use crate::types::WindowsToml;
+use crate::types::ZmemoryToml;
 use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
 use codex_features::FeaturesToml;
-use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
@@ -52,6 +54,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path::normalize_for_path_comparison;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Deserializer;
@@ -62,6 +65,16 @@ const RESERVED_MODEL_PROVIDER_IDS: [&str; 3] = [
     OLLAMA_OSS_PROVIDER_ID,
     LMSTUDIO_OSS_PROVIDER_ID,
 ];
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FallbackProviderToml {
+    /// Provider to use from the model_providers map.
+    pub provider: String,
+
+    /// Optional model slug to use with this fallback provider.
+    pub model: Option<String>,
+}
 
 /// Base config deserialized from ~/.codex/config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
@@ -77,6 +90,16 @@ pub struct ConfigToml {
 
     /// Controls whether thread resume should use persisted or current model metadata.
     pub resume_model_source: Option<ResumeModelSource>,
+
+    /// Optional provider to use when the primary provider request fails.
+    pub fallback_provider: Option<String>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
+
+    /// Ordered list of fallback providers to try for the current request.
+    #[serde(default)]
+    pub fallback_providers: Vec<FallbackProviderToml>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -321,6 +344,20 @@ pub struct ConfigToml {
 
     /// Memories subsystem settings.
     pub memories: Option<MemoriesToml>,
+    /// Zmemory subsystem settings.
+    pub zmemory: Option<ZmemoryToml>,
+
+    /// When true, show the buddy/companion agent in the TUI.
+    pub tui_show_buddy: Option<bool>,
+
+    /// Buddy soul configuration (personality, tone, traits).
+    pub tui_buddy_soul: Option<BuddySoul>,
+
+    /// When true, enable buddy reaction features in the TUI.
+    pub tui_buddy_reactions_enabled: Option<bool>,
+
+    /// Strategy for when/how buddy reactions are triggered.
+    pub tui_buddy_reaction_strategy: Option<BuddyReactionStrategy>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
@@ -604,7 +641,7 @@ impl ConfigToml {
         sandbox_mode_override: Option<SandboxMode>,
         profile_sandbox_mode: Option<SandboxMode>,
         windows_sandbox_level: WindowsSandboxLevel,
-        resolved_cwd: &Path,
+        active_project: Option<&ProjectConfig>,
         sandbox_policy_constraint: Option<&crate::Constrained<SandboxPolicy>>,
     ) -> SandboxPolicy {
         let sandbox_mode_was_explicit = sandbox_mode_override.is_some()
@@ -619,7 +656,7 @@ impl ConfigToml {
                 // If no sandbox_mode is set but this directory has a trust decision,
                 // default to workspace-write except on unsandboxed Windows where we
                 // default to read-only.
-                self.get_active_project(resolved_cwd).await.and_then(|p| {
+                active_project.and_then(|p| {
                     if p.is_trusted() || p.is_untrusted() {
                         if cfg!(target_os = "windows")
                             && windows_sandbox_level == WindowsSandboxLevel::Disabled
@@ -678,11 +715,13 @@ impl ConfigToml {
         }
         sandbox_policy
     }
-
-    /// Resolves the cwd to an existing project, or returns None if ConfigToml
-    /// does not contain a project corresponding to cwd or a git repo for cwd
-    pub async fn get_active_project(&self, resolved_cwd: &Path) -> Option<ProjectConfig> {
-        let repo_root = resolve_root_git_project_for_trust(resolved_cwd);
+    /// does not contain a project corresponding to cwd or the resolved git repo
+    /// root for cwd.
+    pub fn get_active_project(
+        &self,
+        resolved_cwd: &Path,
+        repo_root: Option<&Path>,
+    ) -> Option<ProjectConfig> {
         let projects = self.projects.clone().unwrap_or_default();
 
         let resolved_cwd_key = project_trust_key(resolved_cwd);
@@ -694,10 +733,7 @@ impl ConfigToml {
             return Some(project_config.clone());
         }
 
-        // If cwd lives inside a git repo/worktree, check whether the root git project
-        // (the primary repository working directory) is trusted. This lets
-        // worktrees inherit trust from the main project.
-        if let Some(repo_root) = repo_root.as_deref() {
+        if let Some(repo_root) = repo_root {
             let repo_root_key = project_trust_key(repo_root);
             let repo_root_raw_key = repo_root.to_string_lossy().to_string();
             if let Some(project_config_for_root) = projects
@@ -737,7 +773,7 @@ impl ConfigToml {
 /// projects trust map. On Windows, strips UNC, when possible, to try to ensure
 /// that different paths that point to the same location have the same key.
 fn project_trust_key(project_path: &Path) -> String {
-    dunce::canonicalize(project_path)
+    normalize_for_path_comparison(project_path)
         .unwrap_or_else(|_| project_path.to_path_buf())
         .to_string_lossy()
         .to_string()

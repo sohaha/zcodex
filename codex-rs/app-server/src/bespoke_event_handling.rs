@@ -2935,6 +2935,7 @@ async fn construct_mcp_tool_call_notification(
         tool: begin_event.invocation.tool,
         status: McpToolCallStatus::InProgress,
         arguments: begin_event.invocation.arguments.unwrap_or(JsonValue::Null),
+        mcp_app_resource_uri: begin_event.mcp_app_resource_uri,
         result: None,
         error: None,
         duration_ms: None,
@@ -2961,11 +2962,11 @@ async fn construct_mcp_tool_call_end_notification(
 
     let (result, error) = match &end_event.result {
         Ok(value) => (
-            Some(McpToolCallResult {
+            Some(Box::new(McpToolCallResult {
                 content: value.content.clone(),
                 structured_content: value.structured_content.clone(),
                 meta: value.meta.clone(),
-            }),
+            })),
             None,
         ),
         Err(message) => (
@@ -2982,6 +2983,7 @@ async fn construct_mcp_tool_call_end_notification(
         tool: end_event.invocation.tool,
         status,
         arguments: end_event.invocation.arguments.unwrap_or(JsonValue::Null),
+        mcp_app_resource_uri: end_event.mcp_app_resource_uri,
         result,
         error,
         duration_ms,
@@ -4244,6 +4246,7 @@ mod tests {
                 tool: "list_mcp_resources".to_string(),
                 arguments: Some(serde_json::json!({"server": ""})),
             },
+            mcp_app_resource_uri: Some("ui://widget/list-resources.html".to_string()),
         };
 
         let thread_id = ThreadId::new().to_string();
@@ -4264,6 +4267,7 @@ mod tests {
                 tool: begin_event.invocation.tool,
                 status: McpToolCallStatus::InProgress,
                 arguments: serde_json::json!({"server": ""}),
+                mcp_app_resource_uri: Some("ui://widget/list-resources.html".to_string()),
                 result: None,
                 error: None,
                 duration_ms: None,
@@ -4404,6 +4408,7 @@ mod tests {
                 tool: "list_mcp_resources".to_string(),
                 arguments: None,
             },
+            mcp_app_resource_uri: None,
         };
 
         let thread_id = ThreadId::new().to_string();
@@ -4424,6 +4429,7 @@ mod tests {
                 tool: begin_event.invocation.tool,
                 status: McpToolCallStatus::InProgress,
                 arguments: JsonValue::Null,
+                mcp_app_resource_uri: None,
                 result: None,
                 error: None,
                 duration_ms: None,
@@ -4455,6 +4461,7 @@ mod tests {
                 tool: "list_mcp_resources".to_string(),
                 arguments: Some(serde_json::json!({"server": ""})),
             },
+            mcp_app_resource_uri: Some("ui://widget/list-resources.html".to_string()),
             duration: Duration::from_nanos(92708),
             result: Ok(result),
         };
@@ -4477,13 +4484,14 @@ mod tests {
                 tool: end_event.invocation.tool,
                 status: McpToolCallStatus::Completed,
                 arguments: serde_json::json!({"server": ""}),
-                result: Some(McpToolCallResult {
+                mcp_app_resource_uri: Some("ui://widget/list-resources.html".to_string()),
+                result: Some(Box::new(McpToolCallResult {
                     content,
                     structured_content: None,
                     meta: Some(serde_json::json!({
                         "ui/resourceUri": "ui://widget/list-resources.html"
                     })),
-                }),
+                })),
                 error: None,
                 duration_ms: Some(0),
             },
@@ -4501,6 +4509,7 @@ mod tests {
                 tool: "list_mcp_resources".to_string(),
                 arguments: None,
             },
+            mcp_app_resource_uri: None,
             duration: Duration::from_millis(1),
             result: Err("boom".to_string()),
         };
@@ -4523,6 +4532,7 @@ mod tests {
                 tool: end_event.invocation.tool,
                 status: McpToolCallStatus::Failed,
                 arguments: JsonValue::Null,
+                mcp_app_resource_uri: None,
                 result: None,
                 error: Some(McpToolCallError {
                     message: "boom".to_string(),

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use anyhow::bail;
-use codex_core::WireApi;
+use codex_model_provider_info::WireApi;
 
 use super::ApiError;
 use super::translator::UpstreamTranslator;

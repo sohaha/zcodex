@@ -5,13 +5,14 @@ use clap::ArgGroup;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
-use codex_core::CtfCleanOptions;
 use codex_core::INTERACTIVE_SESSION_SOURCES;
 use codex_core::RolloutRecorder;
 use codex_core::ThreadSortKey;
-use codex_core::clean_ctf_rollout;
 use codex_core::config::Config;
 use codex_core::find_thread_path_by_id_str;
+use codex_rollout::CTF_CLEAN_DEFAULT_REPLACEMENT;
+use codex_rollout::CtfCleanOptions;
+use codex_rollout::clean_ctf_rollout;
 use codex_tui::Cli as TuiCli;
 use codex_utils_cli::CliConfigOverrides;
 use std::path::PathBuf;
@@ -82,7 +83,7 @@ pub struct CtfCleanCommand {
     #[arg(
         long = "replacement",
         value_name = "文本",
-        default_value = codex_core::CTF_CLEAN_DEFAULT_REPLACEMENT
+        default_value = CTF_CLEAN_DEFAULT_REPLACEMENT
     )]
     pub replacement: String,
 }
