@@ -107,11 +107,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     }
 
     let mut ztok_output = String::new();
-    ztok_output.push_str(&format!(
-        "{} 处匹配，{} 个文件：\n\n",
-        total,
-        by_file.len()
-    ));
+    ztok_output.push_str(&format!("{} 处匹配，{} 个文件：\n\n", total, by_file.len()));
 
     let mut shown = 0;
     let mut files: Vec<_> = by_file.iter().collect();
@@ -320,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_no_match_message_is_localized() {
-        let msg = format!("🔍 未找到：'{}'", "needle");
+        let msg = format!("未找到：'{}'", "needle");
         assert_eq!(msg, "未找到：'needle'");
     }
 

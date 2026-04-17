@@ -91,7 +91,30 @@ pub fn format_exec_output_for_model_freeform(
     sections.push("Output:".to_string());
     sections.push(formatted_output);
 
-    sections.join("\n")
+    sections.join("\n");
+    // 成功时省略 Exit code 和 Wall time 以节省 token
+    let prefix = if exec_output.exit_code == 0 && duration_seconds < 0.1 {
+        String::new()
+    } else {
+        let mut parts = Vec::new();
+        if exec_output.exit_code != 0 {
+            parts.push(format!("Exit code: {}", exec_output.exit_code));
+        }
+        if duration_seconds >= 0.1 {
+            parts.push(format!("{:.1}s", duration_seconds));
+        }
+        if !parts.is_empty() {
+            format!("{}: ", parts.join(", "))
+        } else {
+            String::new()
+        }
+    };
+
+    if prefix.is_empty() {
+        formatted_output
+    } else {
+        format!("{}\n{}", prefix, formatted_output)
+    }
 }
 
 pub fn format_exec_output_str(

@@ -290,7 +290,7 @@ pub fn filter_ruff_format(output: &str) -> String {
                 result.push_str(&format!("\n✓ {files_checked} 个文件已格式化\n"));
             }
 
-        result.push_str("\n运行 `ruff format` 格式化这些文件\n");
+            result.push_str("\n运行 `ruff format` 格式化这些文件\n");
         }
     } else {
         // write 模式或其他输出：显示摘要

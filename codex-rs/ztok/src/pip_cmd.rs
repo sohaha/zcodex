@@ -233,7 +233,7 @@ fn filter_pip_outdated(output: &str) -> String {
         result.push_str(&format!("\n... +{} 个包\n", packages.len() - 20));
     }
 
-        result.push_str("\n运行 `pip install --upgrade <package>` 进行更新\n");
+    result.push_str("\n运行 `pip install --upgrade <package>` 进行更新\n");
 
     result.trim().to_string()
 }

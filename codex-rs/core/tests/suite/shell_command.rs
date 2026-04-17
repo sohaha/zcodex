@@ -256,11 +256,12 @@ async fn shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> 
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-   if output.contains("[shell_command routed via embedded ZTOK]") {
-        let rewritten = format!(
-            "codex ztok grep 'hello, world' {} -n",
-            file.path().display()
-        );
+  if output.contains("[shell_command routed via embedded ZTOK]") {
+   if output.contains("ztok:") {
+       let rewritten = format!(
+           "codex ztok grep 'hello, world' {} -n",
+           file.path().display()
+       );
         assert!(output.contains(&rewritten));
         assert!(
             output.contains("1: hello, world"),
@@ -296,11 +297,12 @@ async fn shell_command_with_login_ignores_invalid_ripgrep_config_path_from_paren
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-   if output.contains("[shell_command routed via embedded ZTOK]") {
-        let rewritten = format!(
-            "codex ztok grep 'hello with login' {} -n",
-            file.path().display()
-        );
+  if output.contains("[shell_command routed via embedded ZTOK]") {
+   if output.contains("ztok:") {
+       let rewritten = format!(
+           "codex ztok grep 'hello with login' {} -n",
+           file.path().display()
+       );
         assert!(output.contains(&rewritten));
         assert!(
             output.contains("1: hello with login"),

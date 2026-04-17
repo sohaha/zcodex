@@ -228,9 +228,9 @@ fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
         }
     }
 
-        result.push(format!("   {errors} 个错误"));
-        result.push(format!("   {warnings} 个警告"));
-    result.push(format!("   ℹ️  {info} 条信息"));
+    result.push(format!("   {errors} 个错误"));
+    result.push(format!("   {warnings} 个警告"));
+    result.push(format!("   {info} 条信息"));
 }
 
 fn summarize_list(output: &str, result: &mut Vec<String>) {

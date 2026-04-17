@@ -313,7 +313,7 @@ pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
 
 pub(crate) fn build_ztok_tool_developer_instructions() -> String {
     ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE
-        .render([])
+        .render::<[(&str, &str); 0], _, _>([])
         .unwrap_or_else(|err| panic!("embedded ztok prompt template should render: {err}"))
 }
 
