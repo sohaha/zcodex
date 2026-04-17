@@ -957,6 +957,7 @@ impl TurnContext {
     ) -> FileSystemSandboxContext {
         FileSystemSandboxContext {
             sandbox_policy: self.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
             windows_sandbox_level: self.windows_sandbox_level,
             windows_sandbox_private_desktop: false,
             use_legacy_landlock: false,
@@ -1212,6 +1213,7 @@ impl TurnContext {
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
             sandbox_policy: self.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
             network: self.turn_context_network_item(),
             model: self.model_info.slug.clone(),
             personality: self.personality,
@@ -1348,6 +1350,7 @@ impl SessionConfiguration {
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
             sandbox_policy: self.sandbox_policy.get().clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
             cwd: self.cwd.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
@@ -1692,7 +1695,6 @@ impl Session {
             main_execve_wrapper_exe,
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
-        .with_auto_tldr_routing(per_turn_config.auto_tldr_routing)
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
         .with_has_environment(environment.is_some())
         .with_spawn_agent_usage_hint(per_turn_config.multi_agent_v2.usage_hint_enabled)
@@ -7421,7 +7423,7 @@ fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> Mo
     ModelClient::new(
         turn_context.auth_manager.clone(),
         sess.conversation_id,
-        sess.services.model_client.installation_id(),
+        ,
         turn_context.provider.clone(),
         turn_context.session_source.clone(),
         turn_context.config.model_verbosity,

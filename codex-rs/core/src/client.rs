@@ -855,8 +855,6 @@ impl ModelClientSession {
             .client
             .state
             .provider
-            .max_output_tokens
-            .filter(|v| *v > 0);
         let request = ResponsesApiRequest {
             model: model_info.slug.clone(),
             instructions: instructions.clone(),
