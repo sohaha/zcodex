@@ -44,6 +44,7 @@ fn model_from_preset(preset: ModelPreset) -> Model {
         supports_personality: preset.supports_personality,
         additional_speed_tiers: preset.additional_speed_tiers,
         is_default: preset.is_default,
+        skip_reasoning_popup: preset.skip_reasoning_popup,
     }
 }
 

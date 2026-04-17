@@ -870,30 +870,32 @@ impl ModelClientSession {
             None
         };
         let text = create_text_param_for_request(verbosity, &prompt.output_schema);
-        let prompt_cache_key = Some(self.client.state.conversation_id.to_string());
-        let request = ResponsesApiRequest {
-            model: model_info.slug.clone(),
-            instructions: instructions.clone(),
-            input,
-            tools,
-            tool_choice: "auto".to_string(),
-            parallel_tool_calls: prompt.parallel_tool_calls,
-            reasoning,
-            store: provider.is_azure_responses_endpoint(),
-            stream: true,
-            include,
-            service_tier: match service_tier {
-                Some(ServiceTier::Fast) => Some("priority".to_string()),
-                Some(service_tier) => Some(service_tier.to_string()),
-                None => None,
-            },
-            prompt_cache_key,
-            text,
-            client_metadata: Some(HashMap::from([(
-                X_CODEX_INSTALLATION_ID_HEADER.to_string(),
-                self.client.state.installation_id.clone(),
-            )])),
-        };
+       let prompt_cache_key = Some(self.client.state.conversation_id.to_string());
+       let max_output_tokens = self.client.state.provider.max_output_tokens.filter(|v| *v > 0);
+       let request = ResponsesApiRequest {
+           model: model_info.slug.clone(),
+           instructions: instructions.clone(),
+           input,
+           tools,
+           tool_choice: "auto".to_string(),
+           parallel_tool_calls: prompt.parallel_tool_calls,
+           reasoning,
+           store: provider.is_azure_responses_endpoint(),
+           stream: true,
+           include,
+           service_tier: match service_tier {
+               Some(ServiceTier::Fast) => Some("priority".to_string()),
+               Some(service_tier) => Some(service_tier.to_string()),
+               None => None,
+           },
+           prompt_cache_key,
+           text,
+           max_output_tokens,
+           client_metadata: Some(HashMap::from([(
+               X_CODEX_INSTALLATION_ID_HEADER.to_string(),
+               self.client.state.installation_id.clone(),
+           )])),
+       };
         Ok(request)
     }
 

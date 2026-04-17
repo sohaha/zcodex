@@ -155,6 +155,9 @@ pub struct ModelProviderInfo {
     /// Token usage threshold triggering auto-compaction of conversation history.
     #[serde(default)]
     pub model_auto_compact_token_limit: Option<i64>,
+    /// Maximum number of tokens the model can generate for this provider.
+    #[serde(default)]
+    pub max_output_tokens: Option<i64>,
     /// When true, selecting this provider's model in the picker skips the
     /// reasoning-effort (thinking level) selection popup and uses the model's
     /// default reasoning effort directly.
@@ -374,10 +377,11 @@ impl ModelProviderInfo {
             requires_openai_auth: true,
             supports_websockets: true,
             model_context_window: None,
-            model_auto_compact_token_limit: None,
-            model_catalog: None,
-            skip_reasoning_popup: false,
-        }
+           model_auto_compact_token_limit: None,
+          max_output_tokens: None,
+          model_catalog: None,
+          skip_reasoning_popup: false,
+       }
     }
 
     pub fn is_openai(&self) -> bool {
@@ -513,6 +517,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         requires_openai_auth: false,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        max_output_tokens: None,
         model_catalog: None,
         supports_websockets: false,
         skip_reasoning_popup: false,

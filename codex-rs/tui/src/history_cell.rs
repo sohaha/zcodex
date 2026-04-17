@@ -1401,21 +1401,11 @@ impl HistoryCell for SessionHeaderHistoryCell {
         const CHANGE_MODEL_HINT_EXPLANATION: &str = " 切换模型";
         const DIR_LABEL: &str = "目录：";
         const PERMISSIONS_LABEL: &str = "权限：";
-        let label_width = if self.yolo_mode {
-            DIR_LABEL.len().max(PERMISSIONS_LABEL.len())
-        } else {
-            DIR_LABEL.len()
-        };
 
-        let model_label = format!(
-            "{model_label:<label_width$}",
-            model_label = "模型：",
-            label_width = label_width
-        );
         let reasoning_label = self.reasoning_label();
         let model_spans: Vec<Span<'static>> = {
             let mut spans = vec![
-                Span::from(format!("{model_label} ")).dim(),
+                "模型： ".dim(),
                 Span::styled(self.model.clone(), self.model_style),
             ];
             if let Some(reasoning) = reasoning_label {
@@ -1432,8 +1422,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             spans
         };
 
-        let dir_label = format!("{DIR_LABEL:<label_width$}");
-        let dir_prefix = format!("{dir_label} ");
+        let dir_prefix = format!("{} ", DIR_LABEL);
         let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
         let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
         let dir = self.format_directory(Some(dir_max_width));
@@ -1447,9 +1436,8 @@ impl HistoryCell for SessionHeaderHistoryCell {
         ];
 
         if self.yolo_mode {
-            let permissions_label = format!("{PERMISSIONS_LABEL:<label_width$}");
             lines.push(make_row(vec![
-                Span::from(format!("{permissions_label} ")).dim(),
+                Span::from(format!("{} ", PERMISSIONS_LABEL)).dim(),
                 "YOLO 模式".magenta().bold(),
             ]));
         }

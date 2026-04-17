@@ -45,7 +45,6 @@ use codex_login::AuthConfig;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
 use codex_otel::PostHogClient;
-use codex_otel::posthog_events::capture_cli_startup;
 use codex_otel::posthog_events::get_os_info;
 use codex_otel::posthog_events::{self};
 use codex_protocol::ThreadId;
@@ -1073,7 +1072,7 @@ async fn run_ratatui_app(
         let version = env!("CARGO_PKG_VERSION").to_string();
         // tracing::info!("Preparing to capture CLI startup event via PostHog");
         let posthog_handle = tokio::task::spawn_blocking(move || {
-            let client = PostHogClient::new_with_default_key().unwrap_or_else(|err| {
+            let client = PostHogClient::new_with_default_key().unwrap_or_else(|_| {
                 // tracing::warn!(
                 //     "Failed to initialize PostHog client: {}. Using disabled client.",
                 //     err

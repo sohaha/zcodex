@@ -857,7 +857,7 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
         }),
         // `model/list` already returns models filtered for the active client/auth context.
         supported_in_api: true,
-        skip_reasoning_popup: false,
+        skip_reasoning_popup: model.skip_reasoning_popup,
         input_modalities: model.input_modalities,
     }
 }

@@ -1848,6 +1848,9 @@ pub struct Model {
     pub additional_speed_tiers: Vec<String>,
     // Only one model should be marked as default.
     pub is_default: bool,
+    /// When true, selecting this model skips the reasoning-effort popup.
+    #[serde(default)]
+    pub skip_reasoning_popup: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
