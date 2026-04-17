@@ -6,6 +6,7 @@ use crate::model_info;
 use codex_api::ModelsClient;
 use codex_api::RequestTelemetry;
 use codex_api::ReqwestTransport;
+use codex_api::auth_header_telemetry;
 use codex_api::TransportError;
 use codex_api::map_api_error;
 use codex_app_server_protocol::AuthMode;
@@ -13,6 +14,8 @@ use codex_feedback::FeedbackRequestTags;
 use codex_feedback::emit_feedback_request_tags_with_auth_env;
 use codex_login::AuthEnvTelemetry;
 use codex_login::AuthManager;
+use codex_model_provider::SharedModelProvider;
+use codex_model_provider::create_model_provider;
 use codex_login::CodexAuth;
 use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
@@ -472,11 +475,11 @@ impl ModelsManager {
             self.auth_manager.codex_api_key_env_enabled(),
         );
         let transport = ReqwestTransport::new(build_reqwest_client());
-        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
+        let auth_telemetry = auth_header_telemetry(api_auth.as_ref());
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
-            auth_header_attached: api_auth.auth_header_attached().await,
-            auth_header_name: api_auth.auth_header_name().await,
+            auth_header_attached: auth_telemetry.attached,
+            auth_header_name: auth_telemetry.name,
             auth_env,
         });
         let client = ModelsClient::new(transport, api_provider, api_auth)
@@ -494,7 +497,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version, provider_cache_key)
+            .persist_cache(&models, etag, client_version)
             .await;
         Ok(())
     }
@@ -627,7 +630,7 @@ impl ModelsManager {
                 return false;
             }
         };
-        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
+        let auth_telemetry = auth_header_telemetry(api_auth.as_ref());
         let allow_legacy_without_provider_cache_key = self.provider.is_openai();
         info!(client_version, "models cache: evaluating cache eligibility");
         let cache = match self
