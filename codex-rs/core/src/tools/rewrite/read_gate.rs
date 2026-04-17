@@ -1,5 +1,5 @@
-use crate::codex::TurnContext;
 use crate::config::AutoTldrRoutingMode;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ToolRoutingDirectives;
@@ -146,8 +146,8 @@ fn infer_language(
 #[cfg(test)]
 mod tests {
     use super::rewrite_read_file_to_tldr;
-    use crate::codex::make_session_and_context;
     use crate::config::AutoTldrRoutingMode;
+    use crate::session::tests::make_session_and_context;
     use crate::tools::context::ToolPayload;
     use crate::tools::rewrite::AutoTldrContext;
     use crate::tools::rewrite::ProblemKind;

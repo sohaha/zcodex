@@ -1,7 +1,7 @@
 use super::*;
-use crate::codex::make_session_and_context;
 use crate::protocol::SessionSource;
 use crate::protocol::SubAgentSource;
+use crate::session::tests::make_session_and_context;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use serde_json::json;

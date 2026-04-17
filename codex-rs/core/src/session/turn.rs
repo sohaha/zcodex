@@ -1526,7 +1526,9 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeBegin(_)
-        | EventMsg::CollabResumeEnd(_) => None,
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::BuddySoulGenerated(_)
+        | EventMsg::BuddyReaction(_) => None,
     }
 }
 
@@ -2316,3 +2318,5 @@ fn should_short_circuit_to_parent_model(turn_context: &TurnContext, err: &CodexE
         && subagent_parent_model(turn_context)
             .is_some_and(|parent_model| parent_model != turn_context.model_info.slug)
 }
+use crate::session::SessionSource;
+use codex_protocol::protocol::SubAgentSource;

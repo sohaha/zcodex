@@ -2493,7 +2493,6 @@ impl ChatWidget {
     fn open_plan_implementation_prompt(&mut self) {
         let default_mask = collaboration_modes::default_mode_mask(self.model_catalog.as_ref());
 
-
         self.bottom_pane
             .show_selection_view(plan_implementation::selection_view_params(
                 default_mask,
@@ -8584,7 +8583,7 @@ impl ChatWidget {
                     items.push(SelectionItem {
                         name: "Guardian 审批".to_string(),
                         description: Some(
-                            "与"默认"相同的 workspace-write 权限，但符合条件的 `on-request` 审批会交由 Guardian 审核子代理处理。"
+                            "与「默认」相同的 workspace-write 权限，但符合条件的 `on-request` 审批会交由 Guardian 审核子代理处理。"
                                 .to_string(),
                         ),
                         is_current: current_review_policy == ApprovalsReviewer::GuardianSubagent

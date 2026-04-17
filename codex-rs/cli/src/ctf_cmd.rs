@@ -185,6 +185,7 @@ async fn resolve_target_path(
         1,
         None,
         ThreadSortKey::UpdatedAt,
+        SortDirection::Desc,
         INTERACTIVE_SESSION_SOURCES.as_slice(),
         None,
         config.model_provider_id.as_str(),
@@ -284,3 +285,4 @@ mod tests {
         }
     }
 }
+use codex_core::SortDirection;

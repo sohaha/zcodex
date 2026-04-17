@@ -6,16 +6,16 @@ use crate::buddy::BuddyReactionState;
 /// A session has at most 1 running task at a time, and can be interrupted by user input.
 pub(crate) struct Session {
     pub(crate) conversation_id: ThreadId,
-    pub(super) tx_event: Sender<Event>,
+    pub(crate) tx_event: Sender<Event>,
     pub(super) agent_status: watch::Sender<AgentStatus>,
     pub(super) out_of_band_elicitation_paused: watch::Sender<bool>,
-    pub(super) state: Mutex<SessionState>,
+    pub(crate) state: Mutex<SessionState>,
     /// Serializes rebuild/apply cycles for the running proxy; each cycle
     /// rebuilds from the current SessionState while holding this lock.
     pub(super) managed_network_proxy_refresh_lock: Mutex<()>,
     /// The set of enabled features should be invariant for the lifetime of the
     /// session.
-    pub(super) features: ManagedFeatures,
+    pub(crate) features: ManagedFeatures,
     pub(super) pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
@@ -27,23 +27,6 @@ pub(crate) struct Session {
     pub(super) js_repl: Arc<JsReplHandle>,
     pub(super) next_internal_sub_id: AtomicU64,
     pub(crate) buddy_reaction_state: Mutex<BuddyReactionState>,
-}
-
-impl Session {
-    pub(crate) async fn trigger_turn_mailbox_contents(&self) -> Vec<String> {
-        self.mailbox_rx.lock().await.peek_trigger_turn_contents()
-    }
-
-    pub(crate) async fn set_pending_zmemory_recall_note(&self, sub_id: &str, note: Option<String>) {
-        self.state
-            .lock()
-            .await
-            .set_pending_zmemory_recall_note(sub_id, note);
-    }
-
-    pub(crate) fn buddy_reaction_state(&self) -> &Mutex<BuddyReactionState> {
-        &self.buddy_reaction_state
-    }
 }
 
 #[derive(Clone)]
@@ -487,7 +470,7 @@ impl Session {
         );
 
         session_telemetry.conversation_starts(
-            config.model_provider.name.as_deref().unwrap_or("unknown"),
+            config.model_provider.name.as_deref().unwrap_or(""),
             session_configuration.collaboration_mode.reasoning_effort(),
             config
                 .model_reasoning_summary
@@ -860,5 +843,15 @@ impl Session {
         );
 
         Ok(sess)
+    }
+
+    /// Store a pending zmemory recall note for the given submission.
+    pub(crate) async fn set_pending_zmemory_recall_note(&self, sub_id: &str, note: Option<String>) {
+        let mut state = self.state.lock().await;
+        state.set_pending_zmemory_recall_note(sub_id, note);
+    }
+
+    pub(crate) async fn trigger_turn_mailbox_contents(&self) -> Vec<String> {
+        self.mailbox_rx.lock().await.peek_trigger_turn_contents()
     }
 }

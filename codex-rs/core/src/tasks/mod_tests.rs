@@ -1,5 +1,5 @@
 use super::emit_turn_network_proxy_metric;
-use crate::codex::make_session_and_context;
+use crate::session::tests::make_session_and_context;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;

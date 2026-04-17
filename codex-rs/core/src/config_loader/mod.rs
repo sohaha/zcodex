@@ -8,8 +8,8 @@ mod tests;
 use crate::config_loader::layer_io::LoadedConfigLayers;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::CONFIG_TOML_FILE;
-use codex_config::ZCONFIG_TOML_FILE;
 use codex_config::ConfigRequirementsWithSources;
+use codex_config::ZCONFIG_TOML_FILE;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_exec_server::ExecutorFileSystem;
@@ -208,24 +208,25 @@ pub async fn load_config_layers_state(
     // Add a layer for $CODEX_HOME/zconfig.toml if it exists. This allows
     // community forks to ship their own default configuration without
     // modifying the official config.toml.
-    let zconfig_file =
-        AbsolutePathBuf::resolve_path_against_base(ZCONFIG_TOML_FILE, codex_home);
-    let zconfig_layer =
-        load_config_toml_for_required_layer(fs, &zconfig_file, |config_toml| {
-            let is_empty = matches!(&config_toml, toml::Value::Table(t) if t.is_empty());
-            if is_empty {
-                tracing::debug!("zconfig.toml not found or empty: {}", zconfig_file.as_path().display());
-            } else {
-                tracing::info!("zconfig.toml loaded: {}", zconfig_file.as_path().display());
-            }
-            ConfigLayerEntry::new(
-                ConfigLayerSource::ZConfig {
-                    file: zconfig_file.clone(),
-                },
-                config_toml,
-            )
-        })
-        .await?;
+    let zconfig_file = AbsolutePathBuf::resolve_path_against_base(ZCONFIG_TOML_FILE, codex_home);
+    let zconfig_layer = load_config_toml_for_required_layer(fs, &zconfig_file, |config_toml| {
+        let is_empty = matches!(&config_toml, toml::Value::Table(t) if t.is_empty());
+        if is_empty {
+            tracing::debug!(
+                "zconfig.toml not found or empty: {}",
+                zconfig_file.as_path().display()
+            );
+        } else {
+            tracing::info!("zconfig.toml loaded: {}", zconfig_file.as_path().display());
+        }
+        ConfigLayerEntry::new(
+            ConfigLayerSource::ZConfig {
+                file: zconfig_file.clone(),
+            },
+            config_toml,
+        )
+    })
+    .await?;
     layers.push(zconfig_layer);
 
     if let Some(cwd) = cwd {

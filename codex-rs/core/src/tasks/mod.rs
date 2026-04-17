@@ -730,7 +730,7 @@ async fn handle_buddy_observer(
     }
 
     let strategy = &turn_context.config.tui_buddy_reaction_strategy;
-    let buddy_state = session.buddy_reaction_state().lock().await;
+    let buddy_state = session.buddy_reaction_state.lock().await;
     let state_snapshot = buddy_state.clone();
     drop(buddy_state);
     let (reaction, outcome) = generate_buddy_reaction_hybrid(
@@ -743,7 +743,7 @@ async fn handle_buddy_observer(
         &state_snapshot,
     )
     .await;
-    let mut buddy_state = session.buddy_reaction_state().lock().await;
+    let mut buddy_state = session.buddy_reaction_state.lock().await;
     apply_state_update(&mut buddy_state, outcome);
     drop(buddy_state);
     session

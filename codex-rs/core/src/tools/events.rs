@@ -555,11 +555,11 @@ async fn emit_patch_end(
 mod tests {
     use super::ToolEmitter;
     use super::ToolEventCtx;
-    use crate::codex::make_session_and_context_with_rx;
     use crate::protocol::EventMsg;
     use crate::protocol::ExecCommandBeginEvent;
     use crate::protocol::ExecCommandEndEvent;
     use crate::protocol::ExecCommandSource;
+    use crate::session::tests::make_session_and_context_with_rx;
     use codex_protocol::exec_output::ExecToolCallOutput;
     use codex_protocol::exec_output::StreamOutput;
     use pretty_assertions::assert_eq;

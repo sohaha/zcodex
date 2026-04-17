@@ -552,8 +552,6 @@ impl ToolHandler for ShellCommandHandler {
             interaction_input: prepared.interaction_input,
             model_output_prefix: prepared.model_output_prefix,
             hook_command: params.command,
-            hook_command: params.command,
->>>>>>> openai/main
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             session,

@@ -165,12 +165,17 @@ impl Session {
             .await
     }
 
-    pub(crate) async fn resolve_mcp_tool_info(&self, name: &str, namespace: Option<&str>) -> Option<ToolInfo> { let tool_name = ToolName::new(namespace.map(String::from), name.to_string());
+    pub(crate) async fn resolve_mcp_tool_info(
+        &self,
+        name: &str,
+        namespace: Option<&str>,
+    ) -> Option<ToolInfo> {
+        let tool_name = ToolName::new(namespace.map(String::from), name.to_string());
         self.services
             .mcp_connection_manager
             .read()
             .await
-            .resolve_tool_info(tool_name)
+            .resolve_tool_info(&tool_name)
             .await
     }
 
