@@ -28,6 +28,7 @@ const ANTHROPIC_REASONING_LEVELS: [ReasoningEffort; 3] = [
 ];
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
+    tracing::warn!("with_config_overrides: model={}, config.skip_reasoning_popup={}", model.slug, config.skip_reasoning_popup);
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
         && supports_reasoning_summaries
     {

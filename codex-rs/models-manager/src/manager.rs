@@ -663,6 +663,14 @@ impl ModelsManager {
     fn build_available_models(&self, mut remote_models: Vec<ModelInfo>) -> Vec<ModelPreset> {
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
+        // Apply provider-level config overrides (e.g. skip_reasoning_popup) before
+        // converting to presets so the setting reaches the TUI model picker.
+        if self.provider.skip_reasoning_popup {
+            for model in &mut remote_models {
+                model.skip_reasoning_popup = true;
+            }
+        }
+
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
         // Filter models by provider-specific model_catalog if configured
         tracing::warn!(
