@@ -433,9 +433,7 @@ async fn test_get_git_working_tree_state_branch_fallback() {
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_returns_none_outside_repo() {
     let tmp = TempDir::new().expect("tempdir");
-    assert!(
-        resolve_root_git_project_for_trust(&tmp.path().abs()).is_none()
-    );
+    assert!(resolve_root_git_project_for_trust(&tmp.path().abs()).is_none());
 }
 
 #[tokio::test]
@@ -449,10 +447,7 @@ async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     );
     let nested = repo_path.join("sub/dir");
     std::fs::create_dir_all(nested.as_path()).unwrap();
-    assert_eq!(
-        resolve_root_git_project_for_trust(&nested),
-        Some(repo_path)
-    );
+    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(repo_path));
 }
 
 #[tokio::test]
@@ -520,10 +515,7 @@ async fn resolve_root_git_project_for_trust_detects_worktree_pointer_without_git
         Some(expected.clone())
     );
     let nested = worktree_root.join("nested");
-    assert_eq!(
-        resolve_root_git_project_for_trust(&nested),
-        Some(expected)
-    );
+    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
 }
 
 #[tokio::test]
@@ -543,9 +535,7 @@ async fn resolve_root_git_project_for_trust_non_worktrees_gitdir_returns_none() 
     .unwrap();
 
     let proj = proj.abs();
-    assert!(
-        resolve_root_git_project_for_trust(&proj).is_none()
-    );
+    assert!(resolve_root_git_project_for_trust(&proj).is_none());
     let nested = proj.join("nested");
     assert!(resolve_root_git_project_for_trust(&nested).is_none());
 }

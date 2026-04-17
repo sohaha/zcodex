@@ -273,10 +273,7 @@ mod tests {
 
     #[test]
     fn path_is_responses_compact() {
-        assert_eq!(
-            CompactClient::<DummyTransport>::path(),
-            "responses/compact"
-        );
+        assert_eq!(CompactClient::<DummyTransport>::path(), "responses/compact");
     }
 
     fn provider(base_url: &str, wire_api: WireApi) -> Provider {
