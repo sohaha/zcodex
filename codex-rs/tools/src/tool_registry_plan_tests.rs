@@ -2228,4 +2228,52 @@ fn strip_descriptions_tool(spec: &mut ToolSpec) {
         | ToolSpec::ImageGeneration { .. }
         | ToolSpec::WebSearch { .. } => {}
     }
+
+#[test]
+fn web_search_tool_only_registered_with_responses_wire_api() {
+    use codex_model_provider_info::WireApi;
+
+    let model_info = model_info();
+    let features = Features::with_defaults();
+
+    // 使用 Responses API（默认模式）进行测试
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &[],
+        features: &features,
+        ..Default::default()
+    });
+    let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
+    assert!(
+        plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        "web_search 工具应在 Responses API 模式下被注册"
+    );
+
+    // 使用 Chat API 进行测试
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &[],
+        features: &features,
+        wire_api: WireApi::Chat,
+        ..Default::default()
+    });
+    let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
+    assert!(
+        !plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        "web_search 工具不应在 Chat API 模式下被注册"
+    );
+
+    // 使用 Anthropic API 进行测试
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &[],
+        features: &features,
+        wire_api: WireApi::Anthropic,
+        ..Default::default()
+    });
+    let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
+    assert!(
+        !plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        "web_search 工具不应在 Anthropic API 模式下被注册"
+    );
 }

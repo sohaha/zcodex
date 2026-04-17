@@ -534,7 +534,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -570,7 +570,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -605,7 +605,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer.history.record_local_submission(HistoryEntry::new(
@@ -651,7 +651,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -712,7 +712,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ true,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -768,7 +768,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -797,7 +797,7 @@ mod tests {
                 /*has_input_focus*/ true,
                 sender,
                 /*enhanced_keys_supported*/ false,
-                "Ask Codex to do anything".to_string(),
+                "让 Codex 帮你做任何事".to_string(),
                 /*disable_paste_burst*/ false,
             );
             composer
@@ -836,7 +836,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
 
@@ -867,7 +867,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
 
@@ -902,7 +902,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer
@@ -935,7 +935,7 @@ mod tests {
             /*has_input_focus*/ true,
             sender,
             /*enhanced_keys_supported*/ false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 帮你做任何事".to_string(),
             /*disable_paste_burst*/ false,
         );
         composer

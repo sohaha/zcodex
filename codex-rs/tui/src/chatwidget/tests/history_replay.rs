@@ -569,7 +569,7 @@ async fn replayed_retryable_app_server_error_keeps_turn_running() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert!(status.header() == "Working" || status.header() == "处理中");
+    assert!(status.header() == "处理中" || status.header() == "处理中");
     assert_eq!(status.details(), None);
 }
 
@@ -770,7 +770,7 @@ async fn thread_snapshot_replayed_turn_started_marks_task_running() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert!(status.header() == "Working" || status.header() == "处理中");
+    assert!(status.header() == "处理中" || status.header() == "处理中");
 }
 
 #[tokio::test]
@@ -796,7 +796,7 @@ async fn replayed_in_progress_turn_marks_task_running() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert!(status.header() == "Working" || status.header() == "处理中");
+    assert!(status.header() == "处理中" || status.header() == "处理中");
 }
 
 #[tokio::test]
@@ -856,7 +856,7 @@ async fn thread_snapshot_replayed_stream_recovery_restores_previous_status_heade
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert!(status.header() == "Working" || status.header() == "处理中");
+    assert!(status.header() == "处理中" || status.header() == "处理中");
     assert_eq!(status.details(), None);
     assert!(chat.retry_status_header.is_none());
 }
@@ -915,7 +915,7 @@ async fn replayed_interrupted_reconnect_footer_row_snapshot() {
     let header = render_bottom_first_row(&chat, /*width*/ 80);
     assert!(
         !header.contains("Reconnecting")
-            && !header.contains("Working")
+            && !header.contains("处理中")
             && !header.contains("处理中"),
         "expected replayed interrupted reconnect to avoid active status row, got {header:?}"
     );
@@ -955,7 +955,7 @@ async fn stream_recovery_restores_previous_status_header() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert!(status.header() == "Working" || status.header() == "处理中");
+    assert!(status.header() == "处理中" || status.header() == "处理中");
     assert_eq!(status.details(), None);
     assert!(chat.retry_status_header.is_none());
 }

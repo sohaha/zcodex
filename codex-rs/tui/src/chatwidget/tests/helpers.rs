@@ -174,7 +174,7 @@ pub(super) async fn make_chatwidget_manual_with_config(
         frame_requester: FrameRequester::test_dummy(),
         has_input_focus: true,
         enhanced_keys_supported: false,
-        placeholder_text: "Ask Codex to do anything".to_string(),
+        placeholder_text: "让 Codex 帮你做任何事".to_string(),
         disable_paste_burst: false,
         animations_enabled: cfg.animations,
         skills: None,

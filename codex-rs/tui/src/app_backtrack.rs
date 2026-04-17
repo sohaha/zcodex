@@ -870,7 +870,7 @@ mod tests {
                 /*is_first_line*/ true,
             )) as Arc<dyn HistoryCell>,
             Arc::new(crate::history_cell::new_info_event(
-                "Context compacted".to_string(),
+                "上下文已压缩".to_string(),
                 /*hint*/ None,
             )) as Arc<dyn HistoryCell>,
             Arc::new(AgentMessageCell::new(

@@ -331,6 +331,7 @@ pub fn build_tool_registry_plan(
         plan.register_handler("test_sync_tool", ToolHandlerKind::TestSync);
     }
 
+    if matches!(config.wire_api, WireApi::Responses) {
     if let Some(web_search_tool) = create_web_search_tool(WebSearchToolOptions {
         web_search_mode: config.web_search_mode,
         web_search_config: config.web_search_config.as_ref(),
@@ -341,6 +342,7 @@ pub fn build_tool_registry_plan(
             /*supports_parallel_tool_calls*/ false,
             config.code_mode_enabled,
         );
+    }
     }
 
     if config.image_gen_tool {

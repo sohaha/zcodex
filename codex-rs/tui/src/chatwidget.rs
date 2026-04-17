@@ -2213,7 +2213,7 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
         self.handle_stream_finished();
         self.add_to_history(history_cell::new_info_event(
-            "Context compacted".to_owned(),
+            "上下文已压缩".to_owned(),
             /*hint*/ None,
         ));
         self.request_redraw();
