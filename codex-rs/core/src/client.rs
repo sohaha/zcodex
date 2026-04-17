@@ -854,7 +854,13 @@ impl ModelClientSession {
         };
         let text = create_text_param_for_request(verbosity, &prompt.output_schema);
         let prompt_cache_key = Some(self.client.state.conversation_id.to_string());
-        let max_output_tokens = None;
+        let max_output_tokens = self
+            .client
+            .state
+            .provider
+            .info()
+            .max_output_tokens
+            .filter(|v| *v > 0);
         let request = ResponsesApiRequest {
             model: model_info.slug.clone(),
             instructions: instructions.clone(),

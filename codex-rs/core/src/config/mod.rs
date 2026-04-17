@@ -31,7 +31,6 @@ use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::validate_model_providers;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::ApprovalsReviewer;
-use codex_config::types::ResumeModelSource;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;
@@ -47,6 +46,7 @@ use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
+use codex_config::types::ResumeModelSource;
 use codex_config::types::ShellEnvironmentPolicy;
 use codex_config::types::ToolSuggestConfig;
 use codex_config::types::ToolSuggestDiscoverable;
@@ -462,7 +462,6 @@ pub struct Config {
     /// Zmemory persistent-memory settings.
     pub zmemory: ZmemoryConfig,
 
-    /// When `true`, show the buddy/companion agent in the TUI.
     pub tui_show_buddy: bool,
 
     /// Buddy soul configuration (personality, tone, traits).

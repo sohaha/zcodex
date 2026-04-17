@@ -23,6 +23,7 @@ use crate::compact::InitialContextInjection;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::config::AutoTldrRoutingMode;
 use crate::config::FallbackProviderConfig;
 use crate::config::ManagedFeatures;
 use crate::connectors;
@@ -268,6 +269,7 @@ use crate::SkillInjections;
 use crate::SkillLoadOutcome;
 use crate::SkillMetadata;
 use crate::SkillsManager;
+use crate::agents_md::AgentsMdManager;
 use crate::build_skill_injections;
 use crate::collect_env_var_dependencies;
 use crate::collect_explicit_skill_mentions;
@@ -296,8 +298,6 @@ use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::plugins::PluginsManager;
 use crate::plugins::build_plugin_injections;
 use crate::plugins::render_plugins_section;
-use crate::agents_md::AgentsMdManager;
-use codex_exec_server::LOCAL_FS;
 use crate::resolve_skill_dependencies_for_turn;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
@@ -335,6 +335,7 @@ use crate::unified_exec::UnifiedExecProcessManager;
 use crate::util::backoff;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use codex_async_utils::OrCancelExt;
+use codex_exec_server::LOCAL_FS;
 use codex_git_utils::get_git_repo_root;
 use codex_mcp::compute_auth_statuses;
 use codex_mcp::with_codex_apps_mcp;
@@ -1697,6 +1698,7 @@ impl Session {
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
+        .with_auto_tldr_routing(AutoTldrRoutingMode::default())
         .with_has_environment(environment.is_some())
         .with_spawn_agent_usage_hint(per_turn_config.multi_agent_v2.usage_hint_enabled)
         .with_spawn_agent_usage_hint_text(per_turn_config.multi_agent_v2.usage_hint_text.clone())
@@ -2794,8 +2796,7 @@ impl Session {
         sandbox_policy_changed: bool,
     ) -> Arc<TurnContext> {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
-        let user_instructions =
-            AgentsMdManager::new(&per_turn_config)
+        let user_instructions = AgentsMdManager::new(&per_turn_config)
             .user_instructions_with_fs(LOCAL_FS.as_ref())
             .await;
         {
@@ -7591,7 +7592,11 @@ pub(crate) async fn built_tools(
         });
     let connectors = if apps_enabled {
         let connectors = codex_connectors::merge_plugin_connectors_with_accessible(
-            loaded_plugins.effective_apps().into_iter().map(|id| id.0).collect::<Vec<_>>(),
+            loaded_plugins
+                .effective_apps()
+                .into_iter()
+                .map(|id| id.0)
+                .collect::<Vec<_>>(),
             accessible_connectors.clone().unwrap_or_default(),
         );
         Some(connectors::with_app_enabled_state(

@@ -1607,7 +1607,10 @@ impl JsReplManager {
             .unwrap_or_else(|| ToolName::plain(req.tool_name.clone()));
         let (tool_call_name, payload) = if let Some(tool_info) = exec
             .session
-            .resolve_mcp_tool_info(&requested_tool_name.name, requested_tool_name.namespace.as_deref())
+            .resolve_mcp_tool_info(
+                &requested_tool_name.name,
+                requested_tool_name.namespace.as_deref(),
+            )
             .await
         {
             (

@@ -344,6 +344,24 @@ git worktree remove "$path"
 
 - 2026-04-17: 上游同步 API 适配（22→0 编译错误），codex-core 编译通过
 
+### 7.1.1) 深度审查发现的功能退化修复（2026-04-17）
+
+多 agent 并行深度验证发现并修复了两个功能退化：
+
+| 退化项 | 根因 | 修复 |
+|-------|------|------|
+| `max_output_tokens` 被硬编码为 `None` | 上游移除了 `client.rs` 中从 provider 读取的逻辑，sync 时直接替换为 `None` | 恢复为 `self.client.state.provider.info().max_output_tokens.filter(\|v\| *v > 0)` |
+| `auto_tldr_routing` 调用丢失 | 上游从 `Config` 移除该字段，sync 时误删了 `.with_auto_tldr_routing()` 调用 | 改用 `AutoTldrRoutingMode::default()` 保持 tldr 路由功能启用 |
+
+**验证通过的完整检查清单**：
+- ✅ Fallback provider：6 核心函数、4 config 字段、8 测试完整
+- ✅ 汉化：cli 256行、tui 2100+行、core 360行中文，HEAD~5..HEAD diff 无中文删除
+- ✅ 本地模块：ztok(2126行)、zmemory(12570行)、buddy(1920行)、compact_remote(344行)、agent/role(434行) 均未被修改
+- ✅ 公共 API：lib.rs 40+ pub use、codex.rs 28 pub 函数、config/mod.rs 7 pub struct 全部保留
+- ✅ max_output_tokens：已恢复从 provider 配置读取
+- ✅ auto_tldr_routing：已恢复默认值调用
+- ✅ 全量编译：`cargo check` 0 error 通过
+
 ### 7.2) 上游 API 适配经验库（新增 2026-04-17）
 
 上游同步后常见的 API 变更模式及修复方法：
