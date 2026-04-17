@@ -1,4 +1,4 @@
-# Claude API 使用文档
+# Anthropic / Claude API 使用文档
 
 本文档介绍 Codex 对 Claude（Anthropic Messages API）接口的使用方式。
 
@@ -18,6 +18,7 @@ model_provider = "anthropic"
 name = "Anthropic"
 model = "claude-3-5-haiku-20241022"
 wire_api = "anthropic"
+max_output_tokens = 16384
 # 默认 base_url 为 https://api.anthropic.com/v1
 ```
 
@@ -28,6 +29,8 @@ wire_api = "anthropic"
 - 如果同时设置了全局 `model`，当前 provider 自己的 `model` 会优先生效。
 - 当 provider 配置了 `env_key` 时，Codex 会同时发送 `x-api-key` 与 `Authorization: Bearer ...`，
   以兼容官方 Anthropic API 以及 Claude Code 风格的兼容网关。
+- `max_output_tokens` 控制 Anthropic 请求中的 `max_tokens` 参数（默认 8192）。如果模型支持更大的输出窗口（例如 Claude Sonnet 4 支持 16384），设置此值可以避免长回复被截断。
+- `skip_reasoning_popup = true` 可在模型选择器中跳过推理级别选择弹窗，直接使用默认推理级别。
 
 ## 自定义 API 地址
 
@@ -69,6 +72,20 @@ model_catalog = ["MiniMax-M2.5-higspeed"]
 - 对 Responses provider 来说，`model_catalog_merge_json` 不会关闭远端
   `/models` 刷新；它只是在当前目录快照之上追加/覆盖条目。
 
+## Provider 级配置项
+
+以下配置项可以在 `[model_providers.xxx]` 中设置，影响该 provider 下所有模型的行为：
+
+| 配置项 | 类型 | 默认值 | 说明 |
+|--------|------|--------|------|
+| `max_output_tokens` | `i64` | `8192` | Anthropic 请求中的 `max_tokens`；Responses API 的 `max_output_tokens` |
+| `skip_reasoning_popup` | `bool` | `false` | 模型选择器中跳过推理级别弹窗 |
+| `model_context_window` | `i64` | 内置 | 覆盖模型上下文窗口大小 |
+| `model_auto_compact_token_limit` | `i64` | 自动 | 触发自动压缩的 token 阈值 |
+| `request_max_retries` | `u64` | `4` | 请求最大重试次数 |
+| `stream_idle_timeout_ms` | `u64` | `300000` | 流超时时间 |
+| `retry_base_delay_ms` | `u64` | `200` | 重试基础延迟 |
+
 ## 当前实现限制
 
 当前仓库对 Claude 的支持，主要是将对话请求适配到 Anthropic 的
@@ -100,3 +117,14 @@ Anthropic provider 实现对应的专用接口适配。
 ### 提示没有认证
 
 确认已设置 `ANTHROPIC_API_KEY`，并重新启动终端或刷新环境变量后再运行 Codex。
+
+### 模型回复被截断
+
+Anthropic API 的 `max_tokens` 默认值为 8192。如果模型的输出被截断，可在 provider 配置中设置 `max_output_tokens`：
+
+```toml
+[model_providers.anthropic]
+max_output_tokens = 16384
+```
+
+此值会作为 Anthropic `/v1/messages` 请求中的 `max_tokens` 参数发送。

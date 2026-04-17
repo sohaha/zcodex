@@ -189,7 +189,7 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
     let tools = anthropic_tools(&request.tools);
     let mut body = json!({
         "model": request.model,
-        "max_tokens": ANTHROPIC_DEFAULT_MAX_TOKENS,
+        "max_tokens": request.max_output_tokens.unwrap_or(ANTHROPIC_DEFAULT_MAX_TOKENS),
         "messages": messages,
         "stream": stream,
     });
