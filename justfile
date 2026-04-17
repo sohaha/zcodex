@@ -99,6 +99,49 @@ write-app-server-schema *args:
 write-hooks-schema:
     cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
 
+TARGET_WINDOWS_GNU := "x86_64-pc-windows-gnullvm"
+TARGET_WINDOWS_MSVC := "x86_64-pc-windows-msvc"
+WINDOWS_CROSS_PKGS := "codex-native-tldr codex-cli"
+
+# Cross-compile check for Windows targets (native-tldr + cli).
+# Requires mingw-w64 for GNU target, or MSVC SDK for MSVC target.
+#
+# Usage:
+#   just windows-cross-check          # check both GNU and MSVC
+#   just windows-cross-check gnu      # check GNU only
+#   just windows-cross-check msvc     # check MSVC only
+windows-cross-check *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rustup target add {{ TARGET_WINDOWS_GNU }} {{ TARGET_WINDOWS_MSVC }} 2>/dev/null || true
+    targets=()
+    if [ -z "{{ args }}" ] || echo "{{ args }}" | grep -qw "gnu"; then
+        targets+=("{{ TARGET_WINDOWS_GNU }}")
+    fi
+    if [ -z "{{ args }}" ] || echo "{{ args }}" | grep -qw "msvc"; then
+        targets+=("{{ TARGET_WINDOWS_MSVC }}")
+    fi
+    failed=0
+    for target in "${targets[@]}"; do
+        for pkg in {{ WINDOWS_CROSS_PKGS }}; do
+            echo "=== Checking ${pkg} (${target}) ==="
+            if ! RUSTC_WRAPPER= CARGO_TARGET_DIR="target/${target}" cargo check -p "${pkg}" --target "${target}"; then
+                echo "  ⚠ ${pkg} failed for ${target} (missing cross C toolchain?)" >&2
+                failed=1
+            else
+                echo "  ✓ ${pkg} OK for ${target}"
+            fi
+        done
+    done
+    if [ "${failed}" -ne 0 ]; then
+        echo ""
+        echo "Some checks failed. Common fixes:"
+        echo "  • GNU:  apt install mingw-w64"
+        echo "  • MSVC: run on Windows or install MSVC SDK + linker"
+        exit 1
+    fi
+    echo "All Windows cross-checks passed."
+
 # Run the argument-comment Dylint checks across codex-rs.
 [no-cd]
 argument-comment-lint *args:
