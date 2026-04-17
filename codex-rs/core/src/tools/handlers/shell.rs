@@ -186,21 +186,14 @@ impl ShellCommandHandler {
                     exec_command,
                     Some(logical_command.clone()),
                     Some(command.to_string()),
-                   Some(format!(
-                        "ztok: {command} → {logical_command}"
-                   )),
+                    Some(format!("ztok: {command} → {logical_command}")),
                 ))
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => Ok((
                 command.to_string(),
                 None,
                 None,
-               candidate.then(|| {
-                   format!(
-                        "raw: {command} ({})",
-                       reason.as_str()
-                   )
-               }),
+                candidate.then(|| format!("raw: {command} ({})", reason.as_str())),
             )),
         }
     }

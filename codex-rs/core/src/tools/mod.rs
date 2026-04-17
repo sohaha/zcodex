@@ -80,18 +80,6 @@ pub fn format_exec_output_for_model_freeform(
 
     let formatted_output = truncate_text(&content, truncation_policy);
 
-    let mut sections = Vec::new();
-
-    sections.push(format!("Exit code: {}", exec_output.exit_code));
-    sections.push(format!("Wall time: {duration_seconds} seconds"));
-    if total_lines != formatted_output.lines().count() {
-        sections.push(format!("Total output lines: {total_lines}"));
-    }
-
-    sections.push("Output:".to_string());
-    sections.push(formatted_output);
-
-    sections.join("\n");
     // 成功时省略 Exit code 和 Wall time 以节省 token
     let prefix = if exec_output.exit_code == 0 && duration_seconds < 0.1 {
         String::new()

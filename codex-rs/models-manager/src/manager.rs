@@ -14,10 +14,8 @@ use codex_feedback::emit_feedback_request_tags_with_auth_env;
 use codex_login::AuthEnvTelemetry;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
-use codex_login::auth_provider_from_auth;
 use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
-use codex_login::required_auth_manager_for_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_otel::TelemetryAuthMode;
@@ -232,7 +230,6 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
-        let auth_manager = required_auth_manager_for_provider(auth_manager, &provider);
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
@@ -469,7 +466,7 @@ impl ModelsManager {
         let auth = self.auth_manager.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
+        let api_auth = self.provider.api_auth().await?;
         let auth_env = collect_auth_env_telemetry(
             &self.provider,
             self.auth_manager.codex_api_key_env_enabled(),
@@ -478,8 +475,8 @@ impl ModelsManager {
         let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
-            auth_header_attached: api_auth.auth_header_attached(),
-            auth_header_name: api_auth.auth_header_name(),
+            auth_header_attached: api_auth.auth_header_attached().await,
+            auth_header_name: api_auth.auth_header_name().await,
             auth_env,
         });
         let client = ModelsClient::new(transport, api_provider, api_auth)
