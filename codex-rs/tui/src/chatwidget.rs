@@ -244,10 +244,6 @@ use tracing::debug;
 use tracing::warn;
 
 const DEFAULT_MODEL_DISPLAY_NAME: &str = "加载中";
-const PLAN_IMPLEMENTATION_TITLE: &str = "实现这个计划？";
-const PLAN_IMPLEMENTATION_YES: &str = "是，开始实现";
-const PLAN_IMPLEMENTATION_NO: &str = "否，继续保持 Plan 模式";
-const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "实现这个计划。";
 const MULTI_AGENT_ENABLE_TITLE: &str = "启用子代理？";
 const MULTI_AGENT_ENABLE_YES: &str = "是，启用";
 const MULTI_AGENT_ENABLE_NO: &str = "暂不";
@@ -371,6 +367,8 @@ use self::skills::find_app_mentions;
 use self::skills::find_skill_mentions_with_tool_mentions;
 mod plugins;
 use self::plugins::PluginsCacheState;
+mod plan_implementation;
+use self::plan_implementation::PLAN_IMPLEMENTATION_TITLE;
 mod realtime;
 use self::realtime::RealtimeConversationUiState;
 use self::realtime::RenderedUserMessageEvent;
@@ -799,6 +797,11 @@ pub(crate) struct ChatWidget {
     /// This cache is cleared on session resets and rollbacks so `/copy` never
     /// returns output that is no longer visible in the thread transcript.
     last_agent_markdown: Option<String>,
+    /// Raw markdown of the most recently completed proposed plan.
+    ///
+    /// This is cached only for the approval popup. It is reset at the start of each new task so the
+    /// fresh-context action cannot accidentally submit an older plan after a later turn begins.
+    latest_proposed_plan_markdown: Option<String>,
     /// Whether this turn already produced a copyable response.
     ///
     /// `TurnComplete.last_agent_message` is a fallback source: use it only when no earlier
@@ -2261,6 +2264,7 @@ impl ChatWidget {
         };
         if !plan_text.trim().is_empty() {
             self.record_agent_markdown(&plan_text);
+            self.latest_proposed_plan_markdown = Some(plan_text.clone());
         }
         // Plan commit ticks can hide the status row; remember whether we streamed plan output so
         // completion can restore it once stream queues are idle.
@@ -2340,6 +2344,7 @@ impl ChatWidget {
         self.saw_copy_source_this_turn = false;
         self.saw_plan_update_this_turn = false;
         self.saw_plan_item_this_turn = false;
+        self.latest_proposed_plan_markdown = None;
         self.last_plan_progress = None;
         self.plan_delta_buffer.clear();
         self.plan_item_active = false;
@@ -2487,48 +2492,13 @@ impl ChatWidget {
 
     fn open_plan_implementation_prompt(&mut self) {
         let default_mask = collaboration_modes::default_mode_mask(self.model_catalog.as_ref());
-        let (implement_actions, implement_disabled_reason) = match default_mask {
-            Some(mask) => {
-                let user_text = PLAN_IMPLEMENTATION_CODING_MESSAGE.to_string();
-                let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                    tx.send(AppEvent::SubmitUserMessageWithMode {
-                        text: user_text.clone(),
-                        collaboration_mode: mask.clone(),
-                    });
-                })];
-                (actions, None)
-            }
-            None => (Vec::new(), Some("默认模式当前不可用".to_string())),
-        };
-        let items = vec![
-            SelectionItem {
-                name: PLAN_IMPLEMENTATION_YES.to_string(),
-                description: Some("切换到默认模式并开始编码。".to_string()),
-                selected_description: None,
-                is_current: false,
-                actions: implement_actions,
-                disabled_reason: implement_disabled_reason,
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-            SelectionItem {
-                name: PLAN_IMPLEMENTATION_NO.to_string(),
-                description: Some("继续用当前模型完善计划。".to_string()),
-                selected_description: None,
-                is_current: false,
-                actions: Vec::new(),
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-        ];
 
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some(PLAN_IMPLEMENTATION_TITLE.to_string()),
-            subtitle: None,
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
+
+        self.bottom_pane
+            .show_selection_view(plan_implementation::selection_view_params(
+                default_mask,
+                self.latest_proposed_plan_markdown.as_deref(),
+            ));
         self.notify(Notification::PlanModePrompt {
             title: PLAN_IMPLEMENTATION_TITLE.to_string(),
         });
@@ -4894,6 +4864,7 @@ impl ChatWidget {
             agent_turn_running: false,
             mcp_startup_status: None,
             last_agent_markdown: None,
+            latest_proposed_plan_markdown: None,
             saw_copy_source_this_turn: false,
             service_tier_cleared_explicitly: false,
             mcp_startup_expected_servers: None,
@@ -6451,6 +6422,7 @@ impl ChatWidget {
             | ServerNotification::McpToolCallProgress(_)
             | ServerNotification::McpServerOauthLoginCompleted(_)
             | ServerNotification::AppListUpdated(_)
+            | ServerNotification::ExternalAgentConfigImportCompleted(_)
             | ServerNotification::FsChanged(_)
             | ServerNotification::FuzzyFileSearchSessionUpdated(_)
             | ServerNotification::FuzzyFileSearchSessionCompleted(_)
@@ -7280,7 +7252,22 @@ impl ChatWidget {
             .map(|ti| &ti.total_token_usage)
             .unwrap_or(&default_usage);
         let collaboration_mode = self.collaboration_mode_label();
-        let reasoning_effort_override = Some(self.effective_reasoning_effort());
+        let model = self.current_model().to_string();
+        let model_default_reasoning_effort =
+            self.model_catalog
+                .try_list_models()
+                .ok()
+                .and_then(|models| {
+                    models
+                        .into_iter()
+                        .find(|preset| preset.model == model)
+                        .map(|preset| preset.default_reasoning_effort)
+                });
+        let reasoning_effort_override = Some(
+            self.effective_reasoning_effort()
+                .or(self.config.model_reasoning_effort)
+                .or(model_default_reasoning_effort),
+        );
         let rate_limit_snapshots: Vec<RateLimitSnapshotDisplay> = self
             .rate_limit_snapshots_by_limit_id
             .values()
@@ -8597,7 +8584,7 @@ impl ChatWidget {
                     items.push(SelectionItem {
                         name: "Guardian 审批".to_string(),
                         description: Some(
-                            "与“默认”相同的 workspace-write 权限，但符合条件的 `on-request` 审批会交由 Guardian 审核子代理处理。"
+                            "与"默认"相同的 workspace-write 权限，但符合条件的 `on-request` 审批会交由 Guardian 审核子代理处理。"
                                 .to_string(),
                         ),
                         is_current: current_review_policy == ApprovalsReviewer::GuardianSubagent

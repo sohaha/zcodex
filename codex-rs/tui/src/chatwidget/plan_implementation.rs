@@ -1,0 +1,103 @@
+use codex_protocol::config_types::CollaborationModeMask;
+
+use crate::app_event::AppEvent;
+use crate::bottom_pane::SelectionAction;
+use crate::bottom_pane::SelectionItem;
+use crate::bottom_pane::SelectionViewParams;
+use crate::bottom_pane::popup_consts::standard_popup_hint_line;
+
+pub(super) const PLAN_IMPLEMENTATION_TITLE: &str = "实现这个计划？";
+const PLAN_IMPLEMENTATION_YES: &str = "是，实现这个计划";
+const PLAN_IMPLEMENTATION_CLEAR_CONTEXT: &str = "是，清除上下文并实现";
+const PLAN_IMPLEMENTATION_NO: &str = "否，继续保持 Plan 模式";
+pub(super) const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "实现这个计划。";
+pub(super) const PLAN_IMPLEMENTATION_CLEAR_CONTEXT_PREFIX: &str = concat!(
+    "A previous agent produced the plan below to accomplish the user's task. ",
+    "Implement the plan in a fresh context. Treat the plan as the source of ",
+    "user intent, re-read files as needed, and carry the work through ",
+    "implementation and verification."
+);
+pub(super) const PLAN_IMPLEMENTATION_DEFAULT_UNAVAILABLE: &str = "默认模式当前不可用";
+pub(super) const PLAN_IMPLEMENTATION_NO_APPROVED_PLAN: &str = "没有已批准的计划";
+
+pub(super) fn selection_view_params(
+    default_mask: Option<CollaborationModeMask>,
+    plan_markdown: Option<&str>,
+) -> SelectionViewParams {
+    let (implement_actions, implement_disabled_reason) = match default_mask.clone() {
+        Some(mask) => {
+            let user_text = PLAN_IMPLEMENTATION_CODING_MESSAGE.to_string();
+            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+                tx.send(AppEvent::SubmitUserMessageWithMode {
+                    text: user_text.clone(),
+                    collaboration_mode: mask.clone(),
+                });
+            })];
+            (actions, None)
+        }
+        None => (
+            Vec::new(),
+            Some(PLAN_IMPLEMENTATION_DEFAULT_UNAVAILABLE.to_string()),
+        ),
+    };
+
+    let (clear_context_actions, clear_context_disabled_reason) = match (default_mask, plan_markdown)
+    {
+        (None, _) => (
+            Vec::new(),
+            Some(PLAN_IMPLEMENTATION_DEFAULT_UNAVAILABLE.to_string()),
+        ),
+        (Some(_), Some(plan_markdown)) if !plan_markdown.trim().is_empty() => {
+            let user_text =
+                format!("{PLAN_IMPLEMENTATION_CLEAR_CONTEXT_PREFIX}\n\n{plan_markdown}");
+            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
+                tx.send(AppEvent::ClearUiAndSubmitUserMessage {
+                    text: user_text.clone(),
+                });
+            })];
+            (actions, None)
+        }
+        (Some(_), _) => (
+            Vec::new(),
+            Some(PLAN_IMPLEMENTATION_NO_APPROVED_PLAN.to_string()),
+        ),
+    };
+
+    SelectionViewParams {
+        title: Some(PLAN_IMPLEMENTATION_TITLE.to_string()),
+        subtitle: None,
+        footer_hint: Some(standard_popup_hint_line()),
+        items: vec![
+            SelectionItem {
+                name: PLAN_IMPLEMENTATION_YES.to_string(),
+                description: Some("切换到默认模式并开始编码。".to_string()),
+                selected_description: None,
+                is_current: false,
+                actions: implement_actions,
+                disabled_reason: implement_disabled_reason,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            SelectionItem {
+                name: PLAN_IMPLEMENTATION_CLEAR_CONTEXT.to_string(),
+                description: Some("在新线程中实现此计划。".to_string()),
+                selected_description: None,
+                is_current: false,
+                actions: clear_context_actions,
+                disabled_reason: clear_context_disabled_reason,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            SelectionItem {
+                name: PLAN_IMPLEMENTATION_NO.to_string(),
+                description: Some("继续用当前模型完善计划。".to_string()),
+                selected_description: None,
+                is_current: false,
+                actions: Vec::new(),
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}

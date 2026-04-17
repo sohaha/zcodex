@@ -213,6 +213,27 @@ use codex_protocol::exec_output::StreamOutput;
 use reqwest::StatusCode;
 
 mod rollout_reconstruction;
+#[allow(clippy::module_inception)]
+pub(crate) mod session;
+pub(crate) mod turn;
+pub(crate) mod turn_context;
+#[cfg(test)]
+use self::handlers::submission_dispatch_span;
+use self::handlers::submission_loop;
+use self::review::spawn_review_thread;
+use self::session::AppServerClientMetadata;
+use self::session::Session;
+use self::session::SessionConfiguration;
+use self::session::SessionSettingsUpdate;
+#[cfg(test)]
+use self::turn::AssistantMessageStreamParsers;
+#[cfg(test)]
+use self::turn::collect_explicit_app_ids_from_skill_items;
+#[cfg(test)]
+use self::turn::filter_connectors_for_input;
+use self::turn::realtime_text_for_event;
+use self::turn_context::TurnContext;
+use self::turn_context::TurnSkillsContext;
 #[cfg(test)]
 mod rollout_reconstruction_tests;
 
@@ -8596,7 +8617,7 @@ pub(crate) use tests::make_session_and_context_with_dynamic_tools_and_rx;
 pub(crate) use tests::make_session_and_context_with_rx;
 #[cfg(test)]
 pub(crate) use tests::make_session_configuration_for_tests;
+>>>>>>> openai/main:codex-rs/core/src/session/mod.rs
 
 #[cfg(test)]
-#[path = "codex_tests.rs"]
-mod tests;
+pub(crate) mod tests;

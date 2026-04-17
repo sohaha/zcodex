@@ -1,8 +1,8 @@
 use super::*;
-use crate::codex::make_session_and_context;
-use crate::codex::make_session_and_context_with_rx;
 use crate::config::ConfigBuilder;
 use crate::config::ConfigToml;
+use crate::session::tests::make_session_and_context;
+use crate::session::tests::make_session_and_context_with_rx;
 use crate::state::ActiveTurn;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::types::AppConfig;

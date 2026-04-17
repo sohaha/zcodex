@@ -5,6 +5,10 @@ pub use codex_rollout::RolloutRecorder;
 pub use codex_rollout::RolloutRecorderParams;
 pub use codex_rollout::SESSIONS_SUBDIR;
 pub use codex_rollout::SessionMeta;
+pub use codex_rollout::SortDirection;
+pub use codex_rollout::ThreadItem;
+pub use codex_rollout::ThreadSortKey;
+pub use codex_rollout::ThreadsPage;
 pub use codex_rollout::append_thread_name;
 pub use codex_rollout::find_archived_thread_path_by_id_str;
 #[deprecated(note = "use find_thread_path_by_id_str")]

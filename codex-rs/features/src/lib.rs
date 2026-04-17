@@ -150,6 +150,10 @@ pub enum Feature {
     Apps,
     /// Enable the tool_search tool for apps.
     ToolSearch,
+    /// Always defer MCP tools behind tool_search instead of exposing small sets directly.
+    ToolSearchAlwaysDeferMcpTools,
+    /// Expose placeholder tools for unavailable historical tool calls.
+    UnavailableDummyTools,
     /// Enable discoverable tool suggestions for apps.
     ToolSuggest,
     /// Enable plugins.
@@ -829,6 +833,29 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
+        id: Feature::ToolSearchAlwaysDeferMcpTools,
+        key: "tool_search_always_defer_mcp_tools",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::UnavailableDummyTools,
+        key: "unavailable_dummy_tools",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        key: "tool_search_always_defer_mcp_tools",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::UnavailableDummyTools,
+        key: "unavailable_dummy_tools",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::ToolSuggest,
         key: "tool_suggest",
         stage: Stage::Stable,
@@ -875,7 +902,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "guardian_approval",
         stage: Stage::Experimental {
             name: "Guardian 审批",
-            menu_description: "当 Codex 需要为较高风险的操作申请批准时（例如逃逸沙箱或访问受阻网络），将符合条件的批准请求路由给一个经过精细提示的安全审查子代理，而不是阻塞当前代理等待你的输入。由于它会为每次批准请求运行一个子代理，因此可能显著消耗更多 token。",
             announcement: "",
         },
         default_enabled: false,

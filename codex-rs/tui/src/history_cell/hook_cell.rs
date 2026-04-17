@@ -701,6 +701,7 @@ fn hook_output_prefix(kind: HookOutputEntryKind) -> &'static str {
 fn hook_event_label(event_name: HookEventName) -> &'static str {
     match event_name {
         HookEventName::PreToolUse => "工具调用前",
+        HookEventName::PermissionRequest => "权限请求",
         HookEventName::PostToolUse => "工具调用后",
         HookEventName::SessionStart => "会话开始",
         HookEventName::UserPromptSubmit => "用户消息提交",

@@ -1118,13 +1118,13 @@ impl App {
         &self,
         tui: &mut tui::Tui,
         cfg: crate::legacy_core::config::Config,
+        initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) -> crate::chatwidget::ChatWidgetInit {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
             frame_requester: tui.frame_requester(),
             app_event_tx: self.app_event_tx.clone(),
-            // Fork/resume bootstraps here don't carry any prefilled message content.
-            initial_user_message: None,
+            initial_user_message,
             enhanced_keys_supported: self.enhanced_keys_supported,
             has_chatgpt_account: self.chat_widget.has_chatgpt_account(),
             model_catalog: self.model_catalog.clone(),
@@ -1359,8 +1359,8 @@ impl App {
             }
             if feature == Feature::GuardianApproval && effective_enabled {
                 // The feature flag alone is not enough for the live session.
-                // We also align approval policy + sandbox to the Guardian
-                // Approvals preset so enabling the experiment immediately
+                // We also align approval policy + sandbox to the Auto-review
+                // preset so enabling the experiment immediately
                 // makes guardian review observable in the current thread.
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
@@ -3444,7 +3444,11 @@ impl App {
         self.active_thread_id = Some(thread_id);
         self.active_thread_rx = Some(receiver);
 
-        let init = self.chatwidget_init_for_forked_or_resumed_thread(tui, self.config.clone());
+        let init = self.chatwidget_init_for_forked_or_resumed_thread(
+            tui,
+            self.config.clone(),
+            /*initial_user_message*/ None,
+        );
         self.replace_chat_widget(ChatWidget::new_with_app_event(init));
 
         self.reset_for_thread_switch(tui)?;
@@ -3503,9 +3507,11 @@ impl App {
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
         session_start_source: Option<ThreadStartSource>,
+        initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) {
         // Start a fresh in-memory session while preserving resumability via persisted rollout
-        // history.
+        // history. If an initial message is provided, `enqueue_primary_thread_session` suppresses it
+        // until the new session is configured and any replayed turns have been rendered.
         self.refresh_in_memory_config_from_disk_best_effort("starting a new thread")
             .await;
         let model = self.chat_widget.current_model().to_string();
@@ -3531,7 +3537,12 @@ impl App {
         {
             Ok(started) => {
                 if let Err(err) = self
-                    .replace_chat_widget_with_app_server_thread(tui, app_server, started)
+                    .replace_chat_widget_with_app_server_thread(
+                        tui,
+                        app_server,
+                        started,
+                        initial_user_message,
+                    )
                     .await
                 {
                     self.chat_widget
@@ -3562,9 +3573,17 @@ impl App {
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
         started: AppServerStartedThread,
+        initial_user_message: Option<crate::chatwidget::UserMessage>,
     ) -> Result<()> {
+        // Initial messages are for freshly attached primary threads only. Thread switches and
+        // resume/fork flows pass `None` so they cannot replay old history and then auto-submit a new
+        // user turn by accident.
         self.reset_thread_event_state();
-        let init = self.chatwidget_init_for_forked_or_resumed_thread(tui, self.config.clone());
+        let init = self.chatwidget_init_for_forked_or_resumed_thread(
+            tui,
+            self.config.clone(),
+            initial_user_message,
+        );
         self.replace_chat_widget(ChatWidget::new_with_app_event(init));
         self.enqueue_primary_thread_session(started.session, started.turns)
             .await?;
@@ -4333,7 +4352,9 @@ impl App {
                 self.file_search
                     .update_search_dir(self.config.cwd.to_path_buf());
                 match self
-                    .replace_chat_widget_with_app_server_thread(tui, app_server, resumed)
+                    .replace_chat_widget_with_app_server_thread(
+                        tui, app_server, resumed, /*initial_user_message*/ None,
+                    )
                     .await
                 {
                     Ok(()) => {
@@ -4375,6 +4396,7 @@ impl App {
             AppEvent::NewSession => {
                 self.start_fresh_session_with_summary_hint(
                     tui, app_server, /*session_start_source*/ None,
+                    /*initial_user_message*/ None,
                 )
                 .await;
             }
@@ -4386,6 +4408,23 @@ impl App {
                     tui,
                     app_server,
                     Some(ThreadStartSource::Clear),
+                    /*initial_user_message*/ None,
+                )
+                .await;
+            }
+            AppEvent::ClearUiAndSubmitUserMessage { text } => {
+                self.clear_terminal_ui(tui, /*redraw_header*/ false)?;
+                self.reset_app_ui_state_after_clear();
+
+                self.start_fresh_session_with_summary_hint(
+                    tui,
+                    app_server,
+                    Some(ThreadStartSource::Clear),
+                    crate::chatwidget::create_initial_user_message(
+                        Some(text),
+                        Vec::new(),
+                        Vec::new(),
+                    ),
                 )
                 .await;
             }
@@ -4478,7 +4517,9 @@ impl App {
                         Ok(forked) => {
                             self.shutdown_current_thread(app_server).await;
                             match self
-                                .replace_chat_widget_with_app_server_thread(tui, app_server, forked)
+                                .replace_chat_widget_with_app_server_thread(
+                                    tui, app_server, forked, /*initial_user_message*/ None,
+                                )
                                 .await
                             {
                                 Ok(()) => {
@@ -4573,6 +4614,18 @@ impl App {
             AppEvent::Exit(mode) => {
                 return Ok(self.handle_exit_mode(app_server, mode).await);
             }
+            AppEvent::Logout => match app_server.logout_account().await {
+                Ok(()) => {
+                    return Ok(self
+                        .handle_exit_mode(app_server, ExitMode::ShutdownFirst)
+                        .await);
+                }
+                Err(err) => {
+                    tracing::error!("failed to logout: {err}");
+                    self.chat_widget
+                        .add_error_message(format!("Logout failed: {err}"));
+                }
+            },
             AppEvent::FatalExitRequest(message) => {
                 return Ok(AppRunControl::Exit(ExitReason::Fatal(message)));
             }
@@ -8210,8 +8263,9 @@ mod tests {
             Some(&TomlValue::Boolean(false))
         );
         assert!(
-            !memories.contains_key("no_memories_if_mcp_or_web_search"),
-            "the TUI menu should not write the MCP pollution setting"
+            !memories.contains_key("disable_on_external_context")
+                && !memories.contains_key("no_memories_if_mcp_or_web_search"),
+            "the TUI menu should not write the external-context memory setting"
         );
         app_server.shutdown().await?;
         Ok(())
