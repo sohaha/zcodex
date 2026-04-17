@@ -3,6 +3,8 @@
 pub enum UpdateAction {
     /// Update via `npm install -g @sohaha/zcodex@latest`.
     NpmGlobalLatest,
+    /// Update via standalone Windows PowerShell installer.
+    StandaloneWindows,
     /// Update via `bun install -g @sohaha/zcodex@latest`.
     BunGlobalLatest,
     /// Update via `brew upgrade codex`.
@@ -14,6 +16,7 @@ impl UpdateAction {
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
             UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@sohaha/zcodex"]),
+            UpdateAction::StandaloneWindows => ("powershell", &["-NoProfile", "-Command", "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-Expression ((Invoke-WebRequest -UseBasicParsing 'https://cnb.cool/zcodex_install.ps1').Content) }"]),
             UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@sohaha/zcodex"]),
             UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "codex"]),
         }
@@ -26,24 +29,6 @@ impl UpdateAction {
             .unwrap_or_else(|_| format!("{command} {}", args.join(" ")))
     }
 }
-
-#[cfg(not(debug_assertions))]
-pub(crate) fn get_update_action() -> Option<UpdateAction> {
-    let exe = std::env::current_exe().unwrap_or_default();
-    let managed_by_npm = std::env::var_os("CODEX_MANAGED_BY_NPM").is_some();
-    let managed_by_bun = std::env::var_os("CODEX_MANAGED_BY_BUN").is_some();
-
-    detect_update_action(
-        cfg!(target_os = "macos"),
-        &exe,
-        managed_by_npm,
-        managed_by_bun,
-    )
-}
-
-#[cfg(any(not(debug_assertions), test))]
-fn detect_update_action(
-    is_macos: bool,
     current_exe: &std::path::Path,
     managed_by_npm: bool,
     managed_by_bun: bool,
