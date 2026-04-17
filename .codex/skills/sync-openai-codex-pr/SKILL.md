@@ -353,6 +353,75 @@ git worktree remove "$path"
 | `max_output_tokens` 被硬编码为 `None` | 上游移除了 `client.rs` 中从 provider 读取的逻辑，sync 时直接替换为 `None` | 恢复为 `self.client.state.provider.info().max_output_tokens.filter(\|v\| *v > 0)` |
 | `auto_tldr_routing` 调用丢失 | 上游从 `Config` 移除该字段，sync 时误删了 `.with_auto_tldr_routing()` 调用 | 改用 `AutoTldrRoutingMode::default()` 保持 tldr 路由功能启用 |
 
+### 7.1.2) WireApi::Chat / WireApi::Anthropic 流式 streaming 实现（2026-04-18）
+
+**问题**：上游 `codex-rs/core/src/client.rs` 的 `ModelClientSession::stream()` 对 `WireApi::Chat` 和 `WireApi::Anthropic` 仅有 `unimplemented!()` 占位，导致运行时 panic：
+```
+not implemented: wire_api streaming not yet supported for Anthropicspace
+Location: codex-rs/core/src/client.rs:1476
+```
+
+**本地分叉实现**（**不能被上游 sync 覆盖**）：
+
+| 新增文件/位置 | 内容 |
+|-------------|------|
+| `codex-rs/codex-api/src/endpoint/anthropic.rs` | 新增 `AnthropicClient<T>` struct，参照 `ChatCompletionsClient` 实现 `stream_request()`，路径为 `messages`，调用 `anthropic::build_request_body` + `anthropic::spawn_response_stream` |
+| `codex-rs/codex-api/src/endpoint/mod.rs` | 新增 `pub mod anthropic;` 和 `pub use anthropic::AnthropicClient;` |
+| `codex-rs/codex-api/src/lib.rs` | 新增 `pub use crate::endpoint::AnthropicClient;` |
+| `codex-rs/core/src/client.rs` | 导入 `ApiAnthropicClient`、`ApiChatCompletionsClient`；添加 `stream_chat_api()` 和 `stream_anthropic_api()` 两个方法；`WireApi::Chat | WireApi::Anthropic => unimplemented!()` 拆分为各自调用对应方法 |
+
+**同步时检查点**：
+- 若上游 `client.rs` 的 `stream()` 仍为 `unimplemented!`：**保留本地实现，不要跟随上游**
+- 若上游新增了自己的实现：对比行为差异，按"同功能二选一"流程决策
+- `codex-api/src/endpoint/anthropic.rs` 是**本地分叉新增文件**，上游不存在，sync 不会自动删除；但若上游同步导致 `anthropic.rs`/`chat_completions.rs` 的 API 签名变更，需同步更新该文件
+
+**2026-04-18 补丁：effort/summary/service_tier 参数透传修复**
+
+初版实现中 `stream_chat_api` 和 `stream_anthropic_api` 的 `build_responses_request` 硬编码了 `effort=None, summary=Auto, service_tier=None`，未从 `stream()` 入口透传。已修复：
+
+- `stream_chat_api` / `stream_anthropic_api` 新增 `effort: Option<ReasoningEffortConfig>`, `summary: ReasoningSummaryConfig`, `service_tier: Option<ServiceTier>` 参数
+- `stream()` 调用点同步传递这三个参数
+- telemetry endpoint label 由错误的 `RESPONSES_ENDPOINT` 改为 `CHAT_COMPLETIONS_ENDPOINT` / `ANTHROPIC_MESSAGES_ENDPOINT`
+- 新增常量 `CHAT_COMPLETIONS_ENDPOINT = "/chat/completions"` 和 `ANTHROPIC_MESSAGES_ENDPOINT = "/messages"`
+
+同步后若重新覆盖此实现，上述四点必须同步恢复。
+
+### 7.1.3) zconfig.toml 支持与 name 字段留空（2026-04-18）
+
+**变更 1：`$CODEX_HOME/zconfig.toml` 配置合并**
+
+- `codex_config::ZCONFIG_TOML_FILE` 常量早已定义，`ConfigLayerSource::ZConfig` 变体也已存在（优先级 21，介于 `User`=20 和 `Project`=25 之间）
+- 但 `config_loader/mod.rs` 的 `load_config_layers_state` 从未实际加载它
+- **本地分叉修复**：在 `layers.push(user_layer)` 后，加载 `$CODEX_HOME/zconfig.toml` 作为 `ConfigLayerSource::ZConfig` 层推入 stack
+- 文件不存在时静默跳过（`NotFound` → 空 Table），不影响正常启动
+- **同步时检查点**：若上游也实现了此功能，对比优先级顺序是否一致（本地：User→ZConfig→Project），按"逻辑可融合"处理
+
+**变更 2：`model_providers.*.name` 字段可留空**
+
+- `config_toml.rs` 的 `deserialize_model_providers` 已自动用 map key 填充空 `name`——**无需任何代码修改**，这是现有行为
+- `validate()` 不检查 `name` 字段
+- 已确认：`zconfig.toml` 中的 `[model_providers.mm]`（无 `name` 字段）可正常反序列化，`name` 自动设为 `"mm"`
+
+### 7.1.4) models-manager 退化恢复（2026-04-18）
+
+upstream sync 重写了 `models-manager/src/manager.rs`，删除了以下本地特性：
+
+**退化 1：`build_available_models` 中 `provider.model_catalog` 过滤缺失**
+- 修复：`build_available_models` 恢复 `presets.retain(|p| catalog_slugs.contains(&p.model))`
+- 效果：zconfig.toml 配 `model_catalog = ["glm-5", ...]` 后 TUI 模型选择器只显示指定模型
+
+**退化 2：`build_available_models` 中 `provider.skip_reasoning_popup` 传播缺失**
+- 修复：恢复在转换为 presets 前将 `skip_reasoning_popup` 覆盖到所有 `ModelInfo`
+
+**退化 3：`default_remote_models_for_provider` 函数完全丢失**
+- 效果：Anthropic provider 初始化时用的是 OpenAI bundled models 而非内置 Anthropic catalog
+- 修复：恢复完整函数（WireApi::Anthropic → `anthropic_model_catalog()`），含 slug 自动合成 ModelInfo 逻辑
+- `new_with_provider` 改为调用此函数而非 `load_remote_models_from_file()`
+
+**同步时检查点**：
+- `build_available_models` 必须保留 `provider_info.model_catalog` 过滤和 `skip_reasoning_popup` 传播
+- `default_remote_models_for_provider` 必须保留，且 `new_with_provider` 必须调用它
+
 **验证通过的完整检查清单**：
 - ✅ Fallback provider：6 核心函数、4 config 字段、8 测试完整
 - ✅ 汉化：cli 256行、tui 2100+行、core 360行中文，HEAD~5..HEAD diff 无中文删除

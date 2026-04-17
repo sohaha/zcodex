@@ -20,6 +20,7 @@ use codex_login::default_client::build_reqwest_client;
 use codex_model_provider::SharedModelProvider;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::error::CodexErr;
@@ -216,7 +217,6 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider_info: ModelProviderInfo,
     ) -> Self {
-        let model_provider = create_model_provider(provider_info, Some(auth_manager));
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
@@ -224,9 +224,20 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        let remote_models = model_catalog
+        // Always apply per-provider model_catalog filtering regardless of whether
+        // a global model_catalog was supplied.
+        let base_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| Self::load_remote_models_from_file().unwrap_or_default());
+            .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider_info));
+        let remote_models = if let Some(ref catalog_slugs) = provider_info.model_catalog {
+            base_models
+                .into_iter()
+                .filter(|model| catalog_slugs.contains(&model.slug))
+                .collect()
+        } else {
+            base_models
+        };
+        let model_provider = create_model_provider(provider_info, Some(auth_manager));
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -497,6 +508,77 @@ impl ModelsManager {
         Ok(crate::bundled_models_response()?.models)
     }
 
+    /// Returns the default remote model list for a provider.
+    /// For Anthropic providers, returns the built-in Anthropic catalog.
+    /// Applies `provider.model_catalog` slug filtering; if no slug matches the
+    /// built-in list, synthetic `ModelInfo` entries are created from the slugs.
+    fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+        let models = match provider.wire_api {
+            WireApi::Anthropic => model_info::anthropic_model_catalog(),
+            _ => Self::load_remote_models_from_file().unwrap_or_default(),
+        };
+
+        if let Some(ref catalog_slugs) = provider.model_catalog {
+            let matching: Vec<_> = models
+                .iter()
+                .filter(|m| catalog_slugs.contains(&m.slug))
+                .cloned()
+                .collect();
+            if !matching.is_empty() {
+                return matching;
+            }
+            // No matches in built-in list: synthesise ModelInfo from slugs.
+            let template = models.first().cloned().unwrap_or_else(|| ModelInfo {
+                slug: String::from("fallback"),
+                display_name: String::from("Fallback Model"),
+                description: None,
+                default_reasoning_level: None,
+                supported_reasoning_levels: Vec::new(),
+                shell_type: codex_protocol::openai_models::ConfigShellToolType::Default,
+                visibility: codex_protocol::openai_models::ModelVisibility::None,
+                supported_in_api: true,
+                priority: 999,
+                additional_speed_tiers: Vec::new(),
+                availability_nux: None,
+                upgrade: None,
+                base_instructions: String::new(),
+                model_messages: None,
+                supports_reasoning_summaries: false,
+                default_reasoning_summary: codex_protocol::config_types::ReasoningSummary::Auto,
+                support_verbosity: false,
+                default_verbosity: None,
+                apply_patch_tool_type: None,
+                web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
+                supports_search_tool: false,
+                truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(
+                    10000,
+                ),
+                supports_parallel_tool_calls: false,
+                supports_image_detail_original: false,
+                context_window: None,
+                auto_compact_token_limit: None,
+                effective_context_window_percent: 90,
+                experimental_supported_tools: Vec::new(),
+                input_modalities: Vec::new(),
+                used_fallback_model_metadata: true,
+                skip_reasoning_popup: false,
+            });
+            catalog_slugs
+                .iter()
+                .enumerate()
+                .map(|(i, slug)| {
+                    let mut m = template.clone();
+                    m.slug = slug.clone();
+                    m.display_name = slug.clone();
+                    m.priority = i as i32;
+                    m
+                })
+                .collect()
+        } else {
+            models
+        }
+    }
+
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
         let _timer =
@@ -525,7 +607,23 @@ impl ModelsManager {
     fn build_available_models(&self, mut remote_models: Vec<ModelInfo>) -> Vec<ModelPreset> {
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
+        let provider_info = self.provider.info();
+
+        // Propagate provider-level skip_reasoning_popup to all models before
+        // converting to presets so the setting reaches the TUI model picker.
+        if provider_info.skip_reasoning_popup {
+            for model in &mut remote_models {
+                model.skip_reasoning_popup = true;
+            }
+        }
+
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
+
+        // Filter models by provider-specific model_catalog if configured.
+        if let Some(ref catalog_slugs) = provider_info.model_catalog {
+            presets.retain(|preset| catalog_slugs.contains(&preset.model));
+        }
+
         let auth_mode = self
             .provider
             .auth_manager()
