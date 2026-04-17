@@ -61,9 +61,9 @@ use crate::mcp_tool_to_responses_api_tool;
 use crate::request_permissions_tool_description;
 use crate::request_user_input_tool_description;
 use crate::tool_registry_plan_types::agent_type_description;
+use codex_model_provider_info::WireApi;
 use codex_protocol::openai_models::ApplyPatchToolType;
 use codex_protocol::openai_models::ConfigShellToolType;
-use codex_model_provider_info::WireApi;
 use std::collections::BTreeMap;
 
 pub fn build_tool_registry_plan(
@@ -333,17 +333,17 @@ pub fn build_tool_registry_plan(
     }
 
     if matches!(config.wire_api, WireApi::Responses) {
-    if let Some(web_search_tool) = create_web_search_tool(WebSearchToolOptions {
-        web_search_mode: config.web_search_mode,
-        web_search_config: config.web_search_config.as_ref(),
-        web_search_tool_type: config.web_search_tool_type,
-    }) {
-        plan.push_spec(
-            web_search_tool,
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
-    }
+        if let Some(web_search_tool) = create_web_search_tool(WebSearchToolOptions {
+            web_search_mode: config.web_search_mode,
+            web_search_config: config.web_search_config.as_ref(),
+            web_search_tool_type: config.web_search_tool_type,
+        }) {
+            plan.push_spec(
+                web_search_tool,
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+        }
     }
 
     if config.image_gen_tool {
