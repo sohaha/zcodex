@@ -171,9 +171,9 @@ pub struct ResponsesApiRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<TextControls>,
     #[serde(skip_serializing_if = "Option::is_none")]
-   pub client_metadata: Option<HashMap<String, String>>,
-   #[serde(skip_serializing_if = "Option::is_none")]
-   pub max_output_tokens: Option<i64>,
+    pub client_metadata: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
 }
 
 impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
@@ -195,7 +195,7 @@ impl From<&ResponsesApiRequest> for ResponseCreateWsRequest {
             text: request.text.clone(),
             generate: None,
             client_metadata: request.client_metadata.clone(),
-           max_output_tokens: request.max_output_tokens,
+            max_output_tokens: request.max_output_tokens,
         }
     }
 }
@@ -224,9 +224,9 @@ pub struct ResponseCreateWsRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub generate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-   pub client_metadata: Option<HashMap<String, String>>,
-   #[serde(skip_serializing_if = "Option::is_none")]
-   pub max_output_tokens: Option<i64>,
+    pub client_metadata: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<i64>,
 }
 
 pub fn response_create_client_metadata(

@@ -189,7 +189,7 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
     let tools = anthropic_tools(&request.tools);
     let mut body = json!({
         "model": request.model,
-        "max_tokens": request.max_output_tokens.unwrap_or(ANTHROPIC_DEFAULT_MAX_TOKENS),
+        "max_tokens": request.max_output_tokens.unwrap_or(ANTHROPIC_DEFAULT_MAX_TOKENS as i64),
         "messages": messages,
         "stream": stream,
     });
@@ -1438,24 +1438,24 @@ mod tests {
             client_metadata: None,
             prompt_cache_key: None,
             text: Some(crate::common::TextControls {
-               verbosity: None,
-               format: Some(TextFormat {
-                   r#type: crate::common::TextFormatType::JsonSchema,
-                   strict: true,
-                   schema: json!({
-                       "type": "object",
-                       "properties": {
-                           "ok": { "type": "boolean" }
-                       },
-                       "required": ["ok"]
-                   }),
-                   name: "schema".to_string(),
-               }),
-           }),
-           max_output_tokens: None,
-       };
+                verbosity: None,
+                format: Some(TextFormat {
+                    r#type: crate::common::TextFormatType::JsonSchema,
+                    strict: true,
+                    schema: json!({
+                        "type": "object",
+                        "properties": {
+                            "ok": { "type": "boolean" }
+                        },
+                        "required": ["ok"]
+                    }),
+                    name: "schema".to_string(),
+                }),
+            }),
+            max_output_tokens: None,
+        };
 
-       let body = build_request_body(&request);
+        let body = build_request_body(&request);
         assert_eq!(body["model"], "claude-3-7-sonnet");
         assert_eq!(body["stream"], true);
         assert_eq!(body["tool_choice"]["disable_parallel_tool_use"], true);
@@ -1532,13 +1532,13 @@ mod tests {
             include: Vec::new(),
             service_tier: None,
             client_metadata: None,
-           prompt_cache_key: None,
-           text: None,
-           max_output_tokens: None,
-       };
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
 
-       let body = build_request_body(&request);
-       let messages = body["messages"].as_array().expect("messages array");
+        let body = build_request_body(&request);
+        let messages = body["messages"].as_array().expect("messages array");
         assert_eq!(messages.len(), 3);
         assert_eq!(
             messages[2],

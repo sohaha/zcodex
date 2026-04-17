@@ -91,12 +91,12 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
             client_metadata: None,
             prompt_cache_key: None,
             text: create_text_param_for_request(
-               /*verbosity*/ None,
-               &Some(compaction_output_schema()),
-           ),
-           max_output_tokens: None,
-       };
-       let body = anthropic::build_request_body_with_stream(&request, /*stream*/ false);
+                /*verbosity*/ None,
+                &Some(compaction_output_schema()),
+            ),
+            max_output_tokens: None,
+        };
+        let body = anthropic::build_request_body_with_stream(&request, /*stream*/ false);
         let resp = self
             .session
             .execute_with(Method::POST, "messages", extra_headers, Some(body), |req| {

@@ -211,6 +211,9 @@ pub fn build_request_with_stream(
             );
         }
 
+        if let Some(max_tokens) = request.max_output_tokens {
+            object.insert("max_tokens".to_string(), Value::Number(max_tokens.into()));
+        }
         if let Some(service_tier) = request.service_tier.as_ref() {
             object.insert(
                 "service_tier".to_string(),
