@@ -296,7 +296,8 @@ use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::plugins::PluginsManager;
 use crate::plugins::build_plugin_injections;
 use crate::plugins::render_plugins_section;
-use crate::project_doc::get_user_instructions;
+use crate::agents_md::AgentsMdManager;
+use codex_exec_server::LOCAL_FS;
 use crate::resolve_skill_dependencies_for_turn;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
@@ -559,7 +560,9 @@ impl Codex {
             config.startup_warnings.push(message);
         }
 
-        let user_instructions = get_user_instructions(&config, environment.as_deref()).await;
+        let user_instructions = AgentsMdManager::new(&config)
+            .user_instructions_with_fs(LOCAL_FS.as_ref())
+            .await;
 
         let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
@@ -957,7 +960,6 @@ impl TurnContext {
     ) -> FileSystemSandboxContext {
         FileSystemSandboxContext {
             sandbox_policy: self.sandbox_policy.get().clone(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
             windows_sandbox_level: self.windows_sandbox_level,
             windows_sandbox_private_desktop: false,
             use_legacy_landlock: false,
@@ -1213,7 +1215,7 @@ impl TurnContext {
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
             sandbox_policy: self.sandbox_policy.get().clone(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
+            file_system_sandbox_policy: Some(self.file_system_sandbox_policy.clone()),
             network: self.turn_context_network_item(),
             model: self.model_info.slug.clone(),
             personality: self.personality,
@@ -1350,7 +1352,6 @@ impl SessionConfiguration {
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
             sandbox_policy: self.sandbox_policy.get().clone(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.get().clone(),
             cwd: self.cwd.clone(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
@@ -2794,7 +2795,9 @@ impl Session {
     ) -> Arc<TurnContext> {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
         let user_instructions =
-            get_user_instructions(&per_turn_config, self.services.environment.as_deref()).await;
+            AgentsMdManager::new(&per_turn_config)
+            .user_instructions_with_fs(LOCAL_FS.as_ref())
+            .await;
         {
             let mcp_connection_manager = self.services.mcp_connection_manager.read().await;
             mcp_connection_manager.set_approval_policy(&session_configuration.approval_policy);
@@ -5629,6 +5632,7 @@ mod handlers {
                 }
             };
             let config_layer_stack = match load_config_layers_state(
+                fs.as_ref().expect("filesystem required").as_ref(),
                 &codex_home,
                 Some(cwd_abs.clone()),
                 empty_cli_overrides,
@@ -5715,7 +5719,7 @@ mod handlers {
         }
 
         let memory_root = crate::memories::memory_root(&config.codex_home);
-        if let Err(err) = crate::memories::clear_memory_root_contents(&memory_root).await {
+        if let Err(err) = crate::memories::clear_memory_roots_contents(&memory_root).await {
             errors.push(format!(
                 "failed clearing memory directory {}: {err}",
                 memory_root.display()
@@ -6413,8 +6417,11 @@ pub(crate) async fn run_turn(
         HashMap::new()
     };
     let available_connectors = if turn_context.apps_enabled() {
-        let connectors = connectors::merge_plugin_apps_with_accessible(
-            loaded_plugins.effective_apps(),
+        let connectors = codex_connectors::merge_plugin_connectors_with_accessible(
+            loaded_plugins
+                .effective_apps()
+                .into_iter()
+                .map(|connector_id| connector_id.0),
             connectors::accessible_connectors_from_mcp_tools(&mcp_tools),
         );
         connectors::with_app_enabled_state(connectors, &turn_context.config)
@@ -7061,7 +7068,7 @@ fn collect_explicit_app_ids_from_skill_items(
 
     let connector_slug_counts = build_connector_slug_counts(connectors);
     for connector in connectors {
-        let slug = connectors::connector_mention_slug(connector);
+        let slug = codex_connectors::connector_mention_slug(connector);
         let connector_count = connector_slug_counts.get(&slug).copied().unwrap_or(0);
         let skill_count = skill_name_counts_lower.get(&slug).copied().unwrap_or(0);
         if connector_count == 1 && skill_count == 0 && mention_names_lower.contains(&slug) {
@@ -7136,7 +7143,7 @@ fn connector_inserted_in_messages(
         return true;
     }
 
-    let mention_slug = connectors::connector_mention_slug(connector);
+    let mention_slug = codex_connectors::connector_mention_slug(connector);
     let connector_count = connector_slug_counts
         .get(&mention_slug)
         .copied()
@@ -7423,7 +7430,7 @@ fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> Mo
     ModelClient::new(
         turn_context.auth_manager.clone(),
         sess.conversation_id,
-        ,
+        String::new(),
         turn_context.provider.clone(),
         turn_context.session_source.clone(),
         turn_context.config.model_verbosity,
@@ -7583,8 +7590,8 @@ pub(crate) async fn built_tools(
             connectors::with_app_enabled_state(connectors.clone(), &turn_context.config)
         });
     let connectors = if apps_enabled {
-        let connectors = connectors::merge_plugin_apps_with_accessible(
-            loaded_plugins.effective_apps(),
+        let connectors = codex_connectors::merge_plugin_connectors_with_accessible(
+            loaded_plugins.effective_apps().into_iter().map(|id| id.0).collect::<Vec<_>>(),
             accessible_connectors.clone().unwrap_or_default(),
         );
         Some(connectors::with_app_enabled_state(
@@ -7888,6 +7895,7 @@ fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::ExecCommandEnd(_)
         | EventMsg::PatchApplyBegin(_)
         | EventMsg::PatchApplyEnd(_)
+        | EventMsg::PatchApplyUpdated(_)
         | EventMsg::ViewImageToolCall(_)
         | EventMsg::ImageGenerationBegin(_)
         | EventMsg::ImageGenerationEnd(_)
@@ -8454,6 +8462,7 @@ async fn try_run_sampling_request(
                     last_agent_message,
                 });
             }
+            ResponseEvent::ToolCallInputDelta { .. } => {}
             ResponseEvent::OutputTextDelta(delta) => {
                 // In review child threads, suppress assistant text deltas; the
                 // UI will show a selection popup from the final ReviewOutput.

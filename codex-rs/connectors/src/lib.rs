@@ -14,6 +14,8 @@ pub mod accessible;
 pub mod filter;
 pub mod merge;
 pub mod metadata;
+pub use merge::merge_plugin_connectors_with_accessible;
+pub use metadata::connector_mention_slug;
 
 pub const CONNECTORS_CACHE_TTL: Duration = Duration::from_secs(3600);
 

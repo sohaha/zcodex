@@ -31,6 +31,7 @@ use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::validate_model_providers;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::ApprovalsReviewer;
+use codex_config::types::ResumeModelSource;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;

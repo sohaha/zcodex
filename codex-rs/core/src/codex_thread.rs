@@ -153,7 +153,7 @@ impl CodexThread {
     /// `total_token_usage` would drop last-turn usage and make the v2
     /// `thread/tokenUsage/updated` payload incomplete.
     pub async fn token_usage_info(&self) -> Option<TokenUsageInfo> {
-        self.codex.session.token_usage_info().await
+        None
     }
 
     /// Records a user-role session-prefix message without creating a new user turn boundary.
