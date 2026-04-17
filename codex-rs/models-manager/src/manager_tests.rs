@@ -108,6 +108,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
         supports_websockets: false,
         model_context_window: None,
         model_auto_compact_token_limit: None,
+        skip_reasoning_popup: false,
     }
 }
 

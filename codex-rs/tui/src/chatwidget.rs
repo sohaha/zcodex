@@ -3896,7 +3896,7 @@ impl ChatWidget {
 
         match tool {
             CollabAgentTool::SpawnAgent => {
-                if let (Some(model), Some(reasoning_effort)) = (model.clone(), reasoning_effort) {
+                if let Some(model) = model.clone() {
                     self.pending_collab_spawn_requests.insert(
                         id.clone(),
                         multi_agents::SpawnRequestSummary {
@@ -3910,7 +3910,7 @@ impl ChatWidget {
                     let spawn_request =
                         self.pending_collab_spawn_requests.remove(&id).or_else(|| {
                             model
-                                .zip(reasoning_effort)
+                                .map(|model| (model, reasoning_effort))
                                 .map(|(model, reasoning_effort)| {
                                     multi_agents::SpawnRequestSummary {
                                         model,
@@ -6129,6 +6129,17 @@ impl ChatWidget {
                 agents_states,
             } => self.on_collab_agent_tool_call(ThreadItem::CollabAgentToolCall {
                 id,
+            ThreadItem::CollabAgentToolCall {
+                id,
+                tool,
+                status,
+                sender_thread_id,
+                receiver_thread_ids,
+                prompt,
+                model,
+                reasoning_effort: None,
+                agents_states,
+            } => todo!(),
                 tool,
                 status,
                 sender_thread_id,
@@ -8043,12 +8054,12 @@ impl ChatWidget {
                 if preset_for_event.skip_reasoning_popup {
                     let effort = preset_for_event.default_reasoning_effort;
                     tx.send(AppEvent::UpdateModel(preset_for_event.model.clone()));
-                    tx.send(AppEvent::UpdateReasoningEffort(effort));
-                    tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
-                    tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
+                    tx.send(AppEvent::UpdateReasoningEffort(Some(effort)));
+                    tx.send(AppEvent::UpdatePlanModeReasoningEffort(Some(effort)));
+                    tx.send(AppEvent::PersistPlanModeReasoningEffort(Some(effort)));
                     tx.send(AppEvent::PersistModelSelection {
                         model: preset_for_event.model,
-                        effort,
+                        effort: Some(effort),
                     });
                 } else {
                     tx.send(AppEvent::OpenReasoningPopup {
@@ -8206,17 +8217,17 @@ impl ChatWidget {
             move |tx| {
                 tx.send(AppEvent::UpdateModel(model.clone()));
                 tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
-                tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
+                tx.send(AppEvent::PersistPlanModeReasoningEffort(Some(effort)));
             }
         })];
         let all_modes_actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
             tx.send(AppEvent::UpdateModel(model.clone()));
             tx.send(AppEvent::UpdateReasoningEffort(effort));
             tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
-            tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
+            tx.send(AppEvent::PersistPlanModeReasoningEffort(Some(effort)));
             tx.send(AppEvent::PersistModelSelection {
                 model: model.clone(),
-                effort,
+                effort: Some(effort),
             });
         })];
 
@@ -8284,14 +8295,14 @@ impl ChatWidget {
             if supported.iter().any(|option| option.effort == effort) {
                 choices.push(EffortChoice {
                     stored: Some(effort),
-                    display: effort,
+                    display: effort: Some(effort),
                 });
             }
         }
         if choices.is_empty() {
             choices.push(EffortChoice {
                 stored: Some(default_effort),
-                display: default_effort,
+                display: default_effort: Some(effort),
             });
         }
 
@@ -8302,7 +8313,7 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::OpenPlanReasoningScopePrompt {
                         model: selected_model,
-                        effort: selected_effort,
+                        effort: selected_effort: Some(effort),
                     });
             } else {
                 self.apply_model_and_effort(selected_model, selected_effort);
@@ -8377,14 +8388,14 @@ impl ChatWidget {
                 if should_prompt_plan_mode_scope {
                     tx.send(AppEvent::OpenPlanReasoningScopePrompt {
                         model: model_for_action.clone(),
-                        effort: choice_effort,
+                        effort: choice_effort: Some(effort),
                     });
                 } else {
                     tx.send(AppEvent::UpdateModel(model_for_action.clone()));
                     tx.send(AppEvent::UpdateReasoningEffort(choice_effort));
                     tx.send(AppEvent::PersistModelSelection {
                         model: model_for_action.clone(),
-                        effort: choice_effort,
+                        effort: choice_effort: Some(effort),
                     });
                 }
             })];

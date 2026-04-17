@@ -2028,6 +2028,7 @@ fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                skip_reasoning_popup: false,
             },
         )]),
         ..Default::default()
@@ -2096,6 +2097,7 @@ fn resolves_fallback_provider_chain() -> std::io::Result<()> {
                     supports_websockets: false,
                     model_context_window: None,
                     model_auto_compact_token_limit: None,
+                    skip_reasoning_popup: false,
                 },
             ),
             (
@@ -2121,6 +2123,7 @@ fn resolves_fallback_provider_chain() -> std::io::Result<()> {
                     supports_websockets: false,
                     model_context_window: None,
                     model_auto_compact_token_limit: None,
+                    skip_reasoning_popup: false,
                 },
             ),
         ]),
@@ -7162,6 +7165,7 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                skip_reasoning_popup: false,
             },
         )]),
         profiles: HashMap::from([(
@@ -7234,6 +7238,7 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                skip_reasoning_popup: false,
             },
         )]),
         ..Default::default()
@@ -7338,6 +7343,7 @@ fn test_global_context_window_fallback() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                skip_reasoning_popup: false,
             },
         )]),
         ..Default::default()
