@@ -18,6 +18,7 @@
 - `tui`、`exec`、`app-server` 等上层都依赖 `core` 统一处理模型调用、工具、配置与执行策略。
 - `app-server` 和 `mcp-server` 面向外部客户端，`protocol` 负责稳定类型边界。
 - `native-tldr` 与 `zmemory` 是横切能力：前者提供代码结构分析，后者提供可写持久记忆。
+- TUI 通过 app-server 线程生命周期 RPC（`thread/start` / `thread/resume` / `thread/fork`）接入会话时，embedded 与 remote 都要显式透传客户端的 `model` / `model_provider` 配置；只有 `cwd` 这类远端运行时事实才按 remote override 条件化下发。
 
 ## 重要不变量
 - 外部客户端协议开发优先落在 app-server v2，而不是继续扩 v1。

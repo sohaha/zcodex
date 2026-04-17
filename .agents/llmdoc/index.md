@@ -23,49 +23,16 @@
 - `.agents/llmdoc/guides/ztldr-prompt-optimization.md`：优化 `ztldr` 工具描述、路由提示与相关文档时的事实源、触点与最小验证闭环。
 - `.agents/llmdoc/reference/build-and-test-commands.md`：常用 `just`、`mise`、schema 和测试命令。
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-routing-contract-unification.md`：ztldr 路由 contract 一次性收敛反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-query-signal-observability.md`：ztldr query signal 落到统一日志面的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-tool-route-metrics.md`：ztldr route 指标化与聚合面的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-real-query-matrix.md`：ztldr 真实 query 分类矩阵的回归策略反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-routing-switches.md`：ztldr 路由开关语义的回归边界反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-project-corpus-summary.md`：基于当前项目真实 query 样本的 summary 回归反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shell-corpus-summary.md`：基于当前项目 shell 查询样本的 summary 回归反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-grep-corpus-summary.md`：基于当前项目 grep rewrite 样本的 summary 回归反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-test-corpus.md`：ztldr 三层测试共享样本事实源的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-summary-helpers.md`：ztldr 三层 summary 测试共享标签与计数 helper 的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-real-query-matrix-facts.md`：ztldr 真实 query matrix 收敛到共享事实源的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-shell-fixtures.md`：ztldr shell 命令变体收敛到共享 fixture 的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-grep-tool-calls.md`：ztldr grep tool call builder 收敛的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-grep-payloads.md`：ztldr grep JSON payload 收敛到共享 helper 的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-daemon-socket-path-length.md`：macOS 上 ztldr daemon 因 Unix socket 路径超长而启动失败的根因与修法反思。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ctf-resume-clean-then-resume.md`：CTF 会话在复用现有 resume 选择器时接入 clean-then-resume 的实现与验证阻塞反思。
-- `.agents/llmdoc/memory/reflections/2026-04-10-clouddev-mise-copy-on-write-mask.md`：Clouddev 把 `/root/.local/bin` 与 mise 数据目录挂成 copy-on-write 后遮住镜像预装工具的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-10-build-self-heals-missing-sccache-wrapper.md`：构建脚本在 Clouddev 预设 `RUSTC_WRAPPER=sccache` 但二进制缺失时主动自愈的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-10-buddy-snapshot-accept-scope.md`：在 dirty monorepo 中只接收目标 snapshot，避免 `cargo insta accept` 扩大变更边界的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-10-core-tests-network-sandbox-split.md`：在 sandbox 环境下拆分 `codex-core` 测试以兼顾禁网与环境变量断言的回路反思。
-- `.agents/llmdoc/memory/reflections/2026-04-10-upstream-sync-code-mode-output-schema-local-preservation.md`：同步上游 code-mode `output_schema` 时，先验本地单工具描述行为再决定是否接收上游测试断言的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-11-upstream-sync-native-feature-revert-triage.md`：同步时先确认功能来源，避免把 upstream 已回滚的原生功能误保留成本地分叉。
-- `.agents/llmdoc/memory/reflections/2026-04-12-upstream-sync-state-auditability.md`：同步提交若不是 merge-parent 型，必须靠提交正文与 `STATE.md` 保持 upstream 基线可审计。
-- `.agents/llmdoc/memory/reflections/2026-04-12-upstream-sync-toolname-cli-test-loop.md`：同步 ToolName / namespaced MCP tools 后，如何分流 `cargo` 环境变量噪音、`cli_stream` 缺少 `codex` 二进制，以及高并发 nextest timeout 的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-12-remote-compaction-nonblocking-connectors.md`：远程 compaction 仍卡住时，要继续检查 `build_initial_context()` 和 connector 指令链路是否还在走阻塞版 MCP tools。
-- `.agents/llmdoc/memory/reflections/2026-04-12-core-nextest-mcp-timeout-triage.md`：`codex-core` 中依赖 MCP tool ready 的测试若只在 nextest 30 秒 case timeout 下失败，先用定向 `cargo test --exact` 区分 runner 时限和真实回归。
-- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
-- `.agents/llmdoc/memory/reflections/2026-04-13-zmemory-relative-path-config-deserialization.md`：`zmemory.path` 若需要按 repo root / cwd 解析，就不能在通用配置层提前反序列化成 `AbsolutePathBuf`。
-- `.agents/llmdoc/memory/reflections/2026-04-13-inline-resize-clear-order.md`：inline viewport 因 resize 下移时，必须先按旧 origin 清屏，否则旧 frame 会残留在新 viewport 上方。
-- `.agents/llmdoc/memory/reflections/2026-04-13-inline-resize-screen-delta-fallback.md`：inline viewport 在 cursor 行未变化时，只能对已贴底 viewport 回退到 screen delta，避免重引错误的通用 bottom-align。
 
-- `.agents/llmdoc/memory/reflections/2026-04-12-cli-startup-error-chain-visibility.md`：CLI 入口只打印最外层 anyhow 错误会隐藏 TUI bootstrap 根因，需显式展开 error chain。
-- `.agents/llmdoc/memory/reflections/2026-04-12-windows-native-tldr-daemon-first.md`：Windows 并不需要独立 native-tldr 安装物，缺的是非 Unix daemon-first 的 TCP endpoint metadata 与生命周期接线。
-- `.agents/llmdoc/memory/reflections/2026-04-12-windows-installer-bundle-parity.md`：Windows `install.ps1` 收口到 npm bundle/vendor 分发语义，并补齐 `CODEX_BASE_URL` / `CODEX_INSTALL_DIR` 对齐点的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-13-ztok-find-rewrite-boundary.md`：shell 自动重写不能越过 `ztok find` 的能力边界，rewrite 层应复用运行时不支持参数事实源的反思。
-- `.agents/llmdoc/memory/reflections/2026-04-14-upstream-sync-rtk-global-flag-validation.md`：同步 RTK 时，已删除全局 flag 的残留测试矩阵与定向验证闭环反思。
-- `.agents/llmdoc/memory/reflections/2026-04-14-upstream-sync-tui-localization-snapshot-loop.md`：上游同步时，TUI 中文化输出要和断言、snapshot 一起按同一收敛面回归。
-- `.agents/llmdoc/memory/reflections/2026-04-14-cli-lifecycle-daemon-lock-probe-race.md`：CLI lifecycle 双 contender 场景里，daemon-lock 探测不能在 launcher owner 的最终 spawn 入口重复做一次，否则会把同伴的瞬时抢锁误判成真实 owner。
-- `.agents/llmdoc/memory/reflections/2026-04-14-anthropic-tool-result-history-merge.md`：Anthropic 兼容 provider 若报 `tool call result does not follow tool call`，先检查 `tool_result` 与后续同角色消息是否被错误拆成多条 history message。
+## 最近三天反思
+- 时间窗按当前日期 `2026-04-17` 计算，覆盖 `2026-04-15` 至 `2026-04-17`。
+- 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-16-wire-api-terminal-signal-gating.md`：`wire_api = "anthropic"` / `"chat"` 的流式 parser 需要区分“已有可收敛输出的断流”和“无有效输出的提前关闭”，不能只靠终止信号或连接关闭单独判定。
 - `.agents/llmdoc/memory/reflections/2026-04-16-anthropic-compat-done-and-top-level-error.md`：Anthropic 兼容 provider 可能用顶层 `error` 和 `[DONE]` 代替标准 `error` 事件与 `message_stop`，parser 需要显式识别这两类兼容信号。
 - `.agents/llmdoc/memory/reflections/2026-04-16-ztldr-literal-search-and-generic-symbol-routing.md`：`ztldr search` 默认 literal、非法 regex 结构化失败，以及通用 symbol 回退 exact-text 路由的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-17-model-provider-to-tui-traversal-chain.md`：`model_providers` 配置经过模型元数据链路最终影响 TUI UI 行为的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-17-tui-chinese-text-and-format-consistency.md`：TUI 中文化持续完善、Line::from_iter 格式一致性和备份文件清理的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-17-tui-remote-session-model-provider-propagation.md`：TUI 远端 app-server session 不应因省略远端 `cwd` 而一并丢失 `model_provider` 的反思。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。
