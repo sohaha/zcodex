@@ -671,8 +671,9 @@ fn file_link_hides_destination() {
         "[codex-rs/tui/src/markdown_render.rs](/Users/example/code/codex/codex-rs/tui/src/markdown_render.rs)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter(["codex-rs/tui/src/markdown_render.rs".cyan()]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs".cyan()
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -682,9 +683,7 @@ fn file_link_decodes_percent_encoded_bare_path_destination() {
         "[report](/Users/example/code/codex/Example%20Folder/R%C3%A9sum%C3%A9/report.md)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected = Text::from(Line::from_iter([
-        "Example Folder/Résumé/report.md".cyan(),
-    ]));
+    let expected = Text::from(Line::from_iter(["Example Folder/Résumé/report.md".cyan()]));
     assert_eq!(text, expected);
 }
 
@@ -695,7 +694,7 @@ fn file_link_appends_line_number_when_label_lacks_it() {
         Path::new("/Users/example/code/codex"),
     );
     let expected = Text::from(Line::from_iter([
-        "codex-rs/tui/src/markdown_render.rs:74".cyan(),
+        "codex-rs/tui/src/markdown_render.rs:74".cyan()
     ]));
     assert_eq!(text, expected);
 }
@@ -706,7 +705,9 @@ fn file_link_keeps_absolute_paths_outside_cwd() {
         "[README.md:74](/Users/example/code/codex/README.md:74)",
         Path::new("/Users/example/code/codex/codex-rs/tui"),
     );
-    let expected = Text::from(Line::from_iter(["/Users/example/code/codex/README.md:74".cyan()]));
+    let expected = Text::from(Line::from_iter([
+        "/Users/example/code/codex/README.md:74".cyan()
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -716,10 +717,9 @@ fn file_link_appends_hash_anchor_when_label_lacks_it() {
         "[markdown_render.rs](file:///Users/example/code/codex/codex-rs/tui/src/markdown_render.rs#L74C3)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -729,10 +729,9 @@ fn file_link_uses_target_path_for_hash_anchor() {
         "[markdown_render.rs#L74C3](file:///Users/example/code/codex/codex-rs/tui/src/markdown_render.rs#L74C3)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -742,10 +741,9 @@ fn file_link_appends_range_when_label_lacks_it() {
         "[markdown_render.rs](/Users/example/code/codex/codex-rs/tui/src/markdown_render.rs:74:3-76:9)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -755,10 +753,9 @@ fn file_link_uses_target_path_for_range() {
         "[markdown_render.rs:74:3-76:9](/Users/example/code/codex/codex-rs/tui/src/markdown_render.rs:74:3-76:9)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -768,10 +765,9 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
         "[markdown_render.rs](file:///Users/example/code/codex/codex-rs/tui/src/markdown_render.rs#L74C3-L76C9)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -795,10 +791,9 @@ fn file_link_uses_target_path_for_hash_range() {
         "[markdown_render.rs#L74C3-L76C9](file:///Users/example/code/codex/codex-rs/tui/src/markdown_render.rs#L74C3-L76C9)",
         Path::new("/Users/example/code/codex"),
     );
-    let expected =
-        Text::from(Line::from_iter([
-            "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
-        ]));
+    let expected = Text::from(Line::from_iter([
+        "codex-rs/tui/src/markdown_render.rs:74:3-76:9".cyan(),
+    ]));
     assert_eq!(text, expected);
 }
 
@@ -938,7 +933,10 @@ fn code_block_known_lang_has_syntax_colors() {
         .iter()
         .flat_map(|l| l.spans.iter())
         .any(|sp| sp.style.fg.is_some());
-    assert!(has_colored_span, "expected syntax-highlighted spans with color");
+    assert!(
+        has_colored_span,
+        "expected syntax-highlighted spans with color"
+    );
 }
 
 #[test]
@@ -967,7 +965,10 @@ fn code_block_unknown_lang_plain() {
         .iter()
         .flat_map(|l| l.spans.iter())
         .any(|sp| sp.style.fg.is_some());
-    assert!(!has_colored_span, "expected no syntax coloring for unknown lang");
+    assert!(
+        !has_colored_span,
+        "expected no syntax coloring for unknown lang"
+    );
 }
 
 #[test]
@@ -1364,7 +1365,8 @@ fn code_block_preserves_trailing_blank_lines() {
         "expected a line after 'fn main() {{}}' but content ends: {content:?}"
     );
     assert_eq!(
-        content[code_start + 1], "",
+        content[code_start + 1],
+        "",
         "trailing blank line inside code fence was lost: {content:?}"
     );
 }

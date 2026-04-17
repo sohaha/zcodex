@@ -1344,11 +1344,11 @@ mod tests {
             is_secret: false,
             options: Some(vec![
                 RequestUserInputQuestionOption {
-                    label: "Option 1".to_string(),
+                    label: "选项 1".to_string(),
                     description: "First choice.".to_string(),
                 },
                 RequestUserInputQuestionOption {
-                    label: "Option 2".to_string(),
+                    label: "选项 2".to_string(),
                     description: "Second choice.".to_string(),
                 },
                 RequestUserInputQuestionOption {
@@ -1368,11 +1368,11 @@ mod tests {
             is_secret: false,
             options: Some(vec![
                 RequestUserInputQuestionOption {
-                    label: "Option 1".to_string(),
+                    label: "选项 1".to_string(),
                     description: "First choice.".to_string(),
                 },
                 RequestUserInputQuestionOption {
-                    label: "Option 2".to_string(),
+                    label: "选项 2".to_string(),
                     description: "Second choice.".to_string(),
                 },
                 RequestUserInputQuestionOption {
@@ -1709,7 +1709,7 @@ mod tests {
             panic!("expected UserInputAnswer");
         };
         let answer = response.answers.get("q1").expect("answer missing");
-        assert_eq!(answer.answers, vec!["Option 1".to_string()]);
+        assert_eq!(answer.answers, vec!["选项 1".to_string()]);
     }
 
     #[test]
@@ -1748,13 +1748,13 @@ mod tests {
         expected.insert(
             "q1".to_string(),
             RequestUserInputAnswer {
-                answers: vec!["Option 1".to_string()],
+                answers: vec!["选项 1".to_string()],
             },
         );
         expected.insert(
             "q2".to_string(),
             RequestUserInputAnswer {
-                answers: vec!["Option 1".to_string()],
+                answers: vec!["选项 1".to_string()],
             },
         );
         assert_eq!(response.answers, expected);
@@ -1778,7 +1778,7 @@ mod tests {
             panic!("expected UserInputAnswer");
         };
         let answer = response.answers.get("q1").expect("answer missing");
-        assert_eq!(answer.answers, vec!["Option 2".to_string()]);
+        assert_eq!(answer.answers, vec!["选项 2".to_string()]);
     }
 
     #[test]
@@ -1958,7 +1958,7 @@ mod tests {
             request_event(
                 "turn-1",
                 vec![
-                    question_without_options("q1", "Notes"),
+                    question_without_options("q1", "备注"),
                     question_with_options("q2", "Pick one"),
                 ],
             ),
@@ -1982,7 +1982,7 @@ mod tests {
             request_event(
                 "turn-1",
                 vec![
-                    question_without_options("q1", "Notes"),
+                    question_without_options("q1", "备注"),
                     question_with_options("q2", "Pick one"),
                 ],
             ),
@@ -2018,14 +2018,14 @@ mod tests {
         let answer = response.answers.get("q1").expect("answer missing");
         assert_eq!(answer.answers, Vec::<String>::new());
         let answer = response.answers.get("q2").expect("answer missing");
-        assert_eq!(answer.answers, vec!["Option 1".to_string()]);
+        assert_eq!(answer.answers, vec!["选项 1".to_string()]);
     }
 
     #[test]
     fn esc_in_notes_mode_without_options_interrupts() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
-            request_event("turn-1", vec![question_without_options("q1", "Notes")]),
+            request_event("turn-1", vec![question_without_options("q1", "备注")]),
             tx,
             /*has_input_focus*/ true,
             /*enhanced_keys_supported*/ false,
@@ -2253,7 +2253,7 @@ mod tests {
             request_event(
                 "turn-1",
                 vec![
-                    question_without_options("q1", "Notes"),
+                    question_without_options("q1", "备注"),
                     question_without_options("q2", "More"),
                 ],
             ),
@@ -2265,7 +2265,7 @@ mod tests {
 
         overlay
             .composer
-            .set_text_content("Draft".to_string(), Vec::new(), Vec::new());
+            .set_text_content("草稿".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
         assert_eq!(overlay.unanswered_count(), 2);
 
@@ -2282,7 +2282,7 @@ mod tests {
             request_event(
                 "turn-1",
                 vec![
-                    question_without_options("q1", "Notes"),
+                    question_without_options("q1", "备注"),
                     question_without_options("q2", "More"),
                 ],
             ),
@@ -2302,7 +2302,7 @@ mod tests {
     fn freeform_questions_submit_empty_when_empty() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
-            request_event("turn-1", vec![question_without_options("q1", "Notes")]),
+            request_event("turn-1", vec![question_without_options("q1", "备注")]),
             tx,
             /*has_input_focus*/ true,
             /*enhanced_keys_supported*/ false,
@@ -2323,7 +2323,7 @@ mod tests {
     fn freeform_draft_is_not_submitted_without_enter() {
         let (tx, mut rx) = test_sender();
         let mut overlay = RequestUserInputOverlay::new(
-            request_event("turn-1", vec![question_without_options("q1", "Notes")]),
+            request_event("turn-1", vec![question_without_options("q1", "备注")]),
             tx,
             /*has_input_focus*/ true,
             /*enhanced_keys_supported*/ false,
@@ -2351,7 +2351,7 @@ mod tests {
             request_event(
                 "turn-1",
                 vec![
-                    question_without_options("q1", "Notes"),
+                    question_without_options("q1", "备注"),
                     question_without_options("q2", "More"),
                 ],
             ),
@@ -2363,7 +2363,7 @@ mod tests {
 
         overlay
             .composer
-            .set_text_content("Committed".to_string(), Vec::new(), Vec::new());
+            .set_text_content("已提交".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
         assert_eq!(overlay.answers[0].answer_committed, true);
@@ -2372,7 +2372,7 @@ mod tests {
         overlay.move_question(/*next*/ false);
         overlay
             .composer
-            .set_text_content("Edited".to_string(), Vec::new(), Vec::new());
+            .set_text_content("已编辑".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
         overlay.move_question(/*next*/ true);
         assert_eq!(overlay.answers[0].answer_committed, false);
@@ -2423,7 +2423,7 @@ mod tests {
         assert_eq!(
             answer.answers,
             vec![
-                "Option 2".to_string(),
+                "选项 2".to_string(),
                 "user_note: Notes for option 2".to_string(),
             ]
         );
@@ -2450,7 +2450,7 @@ mod tests {
         overlay.handle_key_event(KeyEvent::from(KeyCode::Tab));
         overlay
             .composer
-            .set_text_content("Notes".to_string(), Vec::new(), Vec::new());
+            .set_text_content("备注".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -3036,7 +3036,7 @@ mod tests {
         overlay.focus = Focus::Notes;
         overlay
             .composer
-            .set_text_content("Notes".to_string(), Vec::new(), Vec::new());
+            .set_text_content("备注".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Down));

@@ -155,6 +155,11 @@ pub struct ModelProviderInfo {
     /// Token usage threshold triggering auto-compaction of conversation history.
     #[serde(default)]
     pub model_auto_compact_token_limit: Option<i64>,
+    /// When true, selecting this provider's model in the picker skips the
+    /// reasoning-effort (thinking level) selection popup and uses the model's
+    /// default reasoning effort directly.
+    #[serde(default)]
+    pub skip_reasoning_popup: bool,
 }
 
 impl ModelProviderInfo {

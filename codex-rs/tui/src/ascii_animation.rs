@@ -27,10 +27,7 @@ impl AsciiAnimation {
         variants: &'static [&'static [&'static str]],
         variant_idx: usize,
     ) -> Self {
-        assert!(
-            !variants.is_empty(),
-            "AsciiAnimation 至少需要一个动画变体",
-        );
+        assert!(!variants.is_empty(), "AsciiAnimation 至少需要一个动画变体",);
         let clamped_idx = variant_idx.min(variants.len() - 1);
         Self {
             request_frame,

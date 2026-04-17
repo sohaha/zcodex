@@ -940,7 +940,7 @@ pub enum ApprovalDecisionActor {
 impl ApprovalDecisionActor {
     fn subject(self) -> &'static str {
         match self {
-            Self::User => "You ",
+            Self::User => "你 ",
             Self::Guardian => "Auto-reviewer ",
         }
     }
@@ -1149,7 +1149,7 @@ impl HistoryCell for TooltipHistoryCell {
             .max(1);
         let mut lines: Vec<Line<'static>> = Vec::new();
         append_markdown(
-            &format!("**Tip:** {}", self.tip),
+            &format!("**提示：** {}", self.tip),
             Some(wrap_width),
             Some(self.cwd.as_path()),
             &mut lines,
@@ -1213,27 +1213,27 @@ pub(crate) fn new_session_info(
             Line::from(vec![
                 "  ".into(),
                 "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
+                " - 创建 AGENTS.md 文件，为 Codex 提供指令".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/status".into(),
-                " - show current session configuration".dim(),
+                " - 显示当前会话配置".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/permissions".into(),
-                " - choose what Codex is allowed to do".dim(),
+                " - 选择 Codex 允许的操作".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/model".into(),
-                " - choose what model and reasoning effort to use".dim(),
+                " - 选择使用的模型和推理强度".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/review".into(),
-                " - review any changes and find issues".dim(),
+                " - 审查更改并发现问题".dim(),
             ]),
         ];
 
@@ -1583,9 +1583,9 @@ impl HistoryCell for McpToolCallCell {
             None => spinner(Some(self.start_time), self.animations_enabled),
         };
         let header_text = if status.is_some() {
-            "Called"
+            "已调用"
         } else {
-            "Calling"
+            "正在调用"
         };
 
         let invocation_line = line_to_static(&format_mcp_invocation(self.invocation.clone()));
@@ -1684,7 +1684,7 @@ fn web_search_header(completed: bool) -> &'static str {
     if completed {
         "Searched"
     } else {
-        "Searching the web"
+        "正在搜索网络"
     }
 }
 
@@ -3211,7 +3211,7 @@ mod tests {
 
         let rendered = render_transcript(&cell).join("\n");
         assert!(!rendered.contains("Model just became available"));
-        assert!(rendered.contains("To get started"));
+        assert!(rendered.contains("开始使用"));
     }
 
     #[tokio::test]
@@ -3289,10 +3289,8 @@ mod tests {
 
     #[test]
     fn error_event_oversized_input_snapshot() {
-        let cell = new_error_event(
-            "Message exceeds the maximum length of 1048576 characters (1048577 provided)."
-                .to_string(),
-        );
+        let cell =
+            new_error_event("消息超出最大长度 1048576 个字符（提供了 1048577 个）".to_string());
         let rendered = render_lines(&cell.display_lines(/*width*/ 120)).join("\n");
         insta::assert_snapshot!(rendered);
     }
@@ -3456,7 +3454,7 @@ mod tests {
     #[test]
     fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
         let summary = Line::from(vec![
-            "You ".into(),
+            "你 ".into(),
             "已批准".bold(),
             " 运行 ".into(),
             "echo something really long to ensure wrapping happens".dim(),
