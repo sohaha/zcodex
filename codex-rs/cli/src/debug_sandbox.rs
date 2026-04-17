@@ -19,7 +19,9 @@ use codex_protocol::config_types::SandboxMode;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::landlock::create_linux_sandbox_command_args_for_policies;
 #[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::{create_seatbelt_command_args, CreateSeatbeltCommandArgsParams};
+use codex_sandboxing::seatbelt::CreateSeatbeltCommandArgsParams;
+#[cfg(target_os = "macos")]
+use codex_sandboxing::seatbelt::create_seatbelt_command_args;
 use codex_utils_cli::CliConfigOverrides;
 use tokio::process::Child;
 use tokio::process::Command as TokioCommand;

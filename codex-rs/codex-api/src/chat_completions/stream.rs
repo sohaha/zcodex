@@ -28,6 +28,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tokio::time::timeout;
 use tracing::debug;
+use tracing::trace;
 
 pub(crate) fn spawn_response_stream(
     stream_response: StreamResponse,
@@ -80,6 +81,12 @@ async fn process_sse(
         match response {
             Ok(Some(Ok(event))) => {
                 if event.data == "[DONE]" {
+                    trace!(
+                        completion_reason = "done_marker",
+                        saw_finish_reason = state.saw_finish_reason,
+                        has_finishable_output = state.has_finishable_output(),
+                        "chat completions stream completed"
+                    );
                     let _ = state.complete(&tx_event).await;
                     return;
                 }
@@ -109,6 +116,18 @@ async fn process_sse(
             }
             Ok(Some(Err(err))) => {
                 if state.can_finish_after_disconnect() {
+                    let completion_reason = if state.saw_finish_reason {
+                        "finish_reason_disconnect"
+                    } else {
+                        "disconnect_with_output"
+                    };
+                    trace!(
+                        completion_reason,
+                        disconnect_kind = "stream_error",
+                        saw_finish_reason = state.saw_finish_reason,
+                        has_finishable_output = state.has_finishable_output(),
+                        "chat completions stream completed"
+                    );
                     if let Err(err) = state.complete(&tx_event).await {
                         let _ = tx_event.send(Err(err)).await;
                     }
@@ -123,6 +142,18 @@ async fn process_sse(
             }
             Ok(None) => {
                 if state.can_finish_after_disconnect() {
+                    let completion_reason = if state.saw_finish_reason {
+                        "finish_reason_disconnect"
+                    } else {
+                        "disconnect_with_output"
+                    };
+                    trace!(
+                        completion_reason,
+                        disconnect_kind = "eof",
+                        saw_finish_reason = state.saw_finish_reason,
+                        has_finishable_output = state.has_finishable_output(),
+                        "chat completions stream completed"
+                    );
                     if let Err(err) = state.complete(&tx_event).await {
                         let _ = tx_event.send(Err(err)).await;
                     }

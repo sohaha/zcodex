@@ -377,11 +377,11 @@ impl ModelProviderInfo {
             requires_openai_auth: true,
             supports_websockets: true,
             model_context_window: None,
-           model_auto_compact_token_limit: None,
-          max_output_tokens: None,
-          model_catalog: None,
-          skip_reasoning_popup: false,
-       }
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            model_catalog: None,
+            skip_reasoning_popup: false,
+        }
     }
 
     pub fn is_openai(&self) -> bool {
