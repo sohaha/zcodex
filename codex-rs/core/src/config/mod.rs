@@ -922,13 +922,57 @@ pub async fn load_config_as_toml_with_cli_overrides(
     )
     .await?;
 
-    let merged_toml = config_layer_stack.effective_config();
+    let mut merged_toml = config_layer_stack.effective_config();
+    // Apply CLI overrides (-c key=value) on top of effective config so they
+    // have the highest precedence.
+    for (path, value) in cli_overrides {
+        apply_single_override(&mut merged_toml, &path, value);
+    }
     let cfg = deserialize_config_toml_with_base(merged_toml, codex_home).map_err(|e| {
         tracing::error!("Failed to deserialize overridden config: {e}");
         e
     })?;
 
     Ok(cfg)
+}
+
+/// Apply a single CLI override onto the config root, creating intermediate
+/// tables as necessary.
+fn apply_single_override(root: &mut TomlValue, path: &str, value: TomlValue) {
+    use toml::map::Map;
+    let parts: Vec<&str> = path.split('.').collect();
+    let mut current = root;
+    for (i, part) in parts.iter().enumerate() {
+        let is_last = i == parts.len() - 1;
+        if is_last {
+            match current {
+                TomlValue::Table(tbl) => {
+                    tbl.insert((*part).to_string(), value);
+                }
+                _ => {
+                    let mut tbl = Map::new();
+                    tbl.insert((*part).to_string(), value);
+                    *current = TomlValue::Table(tbl);
+                }
+            }
+            return;
+        }
+        match current {
+            TomlValue::Table(tbl) => {
+                current = tbl
+                    .entry((*part).to_string())
+                    .or_insert_with(|| TomlValue::Table(Map::new()));
+            }
+            _ => {
+                *current = TomlValue::Table(Map::new());
+                if let TomlValue::Table(tbl) = current {
+                    current = tbl
+                        .entry((*part).to_string())
+                        .or_insert_with(|| TomlValue::Table(Map::new()));
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn deserialize_config_toml_with_base(

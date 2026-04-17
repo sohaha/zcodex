@@ -713,10 +713,13 @@ pub async fn run_main(
     }
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
     // `oss` model provider.
+    eprintln!("DEBUG: raw_overrides = {:?}", raw_overrides);
     let overrides_cli = codex_utils_cli::CliConfigOverrides { raw_overrides };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
-        // Parse `-c` overrides from the CLI.
-        Ok(v) => v,
+        Ok(v) => {
+            eprintln!("DEBUG: parsed overrides = {:?}", v);
+            v
+        }
         #[allow(clippy::print_stderr)]
         Err(e) => {
             eprintln!("Error parsing -c overrides: {e}");
