@@ -60,6 +60,10 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
         model.model_messages = None;
     }
 
+    if config.skip_reasoning_popup {
+        model.skip_reasoning_popup = true;
+    }
+
     model
 }
 
@@ -97,6 +101,7 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         input_modalities: default_input_modalities(),
         used_fallback_model_metadata: true, // this is the fallback model metadata
         supports_search_tool: false,
+        skip_reasoning_popup: false,
     }
 }
 
@@ -170,6 +175,7 @@ fn anthropic_model(
         experimental_supported_tools: Vec::new(),
         input_modalities: default_input_modalities(),
         supports_search_tool: false,
+        skip_reasoning_popup: false,
         used_fallback_model_metadata: false,
     }
 }

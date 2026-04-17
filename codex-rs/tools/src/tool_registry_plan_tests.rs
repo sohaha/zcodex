@@ -2228,6 +2228,7 @@ fn strip_descriptions_tool(spec: &mut ToolSpec) {
         | ToolSpec::ImageGeneration { .. }
         | ToolSpec::WebSearch { .. } => {}
     }
+}
 
 #[test]
 fn web_search_tool_only_registered_with_responses_wire_api() {
@@ -2245,7 +2246,9 @@ fn web_search_tool_only_registered_with_responses_wire_api() {
     });
     let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
     assert!(
-        plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        plan.specs
+            .iter()
+            .any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
         "web_search 工具应在 Responses API 模式下被注册"
     );
 
@@ -2259,7 +2262,10 @@ fn web_search_tool_only_registered_with_responses_wire_api() {
     });
     let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
     assert!(
-        !plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        !plan
+            .specs
+            .iter()
+            .any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
         "web_search 工具不应在 Chat API 模式下被注册"
     );
 
@@ -2273,7 +2279,10 @@ fn web_search_tool_only_registered_with_responses_wire_api() {
     });
     let plan = build_tool_registry_plan(&tools_config, ToolRegistryPlanParams::default());
     assert!(
-        !plan.specs.iter().any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
+        !plan
+            .specs
+            .iter()
+            .any(|spec| matches!(spec.spec, ToolSpec::WebSearch { .. })),
         "web_search 工具不应在 Anthropic API 模式下被注册"
     );
 }

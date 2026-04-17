@@ -8040,9 +8040,21 @@ impl ChatWidget {
             let preset_for_action = preset.clone();
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
                 let preset_for_event = preset_for_action.clone();
-                tx.send(AppEvent::OpenReasoningPopup {
-                    model: preset_for_event,
-                });
+                if preset_for_event.skip_reasoning_popup {
+                    let effort = preset_for_event.default_reasoning_effort;
+                    tx.send(AppEvent::UpdateModel(preset_for_event.model.clone()));
+                    tx.send(AppEvent::UpdateReasoningEffort(effort));
+                    tx.send(AppEvent::UpdatePlanModeReasoningEffort(effort));
+                    tx.send(AppEvent::PersistPlanModeReasoningEffort(effort));
+                    tx.send(AppEvent::PersistModelSelection {
+                        model: preset_for_event.model,
+                        effort,
+                    });
+                } else {
+                    tx.send(AppEvent::OpenReasoningPopup {
+                        model: preset_for_event,
+                    });
+                }
             })];
             items.push(SelectionItem {
                 name: preset.model.clone(),
@@ -8050,7 +8062,7 @@ impl ChatWidget {
                 is_current,
                 is_default: preset.is_default,
                 actions,
-                dismiss_on_select: single_supported_effort,
+                dismiss_on_select: single_supported_effort || preset.skip_reasoning_popup,
                 ..Default::default()
             });
         }

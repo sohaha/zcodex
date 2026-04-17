@@ -142,6 +142,9 @@ pub struct ModelPreset {
     pub upgrade: Option<ModelUpgrade>,
     /// Whether this preset should appear in the picker UI.
     pub show_in_picker: bool,
+    /// When true, selecting this preset skips the reasoning-effort selection popup.
+    #[serde(default)]
+    pub skip_reasoning_popup: bool,
     /// Availability NUX shown when this preset becomes accessible to the user.
     pub availability_nux: Option<ModelAvailabilityNux>,
     /// whether this model is supported in the api
@@ -297,6 +300,10 @@ pub struct ModelInfo {
     pub used_fallback_model_metadata: bool,
     #[serde(default)]
     pub supports_search_tool: bool,
+    /// When true, selecting this model in the picker skips the reasoning-effort
+    /// (thinking level) selection popup and uses the model's default directly.
+    #[serde(default)]
+    pub skip_reasoning_popup: bool,
 }
 
 impl ModelInfo {
@@ -433,6 +440,7 @@ impl From<ModelInfo> for ModelPreset {
                 .default_reasoning_level
                 .unwrap_or(ReasoningEffort::None),
             supported_reasoning_efforts: info.supported_reasoning_levels.clone(),
+            skip_reasoning_popup: info.skip_reasoning_popup,
             supports_personality,
             additional_speed_tiers: info.additional_speed_tiers,
             is_default: false, // default is the highest priority available model

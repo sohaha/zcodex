@@ -63,6 +63,7 @@ use crate::request_user_input_tool_description;
 use crate::tool_registry_plan_types::agent_type_description;
 use codex_protocol::openai_models::ApplyPatchToolType;
 use codex_protocol::openai_models::ConfigShellToolType;
+use codex_model_provider_info::WireApi;
 use std::collections::BTreeMap;
 
 pub fn build_tool_registry_plan(

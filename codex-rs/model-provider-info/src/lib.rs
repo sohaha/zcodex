@@ -376,6 +376,7 @@ impl ModelProviderInfo {
             model_context_window: None,
             model_auto_compact_token_limit: None,
             model_catalog: None,
+            skip_reasoning_popup: false,
         }
     }
 
@@ -514,5 +515,6 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         model_auto_compact_token_limit: None,
         model_catalog: None,
         supports_websockets: false,
+        skip_reasoning_popup: false,
     }
 }

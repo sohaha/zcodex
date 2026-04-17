@@ -22,7 +22,7 @@ use codex_exec_server::EnvironmentManager;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
+// use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
@@ -226,15 +226,20 @@ impl ThreadManager {
         environment_manager: Arc<EnvironmentManager>,
         analytics_events_client: Option<AnalyticsEventsClient>,
     ) -> Self {
-
-        tracing::warn!("THREAD_MANAGER_DEBUG: config.model_providers keys = {:?}", config.model_providers.keys().collect::<Vec<_>>());
+        tracing::warn!(
+            "THREAD_MANAGER_DEBUG: config.model_providers keys = {:?}",
+            config.model_providers.keys().collect::<Vec<_>>()
+        );
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
         // Debug: Check if glm provider exists and its model_catalog
         tracing::warn!("THREAD_MANAGER_DEBUG: Looking for provider glm in config.model_providers");
         if let Some(glm_provider) = config.model_providers.get("glm") {
-            tracing::warn!("THREAD_MANAGER_DEBUG: Found glm provider: base_url={:?}, model_catalog={:?}",
-                glm_provider.base_url, glm_provider.model_catalog);
+            tracing::warn!(
+                "THREAD_MANAGER_DEBUG: Found glm provider: base_url={:?}, model_catalog={:?}",
+                glm_provider.base_url,
+                glm_provider.model_catalog
+            );
         } else {
             tracing::warn!("THREAD_MANAGER_DEBUG: glm provider NOT FOUND in model_providers");
         }

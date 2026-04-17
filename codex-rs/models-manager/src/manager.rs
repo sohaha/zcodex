@@ -591,6 +591,7 @@ impl ModelsManager {
                 experimental_supported_tools: Vec::new(),
                 input_modalities: Vec::new(),
                 used_fallback_model_metadata: true,
+                skip_reasoning_popup: false,
             });
 
             // 为每个目录 slug 创建模型
