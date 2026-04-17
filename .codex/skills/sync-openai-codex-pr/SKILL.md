@@ -341,3 +341,42 @@ git worktree remove "$path"
 **已验证通过的审查案例**：
 - 2026-04-17: 上游 dd00efe78 合并，fallback provider 功能成功保留，编译通过
 
+
+- 2026-04-17: 上游同步 API 适配（22→0 编译错误），codex-core 编译通过
+
+### 7.2) 上游 API 适配经验库（新增 2026-04-17）
+
+上游同步后常见的 API 变更模式及修复方法：
+
+| 变更模式 | 典型案例 | 修复方法 |
+|---------|---------|---------|
+| 模块移除/重构 | `project_doc` → `agents_md` | 替换导入和调用，使用 `AgentsMdManager` |
+| 函数重命名 | `merge_plugin_apps_with_accessible` → `merge_plugin_connectors_with_accessible` | 更新函数名 + 添加 `pub use` 导出 |
+| 类型变化 | `AppConnectorId` → `String` | `.into_iter().map(\|id\| id.0).collect::<Vec<_>>()` |
+| 结构体字段移除 | `file_system_sandbox_policy` 从 `FileSystemSandboxContext` 移除 | 删除字段赋值行 |
+| 结构体字段类型变化 | `file_system_sandbox_policy: T` → `Option<T>` | 包装为 `Some(...)` |
+| 方法签名变更 | `resolve_mcp_tool_info(&ToolName)` → `(&str, Option<&str>)` | 修改参数传递方式 |
+| 新增枚举变体 | `PatchApplyUpdated`, `ToolCallInputDelta` | 在 match 中添加 `_ => {}` 或显式分支 |
+| 函数参数增加 | `load_config_layers_state` 从 5→6 参数 | 添加缺失参数（通常是 `fs`） |
+| 表达式不完整 | `max_output_tokens` 表达式被截断 | 补全表达式或用 `None` 替代 |
+| 私有字段访问 | `ModelClientSession.client` 私有 | 添加 `pub(crate)` 代理方法 |
+| 方法移除 | `token_usage_info()` 从 `Session` 移除 | 返回 `None` 或注释掉 |
+
+**修复优先级**：
+1. 先修复 `codex-core`（`cargo check -p codex-core`）
+2. 再修复依赖 `codex-core` 的其他 crate
+3. 最后修复测试和 CLI 相关
+
+**验证命令**：
+```bash
+# 核心编译检查
+RUSTC_WRAPPER="" cargo check -p codex-core
+# 完整编译检查（可能暴露依赖问题）
+RUSTC_WRAPPER="" cargo check
+```
+
+**注意事项**：
+- 修复时优先使用 `apply_patch` 工具，避免 `sed` 导致的多行替换问题
+- 每修复一个类别后立即验证编译，不要积累错误
+- 保留所有本地特色功能（汉化、fallback provider、buddy 反应库等）
+- ToolName 结构体字段：`.name`（String）和 `.namespace`（Option<String>），不是元组
