@@ -29,3 +29,6 @@ RIPGREP_CONFIG_PATH=/dev/null tail -F "$log_file" \
 [tasks.windows-cross-check]
 description = "在当前环境做 Windows target 交叉编译检查（native-tldr + cli）"
 run = "just windows-cross-check"
+
+[tools]
+just = "latest"

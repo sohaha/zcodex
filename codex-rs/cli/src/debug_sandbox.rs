@@ -19,7 +19,7 @@ use codex_protocol::config_types::SandboxMode;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_sandboxing::landlock::create_linux_sandbox_command_args_for_policies;
 #[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::create_seatbelt_command_args;
+use codex_sandboxing::seatbelt::{create_seatbelt_command_args, CreateSeatbeltCommandArgsParams};
 use codex_utils_cli::CliConfigOverrides;
 use tokio::process::Child;
 use tokio::process::Command as TokioCommand;
@@ -258,14 +258,15 @@ async fn run_command_under_sandbox(
     let mut child = match sandbox_type {
         #[cfg(target_os = "macos")]
         SandboxType::Seatbelt => {
-            let args = create_seatbelt_command_args(
+            let args = create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
                 command,
-                &config.permissions.file_system_sandbox_policy,
-                config.permissions.network_sandbox_policy,
-                sandbox_policy_cwd.as_path(),
-                /*enforce_managed_network*/ false,
-                network.as_ref(),
-            );
+                file_system_sandbox_policy: &config.permissions.file_system_sandbox_policy,
+                network_sandbox_policy: config.permissions.network_sandbox_policy,
+                sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
+                enforce_managed_network: false,
+                network: network.as_ref(),
+                extra_allow_unix_sockets: &[],
+            });
             let network_policy = config.permissions.network_sandbox_policy;
             spawn_debug_sandbox_child(
                 PathBuf::from("/usr/bin/sandbox-exec"),
