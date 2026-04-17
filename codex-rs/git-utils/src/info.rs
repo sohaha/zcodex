@@ -4,6 +4,12 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 
+/// Synchronous wrapper that calls get_git_repo_root internally.
+/// Kept as a separate export for callers that expect this name.
+pub fn resolve_root_git_project_for_trust(cwd: &Path) -> Option<PathBuf> {
+    get_git_repo_root(cwd)
+}
+use codex_exec_server::ExecutorFileSystem;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use futures::future::join_all;
 use schemars::JsonSchema;
@@ -614,36 +620,6 @@ async fn diff_against_sha(cwd: &Path, sha: &GitSha) -> Option<String> {
     Some(diff)
 }
 
-/// Resolve the path that should be used for trust checks. Similar to
-/// `[get_git_repo_root]`, but resolves to the root of the main
-/// repository. Handles worktrees via filesystem inspection without invoking
-/// the `git` executable.
-pub fn resolve_root_git_project_for_trust(cwd: &Path) -> Option<PathBuf> {
-    let base = if cwd.is_dir() { cwd } else { cwd.parent()? };
-    let (repo_root, dot_git) = find_ancestor_git_entry(base)?;
-    if dot_git.is_dir() {
-        return Some(canonicalize_or_raw(repo_root));
-    }
-
-    let git_dir_s = std::fs::read_to_string(&dot_git).ok()?;
-    let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
-    if git_dir_rel.is_empty() {
-        return None;
-    }
-
-    let git_dir_path = canonicalize_or_raw(
-        AbsolutePathBuf::resolve_path_against_base(git_dir_rel, &repo_root).into_path_buf(),
-    );
-    let worktrees_dir = git_dir_path.parent()?;
-    if worktrees_dir.file_name() != Some(OsStr::new("worktrees")) {
-        return None;
-    }
-
-    let common_dir = worktrees_dir.parent()?;
-    let main_repo_root = common_dir.parent()?;
-    Some(canonicalize_or_raw(main_repo_root.to_path_buf()))
-}
-
 fn find_ancestor_git_entry(base_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     let mut dir = base_dir.to_path_buf();
 
@@ -663,8 +639,17 @@ fn find_ancestor_git_entry(base_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
-fn canonicalize_or_raw(path: PathBuf) -> PathBuf {
-    std::fs::canonicalize(&path).unwrap_or(path)
+async fn find_ancestor_git_entry_with_fs(
+    fs: &dyn ExecutorFileSystem,
+    base_dir: &AbsolutePathBuf,
+) -> Option<(AbsolutePathBuf, AbsolutePathBuf)> {
+    for dir in base_dir.ancestors() {
+        let dot_git = dir.join(".git");
+        if fs.get_metadata(&dot_git, /*sandbox*/ None).await.is_ok() {
+            return Some((dir, dot_git));
+        }
+    }
+    None
 }
 
 /// Returns a list of local git branches.
@@ -705,4 +690,39 @@ pub async fn current_branch_name(cwd: &Path) -> Option<String> {
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|name| !name.is_empty())
+}
+
+/// Async version that accepts an ExecutorFileSystem for trust-based repo resolution.
+pub async fn resolve_root_git_project_for_trust_with_fs(
+    fs: &dyn ExecutorFileSystem,
+    cwd: &AbsolutePathBuf,
+) -> Option<AbsolutePathBuf> {
+    let base = match fs.get_metadata(cwd, /*sandbox*/ None).await {
+        Ok(metadata) if metadata.is_directory => cwd.clone(),
+        _ => cwd.parent()?,
+    };
+    let (repo_root, dot_git) = find_ancestor_git_entry_with_fs(fs, &base).await?;
+    if fs
+        .get_metadata(&dot_git, /*sandbox*/ None)
+        .await
+        .ok()?
+        .is_directory
+    {
+        return Some(repo_root);
+    }
+
+    let git_dir_s = fs.read_file_text(&dot_git, /*sandbox*/ None).await.ok()?;
+    let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
+    if git_dir_rel.is_empty() {
+        return None;
+    }
+
+    let git_dir_path = AbsolutePathBuf::resolve_path_against_base(git_dir_rel, repo_root.as_path());
+    let worktrees_dir = git_dir_path.parent()?;
+    if worktrees_dir.as_path().file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+
+    let common_dir = worktrees_dir.parent()?;
+    common_dir.parent()
 }

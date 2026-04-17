@@ -8,6 +8,7 @@ use codex_app_server_protocol::AppInfo;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
+use codex_model_provider_info::WireApi;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::model_info::with_config_overrides;
 use codex_protocol::config_types::WebSearchMode;
@@ -232,6 +233,7 @@ async fn multi_agent_v2_tools_config() -> ToolsConfig {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     })
 }
 
@@ -310,6 +312,7 @@ async fn model_provided_unified_exec_is_blocked_for_windows_sandboxed_policies()
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::new_workspace_write_policy(),
         windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
+        wire_api: WireApi::Responses,
     });
 
     let expected_shell_type = if cfg!(target_os = "windows") {
@@ -336,6 +339,7 @@ async fn get_memory_requires_feature_flag() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -368,6 +372,7 @@ async fn assert_model_tools(
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let router = ToolRouter::from_config(
         &tools_config,
@@ -417,6 +422,7 @@ async fn test_build_specs_gpt5_codex_default() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -441,6 +447,7 @@ async fn test_build_specs_gpt51_codex_default() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -467,6 +474,7 @@ async fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -493,6 +501,7 @@ async fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -517,6 +526,7 @@ async fn test_gpt_5_1_codex_max_defaults() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -541,6 +551,7 @@ async fn test_codex_5_1_mini_defaults() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -564,6 +575,7 @@ async fn test_gpt_5_defaults() {
             "update_plan",
             "request_user_input",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -588,6 +600,7 @@ async fn test_gpt_5_1_defaults() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -614,6 +627,7 @@ async fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "request_user_input",
             "apply_patch",
             "web_search",
+            "image_generation",
             "view_image",
             "spawn_agent",
             "send_input",
@@ -641,6 +655,7 @@ async fn test_build_specs_default_shell_present() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -676,6 +691,7 @@ async fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let user_shell = Shell {
         shell_type: ShellType::Zsh,
@@ -796,6 +812,7 @@ async fn tool_suggest_requires_apps_and_plugins_features() {
             session_source: SessionSource::Cli,
             sandbox_policy: &SandboxPolicy::DangerFullAccess,
             windows_sandbox_level: WindowsSandboxLevel::Disabled,
+            wire_api: WireApi::Responses,
         });
         let (tools, _) = build_specs_with_discoverable_tools(
             &tools_config,
@@ -832,6 +849,7 @@ async fn search_tool_description_handles_no_enabled_mcp_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -866,6 +884,7 @@ async fn search_tool_description_falls_back_to_connector_name_without_descriptio
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -917,6 +936,7 @@ async fn search_tool_registers_namespaced_mcp_tool_aliases() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (_, registry) = build_specs(
@@ -1002,6 +1022,7 @@ async fn direct_mcp_tools_register_namespaced_handlers() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (_, registry) = build_specs(
@@ -1039,6 +1060,7 @@ async fn unavailable_mcp_tools_are_exposed_as_dummy_function_tools() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let unavailable_tool = ToolName::namespaced("mcp__codex_apps__calendar", "_create_event");
@@ -1061,9 +1083,16 @@ async fn unavailable_mcp_tools_are_exposed_as_dummy_function_tools() {
         panic!("unavailable MCP tool should be exposed as a function tool");
     };
     assert!(description.contains("not currently available"));
+    let JsonSchema::Object {
+        additional_properties,
+        ..
+    } = parameters
+    else {
+        panic!("expected object schema");
+    };
     assert_eq!(
-        parameters.additional_properties,
-        Some(AdditionalProperties::Boolean(false))
+        additional_properties,
+        &Some(AdditionalProperties::Boolean(false))
     );
     assert!(registry.has_handler(&ToolName::namespaced(
         "mcp__codex_apps__calendar",
@@ -1088,6 +1117,7 @@ async fn test_mcp_tool_property_missing_type_defaults_to_string() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1151,6 +1181,7 @@ async fn test_mcp_tool_preserves_integer_schema() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1213,6 +1244,7 @@ async fn test_mcp_tool_array_without_items_gets_default_string_items() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1277,6 +1309,7 @@ async fn test_mcp_tool_anyof_defaults_to_string() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
 
     let (tools, _) = build_specs(
@@ -1346,6 +1379,7 @@ async fn test_get_openai_tools_mcp_tools_with_additional_properties_schema() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,

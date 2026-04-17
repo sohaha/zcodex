@@ -1,5 +1,5 @@
-use crate::codex::TurnContext;
 use crate::config::AutoTldrRoutingMode;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ToolRoutingDirectives;
@@ -180,8 +180,8 @@ fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
 #[cfg(test)]
 mod tests {
     use super::rewrite_grep_files_to_tldr;
-    use crate::codex::make_session_and_context;
     use crate::config::AutoTldrRoutingMode;
+    use crate::session::tests::make_session_and_context;
     use crate::tools::context::ToolPayload;
     use crate::tools::rewrite::AutoTldrContext;
     use crate::tools::rewrite::ProblemKind;

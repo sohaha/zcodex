@@ -1,10 +1,10 @@
 use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::next_thread_spawn_depth;
 use crate::agent::status::is_final;
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::config::Config;
 use crate::function_tool::FunctionCallError;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -317,7 +317,7 @@ mod spawn_agents_on_csv {
         );
         let job_suffix = &job_id[..8];
         let job_name = format!("agent-job-{job_suffix}");
-        let effective_agent_config = build_agent_shared_config(turn.as_ref()).await?;
+        let effective_agent_config = build_agent_shared_config(turn.as_ref())?;
         let max_runtime_seconds = normalize_max_runtime_seconds(
             args.max_runtime_seconds
                 .or(effective_agent_config.agent_job_max_runtime_seconds),
@@ -531,7 +531,7 @@ async fn build_runner_options(
     requested_concurrency: Option<usize>,
 ) -> Result<JobRunnerOptions, FunctionCallError> {
     let base_instructions = session.get_base_instructions().await;
-    let spawn_config = build_agent_spawn_config(&base_instructions, turn.as_ref()).await?;
+    let spawn_config = build_agent_spawn_config(&base_instructions, turn.as_ref())?;
     let session_source = turn.session_source.clone();
     let child_depth = next_thread_spawn_depth(&session_source);
     let max_depth = spawn_config.agent_max_depth;

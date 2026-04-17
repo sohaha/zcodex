@@ -1,11 +1,11 @@
 use crate::Prompt;
 use crate::ResponseEvent;
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::compact::content_items_to_text;
 use crate::config::Config;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use codex_config::types::BuddyReactionMode;
 use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BuddySoul;

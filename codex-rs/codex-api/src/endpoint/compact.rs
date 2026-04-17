@@ -22,12 +22,12 @@ use serde_json::json;
 use serde_json::to_value;
 use std::sync::Arc;
 
-pub struct CompactClient<T: HttpTransport, A: AuthProvider> {
-    session: EndpointSession<T, A>,
+pub struct CompactClient<T: HttpTransport> {
+    session: EndpointSession<T>,
 }
 
-impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
-    pub fn new(transport: T, provider: Provider, auth: A) -> Self {
+impl<T: HttpTransport> CompactClient<T> {
+    pub fn new(transport: T, provider: Provider, auth: Arc<dyn AuthProvider>) -> Self {
         Self {
             session: EndpointSession::new(transport, provider, auth),
         }
@@ -273,10 +273,7 @@ mod tests {
 
     #[test]
     fn path_is_responses_compact() {
-        assert_eq!(
-            CompactClient::<DummyTransport, DummyAuth>::path(),
-            "responses/compact"
-        );
+        assert_eq!(CompactClient::<DummyTransport>::path(), "responses/compact");
     }
 
     fn provider(base_url: &str, wire_api: WireApi) -> Provider {

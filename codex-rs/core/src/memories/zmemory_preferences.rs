@@ -1,11 +1,11 @@
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::config::ConfigBuilder;
 use crate::config::types::ZmemoryConfig;
 use crate::memories::zmemory_contract::StablePreferenceMemory;
-use crate::protocol::EventMsg;
-use crate::protocol::WarningEvent;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;

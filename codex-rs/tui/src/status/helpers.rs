@@ -1,6 +1,6 @@
 use crate::exec_command::relativize_to_home;
+use crate::legacy_core::AgentsMdManager;
 use crate::legacy_core::config::Config;
-use crate::legacy_core::discover_project_doc_paths;
 use crate::status::StatusAccountDisplay;
 use crate::text_formatting;
 use chrono::DateTime;
@@ -98,15 +98,9 @@ pub(crate) fn compose_agents_summary(config: &Config, paths: &[AbsolutePathBuf])
 }
 
 pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<String> {
-    let mut paths: Vec<AbsolutePathBuf> = Vec::new();
-    if let Some(path) = config.user_instructions_path.as_ref() {
-        paths.push(path.clone());
-    }
-    paths.extend(
-        discover_project_doc_paths(config, LOCAL_FS.as_ref())
-            .await?
-            .into_iter(),
-    );
+    let paths: Vec<AbsolutePathBuf> = AgentsMdManager::new(config)
+        .instruction_sources(LOCAL_FS.as_ref())
+        .await;
     Ok(compose_agents_summary(config, &paths))
 }
 

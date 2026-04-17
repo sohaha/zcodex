@@ -1,4 +1,4 @@
-use crate::codex::make_session_and_context;
+use crate::session::tests::make_session_and_context;
 use crate::config::AutoTldrRoutingMode;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::ToolRoutingDirectives;
@@ -10,7 +10,7 @@ use pretty_assertions::assert_eq;
 
 use super::ToolCallRuntime;
 
-async fn make_turn_context() -> crate::codex::TurnContext {
+async fn make_turn_context() -> crate::session::turn_context::TurnContext {
     let (_session, turn) = make_session_and_context().await;
     turn
 }

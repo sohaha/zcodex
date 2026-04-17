@@ -544,7 +544,7 @@ exit 64
     let rewritten = maybe_wrap_shell_lc_with_snapshot(
         &command,
         &session_shell,
-        dir.path(),
+        &dir.path().abs(),
         &explicit_env_overrides,
         &env,
     );
@@ -583,7 +583,7 @@ fn maybe_wrap_shell_lc_with_snapshot_unsets_invalid_ripgrep_config_path() {
         let rewritten = maybe_wrap_shell_lc_with_snapshot(
             &command,
             &session_shell,
-            dir.path(),
+            &dir.path().abs(),
             &HashMap::new(),
             &env,
         );

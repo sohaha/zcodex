@@ -179,6 +179,6 @@ pub struct Cli {
     )]
     pub no_alt_screen: bool,
 
-    #[clap(skip)]
+    #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
 }

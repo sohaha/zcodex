@@ -2,37 +2,20 @@
 
 - upstream_repo: https://github.com/openai/codex.git
 - upstream_branch: main
-- last_synced_sha: bd61737e8
-- last_synced_at_utc: 2025-04-16T12:28:00Z
+- last_synced_sha: 92cf90277d4f3bcdee8457047c710db58d9fc715
+- last_synced_at_utc: 2026-04-17T21:11:50Z
 - last_synced_base_branch: web
-- last_sync_commit: 401ce0855
-- notes: 完整合并上游 openai/main (bd61737e8) 到 web。包含 Async config loading (#18022)、memories API、memories menu、dismiss stale requests 功能。修复 30+ 文件编译错误，适配上游 API 变更。保留本地中文界面、同步 config loading、native-tldr 等分叉特性。
-- 本轮额外处理:
-  - URL 替换 openai/codex → sohaha/zcodex (install.sh, install.ps1, announcement_tip.toml, update_action.rs, codex-pr-body SKILL.md, TUI 快照)
-  - 保留本地中文 README.md 和 slash_command.rs
-  - 解决 memories_settings_view.rs 冲突（保留中文版）
-  - 汉化 chatwidget.rs/history_cell.rs 新增上游消息
-  - codex-core: 移除 UnavailableDummyTools、修复 MCP sandbox policy、resolve_mcp_tool_info
-  - codex-config: get_active_project 和 derive_sandbox_policy 改为同步（本地特性）
-  - codex-mcp: notify_sandbox_state_change → set_sandbox_policy
-  - codex-tui/exec/cli/app-server: 移除 codex-thread-store 依赖，使用本地 API
-  - codex-app-server: 移除 reset_memory_data_for_fresh_start、修复 Config::load_default_with_cli_overrides
-- 本地分叉保留:
-  - 中文界面完整汉化
-  - 同步配置加载（非 async）
-  - 本地 native-tldr（无 SearchMatchMode）
-  - 无 codex-thread-store（使用不同状态管理）
-  - URL 替换 openai/codex → sohaha/zcodex
-  - 保留本地中文 README.md 和 slash_command.rs
-  - 解决 memories_settings_view.rs 冲突（保留中文版）
-  - 汉化 chatwidget.rs/history_cell.rs 新增上游消息
-  - codex-core: 移除 UnavailableDummyTools、修复 MCP sandbox policy
-  - codex-config: get_active_project 和 derive_sandbox_policy 改为同步
-  - codex-mcp: notify_sandbox_state_change → set_sandbox_policy
-  - codex-tui/exec/cli/app-server: 移除 codex-thread-store 依赖
-- 本地分叉保留:
-  - 中文界面完整汉化
-  - 同步配置加载
-  - 本地 native-tldr
-  - 无 codex-thread-store
-  - 无 Buddy 功能
+- last_sync_commit: 6e9f21aca65025e25d4ac49c2015a8ffdf9fd2a6
+- notes: |
+    完整合并上游 openai/main (92cf90277) 到 web。包含：
+    - Session/Codex 模块拆分（codex.rs → session/*.rs）
+    - model-provider crate 新增
+    - config filesystem abstraction 重构
+    - Remote thread store
+    - config aliases
+    - PermissionRequest hooks
+    - tool_search 动态工具搜索
+    - apply_patch 流式支持
+    - Guardian -> Auto-Review 重命名
+    - glob deny-read sandbox 策略
+    - 保留所有本地特色：WireApi streaming、中文汉化、buddy、zmemory、ztok、codex-api、URL替换

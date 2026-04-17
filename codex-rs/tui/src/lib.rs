@@ -511,6 +511,7 @@ async fn lookup_session_target_by_name_with_app_server(
                 cursor: cursor.clone(),
                 limit: Some(100),
                 sort_key: Some(AppServerThreadSortKey::UpdatedAt),
+                sort_direction: None,
                 model_providers: None,
                 source_kinds: Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
                 archived: Some(false),
@@ -606,6 +607,7 @@ fn latest_session_lookup_params(
         cursor: None,
         limit: Some(1),
         sort_key: Some(AppServerThreadSortKey::UpdatedAt),
+        sort_direction: None,
         model_providers: if is_remote {
             None
         } else {
@@ -713,10 +715,13 @@ pub async fn run_main(
     }
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
     // `oss` model provider.
+    eprintln!("DEBUG: raw_overrides = {:?}", raw_overrides);
     let overrides_cli = codex_utils_cli::CliConfigOverrides { raw_overrides };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
-        // Parse `-c` overrides from the CLI.
-        Ok(v) => v,
+        Ok(v) => {
+            eprintln!("DEBUG: parsed overrides = {:?}", v);
+            v
+        }
         #[allow(clippy::print_stderr)]
         Err(e) => {
             eprintln!("Error parsing -c overrides: {e}");
@@ -2278,6 +2283,7 @@ mod tests {
             approval_policy: config.permissions.approval_policy.value(),
             sandbox_policy: config.permissions.sandbox_policy.get().clone(),
             network: None,
+            file_system_sandbox_policy: None,
             model,
             personality: None,
             collaboration_mode: None,

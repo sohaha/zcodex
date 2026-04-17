@@ -31,8 +31,6 @@ use tracing::trace;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
 use crate::exec_env::create_env;
@@ -40,6 +38,8 @@ use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::normalize_output_image_detail;
 use crate::sandboxing::ExecOptions;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use codex_sandboxing::SandboxCommand;
@@ -1039,18 +1039,13 @@ impl JsReplManager {
         }
 
         let sandbox = SandboxManager::new();
-        let has_managed_network_requirements = turn
-            .config
-            .config_layer_stack
-            .requirements_toml()
-            .network
-            .is_some();
+        let managed_network_active = turn.network.is_some();
         let sandbox_type = sandbox.select_initial(
             &turn.file_system_sandbox_policy,
             turn.network_sandbox_policy,
             SandboxablePreference::Auto,
             turn.windows_sandbox_level,
-            has_managed_network_requirements,
+            managed_network_active,
         );
         let command = SandboxCommand {
             program: node_path.into_os_string(),
@@ -1073,7 +1068,7 @@ impl JsReplManager {
                 file_system_policy: &turn.file_system_sandbox_policy,
                 network_policy: turn.network_sandbox_policy,
                 sandbox: sandbox_type,
-                enforce_managed_network: has_managed_network_requirements,
+                enforce_managed_network: managed_network_active,
                 network: None,
                 sandbox_policy_cwd: &turn.cwd,
                 codex_linux_sandbox_exe: turn.codex_linux_sandbox_exe.as_deref(),
@@ -1612,7 +1607,10 @@ impl JsReplManager {
             .unwrap_or_else(|| ToolName::plain(req.tool_name.clone()));
         let (tool_call_name, payload) = if let Some(tool_info) = exec
             .session
-            .resolve_mcp_tool_info(requested_tool_name.as_str(), None)
+            .resolve_mcp_tool_info(
+                &requested_tool_name.name,
+                requested_tool_name.namespace.as_deref(),
+            )
             .await
         {
             (

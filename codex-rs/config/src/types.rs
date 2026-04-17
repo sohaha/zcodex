@@ -19,6 +19,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use wildmatch::WildMatchPattern;
 
 use schemars::JsonSchema;
@@ -31,6 +32,10 @@ pub const DEFAULT_MEMORIES_MAX_ROLLOUT_AGE_DAYS: i64 = 30;
 pub const DEFAULT_MEMORIES_MIN_ROLLOUT_IDLE_HOURS: i64 = 6;
 pub const DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 256;
 pub const DEFAULT_MEMORIES_MAX_UNUSED_DAYS: i64 = 30;
+const MIN_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 1;
+const MAX_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION: usize = 4096;
+const MIN_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 1;
+const MAX_MEMORIES_MAX_ROLLOUTS_PER_STARTUP: usize = 128;
 
 const fn default_enabled() -> bool {
     true
@@ -191,19 +196,22 @@ pub struct ToolSuggestConfig {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct MemoriesToml {
-    /// When `true`, web searches and MCP tool calls mark the thread `memory_mode` as `"polluted"`.
-    pub no_memories_if_mcp_or_web_search: Option<bool>,
+    /// When `true`, external context sources mark the thread `memory_mode` as `"polluted"`.
+    #[serde(alias = "no_memories_if_mcp_or_web_search")]
+    pub disable_on_external_context: Option<bool>,
     /// When `false`, newly created threads are stored with `memory_mode = "disabled"` in the state DB.
     pub generate_memories: Option<bool>,
     /// When `false`, skip injecting memory usage instructions into developer prompts.
     pub use_memories: Option<bool>,
     /// Maximum number of recent raw memories retained for global consolidation.
+    #[schemars(range(min = 1, max = 4096))]
     pub max_raw_memories_for_consolidation: Option<usize>,
     /// Maximum number of days since a memory was last used before it becomes ineligible for phase 2 selection.
     pub max_unused_days: Option<i64>,
     /// Maximum age of the threads used for memories.
     pub max_rollout_age_days: Option<i64>,
     /// Maximum number of rollout candidates processed per pass.
+    #[schemars(range(min = 1, max = 128))]
     pub max_rollouts_per_startup: Option<usize>,
     /// Minimum idle time between last thread activity and memory creation (hours). > 12h recommended.
     pub min_rollout_idle_hours: Option<i64>,
@@ -216,7 +224,7 @@ pub struct MemoriesToml {
 /// Effective memories settings after defaults are applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoriesConfig {
-    pub no_memories_if_mcp_or_web_search: bool,
+    pub disable_on_external_context: bool,
     pub generate_memories: bool,
     pub use_memories: bool,
     pub max_raw_memories_for_consolidation: usize,
@@ -231,7 +239,7 @@ pub struct MemoriesConfig {
 impl Default for MemoriesConfig {
     fn default() -> Self {
         Self {
-            no_memories_if_mcp_or_web_search: false,
+            disable_on_external_context: false,
             generate_memories: true,
             use_memories: true,
             max_raw_memories_for_consolidation: DEFAULT_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION,
@@ -249,15 +257,18 @@ impl From<MemoriesToml> for MemoriesConfig {
     fn from(toml: MemoriesToml) -> Self {
         let defaults = Self::default();
         Self {
-            no_memories_if_mcp_or_web_search: toml
-                .no_memories_if_mcp_or_web_search
-                .unwrap_or(defaults.no_memories_if_mcp_or_web_search),
+            disable_on_external_context: toml
+                .disable_on_external_context
+                .unwrap_or(defaults.disable_on_external_context),
             generate_memories: toml.generate_memories.unwrap_or(defaults.generate_memories),
             use_memories: toml.use_memories.unwrap_or(defaults.use_memories),
             max_raw_memories_for_consolidation: toml
                 .max_raw_memories_for_consolidation
                 .unwrap_or(defaults.max_raw_memories_for_consolidation)
-                .min(4096),
+                .clamp(
+                    MIN_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION,
+                    MAX_MEMORIES_MAX_RAW_MEMORIES_FOR_CONSOLIDATION,
+                ),
             max_unused_days: toml
                 .max_unused_days
                 .unwrap_or(defaults.max_unused_days)
@@ -269,7 +280,10 @@ impl From<MemoriesToml> for MemoriesConfig {
             max_rollouts_per_startup: toml
                 .max_rollouts_per_startup
                 .unwrap_or(defaults.max_rollouts_per_startup)
-                .min(128),
+                .clamp(
+                    MIN_MEMORIES_MAX_ROLLOUTS_PER_STARTUP,
+                    MAX_MEMORIES_MAX_ROLLOUTS_PER_STARTUP,
+                ),
             min_rollout_idle_hours: toml
                 .min_rollout_idle_hours
                 .unwrap_or(defaults.min_rollout_idle_hours)
@@ -769,6 +783,9 @@ pub struct MarketplaceConfig {
     /// Last time Codex successfully added or refreshed this marketplace.
     #[serde(default)]
     pub last_updated: Option<String>,
+    /// Git revision Codex last successfully activated for this marketplace.
+    #[serde(default)]
+    pub last_revision: Option<String>,
     /// Source kind used to install this marketplace.
     #[serde(default)]
     pub source_type: Option<MarketplaceSourceType>,
@@ -927,3 +944,17 @@ impl Default for ShellEnvironmentPolicy {
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod tests;
+
+/// Zmemory subsystem settings in TOML format.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ZmemoryToml {
+    /// Optional override for the zmemory database path.
+    pub path: Option<PathBuf>,
+    /// Optional writable memory domains for the current runtime profile.
+    pub valid_domains: Option<Vec<String>>,
+    /// Optional boot anchor URIs for the current runtime profile.
+    pub core_memory_uris: Option<Vec<String>>,
+    /// Optional namespace override for the current runtime profile.
+    pub namespace: Option<String>,
+}

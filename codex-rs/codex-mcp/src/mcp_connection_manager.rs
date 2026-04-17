@@ -50,8 +50,10 @@ use codex_protocol::protocol::McpStartupStatus;
 use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_rmcp_client::ElicitationResponse;
+use codex_rmcp_client::LocalStdioServerLauncher;
 use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::SendElicitation;
+use codex_rmcp_client::StdioServerLauncher;
 use futures::future::BoxFuture;
 use futures::future::FutureExt;
 use futures::future::Shared;
@@ -770,12 +772,13 @@ impl McpConnectionManager {
             let submit_id = startup_submit_id.clone();
             let auth_entry = auth_entries.get(&server_name).cloned();
             join_set.spawn(async move {
-                let outcome = async_managed_client.client().await;
+                let mut outcome = async_managed_client.client().await;
                 if cancel_token.is_cancelled() {
-                    return (server_name, Err(StartupOutcomeError::Cancelled));
+                    outcome = Err(StartupOutcomeError::Cancelled);
                 }
                 let status = match &outcome {
                     Ok(_) => McpStartupStatus::Ready,
+                    Err(StartupOutcomeError::Cancelled) => McpStartupStatus::Cancelled,
                     Err(error) => {
                         let error_str = mcp_init_error_display(
                             server_name.as_str(),
@@ -1535,7 +1538,8 @@ async fn make_rmcp_client(
                     .map(|(key, value)| (key.into(), value.into()))
                     .collect::<HashMap<_, _>>()
             });
-            RmcpClient::new_stdio_client(command_os, args_os, env_os, &env_vars, cwd)
+            let launcher = Arc::new(LocalStdioServerLauncher) as Arc<dyn StdioServerLauncher>;
+            RmcpClient::new_stdio_client(command_os, args_os, env_os, &env_vars, cwd, launcher)
                 .await
                 .map_err(|err| StartupOutcomeError::from(anyhow!(err)))
         }

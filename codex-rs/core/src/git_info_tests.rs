@@ -1,3 +1,4 @@
+use codex_exec_server::LOCAL_FS;
 use codex_git_utils::GitInfo;
 use codex_git_utils::GitSha;
 use codex_git_utils::collect_git_info;
@@ -5,45 +6,48 @@ use codex_git_utils::get_has_changes;
 use codex_git_utils::git_diff_to_remote;
 use codex_git_utils::recent_commits;
 use codex_git_utils::resolve_root_git_project_for_trust;
+use codex_utils_path::normalize_for_path_comparison;
+use core_test_support::PathBufExt;
+use core_test_support::PathExt;
 use core_test_support::skip_if_sandbox;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 use tokio::process::Command;
 
-fn git_envs() -> [(&'static str, &'static str); 2] {
-    [
-        ("GIT_CONFIG_GLOBAL", "/dev/null"),
-        ("GIT_CONFIG_NOSYSTEM", "1"),
-    ]
-}
-
 // Helper function to create a test git repository
 async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
     let repo_path = temp_dir.path().join("repo");
     fs::create_dir(&repo_path).expect("Failed to create repo dir");
+    let envs = vec![
+        ("GIT_CONFIG_GLOBAL", "/dev/null"),
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+    ];
 
     // Initialize git repo
     Command::new("git")
-        .envs(git_envs())
+        .envs(envs.clone())
         .args(["init"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to init git repo");
 
     // Configure git user (required for commits)
     Command::new("git")
-        .envs(git_envs())
+        .envs(envs.clone())
         .args(["config", "user.name", "Test User"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to set git user name");
 
     Command::new("git")
-        .envs(git_envs())
+        .envs(envs.clone())
         .args(["config", "user.email", "test@example.com"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to set git user email");
 
     // Create a test file and commit it
@@ -51,17 +55,19 @@ async fn create_test_git_repo(temp_dir: &TempDir) -> PathBuf {
     fs::write(&test_file, "test content").expect("Failed to write test file");
 
     Command::new("git")
-        .envs(git_envs())
+        .envs(envs.clone())
         .args(["add", "."])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to add files");
 
     Command::new("git")
-        .envs(git_envs())
+        .envs(envs.clone())
         .args(["commit", "-m", "Initial commit"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to commit");
 
     repo_path
@@ -86,48 +92,48 @@ async fn test_recent_commits_orders_and_limits() {
     // Make three distinct commits with small delays to ensure ordering by timestamp.
     fs::write(repo_path.join("file.txt"), "one").unwrap();
     Command::new("git")
-        .envs(git_envs())
         .args(["add", "file.txt"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git add");
     Command::new("git")
-        .envs(git_envs())
         .args(["commit", "-m", "first change"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git commit 1");
 
     sleep(Duration::from_millis(1100)).await;
 
     fs::write(repo_path.join("file.txt"), "two").unwrap();
     Command::new("git")
-        .envs(git_envs())
         .args(["add", "file.txt"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git add 2");
     Command::new("git")
-        .envs(git_envs())
         .args(["commit", "-m", "second change"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git commit 2");
 
     sleep(Duration::from_millis(1100)).await;
 
     fs::write(repo_path.join("file.txt"), "three").unwrap();
     Command::new("git")
-        .envs(git_envs())
         .args(["add", "file.txt"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git add 3");
     Command::new("git")
-        .envs(git_envs())
         .args(["commit", "-m", "third change"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("git commit 3");
 
     // Request the latest 3 commits; should be our three changes in reverse time order.
@@ -149,18 +155,21 @@ async fn create_test_git_repo_with_remote(temp_dir: &TempDir) -> (PathBuf, Strin
     Command::new("git")
         .args(["init", "--bare", remote_path.to_str().unwrap()])
         .output()
+        .await
         .expect("Failed to init bare remote");
 
     Command::new("git")
         .args(["remote", "add", "origin", remote_path.to_str().unwrap()])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to add remote");
 
     let output = Command::new("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to get branch");
     let branch = String::from_utf8(output.stdout).unwrap().trim().to_string();
 
@@ -168,6 +177,7 @@ async fn create_test_git_repo_with_remote(temp_dir: &TempDir) -> (PathBuf, Strin
         .args(["push", "-u", "origin", &branch])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to push initial commit");
 
     (repo_path, branch)
@@ -185,7 +195,9 @@ async fn test_collect_git_info_git_repository() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await;
 
-    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path)
+        .await
+        .expect("Should collect git info from repo");
 
     // Should have commit hash
     assert!(git_info.commit_hash.is_some());
@@ -217,14 +229,18 @@ async fn test_collect_git_info_with_remote() {
         ])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to add remote");
 
-    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path)
+        .await
+        .expect("Should collect git info from repo");
 
     let remote_url_output = Command::new("git")
         .args(["remote", "get-url", "origin"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to read remote url");
     // Some dev environments rewrite remotes (e.g., force SSH), so compare against
     // whatever URL Git reports instead of a fixed placeholder.
@@ -247,6 +263,7 @@ async fn test_collect_git_info_detached_head() {
         .args(["rev-parse", "HEAD"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to get HEAD");
     let commit_hash = String::from_utf8(output.stdout).unwrap().trim().to_string();
 
@@ -255,9 +272,12 @@ async fn test_collect_git_info_detached_head() {
         .args(["checkout", &commit_hash])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to checkout commit");
 
-    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path)
+        .await
+        .expect("Should collect git info from repo");
 
     // Should have commit hash
     assert!(git_info.commit_hash.is_some());
@@ -275,9 +295,12 @@ async fn test_collect_git_info_with_branch() {
         .args(["checkout", "-b", "feature-branch"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to create branch");
 
-    let git_info = collect_git_info(&repo_path).expect("Should collect git info from repo");
+    let git_info = collect_git_info(&repo_path)
+        .await
+        .expect("Should collect git info from repo");
 
     // Should have the new branch name
     assert_eq!(git_info.branch, Some("feature-branch".to_string()));
@@ -323,13 +346,16 @@ async fn test_get_git_working_tree_state_clean_repo() {
         .args(["rev-parse", &format!("origin/{branch}")])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to rev-parse remote");
     let remote_sha = String::from_utf8(remote_sha.stdout)
         .unwrap()
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path)
+        .await
+        .expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.is_empty());
 }
@@ -347,13 +373,16 @@ async fn test_get_git_working_tree_state_with_changes() {
         .args(["rev-parse", &format!("origin/{branch}")])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to rev-parse remote");
     let remote_sha = String::from_utf8(remote_sha.stdout)
         .unwrap()
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path)
+        .await
+        .expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.contains("test.txt"));
     assert!(state.diff.contains("untracked.txt"));
@@ -368,52 +397,57 @@ async fn test_get_git_working_tree_state_branch_fallback() {
         .args(["checkout", "-b", "feature"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to create feature branch");
     Command::new("git")
         .args(["push", "-u", "origin", "feature"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to push feature branch");
 
     Command::new("git")
         .args(["checkout", "-b", "local-branch"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to create local branch");
 
     let remote_sha = Command::new("git")
         .args(["rev-parse", "origin/feature"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to rev-parse remote");
     let remote_sha = String::from_utf8(remote_sha.stdout)
         .unwrap()
         .trim()
         .to_string();
 
-    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path)
+        .await
+        .expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
 }
 
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_returns_none_outside_repo() {
     let tmp = TempDir::new().expect("tempdir");
-    assert!(resolve_root_git_project_for_trust(tmp.path()).is_none());
+    assert!(resolve_root_git_project_for_trust(&tmp.path().abs()).is_none());
 }
 
 #[tokio::test]
 async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
-    let repo_path = create_test_git_repo(&temp_dir).await;
-    let expected = std::fs::canonicalize(&repo_path).unwrap();
+    let repo_path = create_test_git_repo(&temp_dir).await.abs();
 
     assert_eq!(
         resolve_root_git_project_for_trust(&repo_path),
-        Some(expected.clone())
+        Some(repo_path.clone())
     );
     let nested = repo_path.join("sub/dir");
-    std::fs::create_dir_all(&nested).unwrap();
-    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
+    std::fs::create_dir_all(nested.as_path()).unwrap();
+    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(repo_path));
 }
 
 #[tokio::test]
@@ -435,15 +469,27 @@ async fn resolve_root_git_project_for_trust_detects_worktree_and_returns_main_ro
         .output()
         .expect("git worktree add");
 
-    let expected = std::fs::canonicalize(&repo_path).ok();
-    let got =
-        resolve_root_git_project_for_trust(&wt_root).and_then(|p| std::fs::canonicalize(p).ok());
-    assert_eq!(got, expected);
+    let expected = normalize_for_path_comparison(&repo_path).unwrap();
+    let wt_root = wt_root.abs();
+    let got = resolve_root_git_project_for_trust(&wt_root);
+    assert_eq!(
+        got.as_ref()
+            .map(normalize_for_path_comparison)
+            .transpose()
+            .unwrap(),
+        Some(expected.clone())
+    );
     let nested = wt_root.join("nested/sub");
-    std::fs::create_dir_all(&nested).unwrap();
-    let got_nested =
-        resolve_root_git_project_for_trust(&nested).and_then(|p| std::fs::canonicalize(p).ok());
-    assert_eq!(got_nested, expected);
+    std::fs::create_dir_all(nested.as_path()).unwrap();
+    let got_nested = resolve_root_git_project_for_trust(&nested);
+    assert_eq!(
+        got_nested
+            .as_ref()
+            .map(normalize_for_path_comparison)
+            .transpose()
+            .unwrap(),
+        Some(expected)
+    );
 }
 
 #[tokio::test]
@@ -462,15 +508,14 @@ async fn resolve_root_git_project_for_trust_detects_worktree_pointer_without_git
     )
     .unwrap();
 
-    let expected = std::fs::canonicalize(&repo_root).unwrap();
+    let expected = repo_root.abs();
+    let worktree_root = worktree_root.abs();
     assert_eq!(
         resolve_root_git_project_for_trust(&worktree_root),
         Some(expected.clone())
     );
-    assert_eq!(
-        resolve_root_git_project_for_trust(&worktree_root.join("nested")).await,
-        Some(expected)
-    );
+    let nested = worktree_root.join("nested");
+    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
 }
 
 #[tokio::test]
@@ -489,8 +534,10 @@ async fn resolve_root_git_project_for_trust_non_worktrees_gitdir_returns_none() 
     )
     .unwrap();
 
+    let proj = proj.abs();
     assert!(resolve_root_git_project_for_trust(&proj).is_none());
-    assert!(resolve_root_git_project_for_trust(&proj.join("nested")).is_none());
+    let nested = proj.join("nested");
+    assert!(resolve_root_git_project_for_trust(&nested).is_none());
 }
 
 #[tokio::test]
@@ -502,6 +549,7 @@ async fn test_get_git_working_tree_state_unpushed_commit() {
         .args(["rev-parse", &format!("origin/{branch}")])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to rev-parse remote");
     let remote_sha = String::from_utf8(remote_sha.stdout)
         .unwrap()
@@ -513,14 +561,18 @@ async fn test_get_git_working_tree_state_unpushed_commit() {
         .args(["add", "test.txt"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to add file");
     Command::new("git")
         .args(["commit", "-m", "local change"])
         .current_dir(&repo_path)
         .output()
+        .await
         .expect("Failed to commit");
 
-    let state = git_diff_to_remote(&repo_path).expect("Should collect working tree state");
+    let state = git_diff_to_remote(&repo_path)
+        .await
+        .expect("Should collect working tree state");
     assert_eq!(state.sha, GitSha::new(&remote_sha));
     assert!(state.diff.contains("updated"));
 }

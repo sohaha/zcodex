@@ -124,6 +124,7 @@ pub(super) fn stored_thread_from_rollout_item(
         agent_nickname: item.agent_nickname,
         agent_role: item.agent_role,
         agent_path: None,
+        parent_model: None,
         git_info,
         approval_mode: AskForApproval::OnRequest,
         sandbox_policy: SandboxPolicy::new_read_only_policy(),
@@ -139,7 +140,7 @@ fn parse_rfc3339(value: Option<&str>) -> Option<DateTime<Utc>> {
         .map(|dt| dt.with_timezone(&Utc))
 }
 
-fn git_info_from_parts(
+pub(super) fn git_info_from_parts(
     sha: Option<String>,
     branch: Option<String>,
     origin_url: Option<String>,

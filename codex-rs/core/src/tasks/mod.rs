@@ -24,8 +24,6 @@ use crate::buddy::fallback_buddy_reaction;
 use crate::buddy::generate_buddy_reaction_hybrid;
 use crate::buddy::generate_buddy_soul;
 use crate::buddy::persist_buddy_soul;
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::compact::collect_user_messages;
 use crate::contextual_user_message::TURN_ABORTED_CLOSE_TAG;
 use crate::contextual_user_message::TURN_ABORTED_OPEN_TAG;
@@ -34,6 +32,8 @@ use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
 use crate::memories::zmemory_preferences::build_stable_preference_recall_note_from_texts;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
@@ -730,7 +730,7 @@ async fn handle_buddy_observer(
     }
 
     let strategy = &turn_context.config.tui_buddy_reaction_strategy;
-    let buddy_state = session.buddy_reaction_state().lock().await;
+    let buddy_state = session.buddy_reaction_state.lock().await;
     let state_snapshot = buddy_state.clone();
     drop(buddy_state);
     let (reaction, outcome) = generate_buddy_reaction_hybrid(
@@ -743,7 +743,7 @@ async fn handle_buddy_observer(
         &state_snapshot,
     )
     .await;
-    let mut buddy_state = session.buddy_reaction_state().lock().await;
+    let mut buddy_state = session.buddy_reaction_state.lock().await;
     apply_state_update(&mut buddy_state, outcome);
     drop(buddy_state);
     session

@@ -1,6 +1,6 @@
-use crate::codex::Session;
-use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
+use crate::session::session::Session;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::sandboxing::ToolError;
 use codex_protocol::error::CodexErr;
@@ -555,11 +555,11 @@ async fn emit_patch_end(
 mod tests {
     use super::ToolEmitter;
     use super::ToolEventCtx;
-    use crate::codex::make_session_and_context_with_rx;
     use crate::protocol::EventMsg;
     use crate::protocol::ExecCommandBeginEvent;
     use crate::protocol::ExecCommandEndEvent;
     use crate::protocol::ExecCommandSource;
+    use crate::session::tests::make_session_and_context_with_rx;
     use codex_protocol::exec_output::ExecToolCallOutput;
     use codex_protocol::exec_output::StreamOutput;
     use pretty_assertions::assert_eq;
@@ -609,14 +609,11 @@ mod tests {
                 "-lc".to_string(),
                 "FOO=1 codex ztok git status".to_string(),
             ]),
-            turn.cwd.to_path_buf(),
+            turn.cwd.clone(),
             ExecCommandSource::Agent,
             true,
             Some("FOO=1 git status".to_string()),
-           Some(
-                "ztok: FOO=1 git status → FOO=1 codex ztok git status"
-                   .to_string(),
-           ),
+            Some("ztok: FOO=1 git status → FOO=1 codex ztok git status".to_string()),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-1", None);
 
@@ -642,7 +639,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-       assert!(result.contains("[shell_command routed via embedded ZTOK]"));
+        assert!(result.contains("[shell_command routed via embedded ZTOK]"));
         assert!(result.contains("FOO=1 codex ztok git status"));
         assert!(result.contains("ok"));
 
@@ -666,14 +663,11 @@ mod tests {
                 "-lc".to_string(),
                 "codex ztok git status".to_string(),
             ]),
-            turn.cwd.to_path_buf(),
+            turn.cwd.clone(),
             ExecCommandSource::Agent,
             true,
             Some("git status".to_string()),
-           Some(
-                "ztok: git status → codex ztok git status"
-                   .to_string(),
-           ),
+            Some("ztok: git status → codex ztok git status".to_string()),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-abs", None);
 
@@ -708,15 +702,17 @@ mod tests {
     async fn shell_emitter_omits_prefix_for_structured_output() {
         let (session, turn, _rx) = make_session_and_context_with_rx().await;
         let emitter = ToolEmitter::shell(
-            vec!["bash".to_string(), "-lc".to_string(), "git status".to_string()],
+            vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "git status".to_string(),
+            ],
             None,
-            turn.cwd.to_path_buf(),
+            turn.cwd.clone(),
             ExecCommandSource::Agent,
             false,
             None,
-           Some(
-                "raw: git status | head (contains compound shell syntax)".to_string(),
-           ),
+            Some("raw: git status | head (contains compound shell syntax)".to_string()),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-2", None);
 
@@ -727,7 +723,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-       assert!(!result.contains("[shell_command kept raw]"));
+        assert!(!result.contains("[shell_command kept raw]"));
         assert!(result.contains("raw: git status | head"));
     }
 }

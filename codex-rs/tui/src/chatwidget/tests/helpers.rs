@@ -221,6 +221,7 @@ pub(super) async fn make_chatwidget_manual_with_config(
         pending_guardian_review_status: PendingGuardianReviewStatus::default(),
         terminal_title_status_kind: TerminalTitleStatusKind::Working,
         last_agent_markdown: None,
+        latest_proposed_plan_markdown: None,
         saw_copy_source_this_turn: false,
         service_tier_cleared_explicitly: false,
         running_commands: HashMap::new(),
@@ -1019,6 +1020,7 @@ pub(super) async fn assert_hook_events_snapshot(
                 execution_mode: codex_protocol::protocol::HookExecutionMode::Sync,
                 scope: codex_protocol::protocol::HookScope::Turn,
                 source_path: PathBuf::from(test_path_display("/tmp/hooks.json")).abs(),
+                source: codex_protocol::protocol::HookSource::User,
                 display_order: 0,
                 status: codex_protocol::protocol::HookRunStatus::Running,
                 status_message: Some(status_message.to_string()),
@@ -1053,6 +1055,7 @@ pub(super) async fn assert_hook_events_snapshot(
                 execution_mode: codex_protocol::protocol::HookExecutionMode::Sync,
                 scope: codex_protocol::protocol::HookScope::Turn,
                 source_path: PathBuf::from(test_path_display("/tmp/hooks.json")).abs(),
+                source: codex_protocol::protocol::HookSource::User,
                 display_order: 0,
                 status: codex_protocol::protocol::HookRunStatus::Completed,
                 status_message: Some(status_message.to_string()),
@@ -1084,6 +1087,7 @@ pub(super) async fn assert_hook_events_snapshot(
 fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'static str {
     match event_name {
         codex_protocol::protocol::HookEventName::PreToolUse => "工具调用前",
+        codex_protocol::protocol::HookEventName::PermissionRequest => "权限请求",
         codex_protocol::protocol::HookEventName::PostToolUse => "工具调用后",
         codex_protocol::protocol::HookEventName::SessionStart => "会话开始",
         codex_protocol::protocol::HookEventName::UserPromptSubmit => "用户消息提交",

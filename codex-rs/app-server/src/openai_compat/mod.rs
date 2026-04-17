@@ -23,12 +23,12 @@ use axum::routing::get;
 use axum::routing::post;
 use clap::Args;
 use codex_arg0::Arg0DispatchPaths;
-use codex_core::ModelProviderInfo;
-use codex_core::WireApi;
 use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config_loader::LoaderOverrides;
 use codex_login::AuthManager;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use codex_utils_cli::CliConfigOverrides;
 use reqwest::Client;
 use reqwest::Url;
@@ -403,6 +403,7 @@ async fn resolve_provider_bearer_token(
         .provider
         .experimental_bearer_token
         .as_deref()
+        .map(|token: &str| token)
         .filter(|token| !token.trim().is_empty())
     {
         return Ok(Some(token.to_string()));

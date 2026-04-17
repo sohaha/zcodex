@@ -35,6 +35,7 @@ pub use config::Config;
 pub use config::RolloutConfig;
 pub use config::RolloutConfigView;
 pub use list::Cursor;
+pub use list::SortDirection;
 pub use list::ThreadItem;
 pub use list::ThreadListConfig;
 pub use list::ThreadListLayout;

@@ -19,7 +19,7 @@ pub(crate) mod zmemory_preferences;
 
 use codex_protocol::openai_models::ReasoningEffort;
 
-pub(crate) use control::clear_memory_root_contents;
+pub use control::clear_memory_roots_contents;
 /// Starts the memory startup pipeline for eligible root sessions.
 /// This is the single entrypoint that `codex` uses to trigger memory startup.
 ///

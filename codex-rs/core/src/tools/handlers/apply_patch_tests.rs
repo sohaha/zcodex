@@ -1,16 +1,75 @@
 use super::*;
 use codex_apply_patch::MaybeApplyPatchVerified;
 use codex_exec_server::LOCAL_FS;
-use codex_protocol::models::FileSystemPermissions;
-use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::SandboxPolicy;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use pretty_assertions::assert_eq;
-use std::fs;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+#[test]
+fn diff_consumer_does_not_stream_json_tool_call_arguments() {
+    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), r#"{"input":"*** Begin Patch\n"#)
+            .is_none()
+    );
+    assert!(
+        consumer
+            .push_delta(
+                "call-1".to_string(),
+                r#"*** Add File: hello.txt\n+hello\n*** End Patch\n"}"#
+            )
+            .is_none()
+    );
+}
+
+#[test]
+fn diff_consumer_streams_apply_patch_changes() {
+    let mut consumer = ApplyPatchArgumentDiffConsumer::default();
+    assert!(
+        consumer
+            .push_delta("call-1".to_string(), "*** Begin Patch\n")
+            .is_none()
+    );
+
+    let event = consumer
+        .push_delta("call-1".to_string(), "*** Add File: hello.txt\n+hello")
+        .expect("progress event");
+    assert_eq!(
+        (event.call_id, event.changes),
+        (
+            "call-1".to_string(),
+            HashMap::from([(
+                PathBuf::from("hello.txt"),
+                FileChange::Add {
+                    content: "hello\n".to_string(),
+                },
+            )]),
+        )
+    );
+
+    let event = consumer
+        .push_delta("call-1".to_string(), "\n+world")
+        .expect("progress event");
+    assert_eq!(
+        (event.call_id, event.changes),
+        (
+            "call-1".to_string(),
+            HashMap::from([(
+                PathBuf::from("hello.txt"),
+                FileChange::Add {
+                    content: "hello\nworld\n".to_string(),
+                },
+            )]),
+        )
+    );
+}
 
 #[tokio::test]
 async fn approval_keys_include_move_destination() {
@@ -42,27 +101,6 @@ async fn approval_keys_include_move_destination() {
 
     let keys = file_paths_for_action(&action);
     assert_eq!(keys.len(), 2);
-}
-
-#[test]
-fn rewrite_apply_patch_output_handles_windows_drive_paths() {
-    let rewrites = vec![("C:\\tmp\\target.txt".to_string(), "target.txt".to_string())];
-
-    assert_eq!(
-        rewrite_apply_patch_output(
-            "Failed to read file to update C:\\tmp\\target.txt\n".to_string(),
-            &rewrites,
-        ),
-        "Failed to read file to update target.txt\n"
-    );
-    assert_eq!(
-        rewrite_apply_patch_output(
-            "Failed to find expected lines in C:\\tmp\\target.txt:\nC:\\tmp\\target.txt\n"
-                .to_string(),
-            &rewrites,
-        ),
-        "Failed to find expected lines in target.txt:\nC:\\tmp\\target.txt\n"
-    );
 }
 
 #[test]
@@ -110,62 +148,7 @@ fn write_permissions_for_paths_keep_dirs_outside_workspace_root() {
         dunce::simplified(&outside.canonicalize().expect("canonicalize outside dir")).abs();
 
     assert_eq!(
-        permissions,
-        Some(PermissionProfile {
-            file_system: Some(FileSystemPermissions {
-                read: Some(vec![]),
-                write: Some(vec![expected_outside]),
-            }),
-            ..Default::default()
-        })
-    );
-}
-
-async fn parse_action(cwd: &Path, patch: &str) -> ApplyPatchAction {
-    let cwd = cwd
-        .canonicalize()
-        .ok()
-        .and_then(|path| AbsolutePathBuf::try_from(path).ok())
-        .expect("cwd");
-    let argv = vec!["apply_patch".to_string(), patch.to_string()];
-    let verified =
-        codex_apply_patch::maybe_parse_apply_patch_verified(&argv, &cwd, LOCAL_FS.as_ref(), None)
-            .await;
-    match verified {
-        MaybeApplyPatchVerified::Body(verified) => verified,
-        other => panic!("expected patch body, got: {other:?}"),
-    }
-}
-
-#[test]
-fn does_not_rewrite_success_output() {
-    let rewrites = vec![("/tmp/target.txt".to_string(), "target.txt".to_string())];
-    let output = "Done. Updated the following files:\nM /tmp/target.txt\n".to_string();
-    assert_eq!(
-        rewrite_apply_patch_output(output.clone(), &rewrites),
-        output
-    );
-}
-
-#[tokio::test]
-async fn file_paths_for_action_returns_source_and_destination_for_move() {
-    let tmp = TempDir::new().expect("tmp");
-    let old_path = tmp.path().join("old.txt");
-    let new_path = tmp.path().join("new.txt");
-    fs::write(&old_path, "old\n").expect("write old");
-    let patch = format!(
-        "*** Begin Patch\n*** Update File: {}\n*** Move to: {}\n@@\n-old\n+new\n*** End Patch",
-        old_path.display(),
-        new_path.display()
-    );
-    let action = parse_action(tmp.path(), &patch).await;
-
-    let paths = file_paths_for_action(&action);
-    assert_eq!(
-        paths,
-        vec![
-            AbsolutePathBuf::try_from(old_path).expect("abs old path"),
-            AbsolutePathBuf::try_from(new_path).expect("abs new path"),
-        ]
+        permissions.and_then(|profile| profile.file_system.and_then(|fs| fs.write)),
+        Some(vec![expected_outside])
     );
 }

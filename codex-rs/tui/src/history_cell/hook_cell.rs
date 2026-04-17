@@ -701,6 +701,7 @@ fn hook_output_prefix(kind: HookOutputEntryKind) -> &'static str {
 fn hook_event_label(event_name: HookEventName) -> &'static str {
     match event_name {
         HookEventName::PreToolUse => "工具调用前",
+        HookEventName::PermissionRequest => "权限请求",
         HookEventName::PostToolUse => "工具调用后",
         HookEventName::SessionStart => "会话开始",
         HookEventName::UserPromptSubmit => "用户消息提交",
@@ -778,6 +779,7 @@ mod tests {
             execution_mode: codex_protocol::protocol::HookExecutionMode::Sync,
             scope: codex_protocol::protocol::HookScope::Turn,
             source_path: test_path_buf("/tmp/hooks.json").abs(),
+            source: codex_protocol::protocol::HookSource::User,
             display_order: 0,
             status: HookRunStatus::Running,
             status_message: Some("checking output policy".to_string()),

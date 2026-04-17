@@ -9,6 +9,8 @@ use crate::PUBLIC_TOOL_NAME;
 const MAX_JS_SAFE_INTEGER: u64 = (1_u64 << 53) - 1;
 const CODE_MODE_ONLY_PREFACE: &str =
     "Use `exec/wait` tool to run all other tools, do not attempt to use any other tools directly";
+const DEFERRED_NESTED_TOOLS_GUIDANCE: &str = r#"Some nested MCP/app tools may be omitted from this description. They are still available on the global `tools` object and listed in `ALL_TOOLS`.
+To find one, filter `ALL_TOOLS` by `name` and `description`; do not print the full `ALL_TOOLS` array. Print only a small set of relevant matches if you need to inspect them."#;
 const EXEC_DESCRIPTION_TEMPLATE: &str = r#"Run JavaScript code to orchestrate/compose tool calls
 - Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.
 - All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.
@@ -251,15 +253,19 @@ pub fn build_exec_tool_description(
     enabled_tools: &[ToolDefinition],
     namespace_descriptions: &BTreeMap<String, ToolNamespaceDescription>,
     code_mode_only: bool,
+    deferred_tools_available: bool,
 ) -> String {
-    if !code_mode_only {
-        return EXEC_DESCRIPTION_TEMPLATE.to_string();
+    let mut sections = Vec::new();
+    if code_mode_only {
+        sections.push(CODE_MODE_ONLY_PREFACE.to_string());
     }
-
-    let mut sections = vec![
-        CODE_MODE_ONLY_PREFACE.to_string(),
-        EXEC_DESCRIPTION_TEMPLATE.to_string(),
-    ];
+    sections.push(EXEC_DESCRIPTION_TEMPLATE.to_string());
+    if deferred_tools_available {
+        sections.push(DEFERRED_NESTED_TOOLS_GUIDANCE.to_string());
+    }
+    if !code_mode_only {
+        return sections.join("\n\n");
+    }
 
     if !enabled_tools.is_empty() {
         let mut current_namespace: Option<&str> = None;
@@ -319,8 +325,14 @@ pub fn build_exec_tool_description_from_definitions(
     enabled_tools: &[ToolDefinition],
     namespace_descriptions: &BTreeMap<String, ToolNamespaceDescription>,
     code_mode_only: bool,
+    deferred_tools_available: bool,
 ) -> String {
-    build_exec_tool_description(enabled_tools, namespace_descriptions, code_mode_only)
+    build_exec_tool_description(
+        enabled_tools,
+        namespace_descriptions,
+        code_mode_only,
+        deferred_tools_available,
+    )
 }
 
 pub fn build_wait_tool_description() -> &'static str {
@@ -871,6 +883,7 @@ mod tests {
             }],
             &BTreeMap::new(),
             /*code_mode_only*/ true,
+            /*deferred_tools_available*/ false,
         );
         assert!(description.contains(
             "### `foo`
@@ -880,8 +893,12 @@ bar"
 
     #[test]
     fn exec_description_mentions_timeout_helpers() {
-        let description =
-            build_exec_tool_description(&[], &BTreeMap::new(), /*code_mode_only*/ false);
+        let description = build_exec_tool_description(
+            &[],
+            &BTreeMap::new(),
+            /*code_mode_only*/ false,
+            /*deferred_tools_available*/ false,
+        );
         assert!(description.contains("`setTimeout(callback: () => void, delayMs?: number)`"));
         assert!(description.contains("`clearTimeout(timeoutId?: number)`"));
     }
@@ -932,6 +949,7 @@ bar"
             ],
             &namespace_descriptions,
             /*code_mode_only*/ true,
+            /*deferred_tools_available*/ false,
         );
         assert_eq!(description.matches("## mcp__sample").count(), 1);
         assert!(description.contains("## mcp__sample\nShared namespace guidance."));
@@ -971,6 +989,7 @@ bar"
             }],
             &namespace_descriptions,
             /*code_mode_only*/ true,
+            /*deferred_tools_available*/ false,
         );
 
         assert!(!description.contains("## mcp__sample"));
@@ -1069,6 +1088,7 @@ bar"
             ],
             &BTreeMap::new(),
             /*code_mode_only*/ true,
+            /*deferred_tools_available*/ false,
         );
 
         assert_eq!(
@@ -1078,5 +1098,18 @@ bar"
             1
         );
         assert_eq!(description.matches("Shared MCP Types:").count(), 1);
+    }
+
+    #[test]
+    fn exec_description_mentions_deferred_nested_tools_when_available() {
+        let description = build_exec_tool_description(
+            &[],
+            &BTreeMap::new(),
+            /*code_mode_only*/ false,
+            /*deferred_tools_available*/ true,
+        );
+
+        assert!(description.contains("Some nested MCP/app tools may be omitted"));
+        assert!(description.contains("filter `ALL_TOOLS` by `name` and `description`"));
     }
 }

@@ -1,3 +1,4 @@
+pub mod anthropic;
 pub mod chat_completions;
 pub mod compact;
 pub mod memories;
@@ -8,6 +9,7 @@ pub mod responses;
 pub mod responses_websocket;
 mod session;
 
+pub use anthropic::AnthropicClient;
 pub use compact::CompactClient;
 pub use memories::MemoriesClient;
 pub use models::ModelsClient;

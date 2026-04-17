@@ -4,13 +4,13 @@ use codex_protocol::models::ShellToolCallParams;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
-use crate::codex::TurnContext;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
+use crate::session::turn_context::TurnContext;
 use crate::shell::Shell;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -86,9 +86,10 @@ struct RunExecLikeArgs {
     display_command: Option<Vec<String>>,
     interaction_input: Option<String>,
     model_output_prefix: Option<String>,
+    hook_command: String,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
-    session: Arc<crate::codex::Session>,
+    session: Arc<crate::session::session::Session>,
     turn: Arc<TurnContext>,
     tracker: crate::tools::context::SharedTurnDiffTracker,
     call_id: String,
@@ -186,28 +187,21 @@ impl ShellCommandHandler {
                     exec_command,
                     Some(logical_command.clone()),
                     Some(command.to_string()),
-                   Some(format!(
-                        "ztok: {command} → {logical_command}"
-                   )),
+                    Some(format!("ztok: {command} → {logical_command}")),
                 ))
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => Ok((
                 command.to_string(),
                 None,
                 None,
-               candidate.then(|| {
-                   format!(
-                        "raw: {command} ({})",
-                       reason.as_str()
-                   )
-               }),
+                candidate.then(|| format!("raw: {command} ({})", reason.as_str())),
             )),
         }
     }
 
     fn to_exec_params(
         params: &ShellCommandToolCallParams,
-        session: &crate::codex::Session,
+        session: &crate::session::session::Session,
         turn_context: &TurnContext,
         thread_id: ThreadId,
         allow_login_shell: bool,
@@ -410,6 +404,7 @@ impl ToolHandler for ShellHandler {
                     display_command: None,
                     interaction_input: None,
                     model_output_prefix: None,
+                    hook_command: codex_shell_command::parse_command::shlex_join(&params.command),
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
                     session,
@@ -431,6 +426,7 @@ impl ToolHandler for ShellHandler {
                     display_command: None,
                     interaction_input: None,
                     model_output_prefix: None,
+                    hook_command: codex_shell_command::parse_command::shlex_join(&params.command),
                     additional_permissions: None,
                     prefix_rule: None,
                     session,
@@ -555,6 +551,7 @@ impl ToolHandler for ShellCommandHandler {
             display_command: prepared.display_command,
             interaction_input: prepared.interaction_input,
             model_output_prefix: prepared.model_output_prefix,
+            hook_command: params.command,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             session,
@@ -577,6 +574,7 @@ impl ShellHandler {
             display_command: _,
             interaction_input,
             model_output_prefix,
+            hook_command,
             additional_permissions,
             prefix_rule,
             session,
@@ -710,6 +708,7 @@ impl ShellHandler {
 
         let req = ShellRequest {
             command: exec_params.command.clone(),
+            hook_command,
             cwd: exec_params.cwd.clone(),
             timeout_ms: exec_params.expiration.timeout_ms(),
             env: exec_params.env.clone(),

@@ -1,8 +1,8 @@
 use super::parse_arguments;
-use crate::codex::Session;
 use crate::config::ConfigBuilder;
 use crate::config::types::ZmemoryConfig;
 use crate::function_tool::FunctionCallError;
+use crate::session::session::Session;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;

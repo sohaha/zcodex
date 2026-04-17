@@ -383,3 +383,160 @@ git worktree remove "$path"
 - 影响：复杂度 / 可维护性 / 性能 / 安全 / 测试覆盖
 - 选项：保留本地 / 采用上游
 ```
+
+### 7.1) 合并前审查循环（新增 2026-04-17）
+
+在合并回原分支之前，必须执行审查循环以确保本地特色功能未被覆盖：
+
+1. **触发审查**：
+   ```bash
+   codex -P cch -m gpt-5.4 exec "审查最近的 upstream 同步合并，检查本地特色功能（汉化、fallback provider 等）是否完整保留"
+   ```
+
+2. **审查重点**：
+   - 检查本地特色功能是否保留（汉化、本地化、fallback provider 等）
+   - 确认没有本地代码被上游覆盖导致功能丢失
+   - 验证冲突解决方案是否正确
+   - 确认编译通过
+
+3. **审查不通过的处理**：
+   - 如果发现功能丢失或覆盖，重新处理冲突
+   - 再次触发审查直到通过
+   - 记录审查结果和修复过程
+
+4. **模型回退策略**：
+   - 如果 `-m gpt-5.4` 连续失败多次，切换到 `-m glm-5.1` 继续审查
+
+5. **审查通过后才能合并**：
+   - 只有审查通过后才能执行合并回原分支
+   - 在技能文档中记录审查结果
+
+**已验证通过的审查案例**：
+- 2026-04-17: 上游 dd00efe78 合并，fallback provider 功能成功保留，编译通过
+
+
+- 2026-04-17: 上游同步 API 适配（22→0 编译错误），codex-core 编译通过
+
+### 7.1.1) 深度审查发现的功能退化修复（2026-04-17）
+
+多 agent 并行深度验证发现并修复了两个功能退化：
+
+| 退化项 | 根因 | 修复 |
+|-------|------|------|
+| `max_output_tokens` 被硬编码为 `None` | 上游移除了 `client.rs` 中从 provider 读取的逻辑，sync 时直接替换为 `None` | 恢复为 `self.client.state.provider.info().max_output_tokens.filter(\|v\| *v > 0)` |
+| `auto_tldr_routing` 调用丢失 | 上游从 `Config` 移除该字段，sync 时误删了 `.with_auto_tldr_routing()` 调用 | 改用 `AutoTldrRoutingMode::default()` 保持 tldr 路由功能启用 |
+
+### 7.1.2) WireApi::Chat / WireApi::Anthropic 流式 streaming 实现（2026-04-18）
+
+**问题**：上游 `codex-rs/core/src/client.rs` 的 `ModelClientSession::stream()` 对 `WireApi::Chat` 和 `WireApi::Anthropic` 仅有 `unimplemented!()` 占位，导致运行时 panic：
+```
+not implemented: wire_api streaming not yet supported for Anthropicspace
+Location: codex-rs/core/src/client.rs:1476
+```
+
+**本地分叉实现**（**不能被上游 sync 覆盖**）：
+
+| 新增文件/位置 | 内容 |
+|-------------|------|
+| `codex-rs/codex-api/src/endpoint/anthropic.rs` | 新增 `AnthropicClient<T>` struct，参照 `ChatCompletionsClient` 实现 `stream_request()`，路径为 `messages`，调用 `anthropic::build_request_body` + `anthropic::spawn_response_stream` |
+| `codex-rs/codex-api/src/endpoint/mod.rs` | 新增 `pub mod anthropic;` 和 `pub use anthropic::AnthropicClient;` |
+| `codex-rs/codex-api/src/lib.rs` | 新增 `pub use crate::endpoint::AnthropicClient;` |
+| `codex-rs/core/src/client.rs` | 导入 `ApiAnthropicClient`、`ApiChatCompletionsClient`；添加 `stream_chat_api()` 和 `stream_anthropic_api()` 两个方法；`WireApi::Chat | WireApi::Anthropic => unimplemented!()` 拆分为各自调用对应方法 |
+
+**同步时检查点**：
+- 若上游 `client.rs` 的 `stream()` 仍为 `unimplemented!`：**保留本地实现，不要跟随上游**
+- 若上游新增了自己的实现：对比行为差异，按"同功能二选一"流程决策
+- `codex-api/src/endpoint/anthropic.rs` 是**本地分叉新增文件**，上游不存在，sync 不会自动删除；但若上游同步导致 `anthropic.rs`/`chat_completions.rs` 的 API 签名变更，需同步更新该文件
+
+**2026-04-18 补丁：effort/summary/service_tier 参数透传修复**
+
+初版实现中 `stream_chat_api` 和 `stream_anthropic_api` 的 `build_responses_request` 硬编码了 `effort=None, summary=Auto, service_tier=None`，未从 `stream()` 入口透传。已修复：
+
+- `stream_chat_api` / `stream_anthropic_api` 新增 `effort: Option<ReasoningEffortConfig>`, `summary: ReasoningSummaryConfig`, `service_tier: Option<ServiceTier>` 参数
+- `stream()` 调用点同步传递这三个参数
+- telemetry endpoint label 由错误的 `RESPONSES_ENDPOINT` 改为 `CHAT_COMPLETIONS_ENDPOINT` / `ANTHROPIC_MESSAGES_ENDPOINT`
+- 新增常量 `CHAT_COMPLETIONS_ENDPOINT = "/chat/completions"` 和 `ANTHROPIC_MESSAGES_ENDPOINT = "/messages"`
+
+同步后若重新覆盖此实现，上述四点必须同步恢复。
+
+### 7.1.3) zconfig.toml 支持与 name 字段留空（2026-04-18）
+
+**变更 1：`$CODEX_HOME/zconfig.toml` 配置合并**
+
+- `codex_config::ZCONFIG_TOML_FILE` 常量早已定义，`ConfigLayerSource::ZConfig` 变体也已存在（优先级 21，介于 `User`=20 和 `Project`=25 之间）
+- 但 `config_loader/mod.rs` 的 `load_config_layers_state` 从未实际加载它
+- **本地分叉修复**：在 `layers.push(user_layer)` 后，加载 `$CODEX_HOME/zconfig.toml` 作为 `ConfigLayerSource::ZConfig` 层推入 stack
+- 文件不存在时静默跳过（`NotFound` → 空 Table），不影响正常启动
+- **同步时检查点**：若上游也实现了此功能，对比优先级顺序是否一致（本地：User→ZConfig→Project），按"逻辑可融合"处理
+
+**变更 2：`model_providers.*.name` 字段可留空**
+
+- `config_toml.rs` 的 `deserialize_model_providers` 已自动用 map key 填充空 `name`——**无需任何代码修改**，这是现有行为
+- `validate()` 不检查 `name` 字段
+- 已确认：`zconfig.toml` 中的 `[model_providers.mm]`（无 `name` 字段）可正常反序列化，`name` 自动设为 `"mm"`
+
+### 7.1.4) models-manager 退化恢复（2026-04-18）
+
+upstream sync 重写了 `models-manager/src/manager.rs`，删除了以下本地特性：
+
+**退化 1：`build_available_models` 中 `provider.model_catalog` 过滤缺失**
+- 修复：`build_available_models` 恢复 `presets.retain(|p| catalog_slugs.contains(&p.model))`
+- 效果：zconfig.toml 配 `model_catalog = ["glm-5", ...]` 后 TUI 模型选择器只显示指定模型
+
+**退化 2：`build_available_models` 中 `provider.skip_reasoning_popup` 传播缺失**
+- 修复：恢复在转换为 presets 前将 `skip_reasoning_popup` 覆盖到所有 `ModelInfo`
+
+**退化 3：`default_remote_models_for_provider` 函数完全丢失**
+- 效果：Anthropic provider 初始化时用的是 OpenAI bundled models 而非内置 Anthropic catalog
+- 修复：恢复完整函数（WireApi::Anthropic → `anthropic_model_catalog()`），含 slug 自动合成 ModelInfo 逻辑
+- `new_with_provider` 改为调用此函数而非 `load_remote_models_from_file()`
+
+**同步时检查点**：
+- `build_available_models` 必须保留 `provider_info.model_catalog` 过滤和 `skip_reasoning_popup` 传播
+- `default_remote_models_for_provider` 必须保留，且 `new_with_provider` 必须调用它
+
+**验证通过的完整检查清单**：
+- ✅ Fallback provider：6 核心函数、4 config 字段、8 测试完整
+- ✅ 汉化：cli 256行、tui 2100+行、core 360行中文，HEAD~5..HEAD diff 无中文删除
+- ✅ 本地模块：ztok(2126行)、zmemory(12570行)、buddy(1920行)、compact_remote(344行)、agent/role(434行) 均未被修改
+- ✅ 公共 API：lib.rs 40+ pub use、codex.rs 28 pub 函数、config/mod.rs 7 pub struct 全部保留
+- ✅ max_output_tokens：已恢复从 provider 配置读取
+- ✅ auto_tldr_routing：已恢复默认值调用
+- ✅ 全量编译：`cargo check` 0 error 通过
+
+### 7.2) 上游 API 适配经验库（新增 2026-04-17）
+
+上游同步后常见的 API 变更模式及修复方法：
+
+| 变更模式 | 典型案例 | 修复方法 |
+|---------|---------|---------|
+| 模块移除/重构 | `project_doc` → `agents_md` | 替换导入和调用，使用 `AgentsMdManager` |
+| 函数重命名 | `merge_plugin_apps_with_accessible` → `merge_plugin_connectors_with_accessible` | 更新函数名 + 添加 `pub use` 导出 |
+| 类型变化 | `AppConnectorId` → `String` | `.into_iter().map(\|id\| id.0).collect::<Vec<_>>()` |
+| 结构体字段移除 | `file_system_sandbox_policy` 从 `FileSystemSandboxContext` 移除 | 删除字段赋值行 |
+| 结构体字段类型变化 | `file_system_sandbox_policy: T` → `Option<T>` | 包装为 `Some(...)` |
+| 方法签名变更 | `resolve_mcp_tool_info(&ToolName)` → `(&str, Option<&str>)` | 修改参数传递方式 |
+| 新增枚举变体 | `PatchApplyUpdated`, `ToolCallInputDelta` | 在 match 中添加 `_ => {}` 或显式分支 |
+| 函数参数增加 | `load_config_layers_state` 从 5→6 参数 | 添加缺失参数（通常是 `fs`） |
+| 表达式不完整 | `max_output_tokens` 表达式被截断 | 补全表达式或用 `None` 替代 |
+| 私有字段访问 | `ModelClientSession.client` 私有 | 添加 `pub(crate)` 代理方法 |
+| 方法移除 | `token_usage_info()` 从 `Session` 移除 | 返回 `None` 或注释掉 |
+
+**修复优先级**：
+1. 先修复 `codex-core`（`cargo check -p codex-core`）
+2. 再修复依赖 `codex-core` 的其他 crate
+3. 最后修复测试和 CLI 相关
+
+**验证命令**：
+```bash
+# 核心编译检查
+RUSTC_WRAPPER="" cargo check -p codex-core
+# 完整编译检查（可能暴露依赖问题）
+RUSTC_WRAPPER="" cargo check
+```
+
+**注意事项**：
+- 修复时优先使用 `apply_patch` 工具，避免 `sed` 导致的多行替换问题
+- 每修复一个类别后立即验证编译，不要积累错误
+- 保留所有本地特色功能（汉化、fallback provider、buddy 反应库等）
+- ToolName 结构体字段：`.name`（String）和 `.namespace`（Option<String>），不是元组

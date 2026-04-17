@@ -6,9 +6,9 @@ use core_test_support::PathBufExt;
 use core_test_support::test_path_buf;
 use pretty_assertions::assert_eq;
 
-use crate::codex::make_session_and_context;
 use crate::exec_env::create_env;
 use crate::sandboxing::SandboxPermissions;
+use crate::session::tests::make_session_and_context;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell_snapshot::ShellSnapshot;
@@ -262,9 +262,7 @@ fn shell_command_prepare_command_routes_safe_commands_via_ztok() {
             "FOO=1 /tmp/codex ztok git status".to_string(),
             Some("FOO=1 codex ztok git status".to_string()),
             Some("FOO=1 git status".to_string()),
-           Some(
-                "ztok: FOO=1 git status → FOO=1 codex ztok git status".to_string()
-           )
+            Some("ztok: FOO=1 git status → FOO=1 codex ztok git status".to_string())
         )
     );
 }
@@ -280,9 +278,7 @@ fn shell_command_prepare_command_reports_candidate_passthrough_reason() {
             "git status | head".to_string(),
             None,
             None,
-           Some(
-                "raw: git status | head (contains compound shell syntax)".to_string()
-           )
+            Some("raw: git status | head (contains compound shell syntax)".to_string())
         )
     );
 }

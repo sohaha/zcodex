@@ -1,6 +1,6 @@
 use super::parse_arguments;
-use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -815,7 +815,7 @@ mod helper_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codex::make_session_and_context;
+    use crate::session::tests::make_session_and_context;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_utils_absolute_path::AbsolutePathBuf;
@@ -827,8 +827,8 @@ mod tests {
     use tokio::sync::Mutex;
 
     fn invocation(
-        session: Arc<crate::codex::Session>,
-        turn: Arc<crate::codex::TurnContext>,
+        session: Arc<crate::session::session::Session>,
+        turn: Arc<crate::session::turn_context::TurnContext>,
         arguments: serde_json::Value,
     ) -> ToolInvocation {
         ToolInvocation {
