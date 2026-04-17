@@ -16,7 +16,14 @@ impl UpdateAction {
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
             UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@sohaha/zcodex"]),
-            UpdateAction::StandaloneWindows => ("powershell", &["-NoProfile", "-Command", "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-Expression ((Invoke-WebRequest -UseBasicParsing 'https://cnb.cool/zcodex_install.ps1').Content) }"]),
+            UpdateAction::StandaloneWindows => (
+                "powershell",
+                &[
+                    "-NoProfile",
+                    "-Command",
+                    "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-Expression ((Invoke-WebRequest -UseBasicParsing 'https://cnb.cool/zcodex_install.ps1').Content) }",
+                ],
+            ),
             UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@sohaha/zcodex"]),
             UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "codex"]),
         }
@@ -29,6 +36,26 @@ impl UpdateAction {
             .unwrap_or_else(|_| format!("{command} {}", args.join(" ")))
     }
 }
+
+#[cfg(not(debug_assertions))]
+pub(crate) fn get_update_action() -> Option<UpdateAction> {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let managed_by_npm = std::env::var_os("CODEX_MANAGED_BY_NPM").is_some();
+    let managed_by_bun = std::env::var_os("CODEX_MANAGED_BY_BUN").is_some();
+
+    detect_update_action(
+        cfg!(target_os = "macos"),
+        cfg!(windows),
+        &exe,
+        managed_by_npm,
+        managed_by_bun,
+    )
+}
+
+#[cfg(any(not(debug_assertions), test))]
+fn detect_update_action(
+    is_macos: bool,
+    is_windows: bool,
     current_exe: &std::path::Path,
     managed_by_npm: bool,
     managed_by_bun: bool,
@@ -37,6 +64,8 @@ impl UpdateAction {
         Some(UpdateAction::NpmGlobalLatest)
     } else if managed_by_bun {
         Some(UpdateAction::BunGlobalLatest)
+    } else if is_windows && current_exe.extension().is_some_and(|ext| ext == "exe") {
+        Some(UpdateAction::StandaloneWindows)
     } else if is_macos
         && (current_exe.starts_with("/opt/homebrew") || current_exe.starts_with("/usr/local"))
     {
@@ -55,6 +84,7 @@ mod tests {
         assert_eq!(
             detect_update_action(
                 /*is_macos*/ false,
+                /*is_windows*/ false,
                 std::path::Path::new("/any/path"),
                 /*managed_by_npm*/ false,
                 /*managed_by_bun*/ false
@@ -64,6 +94,7 @@ mod tests {
         assert_eq!(
             detect_update_action(
                 /*is_macos*/ false,
+                /*is_windows*/ false,
                 std::path::Path::new("/any/path"),
                 /*managed_by_npm*/ true,
                 /*managed_by_bun*/ false
@@ -73,6 +104,7 @@ mod tests {
         assert_eq!(
             detect_update_action(
                 /*is_macos*/ false,
+                /*is_windows*/ false,
                 std::path::Path::new("/any/path"),
                 /*managed_by_npm*/ false,
                 /*managed_by_bun*/ true
@@ -82,6 +114,7 @@ mod tests {
         assert_eq!(
             detect_update_action(
                 /*is_macos*/ true,
+                /*is_windows*/ false,
                 std::path::Path::new("/opt/homebrew/bin/codex"),
                 /*managed_by_npm*/ false,
                 /*managed_by_bun*/ false
@@ -91,11 +124,22 @@ mod tests {
         assert_eq!(
             detect_update_action(
                 /*is_macos*/ true,
+                /*is_windows*/ false,
                 std::path::Path::new("/usr/local/bin/codex"),
                 /*managed_by_npm*/ false,
                 /*managed_by_bun*/ false
             ),
             Some(UpdateAction::BrewUpgrade)
+        );
+        assert_eq!(
+            detect_update_action(
+                /*is_macos*/ false,
+                /*is_windows*/ true,
+                std::path::Path::new("C:/Users/test/AppData/Local/zcodex/codex.exe"),
+                /*managed_by_npm*/ false,
+                /*managed_by_bun*/ false
+            ),
+            Some(UpdateAction::StandaloneWindows)
         );
     }
 }
