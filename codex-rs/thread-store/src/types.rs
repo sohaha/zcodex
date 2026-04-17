@@ -167,6 +167,8 @@ pub struct StoredThread {
     pub agent_role: Option<String>,
     /// Optional canonical path for thread-spawn sub-agents.
     pub agent_path: Option<String>,
+    /// Optional parent model for thread-spawn sub-agents.
+    pub parent_model: Option<String>,
     /// Optional Git metadata captured for the thread.
     pub git_info: Option<GitInfo>,
     /// Approval mode captured for the thread.

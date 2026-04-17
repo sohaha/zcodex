@@ -89,3 +89,5 @@ pub use state::ConfigLayerEntry;
 pub use state::ConfigLayerStack;
 pub use state::ConfigLayerStackOrdering;
 pub use state::LoaderOverrides;
+
+pub use codex_app_server_protocol::ConfigLayerSource;

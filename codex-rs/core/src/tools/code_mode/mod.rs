@@ -310,7 +310,7 @@ async fn call_nested_tool(
 
     let (tool_call_name, payload) = if let Some(tool_info) = exec
         .session
-        .resolve_mcp_tool_info(tool_name.as_str(), None)
+        .resolve_mcp_tool_info(&ToolName::from(tool_name.as_str()))
         .await
     {
         let raw_arguments = match serialize_function_tool_arguments(&tool_name, input) {

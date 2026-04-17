@@ -2,8 +2,8 @@ use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
 use app_test_support::McpProcess;
 use app_test_support::create_apply_patch_sse_response;
-use app_test_support::create_fake_rollout;
 use app_test_support::create_fake_rollout_with_text_elements;
+use app_test_support::create_fake_rollout_with_token_usage;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
@@ -24,6 +24,7 @@ use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadItem;
@@ -46,17 +47,20 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::Personality;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
-use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource as RolloutSessionSource;
+use codex_protocol::protocol::TokenCountEvent;
+use codex_protocol::protocol::TokenUsage;
+use codex_protocol::protocol::TokenUsageInfo;
+use codex_protocol::protocol::TurnAbortReason;
+use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use codex_state::StateRuntime;
-use codex_state::ThreadMetadataBuilder;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
@@ -79,6 +83,9 @@ use super::analytics::enable_analytics_capture;
 use super::analytics::thread_initialized_event;
 use super::analytics::wait_for_analytics_payload;
 
+#[cfg(windows)]
+const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+#[cfg(not(windows))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 const CODEX_5_2_INSTRUCTIONS_TEMPLATE_DEFAULT: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
 
@@ -148,7 +155,10 @@ async fn thread_resume_rejects_unmaterialized_thread() -> Result<()> {
     )
     .await??;
     assert!(
-        resume_err.error.message.contains("未找到线程"),
+        resume_err
+            .error
+            .message
+            .contains("no rollout found for thread id"),
         "unexpected resume error: {}",
         resume_err.error.message
     );
@@ -276,17 +286,17 @@ async fn thread_resume_returns_rollout_history() -> Result<()> {
 }
 
 #[tokio::test]
-async fn thread_resume_accepts_non_claude_model_for_anthropic_provider() -> Result<()> {
+async fn thread_resume_emits_restored_token_usage_before_next_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
-    create_anthropic_config_toml(codex_home.path())?;
+    create_config_toml(codex_home.path(), &server.uri())?;
 
-    let conversation_id = create_fake_rollout(
+    let conversation_id = create_fake_rollout_with_token_usage(
         codex_home.path(),
         "2025-01-05T12-00-00",
         "2025-01-05T12:00:00Z",
         "Saved user message",
-        Some("anthropic"),
-        None,
+        Some("mock_provider"),
     )?;
 
     let mut mcp = McpProcess::new(codex_home.path()).await?;
@@ -294,7 +304,7 @@ async fn thread_resume_accepts_non_claude_model_for_anthropic_provider() -> Resu
 
     let resume_id = mcp
         .send_thread_resume_request(ThreadResumeParams {
-            thread_id: conversation_id.clone(),
+            thread_id: conversation_id,
             ..Default::default()
         })
         .await?;
@@ -303,59 +313,84 @@ async fn thread_resume_accepts_non_claude_model_for_anthropic_provider() -> Resu
         mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
-    let ThreadResumeResponse {
-        thread,
-        model_provider,
-        ..
-    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+    let ThreadResumeResponse { thread, .. } = to_response::<ThreadResumeResponse>(resume_resp)?;
 
-    assert_eq!(thread.id, conversation_id);
-    assert_eq!(model_provider, "anthropic");
-    assert_eq!(thread.model_provider, "anthropic");
+    let note = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/tokenUsage/updated"),
+    )
+    .await??;
+    let parsed: ServerNotification = note.try_into()?;
+    let ServerNotification::ThreadTokenUsageUpdated(notification) = parsed else {
+        panic!("expected thread/tokenUsage/updated notification");
+    };
+
+    assert_eq!(notification.thread_id, thread.id);
+    assert_eq!(notification.turn_id, thread.turns[0].id);
+    assert_eq!(notification.token_usage.total.total_tokens, 150);
+    assert_eq!(notification.token_usage.total.input_tokens, 120);
+    assert_eq!(notification.token_usage.total.cached_input_tokens, 20);
+    assert_eq!(notification.token_usage.total.output_tokens, 30);
+    assert_eq!(notification.token_usage.total.reasoning_output_tokens, 10);
+    assert_eq!(notification.token_usage.last.total_tokens, 90);
+    assert_eq!(notification.token_usage.model_context_window, Some(200_000));
 
     Ok(())
 }
 
 #[tokio::test]
-async fn thread_resume_restores_persisted_model_metadata_over_current_defaults() -> Result<()> {
+async fn thread_resume_token_usage_replay_ignores_stale_interrupted_tail_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
-    create_dual_provider_resume_config_toml(codex_home.path(), "disabled")?;
+    create_config_toml(codex_home.path(), &server.uri())?;
 
-    let conversation_id = create_fake_rollout(
+    let filename_ts = "2025-01-05T12-00-00";
+    let meta_rfc3339 = "2025-01-05T12:00:00Z";
+    let conversation_id = create_fake_rollout_with_token_usage(
         codex_home.path(),
-        "2025-01-05T12-00-00",
-        "2025-01-05T12:00:00Z",
+        filename_ts,
+        meta_rfc3339,
         "Saved user message",
-        Some("anthropic"),
-        None,
+        Some("mock_provider"),
     )?;
-    let thread_id = ThreadId::from_string(&conversation_id)?;
-    let rollout_file_path =
-        rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
-
-    let state_db =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
-    state_db.mark_backfill_complete(None).await?;
-    let mut builder = ThreadMetadataBuilder::new(
-        thread_id,
-        rollout_file_path,
-        Utc::now(),
-        RolloutSessionSource::Cli,
-    );
-    builder.cwd = PathBuf::from("/");
-    builder.model_provider = Some("anthropic".to_string());
-    builder.cli_version = Some("0.0.0".to_string());
-    let mut metadata = builder.build("mock_provider");
-    metadata.model = Some("proxy/custom-anthropic".to_string());
-    metadata.reasoning_effort = Some(ReasoningEffort::High);
-    state_db.upsert_thread(&metadata).await?;
+    let rollout_file_path = rollout_path(codex_home.path(), filename_ts, &conversation_id);
+    let persisted_rollout = std::fs::read_to_string(&rollout_file_path)?;
+    let stale_turn_id = "incomplete-turn-after-token-usage";
+    let appended_rollout = [
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: stale_turn_id.to_string(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            }))?,
+        })
+        .to_string(),
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::AgentMessage(AgentMessageEvent {
+                message: "Still running".to_string(),
+                phase: None,
+                memory_citation: None,
+            }))?,
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    std::fs::write(
+        &rollout_file_path,
+        format!("{persisted_rollout}{appended_rollout}\n"),
+    )?;
 
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let resume_id = mcp
         .send_thread_resume_request(ThreadResumeParams {
-            thread_id: conversation_id.clone(),
+            thread_id: conversation_id,
             ..Default::default()
         })
         .await?;
@@ -364,64 +399,121 @@ async fn thread_resume_restores_persisted_model_metadata_over_current_defaults()
         mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
-    let ThreadResumeResponse {
-        thread,
-        model_provider,
-        model,
-        reasoning_effort,
-        ..
-    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+    let ThreadResumeResponse { thread, .. } = to_response::<ThreadResumeResponse>(resume_resp)?;
 
-    assert_eq!(thread.id, conversation_id);
-    assert_eq!(thread.model_provider, "anthropic");
-    assert_eq!(model_provider, "anthropic");
-    assert_eq!(model, "proxy/custom-anthropic");
-    assert_eq!(reasoning_effort, Some(ReasoningEffort::High));
+    assert_eq!(thread.turns.len(), 2);
+    assert_eq!(thread.turns[0].status, TurnStatus::Completed);
+    assert_eq!(thread.turns[1].id, stale_turn_id);
+    assert_eq!(thread.turns[1].status, TurnStatus::Interrupted);
+
+    let note = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("thread/tokenUsage/updated"),
+    )
+    .await??;
+    let parsed: ServerNotification = note.try_into()?;
+    let ServerNotification::ThreadTokenUsageUpdated(notification) = parsed else {
+        panic!("expected thread/tokenUsage/updated notification");
+    };
+
+    assert_eq!(notification.thread_id, thread.id);
+    assert_eq!(notification.turn_id, thread.turns[0].id);
+    assert_ne!(notification.turn_id, stale_turn_id);
+    assert_eq!(notification.token_usage.total.total_tokens, 150);
+    assert_eq!(notification.token_usage.last.total_tokens, 90);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn thread_resume_restores_persisted_model_metadata_when_explicitly_configured() -> Result<()>
-{
+async fn thread_resume_token_usage_replay_can_belong_to_interrupted_turn() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
-    create_dual_provider_resume_config_toml(codex_home.path(), "persisted")?;
+    create_config_toml(codex_home.path(), &server.uri())?;
 
-    let conversation_id = create_fake_rollout(
+    let filename_ts = "2025-01-05T12-00-00";
+    let meta_rfc3339 = "2025-01-05T12:00:00Z";
+    let conversation_id = create_fake_rollout_with_token_usage(
         codex_home.path(),
-        "2025-01-05T12-00-00",
-        "2025-01-05T12:00:00Z",
+        filename_ts,
+        meta_rfc3339,
         "Saved user message",
-        Some("anthropic"),
-        None,
+        Some("mock_provider"),
     )?;
-    let thread_id = ThreadId::from_string(&conversation_id)?;
-    let rollout_file_path =
-        rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
-
-    let state_db =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
-    state_db.mark_backfill_complete(None).await?;
-    let mut builder = ThreadMetadataBuilder::new(
-        thread_id,
-        rollout_file_path,
-        Utc::now(),
-        RolloutSessionSource::Cli,
-    );
-    builder.cwd = PathBuf::from("/");
-    builder.model_provider = Some("anthropic".to_string());
-    builder.cli_version = Some("0.0.0".to_string());
-    let mut metadata = builder.build("mock_provider");
-    metadata.model = Some("proxy/custom-anthropic".to_string());
-    metadata.reasoning_effort = Some(ReasoningEffort::High);
-    state_db.upsert_thread(&metadata).await?;
+    let rollout_file_path = rollout_path(codex_home.path(), filename_ts, &conversation_id);
+    let persisted_rollout = std::fs::read_to_string(&rollout_file_path)?;
+    let interrupted_turn_id = "interrupted-turn-with-token-usage";
+    let appended_rollout = [
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: interrupted_turn_id.to_string(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            }))?,
+        })
+        .to_string(),
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::AgentMessage(AgentMessageEvent {
+                message: "Interrupted after usage".to_string(),
+                phase: None,
+                memory_citation: None,
+            }))?,
+        })
+        .to_string(),
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::TokenCount(TokenCountEvent {
+                info: Some(TokenUsageInfo {
+                    total_token_usage: TokenUsage {
+                        input_tokens: 180,
+                        cached_input_tokens: 40,
+                        output_tokens: 50,
+                        reasoning_output_tokens: 15,
+                        total_tokens: 230,
+                    },
+                    last_token_usage: TokenUsage {
+                        input_tokens: 90,
+                        cached_input_tokens: 30,
+                        output_tokens: 40,
+                        reasoning_output_tokens: 12,
+                        total_tokens: 130,
+                    },
+                    model_context_window: Some(200_000),
+                }),
+                rate_limits: None,
+            }))?,
+        })
+        .to_string(),
+        json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": serde_json::to_value(EventMsg::TurnAborted(TurnAbortedEvent {
+                turn_id: Some(interrupted_turn_id.to_string()),
+                reason: TurnAbortReason::Interrupted,
+                completed_at: None,
+                duration_ms: None,
+            }))?,
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    std::fs::write(
+        &rollout_file_path,
+        format!("{persisted_rollout}{appended_rollout}\n"),
+    )?;
 
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
     let resume_id = mcp
         .send_thread_resume_request(ThreadResumeParams {
-            thread_id: conversation_id.clone(),
+            thread_id: conversation_id,
             ..Default::default()
         })
         .await?;
@@ -430,84 +522,27 @@ async fn thread_resume_restores_persisted_model_metadata_when_explicitly_configu
         mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
-    let ThreadResumeResponse {
-        thread,
-        model_provider,
-        model,
-        reasoning_effort,
-        ..
-    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+    let ThreadResumeResponse { thread, .. } = to_response::<ThreadResumeResponse>(resume_resp)?;
 
-    assert_eq!(thread.id, conversation_id);
-    assert_eq!(thread.model_provider, "anthropic");
-    assert_eq!(model_provider, "anthropic");
-    assert_eq!(model, "proxy/custom-anthropic");
-    assert_eq!(reasoning_effort, Some(ReasoningEffort::High));
+    assert_eq!(thread.turns.len(), 2);
+    assert_eq!(thread.turns[0].status, TurnStatus::Completed);
+    assert_eq!(thread.turns[1].id, interrupted_turn_id);
+    assert_eq!(thread.turns[1].status, TurnStatus::Interrupted);
 
-    Ok(())
-}
-
-#[tokio::test]
-async fn thread_resume_uses_current_model_metadata_when_configured() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    create_dual_provider_resume_config_toml(codex_home.path(), "current")?;
-
-    let conversation_id = create_fake_rollout(
-        codex_home.path(),
-        "2025-01-05T12-00-00",
-        "2025-01-05T12:00:00Z",
-        "Saved user message",
-        Some("anthropic"),
-        None,
-    )?;
-    let thread_id = ThreadId::from_string(&conversation_id)?;
-    let rollout_file_path =
-        rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
-
-    let state_db =
-        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
-    state_db.mark_backfill_complete(None).await?;
-    let mut builder = ThreadMetadataBuilder::new(
-        thread_id,
-        rollout_file_path,
-        Utc::now(),
-        RolloutSessionSource::Cli,
-    );
-    builder.cwd = PathBuf::from("/");
-    builder.model_provider = Some("anthropic".to_string());
-    builder.cli_version = Some("0.0.0".to_string());
-    let mut metadata = builder.build("mock_provider");
-    metadata.model = Some("proxy/custom-anthropic".to_string());
-    metadata.reasoning_effort = Some(ReasoningEffort::High);
-    state_db.upsert_thread(&metadata).await?;
-
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let resume_id = mcp
-        .send_thread_resume_request(ThreadResumeParams {
-            thread_id: conversation_id.clone(),
-            ..Default::default()
-        })
-        .await?;
-    let resume_resp: JSONRPCResponse = timeout(
+    let note = timeout(
         DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
+        mcp.read_stream_until_notification_message("thread/tokenUsage/updated"),
     )
     .await??;
-    let ThreadResumeResponse {
-        thread,
-        model_provider,
-        model,
-        reasoning_effort,
-        ..
-    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+    let parsed: ServerNotification = note.try_into()?;
+    let ServerNotification::ThreadTokenUsageUpdated(notification) = parsed else {
+        panic!("expected thread/tokenUsage/updated notification");
+    };
 
-    assert_eq!(thread.id, conversation_id);
-    assert_eq!(thread.model_provider, "anthropic");
-    assert_eq!(model_provider, "mock_provider");
-    assert_eq!(model, "gpt-5.2-codex");
-    assert_eq!(reasoning_effort, Some(ReasoningEffort::Low));
+    assert_eq!(notification.thread_id, thread.id);
+    assert_eq!(notification.turn_id, interrupted_turn_id);
+    assert_eq!(notification.token_usage.total.total_tokens, 230);
+    assert_eq!(notification.token_usage.last.total_tokens, 130);
 
     Ok(())
 }
@@ -1696,7 +1731,9 @@ async fn thread_resume_fails_when_required_mcp_server_fails_to_initialize() -> R
     .await??;
 
     assert!(
-        err.error.message.contains("必需的 MCP 服务器初始化失败"),
+        err.error
+            .message
+            .contains("required MCP servers failed to initialize"),
         "unexpected error message: {}",
         err.error.message
     );
@@ -1784,7 +1821,7 @@ async fn thread_resume_surfaces_cloud_requirements_load_errors() -> Result<()> {
     .await??;
 
     assert!(
-        err.error.message.contains("加载配置失败"),
+        err.error.message.contains("failed to load configuration"),
         "unexpected error message: {}",
         err.error.message
     );
@@ -2124,63 +2161,6 @@ wire_api = "responses"
 request_max_retries = 0
 stream_max_retries = 0
 "#
-        ),
-    )
-}
-
-fn create_anthropic_config_toml(codex_home: &std::path::Path) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        r#"
-approval_policy = "never"
-sandbox_mode = "read-only"
-
-model_provider = "anthropic"
-
-[model_providers.anthropic]
-name = "Anthropic-compatible provider for test"
-model = "proxy/custom-anthropic"
-base_url = "http://127.0.0.1:9"
-wire_api = "anthropic"
-request_max_retries = 0
-stream_max_retries = 0
-"#,
-    )
-}
-
-fn create_dual_provider_resume_config_toml(
-    codex_home: &std::path::Path,
-    resume_model_source: &str,
-) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-model = "gpt-5.2-codex"
-model_reasoning_effort = "low"
-resume_model_source = "{resume_model_source}"
-approval_policy = "never"
-sandbox_mode = "read-only"
-
-model_provider = "mock_provider"
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "http://127.0.0.1:9/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-
-[model_providers.anthropic]
-name = "Anthropic-compatible provider for test"
-model = "proxy/custom-anthropic"
-base_url = "http://127.0.0.1:9"
-wire_api = "anthropic"
-request_max_retries = 0
-stream_max_retries = 0
-"#,
         ),
     )
 }

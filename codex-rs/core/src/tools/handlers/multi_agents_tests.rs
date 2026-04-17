@@ -23,6 +23,7 @@ use codex_config::types::ShellEnvironmentPolicy;
 use codex_features::Feature;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_model_provider::create_model_provider;
 use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -421,10 +422,10 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
-    let provider =
+    let provider_info =
         built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["ollama"].clone();
     config.model_provider_id = "ollama".to_string();
-    config.model_provider = provider.clone();
+    config.model_provider = provider_info.clone();
     config
         .permissions
         .approval_policy
@@ -433,7 +434,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     turn.approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy should be set");
-    turn.provider = provider;
+    turn.provider = create_model_provider(provider_info, turn.auth_manager.clone());
     turn.config = Arc::new(config);
 
     let invocation = invocation(
@@ -1432,6 +1433,7 @@ async fn multi_agent_v2_followup_task_interrupts_busy_child_without_losing_messa
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(worker_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -3460,13 +3462,11 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_spawn_config(&base_instructions, &turn)
-        .await
-        .expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
-    expected.model_provider = turn.provider.clone();
+    expected.model_provider = turn.provider.info().clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();
@@ -3499,20 +3499,18 @@ async fn build_agent_spawn_config_preserves_runtime_provider_details() {
     base_config
         .model_providers
         .insert(base_config.model_provider_id.clone(), stale_provider);
-    turn.provider = runtime_provider.clone();
+    turn.provider = create_model_provider(runtime_provider.clone(), /*auth_manager*/ None);
     turn.config = Arc::new(base_config);
     let base_instructions = BaseInstructions {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn)
-        .await
-        .expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
 
     assert_eq!(config.model_provider, runtime_provider);
     assert_eq!(
         config.model_providers.get(&config.model_provider_id),
-        Some(&turn.provider)
+        Some(&runtime_provider)
     );
 }
 
@@ -3527,9 +3525,7 @@ async fn build_agent_spawn_config_preserves_base_user_instructions() {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn)
-        .await
-        .expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
 
     assert_eq!(config.user_instructions, base_config.user_instructions);
 }
@@ -3544,14 +3540,12 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
-        .await
-        .expect("resume config");
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;
     expected.model = Some(turn.model_info.slug.clone());
-    expected.model_provider = turn.provider.clone();
+    expected.model_provider = turn.provider.info().clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();
@@ -3583,9 +3577,7 @@ async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_tur
     turn.config = Arc::new(fixture.base_config.clone());
     turn.cwd = fixture.nested.clone();
 
-    let config = build_agent_spawn_config(&base_instructions, &turn)
-        .await
-        .expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
 
     let mut expected = fixture.base_config.clone();
     expected.zmemory = fixture.project_config.zmemory.clone();
@@ -3595,7 +3587,7 @@ async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_tur
     expected.agent_roles = fixture.project_config.agent_roles.clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
-    expected.model_provider = turn.provider.clone();
+    expected.model_provider = turn.provider.info().clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();
@@ -3629,9 +3621,7 @@ async fn build_agent_resume_config_reloads_project_scoped_zmemory_profile_for_tu
     turn.config = Arc::new(fixture.base_config.clone());
     turn.cwd = fixture.nested.clone();
 
-    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
-        .await
-        .expect("resume config");
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
 
     let mut expected = fixture.base_config.clone();
     expected.zmemory = fixture.project_config.zmemory.clone();
@@ -3641,7 +3631,7 @@ async fn build_agent_resume_config_reloads_project_scoped_zmemory_profile_for_tu
     expected.agent_roles = fixture.project_config.agent_roles.clone();
     expected.base_instructions = None;
     expected.model = Some(turn.model_info.slug.clone());
-    expected.model_provider = turn.provider.clone();
+    expected.model_provider = turn.provider.info().clone();
     expected.model_reasoning_effort = turn.reasoning_effort;
     expected.model_reasoning_summary = Some(turn.reasoning_summary);
     expected.developer_instructions = turn.developer_instructions.clone();

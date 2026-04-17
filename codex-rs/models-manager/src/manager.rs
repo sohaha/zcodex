@@ -7,6 +7,7 @@ use codex_api::ModelsClient;
 use codex_api::RequestTelemetry;
 use codex_api::ReqwestTransport;
 use codex_api::TransportError;
+use codex_api::auth_header_telemetry;
 use codex_api::map_api_error;
 use codex_app_server_protocol::AuthMode;
 use codex_feedback::FeedbackRequestTags;
@@ -14,12 +15,11 @@ use codex_feedback::emit_feedback_request_tags_with_auth_env;
 use codex_login::AuthEnvTelemetry;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
-use codex_login::auth_provider_from_auth;
 use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
-use codex_login::required_auth_manager_for_provider;
+use codex_model_provider::SharedModelProvider;
+use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
-use codex_model_provider_info::WireApi;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::error::CodexErr;
@@ -45,24 +45,6 @@ const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
-
-fn provider_cache_key(provider: &ModelProviderInfo, api_provider: &codex_api::Provider) -> String {
-    let mut parts = vec![
-        format!("name={:?}", provider.name),
-        format!("base_url={}", api_provider.base_url),
-        format!("wire_api={:?}", api_provider.wire_api),
-    ];
-    if let Some(params) = &api_provider.query_params
-        && !params.is_empty()
-    {
-        let mut entries: Vec<_> = params.iter().collect();
-        entries.sort_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs));
-        for (key, value) in entries {
-            parts.push(format!("query:{key}={value}"));
-        }
-    }
-    parts.join("|")
-}
 #[derive(Clone)]
 struct ModelsRequestTelemetry {
     auth_mode: Option<String>,
@@ -197,10 +179,9 @@ pub struct ModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
     catalog_mode: CatalogMode,
     collaboration_modes_config: CollaborationModesConfig,
-    auth_manager: Arc<AuthManager>,
     etag: RwLock<Option<String>>,
     cache_manager: ModelsCacheManager,
-    provider: ModelProviderInfo,
+    provider: SharedModelProvider,
 }
 
 impl ModelsManager {
@@ -225,14 +206,17 @@ impl ModelsManager {
     }
 
     /// Construct a manager with an explicit provider used for remote model refreshes.
+    // TODO(celia-oai): Revisit this ownership direction: the model provider should likely
+    // own or return the models manager instead of requiring the manager to construct and use
+    // a provider from provider info.
     pub fn new_with_provider(
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
-        provider: ModelProviderInfo,
+        provider_info: ModelProviderInfo,
     ) -> Self {
-        let auth_manager = required_auth_manager_for_provider(auth_manager, &provider);
+        let model_provider = create_model_provider(provider_info, Some(auth_manager));
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
@@ -240,32 +224,16 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        // Always apply per-provider model_catalog filtering, regardless of global model_catalog
-        let base_models = model_catalog
+        let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider));
-        
-        let remote_models = if let Some(ref catalog_slugs) = provider.model_catalog {
-            tracing::warn!(
-                "MODEL_CATALOG_DEBUG: Filtering {} models by provider catalog: {:?}",
-                base_models.len(),
-                catalog_slugs
-            );
-            base_models
-                .into_iter()
-                .filter(|model| catalog_slugs.contains(&model.slug))
-                .collect()
-        } else {
-            base_models
-        };
+            .unwrap_or_else(|| Self::load_remote_models_from_file().unwrap_or_default());
         Self {
-            catalog_mode,
             remote_models: RwLock::new(remote_models),
+            catalog_mode,
             collaboration_modes_config,
-            auth_manager,
             etag: RwLock::new(None),
             cache_manager,
-            provider,
+            provider: model_provider,
         }
     }
 
@@ -429,9 +397,11 @@ impl ModelsManager {
             return Ok(());
         }
 
-        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt)
-            && !self.provider.has_command_auth()
-        {
+        let auth_mode = self
+            .provider
+            .auth_manager()
+            .and_then(|auth_manager| auth_manager.auth_mode());
+        if auth_mode != Some(AuthMode::Chatgpt) && !self.provider.info().has_command_auth() {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
@@ -466,20 +436,21 @@ impl ModelsManager {
     async fn fetch_and_update_models(&self) -> CoreResult<()> {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
-        let auth = self.auth_manager.auth().await;
+        let auth_manager = self.provider.auth_manager();
+        let codex_api_key_env_enabled = auth_manager
+            .as_ref()
+            .is_some_and(|auth_manager| auth_manager.codex_api_key_env_enabled());
+        let auth = self.provider.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
-        let api_provider = self.provider.to_api_provider(auth_mode)?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
-        let auth_env = collect_auth_env_telemetry(
-            &self.provider,
-            self.auth_manager.codex_api_key_env_enabled(),
-        );
+        let api_provider = self.provider.api_provider().await?;
+        let api_auth = self.provider.api_auth().await?;
+        let auth_env = collect_auth_env_telemetry(self.provider.info(), codex_api_key_env_enabled);
         let transport = ReqwestTransport::new(build_reqwest_client());
-        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
+        let auth_telemetry = auth_header_telemetry(api_auth.as_ref());
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
-            auth_header_attached: api_auth.auth_header_attached(),
-            auth_header_name: api_auth.auth_header_name(),
+            auth_header_attached: auth_telemetry.attached,
+            auth_header_name: auth_telemetry.name,
             auth_env,
         });
         let client = ModelsClient::new(transport, api_provider, api_auth)
@@ -497,7 +468,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version, provider_cache_key)
+            .persist_cache(&models, etag, client_version)
             .await;
         Ok(())
     }
@@ -508,7 +479,7 @@ impl ModelsManager {
 
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::default_remote_models_for_provider(&self.provider);
+        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
         for model in models {
             if let Some(existing_index) = existing_models
                 .iter()
@@ -522,90 +493,6 @@ impl ModelsManager {
         *self.remote_models.write().await = existing_models;
     }
 
-fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
-    let models = match provider.wire_api {
-        WireApi::Anthropic => model_info::anthropic_model_catalog(),
-        _ => Self::load_remote_models_from_file().unwrap_or_default(),
-    };
-    
-    // Apply model_catalog filtering for all wire_api types
-    if let Some(ref catalog_slugs) = provider.model_catalog {
-        tracing::warn!(
-            "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
-            models.len(),
-            catalog_slugs
-        );
-        
-        // Try to find matching models in default list
-        let matching_models: Vec<_> = models
-            .iter()
-            .filter(|model| catalog_slugs.contains(&model.slug))
-            .cloned()
-            .collect();
-        
-        if !matching_models.is_empty() {
-            tracing::warn!("MODEL_CATALOG_DEBUG: Found {} matching models in default list", matching_models.len());
-            return matching_models;
-        }
-        
-        // If no matches, create models from catalog slugs
-        tracing::warn!("MODEL_CATALOG_DEBUG: No matches found, creating {} models from catalog slugs", catalog_slugs.len());
-        
-        // Use first model as template or create fallback
-        let template = models.first().cloned().unwrap_or_else(|| {
-            ModelInfo {
-                slug: String::from("fallback"),
-                display_name: String::from("Fallback Model"),
-                description: None,
-                default_reasoning_level: None,
-                supported_reasoning_levels: Vec::new(),
-                shell_type: codex_protocol::openai_models::ConfigShellToolType::Default,
-                visibility: codex_protocol::openai_models::ModelVisibility::None,
-                supported_in_api: true,
-                priority: 999,
-                additional_speed_tiers: Vec::new(),
-                availability_nux: None,
-                upgrade: None,
-                base_instructions: String::new(),
-                model_messages: None,
-                supports_reasoning_summaries: false,
-                default_reasoning_summary: codex_protocol::config_types::ReasoningSummary::Auto,
-                support_verbosity: false,
-                default_verbosity: None,
-                apply_patch_tool_type: None,
-                web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
-                supports_search_tool: false,
-                truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(10000),
-                supports_parallel_tool_calls: false,
-                supports_image_detail_original: false,
-                context_window: None,
-                auto_compact_token_limit: None,
-                effective_context_window_percent: 90,
-                experimental_supported_tools: Vec::new(),
-                input_modalities: Vec::new(),
-                used_fallback_model_metadata: true,
-            }
-        });
-        
-        // Create models for each catalog slug
-        let custom_models: Vec<ModelInfo> = catalog_slugs
-            .iter()
-            .enumerate()
-            .map(|(i, slug)| {
-                let mut model = template.clone();
-                model.slug = slug.clone();
-                model.display_name = slug.clone();
-                model.priority = i as i32;
-                model
-            })
-            .collect();
-        
-        return custom_models;
-    } else {
-        models
-    }
-}
-
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
         Ok(crate::bundled_models_response()?.models)
     }
@@ -615,26 +502,8 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::client_version_to_whole();
-        let auth_mode = self.auth_manager.auth_mode();
-        let api_provider = match self.provider.to_api_provider(auth_mode) {
-            Ok(provider) => provider,
-            Err(err) => {
-                error!("models cache: failed to build provider config: {err}");
-                return false;
-            }
-        };
-        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
-        let allow_legacy_without_provider_cache_key = self.provider.is_openai();
         info!(client_version, "models cache: evaluating cache eligibility");
-        let cache = match self
-            .cache_manager
-            .load_fresh(
-                &client_version,
-                &provider_cache_key,
-                allow_legacy_without_provider_cache_key,
-            )
-            .await
-        {
+        let cache = match self.cache_manager.load_fresh(&client_version).await {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");
@@ -657,18 +526,18 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
-        // Filter models by provider-specific model_catalog if configured
-        tracing::warn!("MODEL_CATALOG_DEBUG: provider.model_catalog = {:?}, remote_models count = {}", self.provider.model_catalog, presets.len());
-        if let Some(ref catalog_slugs) = self.provider.model_catalog {
-            presets.retain(|preset| catalog_slugs.contains(&preset.model));
-        }
-        let chatgpt_mode = matches!(self.auth_manager.auth_mode(), Some(AuthMode::Chatgpt));
+        let auth_mode = self
+            .provider
+            .auth_manager()
+            .and_then(|auth_manager| auth_manager.auth_mode());
+        let chatgpt_mode = matches!(auth_mode, Some(AuthMode::Chatgpt));
         presets = ModelPreset::filter_by_auth(presets, chatgpt_mode);
 
         ModelPreset::mark_default_by_picker_visibility(&mut presets);
 
         presets
     }
+
     async fn get_remote_models(&self) -> Vec<ModelInfo> {
         self.remote_models.read().await.clone()
     }
@@ -697,9 +566,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         if let Some(model) = model {
             return model.to_string();
         }
-        let mut models = Self::default_remote_models_for_provider(
-            &ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-        );
+        let mut models = Self::load_remote_models_from_file().unwrap_or_default();
         models.sort_by(|a, b| a.priority.cmp(&b.priority));
         let presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
         presets

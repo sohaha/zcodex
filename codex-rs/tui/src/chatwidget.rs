@@ -1337,6 +1337,7 @@ fn hook_run_summary_from_notification(
         execution_mode: run.execution_mode.to_core(),
         scope: run.scope.to_core(),
         source_path: run.source_path,
+        source: run.source.to_core(),
         display_order: run.display_order,
         status: run.status.to_core(),
         status_message: run.status_message,
@@ -4756,6 +4757,7 @@ impl ChatWidget {
         let McpToolCallEndEvent {
             call_id,
             invocation,
+            mcp_app_resource_uri: _,
             duration,
             result,
         } = ev;
@@ -5053,10 +5055,10 @@ impl ChatWidget {
                 && c.eq_ignore_ascii_case(&'v') =>
             {
                 match paste_image_to_temp_file(
-                    self.config.tui_auto_compress_pasted_images,
-                    self.config.tui_pasted_image_max_width,
-                    self.config.tui_pasted_image_max_height,
-                    self.config.tui_pasted_image_jpeg_quality,
+                    self.config.auto_compress_pasted_images,
+                    self.config.pasted_image_max_width,
+                    self.config.pasted_image_max_height,
+                    self.config.pasted_image_jpeg_quality,
                 ) {
                     Ok((path, info)) => {
                         tracing::debug!(
@@ -5385,6 +5387,7 @@ impl ChatWidget {
         let view = CustomPromptView::new(
             title.to_string(),
             "输入名称后按 Enter".to_string(),
+            String::new(),
             /*context_label*/ None,
             Box::new(move |name: String| {
                 let Some(name) = crate::legacy_core::util::normalize_thread_name(&name) else {
@@ -5629,7 +5632,7 @@ impl ChatWidget {
 
             let app_mentions = find_app_mentions(&mentions, apps, &skill_names_lower);
             for app in app_mentions {
-                let slug = crate::legacy_core::connectors::connector_mention_slug(&app);
+                let slug = codex_connectors::metadata::connector_mention_slug(&app);
                 if bound_names.contains(&slug) || !selected_app_ids.insert(app.id.clone()) {
                     continue;
                 }
@@ -6062,6 +6065,7 @@ impl ChatWidget {
                         tool,
                         arguments: Some(arguments),
                     },
+                    mcp_app_resource_uri: None,
                     duration: Duration::from_millis(duration_ms.unwrap_or_default().max(0) as u64),
                     result: match (result, error) {
                         (_, Some(error)) => Err(error.message),
@@ -6584,6 +6588,7 @@ impl ChatWidget {
                         tool,
                         arguments: Some(arguments),
                     },
+                    mcp_app_resource_uri: None,
                 });
             }
             ThreadItem::WebSearch { id, .. } => {
@@ -9800,7 +9805,7 @@ impl ChatWidget {
         self.config.features.enabled(Feature::Apps) && self.has_chatgpt_account
     }
 
-    fn connectors_for_mentions(&self) -> Option<&[connectors::AppInfo]> {
+    fn connectors_for_mentions(&self) -> Option<&[codex_app_server_protocol::AppInfo]> {
         if !self.connectors_enabled() {
             return None;
         }
@@ -9977,7 +9982,7 @@ impl ChatWidget {
         }
     }
 
-    fn open_connectors_popup(&mut self, connectors: &[connectors::AppInfo]) {
+    fn open_connectors_popup(&mut self, connectors: &[codex_app_server_protocol::AppInfo]) {
         self.bottom_pane.show_selection_view(
             self.connectors_popup_params(connectors, /*selected_connector_id*/ None),
         );
@@ -10003,7 +10008,7 @@ impl ChatWidget {
 
     fn connectors_popup_params(
         &self,
-        connectors: &[connectors::AppInfo],
+        connectors: &[codex_app_server_protocol::AppInfo],
         selected_connector_id: Option<&str>,
     ) -> SelectionViewParams {
         let total = connectors.len();
@@ -10026,7 +10031,7 @@ impl ChatWidget {
         });
         let mut items: Vec<SelectionItem> = Vec::with_capacity(connectors.len());
         for connector in connectors {
-            let connector_label = connectors::connector_display_label(connector);
+            let connector_label = codex_connectors::metadata::connector_display_label(connector);
             let connector_title = connector_label.clone();
             let link_description = Self::connector_description(connector);
             let description = Self::connector_brief_description(connector);
@@ -10098,7 +10103,10 @@ impl ChatWidget {
         }
     }
 
-    fn refresh_connectors_popup_if_open(&mut self, connectors: &[connectors::AppInfo]) {
+    fn refresh_connectors_popup_if_open(
+        &mut self,
+        connectors: &[codex_app_server_protocol::AppInfo],
+    ) {
         let selected_connector_id =
             if let (Some(selected_index), ConnectorsCacheState::Ready(snapshot)) = (
                 self.bottom_pane
@@ -10126,7 +10134,7 @@ impl ChatWidget {
         ])
     }
 
-    fn connector_brief_description(connector: &connectors::AppInfo) -> String {
+    fn connector_brief_description(connector: &codex_app_server_protocol::AppInfo) -> String {
         let status_label = Self::connector_status_label(connector);
         match Self::connector_description(connector) {
             Some(description) => format!("{status_label} · {description}"),
@@ -10134,7 +10142,7 @@ impl ChatWidget {
         }
     }
 
-    fn connector_status_label(connector: &connectors::AppInfo) -> &'static str {
+    fn connector_status_label(connector: &codex_app_server_protocol::AppInfo) -> &'static str {
         if connector.is_accessible {
             if connector.is_enabled {
                 "已安装"
@@ -10146,7 +10154,7 @@ impl ChatWidget {
         }
     }
 
-    fn connector_description(connector: &connectors::AppInfo) -> Option<String> {
+    fn connector_description(connector: &codex_app_server_protocol::AppInfo) -> Option<String> {
         connector
             .description
             .as_deref()
@@ -10683,6 +10691,7 @@ impl ChatWidget {
         let view = CustomPromptView::new(
             "自定义评审说明".to_string(),
             "输入说明后按 Enter".to_string(),
+            String::new(),
             /*context_label*/ None,
             Box::new(move |prompt: String| {
                 let trimmed = prompt.trim().to_string();

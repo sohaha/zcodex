@@ -58,3 +58,12 @@ pub(crate) use crate::session_rollout_init_error::map_session_init_error;
 pub(crate) mod truncation {
     pub(crate) use crate::thread_rollout_truncation::*;
 }
+pub use codex_rollout::Cursor;
+pub use codex_rollout::EventPersistenceMode;
+pub use codex_rollout::ThreadItem;
+pub use codex_rollout::ThreadSortKey;
+pub use codex_rollout::ThreadsPage;
+pub use codex_rollout::find_thread_names_by_ids;
+pub use codex_rollout::parse_cursor;
+pub use codex_rollout::read_head_for_summary;
+pub use codex_rollout::read_session_meta_line;

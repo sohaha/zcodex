@@ -42,8 +42,8 @@ fn default_enabled_features_are_stable() {
 }
 
 #[test]
-fn use_legacy_landlock_is_stable_and_disabled_by_default() {
-    assert_eq!(Feature::UseLegacyLandlock.stage(), Stage::Stable);
+fn use_legacy_landlock_is_deprecated_and_disabled_by_default() {
+    assert_eq!(Feature::UseLegacyLandlock.stage(), Stage::Deprecated);
     assert_eq!(Feature::UseLegacyLandlock.default_enabled(), false);
 }
 
@@ -66,11 +66,11 @@ fn js_repl_is_experimental_and_user_toggleable() {
     let expected_node_version = include_str!("../../node-version.txt").trim_end();
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("JavaScript 交互环境"));
+    assert_eq!(stage.experimental_menu_name(), Some("JavaScript REPL"));
     assert_eq!(
         stage.experimental_menu_description().map(str::to_owned),
         Some(format!(
-            "启用一个由 Node 持久驱动的 JavaScript 交互环境，用于交互式网站调试和其他内联 JavaScript 执行能力。需要已安装 Node >= v{expected_node_version}。"
+            "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v{expected_node_version} installed."
         ))
     );
     assert_eq!(Feature::JsRepl.default_enabled(), false);
@@ -92,11 +92,11 @@ fn guardian_approval_is_experimental_and_user_toggleable() {
     let stage = spec.stage;
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("Guardian 审批"));
+    assert_eq!(stage.experimental_menu_name(), Some("Guardian Approvals"));
     assert_eq!(
         stage.experimental_menu_description().map(str::to_owned),
         Some(
-            "当 Codex 需要为较高风险的操作申请批准时（例如逃逸沙箱或访问受阻网络），将符合条件的批准请求路由给一个经过精细提示的安全审查子代理，而不是阻塞当前代理等待你的输入。由于它会为每次批准请求运行一个子代理，因此可能显著消耗更多 token。".to_string()
+            "When Codex needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.".to_string()
         )
     );
     assert_eq!(stage.experimental_announcement(), None);
@@ -128,21 +128,9 @@ fn tool_suggest_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn native_memories_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::NativeMemories.stage(), Stage::Stable);
-    assert_eq!(Feature::NativeMemories.default_enabled(), true);
-}
-
-#[test]
-fn zmemory_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::Zmemory.stage(), Stage::Stable);
-    assert_eq!(Feature::Zmemory.default_enabled(), true);
-}
-
-#[test]
-fn tool_search_is_under_development_and_disabled_by_default() {
-    assert_eq!(Feature::ToolSearch.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::ToolSearch.default_enabled(), false);
+fn tool_search_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::ToolSearch.stage(), Stage::Stable);
+    assert_eq!(Feature::ToolSearch.default_enabled(), true);
 }
 
 #[test]
@@ -157,7 +145,7 @@ fn unavailable_dummy_tools_is_under_development_and_disabled_by_default() {
 #[test]
 fn general_analytics_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::GeneralAnalytics.stage(), Stage::Stable);
-    assert_eq!(Feature::GeneralAnalytics.default_enabled(), false);
+    assert_eq!(Feature::GeneralAnalytics.default_enabled(), true);
 }
 
 #[test]
@@ -173,17 +161,39 @@ fn use_linux_sandbox_bwrap_is_a_removed_feature_key() {
 }
 
 #[test]
+fn image_generation_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::ImageGeneration.stage(), Stage::Stable);
+    assert_eq!(Feature::ImageGeneration.default_enabled(), true);
+}
+
+#[test]
+fn use_legacy_landlock_config_records_deprecation_notice() {
+    let mut entries = BTreeMap::new();
+    entries.insert("use_legacy_landlock".to_string(), true);
+
+    let mut features = Features::with_defaults();
+    features.apply_map(&entries);
+
+    let usages = features.legacy_feature_usages().collect::<Vec<_>>();
+    assert_eq!(usages.len(), 1);
+    assert_eq!(usages[0].alias, "features.use_legacy_landlock");
+    assert_eq!(usages[0].feature, Feature::UseLegacyLandlock);
+    assert_eq!(
+        usages[0].summary,
+        "`[features].use_legacy_landlock` is deprecated and will be removed soon."
+    );
+    assert_eq!(
+        usages[0].details.as_deref(),
+        Some("Remove this setting to stop opting into the legacy Linux sandbox behavior.")
+    );
+}
+
+#[test]
 fn image_detail_original_is_a_removed_feature_key() {
     assert_eq!(
         feature_for_key("image_detail_original"),
         Some(Feature::ImageDetailOriginal)
     );
-}
-
-#[test]
-fn image_generation_is_under_development() {
-    assert_eq!(Feature::ImageGeneration.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::ImageGeneration.default_enabled(), false);
 }
 
 #[test]

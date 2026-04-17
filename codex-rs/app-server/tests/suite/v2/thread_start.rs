@@ -1,6 +1,7 @@
 use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
 use app_test_support::McpProcess;
+use app_test_support::PathBufExt;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::to_response;
 use app_test_support::write_chatgpt_auth;
@@ -20,6 +21,7 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadStatusChangedNotification;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_core::config::set_project_trust_level;
+use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_login::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
 use codex_protocol::config_types::ServiceTier;
@@ -345,41 +347,6 @@ model_reasoning_effort = "high"
 }
 
 #[tokio::test]
-async fn thread_start_accepts_non_claude_model_for_anthropic_provider() -> Result<()> {
-    let server = MockServer::start().await;
-
-    let codex_home = TempDir::new()?;
-    create_anthropic_config_toml(codex_home.path(), &server.uri())?;
-
-    let mut mcp = McpProcess::new(codex_home.path()).await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let req_id = mcp
-        .send_thread_start_request(ThreadStartParams {
-            model: Some("proxy/custom-anthropic".to_string()),
-            ..Default::default()
-        })
-        .await?;
-
-    let resp: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(req_id)),
-    )
-    .await??;
-    let ThreadStartResponse {
-        thread,
-        model_provider,
-        ..
-    } = to_response::<ThreadStartResponse>(resp)?;
-
-    assert!(!thread.id.is_empty(), "thread id should not be empty");
-    assert_eq!(model_provider, "anthropic");
-    assert_eq!(thread.model_provider, "anthropic");
-
-    Ok(())
-}
-
-#[tokio::test]
 async fn thread_start_accepts_flex_service_tier() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
 
@@ -501,7 +468,9 @@ async fn thread_start_fails_when_required_mcp_server_fails_to_initialize() -> Re
     .await??;
 
     assert!(
-        err.error.message.contains("必需的 MCP 服务器初始化失败"),
+        err.error
+            .message
+            .contains("required MCP servers failed to initialize"),
         "unexpected error message: {}",
         err.error.message
     );
@@ -676,7 +645,7 @@ async fn thread_start_surfaces_cloud_requirements_load_errors() -> Result<()> {
     .await??;
 
     assert!(
-        err.error.message.contains("加载配置失败"),
+        err.error.message.contains("failed to load configuration"),
         "unexpected error message: {}",
         err.error.message
     );
@@ -749,9 +718,11 @@ model_reasoning_effort = "high"
     assert_eq!(reasoning_effort, Some(ReasoningEffort::High));
 
     let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    let trusted_root = resolve_root_git_project_for_trust(workspace.path())
-        .unwrap_or_else(|| workspace.path().to_path_buf());
-    assert!(config_toml.contains(&persisted_trust_path(&trusted_root)));
+    let workspace_abs = workspace.path().to_path_buf().abs();
+    let trusted_root = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &workspace_abs)
+        .await
+        .unwrap_or(workspace_abs);
+    assert!(config_toml.contains(&persisted_trust_path(trusted_root.as_path())));
     assert!(config_toml.contains("trust_level = \"trusted\""));
 
     Ok(())
@@ -786,9 +757,11 @@ async fn thread_start_with_nested_git_cwd_trusts_repo_root() -> Result<()> {
     .await??;
 
     let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
-    let trusted_root =
-        resolve_root_git_project_for_trust(&nested).expect("git root should resolve");
-    assert!(config_toml.contains(&persisted_trust_path(&trusted_root)));
+    let nested_abs = nested.abs();
+    let trusted_root = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &nested_abs)
+        .await
+        .expect("git root should resolve");
+    assert!(config_toml.contains(&persisted_trust_path(trusted_root.as_path())));
     assert!(!config_toml.contains(&persisted_trust_path(&nested)));
 
     Ok(())
@@ -920,29 +893,6 @@ model_provider = "mock_provider"
 name = "Mock provider for test"
 base_url = "{server_uri}/v1"
 wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#
-        ),
-    )
-}
-
-fn create_anthropic_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
-    let config_toml = codex_home.join("config.toml");
-    std::fs::write(
-        config_toml,
-        format!(
-            r#"
-approval_policy = "never"
-sandbox_mode = "read-only"
-
-model_provider = "anthropic"
-
-[model_providers.anthropic]
-name = "Anthropic-compatible provider for test"
-model = "proxy/custom-anthropic"
-base_url = "{server_uri}"
-wire_api = "anthropic"
 request_max_retries = 0
 stream_max_retries = 0
 "#

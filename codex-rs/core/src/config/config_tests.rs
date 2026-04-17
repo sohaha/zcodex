@@ -1,5 +1,5 @@
-use crate::config::ConfigToml;
-use crate::config::ProjectConfig;
+use crate::agents_md::DEFAULT_AGENTS_MD_FILENAME;
+use crate::agents_md::LOCAL_AGENTS_MD_FILENAME;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::edit::apply_blocking;
@@ -9,6 +9,8 @@ use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
+use codex_config::config_toml::ConfigToml;
+use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::RealtimeToml;
@@ -26,7 +28,6 @@ use codex_config::permissions_toml::PermissionsToml;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::AppToolApproval;
 use codex_config::types::ApprovalsReviewer;
-use codex_config::types::BuddyReactionStrategy;
 use codex_config::types::BundledSkillsConfig;
 use codex_config::types::FeedbackConfigToml;
 use codex_config::types::HistoryPersistence;
@@ -43,10 +44,10 @@ use codex_config::types::SkillsConfig;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_config::types::Tui;
 use codex_config::types::TuiNotificationSettings;
+use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
 use codex_features::FeaturesToml;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
-use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::bundled_models_response;
@@ -58,7 +59,6 @@ use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::RealtimeVoice;
-use codex_zmemory::resolve_zmemory_path;
 use serde::Deserialize;
 use tempfile::tempdir;
 
@@ -84,12 +84,14 @@ fn stdio_mcp(command: &str) -> McpServerConfig {
             env_vars: Vec::new(),
             cwd: None,
         },
+        experimental_environment: None,
         enabled: true,
         required: false,
         supports_parallel_tool_calls: false,
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
+        default_tools_approval_mode: None,
         enabled_tools: None,
         disabled_tools: None,
         scopes: None,
@@ -106,12 +108,14 @@ fn http_mcp(url: &str) -> McpServerConfig {
             http_headers: None,
             env_http_headers: None,
         },
+        experimental_environment: None,
         enabled: true,
         required: false,
         supports_parallel_tool_calls: false,
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
+        default_tools_approval_mode: None,
         enabled_tools: None,
         disabled_tools: None,
         scopes: None,
@@ -139,10 +143,12 @@ async fn load_config_normalizes_relative_cwd_override() -> std::io::Result<()> {
 }
 
 #[tokio::test]
-async fn load_config_records_global_agents_path() -> std::io::Result<()> {
+async fn load_config_loads_global_agents_instructions() -> std::io::Result<()> {
     let codex_home = tempdir()?;
-    let global_agents_path = codex_home.path().join(DEFAULT_PROJECT_DOC_FILENAME);
-    std::fs::write(&global_agents_path, "\n  global instructions  \n")?;
+    std::fs::write(
+        codex_home.path().join(DEFAULT_AGENTS_MD_FILENAME),
+        "\n  global instructions  \n",
+    )?;
 
     let config = Config::load_from_base_config_with_overrides(
         ConfigToml::default(),
@@ -155,21 +161,17 @@ async fn load_config_records_global_agents_path() -> std::io::Result<()> {
         config.user_instructions.as_deref(),
         Some("global instructions")
     );
-    assert_eq!(
-        config.user_instructions_path.as_deref(),
-        Some(global_agents_path.as_path())
-    );
     Ok(())
 }
 
 #[tokio::test]
-async fn load_config_records_preferred_global_agents_override_path() -> std::io::Result<()> {
+async fn load_config_prefers_global_agents_override_instructions() -> std::io::Result<()> {
     let codex_home = tempdir()?;
     std::fs::write(
-        codex_home.path().join(DEFAULT_PROJECT_DOC_FILENAME),
+        codex_home.path().join(DEFAULT_AGENTS_MD_FILENAME),
         "global instructions",
     )?;
-    let global_agents_override_path = codex_home.path().join(LOCAL_PROJECT_DOC_FILENAME);
+    let global_agents_override_path = codex_home.path().join(LOCAL_AGENTS_MD_FILENAME);
     std::fs::write(&global_agents_override_path, "local override instructions")?;
 
     let config = Config::load_from_base_config_with_overrides(
@@ -182,10 +184,6 @@ async fn load_config_records_preferred_global_agents_override_path() -> std::io:
     assert_eq!(
         config.user_instructions.as_deref(),
         Some("local override instructions")
-    );
-    assert_eq!(
-        config.user_instructions_path.as_deref(),
-        Some(global_agents_override_path.as_path())
     );
     Ok(())
 }
@@ -368,17 +366,11 @@ fn config_toml_deserializes_model_availability_nux() {
         Tui {
             notification_settings: TuiNotificationSettings::default(),
             animations: true,
-            show_tooltips: false,
-            show_buddy: true,
+            show_tooltips: true,
             alternate_screen: AltScreenMode::default(),
             status_line: None,
             terminal_title: None,
             theme: None,
-            auto_compress_pasted_images: true,
-            pasted_image_max_width: 1280,
-            pasted_image_max_height: 720,
-            pasted_image_jpeg_quality: 85,
-            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
                     ("gpt-bar".to_string(), 4),
@@ -437,6 +429,7 @@ allow_upstream_proxy = false
                 "workspace".to_string(),
                 PermissionProfileToml {
                     filesystem: Some(FilesystemPermissionsToml {
+                        glob_scan_max_depth: None,
                         entries: BTreeMap::from([
                             (
                                 ":minimal".to_string(),
@@ -491,6 +484,7 @@ async fn permissions_profiles_network_populates_runtime_network_proxy_spec() -> 
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
@@ -540,6 +534,7 @@ async fn permissions_profiles_network_disabled_by_default_does_not_start_proxy()
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
@@ -585,6 +580,7 @@ async fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::
                 "workspace".to_string(),
                 PermissionProfileToml {
                     filesystem: Some(FilesystemPermissionsToml {
+                        glob_scan_max_depth: None,
                         entries: BTreeMap::from([
                             (
                                 ":minimal".to_string(),
@@ -667,6 +663,82 @@ async fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::
 }
 
 #[tokio::test]
+async fn project_root_glob_none_compiles_to_filesystem_pattern_entry() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    tokio::fs::write(cwd.path().join(".git"), "gitdir: nowhere").await?;
+
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            default_permissions: Some("workspace".to_string()),
+            permissions: Some(PermissionsToml {
+                entries: BTreeMap::from([(
+                    "workspace".to_string(),
+                    PermissionProfileToml {
+                        filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: Some(2),
+                            entries: BTreeMap::from([(
+                                ":project_roots".to_string(),
+                                FilesystemPermissionToml::Scoped(BTreeMap::from([
+                                    (".".to_string(), FileSystemAccessMode::Write),
+                                    ("**/*.env".to_string(), FileSystemAccessMode::None),
+                                ])),
+                            )]),
+                        }),
+                        network: None,
+                    },
+                )]),
+            }),
+            ..Default::default()
+        },
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        config
+            .permissions
+            .file_system_sandbox_policy
+            .glob_scan_max_depth,
+        Some(2)
+    );
+    let expected_pattern = AbsolutePathBuf::resolve_path_against_base("**/*.env", cwd.path())
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        config
+            .permissions
+            .file_system_sandbox_policy
+            .entries
+            .contains(&FileSystemSandboxEntry {
+                path: FileSystemPath::GlobPattern {
+                    pattern: expected_pattern,
+                },
+                access: FileSystemAccessMode::None,
+            })
+    );
+    assert!(
+        !config
+            .permissions
+            .file_system_sandbox_policy
+            .entries
+            .iter()
+            .any(|entry| matches!(
+                &entry.path,
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::ProjectRoots { subpath: Some(subpath) },
+                } if subpath == std::path::Path::new("**/*.env")
+            )),
+        "glob should compile to a filesystem pattern entry, not a literal filesystem entry"
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn permissions_profiles_require_default_permissions() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
@@ -679,6 +751,7 @@ async fn permissions_profiles_require_default_permissions() -> std::io::Result<(
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
@@ -722,6 +795,7 @@ async fn permissions_profiles_reject_writes_outside_workspace_root() -> std::io:
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 external_write_path.to_string(),
                                 FilesystemPermissionToml::Access(FileSystemAccessMode::Write),
@@ -765,6 +839,7 @@ async fn permissions_profiles_reject_nested_entries_for_non_project_roots() -> s
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
@@ -824,6 +899,7 @@ async fn load_workspace_permission_profile(
 async fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
         filesystem: Some(FilesystemPermissionsToml {
+            glob_scan_max_depth: None,
             entries: BTreeMap::from([(
                 ":future_special_path".to_string(),
                 FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
@@ -870,6 +946,7 @@ async fn permissions_profiles_allow_unknown_special_paths_with_nested_entries()
 -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
         filesystem: Some(FilesystemPermissionsToml {
+            glob_scan_max_depth: None,
             entries: BTreeMap::from([(
                 ":future_special_path".to_string(),
                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
@@ -937,6 +1014,7 @@ async fn permissions_profiles_allow_missing_filesystem_with_warning() -> std::io
 async fn permissions_profiles_allow_empty_filesystem_with_warning() -> std::io::Result<()> {
     let config = load_workspace_permission_profile(PermissionProfileToml {
         filesystem: Some(FilesystemPermissionsToml {
+            glob_scan_max_depth: None,
             entries: BTreeMap::new(),
         }),
         network: None,
@@ -971,6 +1049,7 @@ async fn permissions_profiles_reject_project_root_parent_traversal() -> std::io:
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":project_roots".to_string(),
                                 FilesystemPermissionToml::Scoped(BTreeMap::from([(
@@ -1016,6 +1095,7 @@ async fn permissions_profiles_allow_network_enablement() -> std::io::Result<()> 
                     "workspace".to_string(),
                     PermissionProfileToml {
                         filesystem: Some(FilesystemPermissionsToml {
+                            glob_scan_max_depth: None,
                             entries: BTreeMap::from([(
                                 ":minimal".to_string(),
                                 FilesystemPermissionToml::Access(FileSystemAccessMode::Read),
@@ -1089,17 +1169,11 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
         Tui {
             notification_settings: TuiNotificationSettings::default(),
             animations: true,
-            show_tooltips: false,
-            show_buddy: true,
+            show_tooltips: true,
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
             terminal_title: None,
             theme: None,
-            auto_compress_pasted_images: true,
-            pasted_image_max_width: 1280,
-            pasted_image_max_height: 720,
-            pasted_image_jpeg_quality: 85,
-            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
     );
@@ -1121,7 +1195,7 @@ network_access = false  # This should be ignored.
             sandbox_mode_override,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &PathBuf::from("/tmp/test"),
+            /*active_project*/ None,
             /*sandbox_policy_constraint*/ None,
         )
         .await;
@@ -1142,7 +1216,7 @@ network_access = true  # This should be ignored.
             sandbox_mode_override,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &PathBuf::from("/tmp/test"),
+            /*active_project*/ None,
             /*sandbox_policy_constraint*/ None,
         )
         .await;
@@ -1159,6 +1233,9 @@ writable_roots = [
 ]
 exclude_tmpdir_env_var = true
 exclude_slash_tmp = true
+
+[projects."/tmp/test"]
+trust_level = "trusted"
 "#,
         serde_json::json!(writable_root)
     );
@@ -1171,7 +1248,7 @@ exclude_slash_tmp = true
             sandbox_mode_override,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &PathBuf::from("/tmp/test"),
+            /*active_project*/ None,
             /*sandbox_policy_constraint*/ None,
         )
         .await;
@@ -1200,9 +1277,6 @@ writable_roots = [
 ]
 exclude_tmpdir_env_var = true
 exclude_slash_tmp = true
-
-[projects."/tmp/test"]
-trust_level = "trusted"
 "#,
         serde_json::json!(writable_root)
     );
@@ -1215,7 +1289,7 @@ trust_level = "trusted"
             sandbox_mode_override,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &PathBuf::from("/tmp/test"),
+            /*active_project*/ None,
             /*sandbox_policy_constraint*/ None,
         )
         .await;
@@ -1999,152 +2073,6 @@ async fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     Ok(())
 }
 
-#[test]
-fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        fallback_provider: Some("fallback".to_string()),
-        fallback_model: Some("fallback-model".to_string()),
-        model_providers: HashMap::from([(
-            "fallback".to_string(),
-            ModelProviderInfo {
-                name: "Fallback".to_string(),
-                model: None,
-                base_url: Some("https://fallback.example/v1".to_string()),
-                env_key: Some("OPENAI_API_KEY".to_string()),
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: WireApi::Responses,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                retry_base_delay_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-                model_context_window: None,
-                model_auto_compact_token_limit: None,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )?;
-
-    assert_eq!(config.fallback_provider_id.as_deref(), Some("fallback"));
-    assert_eq!(
-        config
-            .fallback_provider
-            .as_ref()
-            .map(|provider| provider.name.as_str()),
-        Some("Fallback")
-    );
-    assert_eq!(config.fallback_model.as_deref(), Some("fallback-model"));
-    assert_eq!(config.fallback_providers.len(), 1);
-    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
-    assert_eq!(
-        config.fallback_providers[0].model.as_deref(),
-        Some("fallback-model")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn resolves_fallback_provider_chain() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        fallback_providers: vec![
-            FallbackProviderToml {
-                provider: "fallback-a".to_string(),
-                model: Some("fallback-model-a".to_string()),
-            },
-            FallbackProviderToml {
-                provider: "fallback-b".to_string(),
-                model: None,
-            },
-        ],
-        model_providers: HashMap::from([
-            (
-                "fallback-a".to_string(),
-                ModelProviderInfo {
-                    name: "Fallback A".to_string(),
-                    model: None,
-                    base_url: Some("https://fallback-a.example/v1".to_string()),
-                    env_key: Some("OPENAI_API_KEY".to_string()),
-                    env_key_instructions: None,
-                    experimental_bearer_token: None,
-                    auth: None,
-                    wire_api: WireApi::Responses,
-                    query_params: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                    request_max_retries: None,
-                    stream_max_retries: None,
-                    stream_idle_timeout_ms: None,
-                    websocket_connect_timeout_ms: None,
-                    retry_base_delay_ms: None,
-                    requires_openai_auth: false,
-                    supports_websockets: false,
-                    model_context_window: None,
-                    model_auto_compact_token_limit: None,
-                },
-            ),
-            (
-                "fallback-b".to_string(),
-                ModelProviderInfo {
-                    name: "Fallback B".to_string(),
-                    model: Some("provider-default-model".to_string()),
-                    base_url: Some("https://fallback-b.example/v1".to_string()),
-                    env_key: Some("OPENAI_API_KEY".to_string()),
-                    env_key_instructions: None,
-                    experimental_bearer_token: None,
-                    auth: None,
-                    wire_api: WireApi::Responses,
-                    query_params: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                    request_max_retries: None,
-                    stream_max_retries: None,
-                    stream_idle_timeout_ms: None,
-                    websocket_connect_timeout_ms: None,
-                    retry_base_delay_ms: None,
-                    requires_openai_auth: false,
-                    supports_websockets: false,
-                    model_context_window: None,
-                    model_auto_compact_token_limit: None,
-                },
-            ),
-        ]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.abs(),
-    )?;
-
-    assert_eq!(config.fallback_providers.len(), 2);
-    assert_eq!(config.fallback_providers[0].provider_id, "fallback-a");
-    assert_eq!(
-        config.fallback_providers[0].model.as_deref(),
-        Some("fallback-model-a")
-    );
-    assert_eq!(config.fallback_providers[1].provider_id, "fallback-b");
-    assert_eq!(config.fallback_providers[1].model.as_deref(), None);
-
-    Ok(())
-}
-
 #[tokio::test]
 async fn managed_config_overrides_oauth_store_mode() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
@@ -2158,6 +2086,7 @@ async fn managed_config_overrides_oauth_store_mode() -> anyhow::Result<()> {
 
     let cwd = codex_home.path().abs();
     let config_layer_stack = load_config_layers_state(
+        LOCAL_FS.as_ref(),
         codex_home.path(),
         Some(cwd),
         &Vec::new(),
@@ -2218,12 +2147,14 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: None,
             },
+            experimental_environment: Some("remote".to_string()),
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: Some(Duration::from_secs(3)),
             tool_timeout_sec: Some(Duration::from_secs(5)),
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2259,6 +2190,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     }
     assert_eq!(docs.startup_timeout_sec, Some(Duration::from_secs(3)));
     assert_eq!(docs.tool_timeout_sec, Some(Duration::from_secs(5)));
+    assert_eq!(docs.experimental_environment.as_deref(), Some("remote"));
     assert!(docs.enabled);
 
     let empty = BTreeMap::new();
@@ -2288,6 +2220,7 @@ async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
 
     let cwd = codex_home.path().abs();
     let config_layer_stack = load_config_layers_state(
+        LOCAL_FS.as_ref(),
         codex_home.path(),
         Some(cwd),
         &[("model".to_string(), TomlValue::String("cli".to_string()))],
@@ -2336,23 +2269,28 @@ fn mcp_servers_toml_parses_per_tool_approval_overrides() {
 [mcp_servers.docs]
 command = "docs-server"
 name = "Docs"
+default_tools_approval_mode = "prompt"
 
 [mcp_servers.docs.tools.search]
 approval_mode = "approve"
 "#,
     )
     .expect("TOML deserialization should succeed");
-    let tool = config
+    let server = config
         .mcp_servers
         .get("docs")
-        .and_then(|server| server.tools.get("search"))
-        .expect("docs/search tool config exists");
+        .expect("docs server config exists");
 
     assert_eq!(
-        tool,
-        &McpServerToolConfig {
+        server.default_tools_approval_mode,
+        Some(AppToolApproval::Prompt)
+    );
+
+    assert_eq!(
+        server.tools.get("search"),
+        Some(&McpServerToolConfig {
             approval_mode: Some(AppToolApproval::Approve),
-        }
+        })
     );
 }
 
@@ -2466,12 +2404,14 @@ async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2540,12 +2480,14 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
                 env_vars: vec!["ALPHA".to_string(), "BETA".to_string()],
                 cwd: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2594,12 +2536,14 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: Some(cwd_path.clone()),
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2646,12 +2590,14 @@ async fn replace_mcp_servers_streamable_http_serializes_bearer_token() -> anyhow
                 http_headers: None,
                 env_http_headers: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: Some(Duration::from_secs(2)),
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2714,12 +2660,14 @@ async fn replace_mcp_servers_streamable_http_serializes_custom_headers() -> anyh
                     "DOCS_AUTH".to_string(),
                 )])),
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: Some(Duration::from_secs(2)),
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2794,12 +2742,14 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
                     "DOCS_AUTH".to_string(),
                 )])),
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: Some(Duration::from_secs(2)),
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2827,12 +2777,14 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
                 http_headers: None,
                 env_http_headers: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -2895,12 +2847,14 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
                         "DOCS_AUTH".to_string(),
                     )])),
                 },
+                experimental_environment: None,
                 enabled: true,
                 required: false,
                 supports_parallel_tool_calls: false,
                 disabled_reason: None,
                 startup_timeout_sec: Some(Duration::from_secs(2)),
                 tool_timeout_sec: None,
+                default_tools_approval_mode: None,
                 enabled_tools: None,
                 disabled_tools: None,
                 scopes: None,
@@ -2918,12 +2872,14 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
                     env_vars: Vec::new(),
                     cwd: None,
                 },
+                experimental_environment: None,
                 enabled: true,
                 required: false,
                 supports_parallel_tool_calls: false,
                 disabled_reason: None,
                 startup_timeout_sec: None,
                 tool_timeout_sec: None,
+                default_tools_approval_mode: None,
                 enabled_tools: None,
                 disabled_tools: None,
                 scopes: None,
@@ -3004,12 +2960,14 @@ async fn replace_mcp_servers_serializes_disabled_flag() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: None,
             },
+            experimental_environment: None,
             enabled: false,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -3052,12 +3010,14 @@ async fn replace_mcp_servers_serializes_required_flag() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: true,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -3100,12 +3060,14 @@ async fn replace_mcp_servers_serializes_tool_filters() -> anyhow::Result<()> {
                 env_vars: Vec::new(),
                 cwd: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: Some(vec!["allowed".to_string()]),
             disabled_tools: Some(vec!["blocked".to_string()]),
             scopes: None,
@@ -3152,12 +3114,14 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
                 http_headers: None,
                 env_http_headers: None,
             },
+            experimental_environment: None,
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
+            default_tools_approval_mode: None,
             enabled_tools: None,
             disabled_tools: None,
             scopes: None,
@@ -3525,6 +3489,7 @@ async fn load_config_uses_requirements_guardian_policy_config() -> std::io::Resu
     .map_err(std::io::Error::other)?;
 
     let config = Config::load_config_with_layer_stack(
+        LOCAL_FS.as_ref(),
         ConfigToml::default(),
         ConfigOverrides {
             cwd: Some(codex_home.path().to_path_buf()),
@@ -3557,6 +3522,7 @@ async fn load_config_ignores_empty_requirements_guardian_policy_config() -> std:
     .map_err(std::io::Error::other)?;
 
     let config = Config::load_config_with_layer_stack(
+        LOCAL_FS.as_ref(),
         ConfigToml::default(),
         ConfigOverrides {
             cwd: Some(codex_home.path().to_path_buf()),
@@ -3652,44 +3618,6 @@ nickname_candidates = ["Hypatia", "Noether"]
             .and_then(|role| role.nickname_candidates.as_ref())
             .map(|candidates| candidates.iter().map(String::as_str).collect::<Vec<_>>()),
         Some(vec!["Hypatia", "Noether"])
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn zmemory_relative_path_loads_and_resolves_against_repo_root() -> std::io::Result<()> {
-    let repo = TempDir::new()?;
-    tokio::fs::create_dir(repo.path().join(".git")).await?;
-    tokio::fs::create_dir_all(repo.path().join(".agents")).await?;
-    tokio::fs::create_dir(repo.path().join("src")).await?;
-    tokio::fs::write(
-        repo.path().join(CONFIG_TOML_FILE),
-        r#"[zmemory]
-path = ".agents/memory.db"
-"#,
-    )
-    .await?;
-
-    let config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(repo.path().to_path_buf())
-        .fallback_cwd(Some(repo.path().join("src")))
-        .build()
-        .await?;
-
-    assert_eq!(
-        config.zmemory.path.as_deref(),
-        Some(Path::new(".agents/memory.db"))
-    );
-    assert_eq!(
-        resolve_zmemory_path(
-            config.codex_home.as_path(),
-            config.cwd.as_path(),
-            config.zmemory.path.as_deref(),
-        )
-        .map_err(std::io::Error::other)?
-        .db_path,
-        repo.path().join(".agents").join("memory.db")
     );
 
     Ok(())
@@ -4745,7 +4673,6 @@ model_verbosity = "high"
 
     let openai_custom_provider = ModelProviderInfo {
         name: "OpenAI custom".to_string(),
-        model: None,
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
         wire_api: WireApi::Responses,
@@ -4759,11 +4686,8 @@ model_verbosity = "high"
         stream_max_retries: Some(10),
         stream_idle_timeout_ms: Some(300_000),
         websocket_connect_timeout_ms: Some(15_000),
-        retry_base_delay_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
-        model_context_window: None,
-        model_auto_compact_token_limit: None,
     };
     let model_provider_map = {
         let mut model_provider_map =
@@ -4823,11 +4747,6 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             service_tier: None,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
-            resume_model_source: codex_config::types::ResumeModelSource::Disabled,
-            fallback_provider_id: None,
-            fallback_provider: None,
-            fallback_model: None,
-            fallback_providers: Vec::new(),
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4844,7 +4763,6 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             approvals_reviewer: ApprovalsReviewer::User,
             enforce_residency: Constrained::allow_any(/*initial_value*/ None),
             user_instructions: None,
-            user_instructions_path: None,
             notify: None,
             cwd: fixture.cwd(),
             cli_auth_credentials_store_mode: Default::default(),
@@ -4856,15 +4774,13 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             mcp_oauth_callback_port: None,
             mcp_oauth_callback_url: None,
             model_providers: fixture.model_provider_map.clone(),
-            project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+            project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
             project_doc_fallback_filenames: Vec::new(),
             tool_output_token_limit: None,
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
             agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
-            zmemory: types::ZmemoryConfig::default(),
-            auto_tldr_routing: AutoTldrRoutingMode::Safe,
             agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
             codex_home: fixture.codex_home(),
             sqlite_home: fixture.codex_home().to_path_buf(),
@@ -4887,7 +4803,6 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
             model_catalog: None,
-            model_catalog_merge: None,
             model_verbosity: None,
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4925,8 +4840,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             disable_paste_burst: false,
             tui_notifications: Default::default(),
             animations: true,
-            show_tooltips: false,
-            tui_show_buddy: true,
+            show_tooltips: true,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
             analytics_enabled: Some(true),
             feedback_enabled: true,
@@ -4935,13 +4849,6 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
-            tui_auto_compress_pasted_images: true,
-            tui_pasted_image_max_width: 1280,
-            tui_pasted_image_max_height: 720,
-            tui_pasted_image_jpeg_quality: 85,
-            tui_buddy_reactions_enabled: true,
-            tui_buddy_soul: None,
-            tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
             otel: OtelConfig::default(),
         },
         o3_profile_config
@@ -4990,11 +4897,6 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
-        resume_model_source: codex_config::types::ResumeModelSource::Disabled,
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5011,7 +4913,6 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
-        user_instructions_path: None,
         notify: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
@@ -5023,15 +4924,13 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
         model_providers: fixture.model_provider_map.clone(),
-        project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+        project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: types::ZmemoryConfig::default(),
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home().to_path_buf(),
@@ -5054,7 +4953,6 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -5092,8 +4990,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         disable_paste_burst: false,
         tui_notifications: Default::default(),
         animations: true,
-        show_tooltips: false,
-        tui_show_buddy: true,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(true),
         feedback_enabled: true,
@@ -5102,13 +4999,6 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_auto_compress_pasted_images: true,
-        tui_pasted_image_max_width: 1280,
-        tui_pasted_image_max_height: 720,
-        tui_pasted_image_jpeg_quality: 85,
-        tui_buddy_reactions_enabled: true,
-        tui_buddy_soul: None,
-        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 
@@ -5155,11 +5045,6 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
-        resume_model_source: codex_config::types::ResumeModelSource::Disabled,
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5176,7 +5061,6 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
-        user_instructions_path: None,
         notify: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
@@ -5188,15 +5072,13 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
         model_providers: fixture.model_provider_map.clone(),
-        project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+        project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: types::ZmemoryConfig::default(),
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home().to_path_buf(),
@@ -5219,7 +5101,6 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -5257,8 +5138,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         disable_paste_burst: false,
         tui_notifications: Default::default(),
         animations: true,
-        show_tooltips: false,
-        tui_show_buddy: true,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(false),
         feedback_enabled: true,
@@ -5267,13 +5147,6 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_auto_compress_pasted_images: true,
-        tui_pasted_image_max_width: 1280,
-        tui_pasted_image_max_height: 720,
-        tui_pasted_image_jpeg_quality: 85,
-        tui_buddy_reactions_enabled: true,
-        tui_buddy_soul: None,
-        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 
@@ -5305,11 +5178,6 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
-        resume_model_source: codex_config::types::ResumeModelSource::Disabled,
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5326,7 +5194,6 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
-        user_instructions_path: None,
         notify: None,
         cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
@@ -5338,15 +5205,13 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         mcp_oauth_callback_port: None,
         mcp_oauth_callback_url: None,
         model_providers: fixture.model_provider_map.clone(),
-        project_doc_max_bytes: PROJECT_DOC_MAX_BYTES,
+        project_doc_max_bytes: AGENTS_MD_MAX_BYTES,
         project_doc_fallback_filenames: Vec::new(),
         tool_output_token_limit: None,
         agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: types::ZmemoryConfig::default(),
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home().to_path_buf(),
@@ -5369,7 +5234,6 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_reasoning_summary: Some(ReasoningSummary::Detailed),
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: Some(Verbosity::High),
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -5407,8 +5271,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         disable_paste_burst: false,
         tui_notifications: Default::default(),
         animations: true,
-        show_tooltips: false,
-        tui_show_buddy: true,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(true),
         feedback_enabled: true,
@@ -5417,13 +5280,6 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_auto_compress_pasted_images: true,
-        tui_pasted_image_max_width: 1280,
-        tui_pasted_image_max_height: 720,
-        tui_pasted_image_jpeg_quality: 85,
-        tui_buddy_reactions_enabled: true,
-        tui_buddy_soul: None,
-        tui_buddy_reaction_strategy: BuddyReactionStrategy::default(),
         otel: OtelConfig::default(),
     };
 
@@ -5479,6 +5335,7 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
             .expect("config layer stack");
 
     let config = Config::load_config_with_layer_stack(
+        LOCAL_FS.as_ref(),
         fixture.cfg.clone(),
         ConfigOverrides {
             cwd: Some(fixture.cwd_path()),
@@ -5493,7 +5350,7 @@ async fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() 
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("配置项 `web_search_mode`")),
+            .any(|warning| warning.contains("Configured value for `web_search_mode`")),
         "{:?}",
         config.startup_warnings
     );
@@ -5686,13 +5543,16 @@ trust_level = "untrusted"
 
     let cfg = toml::from_str::<ConfigToml>(config_with_untrusted)
         .expect("TOML deserialization should succeed");
+    let active_project = ProjectConfig {
+        trust_level: Some(TrustLevel::Untrusted),
+    };
 
     let resolution = cfg
         .derive_sandbox_policy(
             /*sandbox_mode_override*/ None,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &PathBuf::from("/tmp/test"),
+            Some(&active_project),
             /*sandbox_policy_constraint*/ None,
         )
         .await;
@@ -5728,6 +5588,9 @@ async fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defau
         )])),
         ..Default::default()
     };
+    let active_project = ProjectConfig {
+        trust_level: Some(TrustLevel::Trusted),
+    };
     let constrained = Constrained::new(SandboxPolicy::DangerFullAccess, |candidate| {
         if matches!(candidate, SandboxPolicy::DangerFullAccess) {
             Ok(())
@@ -5746,7 +5609,7 @@ async fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defau
             /*sandbox_mode_override*/ None,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &project_path,
+            Some(&active_project),
             Some(&constrained),
         )
         .await;
@@ -5770,6 +5633,9 @@ async fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallb
         )])),
         ..Default::default()
     };
+    let active_project = ProjectConfig {
+        trust_level: Some(TrustLevel::Trusted),
+    };
     let constrained = Constrained::new(SandboxPolicy::new_workspace_write_policy(), |candidate| {
         if matches!(candidate, SandboxPolicy::WorkspaceWrite { .. }) {
             Ok(())
@@ -5788,7 +5654,7 @@ async fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallb
             /*sandbox_mode_override*/ None,
             /*profile_sandbox_mode*/ None,
             WindowsSandboxLevel::Disabled,
-            &project_path,
+            Some(&active_project),
             Some(&constrained),
         )
         .await;
@@ -6225,7 +6091,7 @@ async fn feature_requirements_normalize_effective_feature_values() -> std::io::R
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("配置项 `features`")),
+            .any(|warning| warning.contains("Configured value for `features`")),
         "{:?}",
         config.startup_warnings
     );
@@ -6268,7 +6134,7 @@ shell_tool = true
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("配置项 `features`")),
+            .any(|warning| warning.contains("Configured value for `features`")),
         "{:?}",
         config.startup_warnings
     );
@@ -6438,7 +6304,8 @@ async fn root_approvals_reviewer_falls_back_when_disallowed_by_requirements() ->
     );
     assert!(
         config.startup_warnings.iter().any(|warning| {
-            warning.contains("配置项 `approvals_reviewer` 不符合 requirements 限制")
+            warning
+                .contains("Configured value for `approvals_reviewer` is disallowed by requirements")
         }),
         "{:?}",
         config.startup_warnings
@@ -7101,259 +6968,4 @@ fn test_tui_notification_condition_rejects_unknown_value() {
             && err.contains("always"),
         "unexpected error: {err}"
     );
-}
-
-#[test]
-fn test_tui_auto_compress_pasted_images_can_be_disabled() {
-    let toml = r#"
-            [tui]
-            auto_compress_pasted_images = false
-        "#;
-    let parsed: ConfigToml =
-        toml::from_str(toml).expect("deserialize auto_compress_pasted_images=false");
-    let tui = parsed.tui.expect("tui config should deserialize");
-    assert!(!tui.auto_compress_pasted_images);
-}
-
-#[test]
-fn test_tui_pasted_image_compression_settings_can_be_configured() {
-    let toml = r#"
-            [tui]
-            pasted_image_max_width = 900
-            pasted_image_max_height = 600
-            pasted_image_jpeg_quality = 77
-        "#;
-    let parsed: ConfigToml = toml::from_str(toml).expect("deserialize pasted image settings");
-    let tui = parsed.tui.expect("tui config should deserialize");
-    assert_eq!(tui.pasted_image_max_width, 900);
-    assert_eq!(tui.pasted_image_max_height, 600);
-    assert_eq!(tui.pasted_image_jpeg_quality, 77);
-}
-
-#[test]
-fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
-    let codex_home = tempfile::tempdir()?;
-    let cwd = tempfile::tempdir()?;
-
-    // Create a config with global model, provider-specific model, and profile
-    let cfg = ConfigToml {
-        model: Some("global-model".to_string()),
-        model_provider: Some("cc".to_string()),
-        model_providers: HashMap::from([(
-            "cc".to_string(),
-            ModelProviderInfo {
-                name: "CC Provider".to_string(),
-                model: Some("provider-model".to_string()),
-                base_url: Some("http://127.0.0.1:18100/v1".to_string()),
-                env_key: None,
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: WireApi::Anthropic,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                retry_base_delay_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-                model_context_window: None,
-                model_auto_compact_token_limit: None,
-            },
-        )]),
-        profiles: HashMap::from([(
-            "test-profile".to_string(),
-            ConfigProfile {
-                model: Some("profile-model".to_string()),
-                model_provider: Some("cc".to_string()),
-                ..Default::default()
-            },
-        )]),
-        ..Default::default()
-    };
-
-    // Test 1: Provider-specific model should override global model
-    let overrides = ConfigOverrides {
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-    let config =
-        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())?;
-
-    assert_eq!(config.model.as_deref(), Some("provider-model"));
-
-    // Test 2: Command line model should still have highest priority
-    let overrides = ConfigOverrides {
-        model: Some("cli-model".to_string()),
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-    let config =
-        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())?;
-
-    assert_eq!(config.model.as_deref(), Some("cli-model"));
-
-    // Test 3: Profile model should override global but not provider-specific
-    let overrides = ConfigOverrides {
-        config_profile: Some("test-profile".to_string()),
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
-
-    // Provider-specific model should still win over profile model
-    assert_eq!(config.model.as_deref(), Some("provider-model"));
-
-    // Test 4: Provider without specific model should fall back to global model
-    let cfg_no_provider_model = ConfigToml {
-        model: Some("global-model".to_string()),
-        model_provider: Some("cc".to_string()),
-        model_providers: HashMap::from([(
-            "cc".to_string(),
-            ModelProviderInfo {
-                name: "CC Provider".to_string(),
-                model: None, // No provider-specific model
-                base_url: Some("http://127.0.0.1:18100/v1".to_string()),
-                env_key: None,
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: WireApi::Anthropic,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                retry_base_delay_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-                model_context_window: None,
-                model_auto_compact_token_limit: None,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let overrides = ConfigOverrides {
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-    let config = Config::load_from_base_config_with_overrides(
-        cfg_no_provider_model,
-        overrides,
-        codex_home.abs(),
-    )?;
-
-    assert_eq!(config.model.as_deref(), Some("global-model"));
-
-    Ok(())
-}
-
-#[test]
-fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
-    let cwd = tempfile::tempdir()?;
-    let codex_home = tempfile::tempdir()?;
-
-    let cfg = ConfigToml {
-        model_provider: Some("test_provider".to_string()),
-        model_context_window: Some(8192),
-        model_auto_compact_token_limit: Some(7000),
-        model_providers: HashMap::from([(
-            "test_provider".to_string(),
-            ModelProviderInfo {
-                name: "Test Provider".to_string(),
-                model: None,
-                base_url: Some("https://api.test.com/v1".to_string()),
-                env_key: None,
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: WireApi::Responses,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                retry_base_delay_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-                model_context_window: Some(16000),
-                model_auto_compact_token_limit: Some(14000),
-            },
-        )]),
-        ..Default::default()
-    };
-    let overrides = ConfigOverrides {
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
-
-    let manager_config = config.to_models_manager_config();
-
-    // Provider-specific values should take priority
-    assert_eq!(manager_config.model_context_window, Some(16000));
-    assert_eq!(manager_config.model_auto_compact_token_limit, Some(14000));
-
-    Ok(())
-}
-
-#[test]
-fn test_global_context_window_fallback() -> std::io::Result<()> {
-    let cwd = tempfile::tempdir()?;
-    let codex_home = tempfile::tempdir()?;
-
-    let cfg = ConfigToml {
-        model_provider: Some("test_provider".to_string()),
-        model_context_window: Some(8192),
-        model_auto_compact_token_limit: Some(7000),
-        model_providers: HashMap::from([(
-            "test_provider".to_string(),
-            ModelProviderInfo {
-                name: "Test Provider".to_string(),
-                model: None,
-                base_url: Some("https://api.test.com/v1".to_string()),
-                env_key: None,
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: WireApi::Responses,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                retry_base_delay_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-                model_context_window: None,
-                model_auto_compact_token_limit: None,
-            },
-        )]),
-        ..Default::default()
-    };
-    let overrides = ConfigOverrides {
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
-
-    let manager_config = config.to_models_manager_config();
-
-    // Global values should be used when provider doesn't specify them
-    assert_eq!(manager_config.model_context_window, Some(8192));
-    assert_eq!(manager_config.model_auto_compact_token_limit, Some(7000));
-
-    Ok(())
 }

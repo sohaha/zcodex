@@ -1,4 +1,3 @@
-use crate::AuthProvider as ApiAuthProvider;
 use crate::TransportError;
 use crate::error::ApiError;
 use crate::rate_limits::parse_promo_message;
@@ -12,7 +11,6 @@ use codex_protocol::error::RetryLimitReachedError;
 use codex_protocol::error::UnexpectedResponseError;
 use codex_protocol::error::UsageLimitReachedError;
 use http::HeaderMap;
-use http::HeaderValue;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -57,16 +55,7 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
                 }
 
                 if status == http::StatusCode::BAD_REQUEST {
-                    if let Ok(error) = serde_json::from_str::<AnthropicErrorResponse>(&body_text)
-                        && error.error.error_type.as_deref() == Some("invalid_request_error")
-                        && error
-                            .error
-                            .message
-                            .as_deref()
-                            .is_some_and(crate::anthropic::is_context_window_error_message)
-                    {
-                        CodexErr::ContextWindowExceeded
-                    } else if body_text
+                    if body_text
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
@@ -182,56 +171,4 @@ struct UsageErrorBody {
     error_type: Option<String>,
     plan_type: Option<PlanType>,
     resets_at: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AnthropicErrorResponse {
-    error: AnthropicErrorBody,
-}
-
-#[derive(Debug, Deserialize)]
-struct AnthropicErrorBody {
-    #[serde(rename = "type")]
-    error_type: Option<String>,
-    message: Option<String>,
-}
-
-#[derive(Clone, Default)]
-pub struct CoreAuthProvider {
-    pub token: Option<String>,
-    pub account_id: Option<String>,
-}
-
-impl CoreAuthProvider {
-    pub fn auth_header_attached(&self) -> bool {
-        self.token
-            .as_ref()
-            .is_some_and(|token| http::HeaderValue::from_str(&format!("Bearer {token}")).is_ok())
-    }
-
-    pub fn auth_header_name(&self) -> Option<&'static str> {
-        self.auth_header_attached().then_some("authorization")
-    }
-
-    pub fn for_test(token: Option<&str>, account_id: Option<&str>) -> Self {
-        Self {
-            token: token.map(str::to_string),
-            account_id: account_id.map(str::to_string),
-        }
-    }
-}
-
-impl ApiAuthProvider for CoreAuthProvider {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
-        if let Some(token) = self.token.as_ref()
-            && let Ok(header) = HeaderValue::from_str(&format!("Bearer {token}"))
-        {
-            let _ = headers.insert(http::header::AUTHORIZATION, header);
-        }
-        if let Some(account_id) = self.account_id.as_ref()
-            && let Ok(header) = HeaderValue::from_str(account_id)
-        {
-            let _ = headers.insert("ChatGPT-Account-ID", header);
-        }
-    }
 }
