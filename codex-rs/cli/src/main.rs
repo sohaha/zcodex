@@ -1670,6 +1670,12 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     if let Some(model) = subcommand_cli.model {
         interactive.model = Some(model);
     }
+    if let Some(provider) = subcommand_cli.provider {
+        interactive.provider = Some(provider);
+    }
+    if let Some(oss_provider) = subcommand_cli.oss_provider {
+        interactive.oss_provider = Some(oss_provider);
+    }
     if subcommand_cli.oss {
         interactive.oss = true;
     }
@@ -1699,6 +1705,9 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     }
     if !subcommand_cli.add_dir.is_empty() {
         interactive.add_dir.extend(subcommand_cli.add_dir);
+    }
+    if subcommand_cli.no_alt_screen {
+        interactive.no_alt_screen = true;
     }
     if let Some(prompt) = subcommand_cli.prompt {
         // Normalize CRLF/CR to LF so CLI-provided text can't leak `\r` into TUI state.
@@ -2318,6 +2327,30 @@ mod tests {
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
+    }
+
+    #[test]
+    fn resume_merges_provider_flags() {
+        let interactive = finalize_resume_from_args(
+            [
+                "codex",
+                "resume",
+                "sid",
+                "-P",
+                "anthropic",
+                "--local-provider",
+                "ollama",
+                "--no-alt-screen",
+            ]
+            .as_ref(),
+        );
+
+        assert_eq!(interactive.provider.as_deref(), Some("anthropic"));
+        assert_eq!(interactive.oss_provider.as_deref(), Some("ollama"));
+        assert!(interactive.no_alt_screen);
+        assert!(!interactive.resume_picker);
+        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
     }
 
     #[test]
