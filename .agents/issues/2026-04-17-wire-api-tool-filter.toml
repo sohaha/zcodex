@@ -1,0 +1,70 @@
+plan = ".agents/plan/2026-04-17-wire-api-tool-filter.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "在工具注册逻辑中添加 wire_api 检查条件"
+scope = """
+修改 `codex-rs/tools/src/tool_registry_plan.rs` 中的 `build_tool_registry_plan` 函数，
+为 web_search 工具注册添加 wire_api 检查条件。仅当 `config.wire_api == WireApi::Responses` 时
+才调用 `create_web_search_tool` 并注册到工具计划中。
+
+不涉及其他工具类型的修改，不修改工具创建函数签名。
+"""
+touch_points = ["codex-rs/tools/src/tool_registry_plan.rs"]
+depends_on = []
+done_when = "代码修改完成并通过 `cargo build -p codex-tools` 编译检查"
+validate_by = "cd /workspace/codex-rs && cargo build -p codex-tools"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "添加单元测试验证 wire_api 过滤逻辑"
+scope = """
+在 `codex-rs/tools/src/tool_registry_plan_tests.rs` 中添加测试用例，验证：
+1. 当 wire_api = WireApi::Responses 时，web_search 工具应被注册
+2. 当 wire_api = WireApi::Chat 时，web_search 工具不应被注册
+3. 当 wire_api = WireApi::Anthropic 时，web_search 工具不应被注册
+
+不涉及其他测试文件的修改。
+"""
+touch_points = ["codex-rs/tools/src/tool_registry_plan_tests.rs"]
+depends_on = ["a1"]
+done_when = "测试用例添加完成且所有测试通过"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-tools tool_registry_plan"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-tools"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "运行完整测试套件验证无回归"
+scope = """
+运行 codex-tools 和 codex-core 的完整测试套件，确保修改没有引入回归问题。
+重点验证：
+1. 所有现有工具注册测试通过
+2. 核心功能测试通过
+3. 新添加的 wire_api 过滤测试通过
+
+不涉及代码修改，仅执行验证。
+"""
+touch_points = ["codex-rs/tools", "codex-rs/core"]
+depends_on = ["a2"]
+done_when = "所有测试套件运行完成且无失败"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-tools && cargo nextest run -p codex-core"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"

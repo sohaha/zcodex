@@ -158,11 +158,11 @@ impl RequestTelemetry for ModelsRequestTelemetry {
 /// Strategy for refreshing available models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshStrategy {
-    /// Always fetch from the network, ignoring cache.
+    /// 始终从网络获取，忽略缓存.
     Online,
     /// Only use cached data, never fetch from the network.
     Offline,
-    /// Use cache if available and fresh, otherwise fetch from the network.
+    /// 如果缓存可用且新鲜则使用，否则从网络获取.
     OnlineIfUncached,
 }
 
@@ -185,13 +185,13 @@ impl fmt::Display for RefreshStrategy {
 /// How the manager's base catalog is sourced for the lifetime of the process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CatalogMode {
-    /// Start from bundled `models.json` and allow cache/network refresh updates.
+    /// 从绑定的 models.json 开始，允许缓存/网络刷新更新.
     Default,
-    /// Use a caller-provided catalog as authoritative and do not mutate it via refresh.
+    /// 使用调用者提供的目录作为权威目录，不通过刷新变更.
     Custom,
 }
 
-/// Coordinates remote model discovery plus cached metadata on disk.
+/// 协调远程模型发现及磁盘上的缓存元数据.
 #[derive(Debug)]
 pub struct ModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
@@ -204,11 +204,11 @@ pub struct ModelsManager {
 }
 
 impl ModelsManager {
-    /// Construct a manager scoped to the provided `AuthManager`.
+    /// 使用提供的 AuthManager 构造管理器.
     ///
-    /// Uses `codex_home` to store cached model metadata and initializes with bundled catalog
-    /// When `model_catalog` is provided, it becomes the authoritative remote model list and
-    /// background refreshes from `/models` are disabled.
+    /// 使用 codex_home 存储缓存的模型元数据，并用绑定的目录初始化
+    /// 当提供 model_catalog 时，它成为权威的远程模型列表
+    /// 且禁用从 /models 的后台刷新.
     pub fn new(
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
@@ -224,7 +224,7 @@ impl ModelsManager {
         )
     }
 
-    /// Construct a manager with an explicit provider used for remote model refreshes.
+    /// 使用用于远程模型刷新的显式提供商构造管理器.
     pub fn new_with_provider(
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
@@ -240,11 +240,11 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        // Always apply per-provider model_catalog filtering, regardless of global model_catalog
+        // 无论全局 model_catalog 如何，始终应用按提供商的 model_catalog 过滤
         let base_models = model_catalog
             .map(|catalog| catalog.models)
             .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider));
-        
+
         let remote_models = if let Some(ref catalog_slugs) = provider.model_catalog {
             tracing::warn!(
                 "MODEL_CATALOG_DEBUG: Filtering {} models by provider catalog: {:?}",
@@ -269,9 +269,9 @@ impl ModelsManager {
         }
     }
 
-    /// List all available models, refreshing according to the specified strategy.
+    /// 列出所有可用模型，按指定策略刷新.
     ///
-    /// Returns model presets sorted by priority and filtered by auth mode and visibility.
+    /// 返回按优先级排序并按认证模式和可见性过滤的模型预设.
     #[instrument(
         level = "info",
         skip(self),
@@ -299,7 +299,7 @@ impl ModelsManager {
         builtin_collaboration_mode_presets(collaboration_modes_config)
     }
 
-    /// Attempt to list models without blocking, using the current cached state.
+    /// 尝试非阻塞列出模型，使用当前缓存状态.
     ///
     /// Returns an error if the internal lock cannot be acquired.
     pub fn try_list_models(&self) -> Result<Vec<ModelPreset>, TryLockError> {
@@ -307,10 +307,10 @@ impl ModelsManager {
         Ok(self.build_available_models(remote_models))
     }
 
-    // todo(aibrahim): should be visible to core only and sent on session_configured event
+    // 应该在 core 可见并在 session_configured 事件上发送
     /// Get the model identifier to use, refreshing according to the specified strategy.
     ///
-    /// If `model` is provided, returns it directly. Otherwise selects the default based on
+    /// 如果提供了 model，则直接返回。否则根据
     /// auth mode and available models.
     #[instrument(
         level = "info",
@@ -342,7 +342,7 @@ impl ModelsManager {
     }
 
     // todo(aibrahim): look if we can tighten it to pub(crate)
-    /// Look up model metadata, applying remote overrides and config adjustments.
+    /// 查找模型元数据，应用远程覆盖和配置调整.
     #[instrument(level = "info", skip(self, config), fields(model = model))]
     pub async fn get_model_info(&self, model: &str, config: &ModelsManagerConfig) -> ModelInfo {
         let remote_models = self.get_remote_models().await;
@@ -367,9 +367,9 @@ impl ModelsManager {
         best
     }
 
-    /// Retry metadata lookup for a single namespaced slug like `namespace/model-name`.
+    /// 重试单个带命名空间 slug（如 namespace/model-name）的元数据查找.
     ///
-    /// This only strips one leading namespace segment and only when the namespace is ASCII
+    /// 仅剥离一个前导命名空间段，且仅当命名空间是 ASCII
     /// alphanumeric/underscore (`\\w+`) to avoid broadly matching arbitrary aliases.
     fn find_model_by_namespaced_suffix(model: &str, candidates: &[ModelInfo]) -> Option<ModelInfo> {
         let (namespace, suffix) = model.split_once('/')?;
@@ -390,7 +390,7 @@ impl ModelsManager {
         candidates: &[ModelInfo],
         config: &ModelsManagerConfig,
     ) -> ModelInfo {
-        // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
+        // 首先使用正常的最长前缀匹配。如果未命中，允许狭义范围
         // retry for namespaced slugs like `custom/gpt-5.3-codex`.
         let remote = Self::find_model_by_longest_prefix(model, candidates)
             .or_else(|| Self::find_model_by_namespaced_suffix(model, candidates));
@@ -406,7 +406,7 @@ impl ModelsManager {
         model_info::with_config_overrides(model_info, config)
     }
 
-    /// Refresh models if the provided ETag differs from the cached ETag.
+    /// 如果提供的 ETag 与缓存的 ETag 不同则刷新模型.
     ///
     /// Uses `Online` strategy to fetch latest models when ETags differ.
     pub async fn refresh_if_new_etag(&self, etag: String) {
@@ -448,12 +448,12 @@ impl ModelsManager {
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
-                // Try cache first, fall back to online if unavailable
+                // 优先尝试缓存，不可用时回退到在线
                 if self.try_load_cache().await {
-                    info!("models cache: using cached models for OnlineIfUncached");
+                    info!("模型缓存：为 OnlineIfUncached 使用缓存模型");
                     return Ok(());
                 }
-                info!("models cache: cache miss, fetching remote models");
+                info!("模型缓存：缓存未命中，获取远程模型");
                 self.fetch_and_update_models().await
             }
             RefreshStrategy::Online => {
@@ -522,38 +522,43 @@ impl ModelsManager {
         *self.remote_models.write().await = existing_models;
     }
 
-fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
-    let models = match provider.wire_api {
-        WireApi::Anthropic => model_info::anthropic_model_catalog(),
-        _ => Self::load_remote_models_from_file().unwrap_or_default(),
-    };
-    
-    // Apply model_catalog filtering for all wire_api types
-    if let Some(ref catalog_slugs) = provider.model_catalog {
-        tracing::warn!(
-            "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
-            models.len(),
-            catalog_slugs
-        );
-        
-        // Try to find matching models in default list
-        let matching_models: Vec<_> = models
-            .iter()
-            .filter(|model| catalog_slugs.contains(&model.slug))
-            .cloned()
-            .collect();
-        
-        if !matching_models.is_empty() {
-            tracing::warn!("MODEL_CATALOG_DEBUG: Found {} matching models in default list", matching_models.len());
-            return matching_models;
-        }
-        
-        // If no matches, create models from catalog slugs
-        tracing::warn!("MODEL_CATALOG_DEBUG: No matches found, creating {} models from catalog slugs", catalog_slugs.len());
-        
-        // Use first model as template or create fallback
-        let template = models.first().cloned().unwrap_or_else(|| {
-            ModelInfo {
+    fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+        let models = match provider.wire_api {
+            WireApi::Anthropic => model_info::anthropic_model_catalog(),
+            _ => Self::load_remote_models_from_file().unwrap_or_default(),
+        };
+
+        // Apply model_catalog filtering for all wire_api types
+        if let Some(ref catalog_slugs) = provider.model_catalog {
+            tracing::warn!(
+                "MODEL_CATALOG_DEBUG: Filtering {} models by catalog: {:?}",
+                models.len(),
+                catalog_slugs
+            );
+
+            // Try to find matching models in default list
+            let matching_models: Vec<_> = models
+                .iter()
+                .filter(|model| catalog_slugs.contains(&model.slug))
+                .cloned()
+                .collect();
+
+            if !matching_models.is_empty() {
+                tracing::warn!(
+                    "MODEL_CATALOG_DEBUG: Found {} matching models in default list",
+                    matching_models.len()
+                );
+                return matching_models;
+            }
+
+            // 如果没有匹配，则从目录 slug 创建模型
+            tracing::warn!(
+                "MODEL_CATALOG_DEBUG: No matches found, creating {} models from catalog slugs",
+                catalog_slugs.len()
+            );
+
+            // Use first model as template or create fallback
+            let template = models.first().cloned().unwrap_or_else(|| ModelInfo {
                 slug: String::from("fallback"),
                 display_name: String::from("Fallback Model"),
                 description: None,
@@ -575,7 +580,9 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
                 apply_patch_tool_type: None,
                 web_search_tool_type: codex_protocol::openai_models::WebSearchToolType::Text,
                 supports_search_tool: false,
-                truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(10000),
+                truncation_policy: codex_protocol::openai_models::TruncationPolicyConfig::bytes(
+                    10000,
+                ),
                 supports_parallel_tool_calls: false,
                 supports_image_detail_original: false,
                 context_window: None,
@@ -584,27 +591,26 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
                 experimental_supported_tools: Vec::new(),
                 input_modalities: Vec::new(),
                 used_fallback_model_metadata: true,
-            }
-        });
-        
-        // Create models for each catalog slug
-        let custom_models: Vec<ModelInfo> = catalog_slugs
-            .iter()
-            .enumerate()
-            .map(|(i, slug)| {
-                let mut model = template.clone();
-                model.slug = slug.clone();
-                model.display_name = slug.clone();
-                model.priority = i as i32;
-                model
-            })
-            .collect();
-        
-        return custom_models;
-    } else {
-        models
+            });
+
+            // 为每个目录 slug 创建模型
+            let custom_models: Vec<ModelInfo> = catalog_slugs
+                .iter()
+                .enumerate()
+                .map(|(i, slug)| {
+                    let mut model = template.clone();
+                    model.slug = slug.clone();
+                    model.display_name = slug.clone();
+                    model.priority = i as i32;
+                    model
+                })
+                .collect();
+
+            return custom_models;
+        } else {
+            models
+        }
     }
-}
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
         Ok(crate::bundled_models_response()?.models)
@@ -637,7 +643,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         {
             Some(cache) => cache,
             None => {
-                info!("models cache: no usable cache entry");
+                info!("模型缓存：没有可用的缓存条目");
                 return false;
             }
         };
@@ -652,13 +658,17 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         true
     }
 
-    /// Build picker-ready presets from the active catalog snapshot.
+    /// 从活动目录快照构建选择器就绪的预设.
     fn build_available_models(&self, mut remote_models: Vec<ModelInfo>) -> Vec<ModelPreset> {
         remote_models.sort_by(|a, b| a.priority.cmp(&b.priority));
 
         let mut presets: Vec<ModelPreset> = remote_models.into_iter().map(Into::into).collect();
         // Filter models by provider-specific model_catalog if configured
-        tracing::warn!("MODEL_CATALOG_DEBUG: provider.model_catalog = {:?}, remote_models count = {}", self.provider.model_catalog, presets.len());
+        tracing::warn!(
+            "MODEL_CATALOG_DEBUG: provider.model_catalog = {:?}, remote_models count = {}",
+            self.provider.model_catalog,
+            presets.len()
+        );
         if let Some(ref catalog_slugs) = self.provider.model_catalog {
             presets.retain(|preset| catalog_slugs.contains(&preset.model));
         }
@@ -677,7 +687,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         Ok(self.remote_models.try_read()?.clone())
     }
 
-    /// Construct a manager with a specific provider for testing.
+    /// 使用特定提供商为测试构造管理器.
     pub fn with_provider_for_tests(
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
@@ -692,7 +702,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
         )
     }
 
-    /// Get model identifier without consulting remote state or cache.
+    /// 在不查询远程状态或缓存的情况下获取模型标识符.
     pub fn get_model_offline_for_tests(model: Option<&str>) -> String {
         if let Some(model) = model {
             return model.to_string();
@@ -710,7 +720,7 @@ fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<Model
             .unwrap_or_default()
     }
 
-    /// Build `ModelInfo` without consulting remote state or cache.
+    /// 在不查询远程状态或缓存的情况下构建 ModelInfo.
     pub fn construct_model_info_offline_for_tests(
         model: &str,
         config: &ModelsManagerConfig,
