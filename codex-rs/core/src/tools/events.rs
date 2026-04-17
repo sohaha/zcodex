@@ -613,10 +613,10 @@ mod tests {
             ExecCommandSource::Agent,
             true,
             Some("FOO=1 git status".to_string()),
-            Some(
-                "[shell_command routed via embedded ZTOK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex ztok git status"
-                    .to_string(),
-            ),
+           Some(
+                "ztok: FOO=1 git status → FOO=1 codex ztok git status"
+                   .to_string(),
+           ),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-1", None);
 
@@ -642,8 +642,8 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(result.contains("[shell_command routed via embedded ZTOK]"));
-        assert!(result.contains("rewritten: FOO=1 codex ztok git status"));
+       assert!(result.contains("[shell_command routed via embedded ZTOK]"));
+        assert!(result.contains("FOO=1 codex ztok git status"));
         assert!(result.contains("ok"));
 
         let end = recv_exec_end(&mut rx).await;
@@ -670,10 +670,10 @@ mod tests {
             ExecCommandSource::Agent,
             true,
             Some("git status".to_string()),
-            Some(
-                "[shell_command routed via embedded ZTOK]\noriginal: git status\nrewritten: codex ztok git status"
-                    .to_string(),
-            ),
+           Some(
+                "ztok: git status → codex ztok git status"
+                   .to_string(),
+           ),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-abs", None);
 
@@ -714,9 +714,9 @@ mod tests {
             ExecCommandSource::Agent,
             false,
             None,
-            Some(
-                "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax".to_string(),
-            ),
+           Some(
+                "raw: git status | head (contains compound shell syntax)".to_string(),
+           ),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-2", None);
 
@@ -727,7 +727,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(!result.contains("[shell_command kept raw]"));
-        assert!(result.contains("stdout"));
+       assert!(!result.contains("[shell_command kept raw]"));
+        assert!(result.contains("raw: git status | head"));
     }
 }

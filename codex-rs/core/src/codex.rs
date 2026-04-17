@@ -3978,6 +3978,7 @@ impl Session {
                 developer_sections.push(zmemory_recall_note);
             }
         }
+        developer_sections.push(build_ztok_tool_developer_instructions());
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
@@ -8569,6 +8570,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 }
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
+use crate::memories::prompts::build_ztok_tool_developer_instructions;
 use crate::memories::prompts::build_zmemory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;

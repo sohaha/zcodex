@@ -429,7 +429,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
             filtered.push_str(&line);
             print!("{line}");
             if failed > 0 {
-                let line = format!("  ⚠️  {failed} checks failed\n");
+                let line = format!("  {failed} checks failed\n");
                 filtered.push_str(&line);
                 print!("{line}");
             }
@@ -515,15 +515,15 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let mut filtered = String::new();
 
-    let line = "🔍 CI Checks\n";
+    let line = "CI Checks\n";
     filtered.push_str(line);
     print!("{line}");
 
-    let line = format!("  ✅ Passed: {passed}\n");
+    let line = format!("  Passed: {passed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  ❌ Failed: {failed}\n");
+    let line = format!("  Failed: {failed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -580,7 +580,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     let mut filtered = String::new();
 
     if let Some(created_by) = json["createdBy"].as_array() {
-        let line = format!("📝 PRs (created by you, {})\n", created_by.len());
+        let line = format!("PRs (created by you, {})\n", created_by.len());
         filtered.push_str(&line);
         print!("{line}");
         for pr in created_by.iter().take(5) {
@@ -839,14 +839,14 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 }
             } else {
                 match conclusion {
-                    "success" => "✅",
-                    "failure" => "❌",
-                    "cancelled" => "🚫",
+                    "success" => "ok",
+                    "failure" => "fail",
+                    "cancelled" => "cancelled",
                     _ => {
                         if status == "in_progress" {
-                            "⏳"
+                            "running"
                         } else {
-                            "⚪"
+                            "pending"
                         }
                     }
                 }

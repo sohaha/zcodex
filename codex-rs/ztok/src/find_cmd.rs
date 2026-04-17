@@ -306,7 +306,7 @@ pub fn run(
     let dirs_count = dirs.len();
     let total_files = files.len();
 
-    println!("📁 {total_files} 个文件 {dirs_count} 个目录：");
+    println!("{total_files} 个文件 {dirs_count} 个目录：");
     println!();
 
     // 按 `--max` 正确限制展示数量（按单个文件计数）

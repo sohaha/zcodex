@@ -186,21 +186,21 @@ impl ShellCommandHandler {
                     exec_command,
                     Some(logical_command.clone()),
                     Some(command.to_string()),
-                    Some(format!(
-                        "[shell_command routed via embedded ZTOK]\noriginal: {command}\nrewritten: {logical_command}"
-                    )),
+                   Some(format!(
+                        "ztok: {command} → {logical_command}"
+                   )),
                 ))
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => Ok((
                 command.to_string(),
                 None,
                 None,
-                candidate.then(|| {
-                    format!(
-                        "[shell_command kept raw]\noriginal: {command}\nexecuted: {command}\nreason: {}",
-                        reason.as_str()
-                    )
-                }),
+               candidate.then(|| {
+                   format!(
+                        "raw: {command} ({})",
+                       reason.as_str()
+                   )
+               }),
             )),
         }
     }

@@ -4469,6 +4469,21 @@ async fn build_initial_context_includes_zmemory_instructions_when_feature_enable
 }
 
 #[tokio::test]
+async fn build_initial_context_includes_ztok_instructions() {
+    let (session, turn_context) = make_session_and_context().await;
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Embedded ZTOK")),
+        "expected initial context to include ztok instructions, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn build_initial_context_includes_pending_zmemory_recall_note() {
     let (session, mut turn_context) = make_session_and_context().await;
     let _ = turn_context.features.enable(Feature::Zmemory);

@@ -81,28 +81,28 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     }
 
     if !lang_vars.is_empty() {
-        println!("\n🔧 语言/运行时：");
+        println!("\n语言/运行时：");
         for (k, v) in &lang_vars {
             println!("  {k}={v}");
         }
     }
 
     if !cloud_vars.is_empty() {
-        println!("\n☁️  云/服务：");
+        println!("\n云/服务：");
         for (k, v) in &cloud_vars {
             println!("  {k}={v}");
         }
     }
 
     if !tool_vars.is_empty() {
-        println!("\n🛠️  工具：");
+        println!("\n工具：");
         for (k, v) in &tool_vars {
             println!("  {k}={v}");
         }
     }
 
     if !other_vars.is_empty() {
-        println!("\n📋 其他：");
+        println!("\n其他：");
         for (k, v) in other_vars.iter().take(20) {
             println!("  {k}={v}");
         }
@@ -118,7 +118,7 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
         + tool_vars.len()
         + other_vars.len().min(20);
     if filter.is_none() {
-        println!("\n📊 总计：{total} 个变量（显示 {shown} 个相关）");
+        println!("\n总计：{total} 个变量（显示 {shown} 个相关）");
     }
 
     let raw: String = vars.iter().map(|(k, v)| format!("{k}={v}\n")).collect();

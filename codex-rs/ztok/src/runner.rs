@@ -25,10 +25,10 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
 
     if filtered.is_empty() {
         if output.status.success() {
-            ztok.push_str("✅ 命令执行成功（无错误）");
+            ztok.push_str("命令执行成功（无错误）");
         } else {
             ztok.push_str(&format!(
-                "❌ 命令执行失败（退出码：{:?}）\n",
+                "命令执行失败（退出码：{:?}）\n",
                 output.status.code()
             ));
             let lines: Vec<&str> = raw.lines().collect();
@@ -216,7 +216,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     let mut output = String::new();
 
     if !failures.is_empty() {
-        output.push_str("❌ 失败：\n");
+        output.push_str("失败：\n");
         for f in failures.iter().take(10) {
             output.push_str(&format!("  {f}\n"));
         }
@@ -227,13 +227,13 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     }
 
     if !result.is_empty() {
-        output.push_str("📊 摘要：\n");
+        output.push_str("摘要：\n");
         for r in &result {
             output.push_str(&format!("  {r}\n"));
         }
     } else {
         // 回退：显示最后几行
-        output.push_str("📊 输出（最后 5 行）：\n");
+        output.push_str("输出（最后 5 行）：\n");
         let start = lines.len().saturating_sub(5);
         for line in &lines[start..] {
             if !line.trim().is_empty() {

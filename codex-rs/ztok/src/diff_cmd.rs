@@ -22,7 +22,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
     let mut ztok = String::new();
 
     if diff.added == 0 && diff.removed == 0 {
-        ztok.push_str("✅ 文件完全一致");
+        ztok.push_str("文件完全一致");
         println!("{ztok}");
         timer.track(
             &format!("diff {} {}", file1.display(), file2.display()),
@@ -33,7 +33,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
         return Ok(());
     }
 
-    ztok.push_str(&format!("📊 {} → {}\n", file1.display(), file2.display()));
+    ztok.push_str(&format!("{} → {}\n", file1.display(), file2.display()));
     ztok.push_str(&format!(
         "   +{} 新增，-{} 删除，~{} 修改\n\n",
         diff.added, diff.removed, diff.modified
@@ -173,7 +173,7 @@ fn condense_unified_diff(diff: &str) -> String {
             // 文件头
             if line.starts_with("+++ ") {
                 if !current_file.is_empty() && (added > 0 || removed > 0) {
-                    result.push(format!("📄 {current_file} (+{added} -{removed})"));
+                    result.push(format!("{current_file} (+{added} -{removed})"));
                     for c in changes.iter().take(10) {
                         result.push(format!("  {c}"));
                     }
@@ -204,7 +204,7 @@ fn condense_unified_diff(diff: &str) -> String {
 
     // 最后一个文件
     if !current_file.is_empty() && (added > 0 || removed > 0) {
-        result.push(format!("📄 {current_file} (+{added} -{removed})"));
+        result.push(format!("{current_file} (+{added} -{removed})"));
         for c in changes.iter().take(10) {
             result.push(format!("  {c}"));
         }

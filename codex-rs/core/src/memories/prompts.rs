@@ -43,6 +43,12 @@ static ZMEMORY_DEVELOPER_INSTRUCTIONS_TEMPLATE: LazyLock<Template> = LazyLock::n
         "zmemory/write_path.md",
     )
 });
+static ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
+    parse_embedded_template(
+        include_str!("../../templates/compact/ztok.md"),
+        "compact/ztok.md",
+    )
+});
 static MEMORY_EXTENSIONS_FOLDER_STRUCTURE_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
     parse_embedded_template(
         MEMORY_EXTENSIONS_FOLDER_STRUCTURE,
@@ -303,6 +309,12 @@ pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
             stable_preference_contract.as_str(),
         )])
         .unwrap_or_else(|err| panic!("embedded zmemory prompt template should render: {err}"))
+}
+
+pub(crate) fn build_ztok_tool_developer_instructions() -> String {
+    ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE
+        .render([])
+        .unwrap_or_else(|err| panic!("embedded ztok prompt template should render: {err}"))
 }
 
 #[cfg(test)]

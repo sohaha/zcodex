@@ -214,7 +214,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     let json: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => {
-            ztok.push_str("☸️  未找到 Pod");
+            ztok.push_str("未找到 Pod");
             println!("{ztok}");
             timer.track("kubectl get pods", "ztok kubectl pods", &raw, &ztok);
             return Ok(());
@@ -222,7 +222,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     };
 
     let Some(pods) = json["items"].as_array().filter(|a| !a.is_empty()) else {
-        ztok.push_str("☸️  未找到 Pod");
+        ztok.push_str("未找到 Pod");
         println!("{ztok}");
         timer.track("kubectl get pods", "ztok kubectl pods", &raw, &ztok);
         return Ok(());
@@ -273,25 +273,21 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut parts = Vec::new();
     if running > 0 {
-        parts.push(format!("{running} ✓"));
+        parts.push(format!("{running} running"));
     }
     if pending > 0 {
         parts.push(format!("{pending} 等待"));
     }
     if failed > 0 {
-        parts.push(format!("{failed} ✗"));
+        parts.push(format!("{failed} failed"));
     }
     if restarts_total > 0 {
         parts.push(format!("{restarts_total} 次重启"));
     }
 
-    ztok.push_str(&format!(
-        "☸️  {} 个 Pods: {}\n",
-        pods.len(),
-        parts.join(", ")
-    ));
+    ztok.push_str(&format!("{} 个 Pods: {}\n", pods.len(), parts.join(", ")));
     if !issues.is_empty() {
-        ztok.push_str("⚠️  问题：\n");
+        ztok.push_str("问题：\n");
         for issue in issues.iter().take(10) {
             ztok.push_str(&format!("  {issue}\n"));
         }
@@ -321,7 +317,7 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     let json: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => {
-            ztok.push_str("☸️  未找到 Services");
+            ztok.push_str("未找到 Services");
             println!("{ztok}");
             timer.track("kubectl get svc", "ztok kubectl svc", &raw, &ztok);
             return Ok(());
@@ -329,12 +325,12 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     };
 
     let Some(services) = json["items"].as_array().filter(|a| !a.is_empty()) else {
-        ztok.push_str("☸️  未找到 Services");
+        ztok.push_str("未找到 Services");
         println!("{ztok}");
         timer.track("kubectl get svc", "ztok kubectl svc", &raw, &ztok);
         return Ok(());
     };
-    ztok.push_str(&format!("☸️  {} 个 Services:\n", services.len()));
+    ztok.push_str(&format!("{} 个 Services:\n", services.len()));
 
     for svc in services.iter().take(15) {
         let ns = svc["metadata"]["namespace"].as_str().unwrap_or("-");
@@ -394,7 +390,7 @@ fn kubectl_logs(args: &[String], _verbose: u8) -> Result<()> {
     let output = cmd.output().context("运行 kubectl logs 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
     let analyzed = crate::log_cmd::run_stdin_str(&raw);
-    let ztok = format!("☸️  {pod} 日志：\n{analyzed}");
+    let ztok = format!("{pod} 日志：\n{analyzed}");
     println!("{ztok}");
     timer.track(
         &format!("kubectl logs {pod}"),

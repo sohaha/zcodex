@@ -159,3 +159,16 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("Use `create` only when that canonical URI is missing"));
     assert!(instructions.contains("always `update` that same canonical node"));
 }
+
+#[test]
+fn build_ztok_tool_developer_instructions_renders_embedded_template() {
+    let instructions = build_ztok_tool_developer_instructions();
+
+    assert!(instructions.contains("## Embedded ZTOK"));
+    assert!(instructions.contains("`codex ztok` is the token-optimized CLI proxy"));
+    assert!(instructions.contains("Prefer running shell commands through `codex ztok`"));
+    assert!(instructions.contains("`codex ztok err -- <command> [args...]`"));
+    assert!(instructions.contains("`codex ztok test -- <command> [args...]`"));
+    assert!(instructions.contains("[shell_command routed via embedded ZTOK]"));
+    assert!(instructions.contains("[shell_command kept raw]"));
+}

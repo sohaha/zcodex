@@ -71,7 +71,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
                 eprintln!("{}", stderr.trim());
             }
         }
-        let msg = format!("🔍 未找到：'{pattern}'");
+        let msg = format!("未找到：'{pattern}'");
         println!("{msg}");
         timer.track(
             &format!("grep -rn '{pattern}' {path}"),
@@ -108,7 +108,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
 
     let mut ztok_output = String::new();
     ztok_output.push_str(&format!(
-        "🔍 {} 处匹配，{} 个文件：\n\n",
+        "{} 处匹配，{} 个文件：\n\n",
         total,
         by_file.len()
     ));
@@ -123,7 +123,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
         }
 
         let file_display = compact_path(file);
-        ztok_output.push_str(&format!("📄 {} ({}):\n", file_display, matches.len()));
+        ztok_output.push_str(&format!("{} ({}):\n", file_display, matches.len()));
 
         for (line_num, content) in matches.iter().take(10) {
             ztok_output.push_str(&format!("  {line_num:>4}: {content}\n"));
@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn test_no_match_message_is_localized() {
         let msg = format!("🔍 未找到：'{}'", "needle");
-        assert_eq!(msg, "🔍 未找到：'needle'");
+        assert_eq!(msg, "未找到：'needle'");
     }
 
     #[test]

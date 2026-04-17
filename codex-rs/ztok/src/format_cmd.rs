@@ -230,7 +230,7 @@ fn filter_black_output(output: &str) -> String {
 
     if !needs_formatting && (all_done || files_unchanged > 0) {
         // 所有文件格式都正确
-        result.push_str("✓ 格式（black）：所有文件格式正确");
+        result.push_str("格式（black）：所有文件格式正确");
         if files_unchanged > 0 {
             result.push_str(&format!("（检查了 {files_unchanged} 个文件）"));
         }
@@ -256,10 +256,10 @@ fn filter_black_output(output: &str) -> String {
         }
 
         if files_unchanged > 0 {
-            result.push_str(&format!("\n✓ {files_unchanged} 个文件已格式化\n"));
+            result.push_str(&format!("\n{files_unchanged} 个文件已格式化\n"));
         }
 
-        result.push_str("\n💡 运行 `black .` 格式化这些文件\n");
+        result.push_str("\n运行 `black .` 格式化这些文件\n");
     } else {
         // 回退：直接显示原始输出
         result.push_str(output.trim());
@@ -344,7 +344,7 @@ mod tests {
     fn test_filter_black_all_formatted() {
         let output = "All done! ✨ 🍰 ✨\n5 files left unchanged.";
         let result = filter_black_output(output);
-        assert!(result.contains("✓ 格式（black）"));
+        assert!(result.contains("格式（black）"));
         assert!(result.contains("所有文件格式正确"));
         assert!(result.contains("检查了 5 个文件"));
     }

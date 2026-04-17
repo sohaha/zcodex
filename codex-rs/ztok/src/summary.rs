@@ -47,7 +47,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     let mut result = Vec::new();
 
     // 状态
-    let status_icon = if success { "✅" } else { "❌" };
+    let status_icon = if success { "ok" } else { "fail" };
     result.push(format!(
         "{} 命令：{}",
         status_icon,
@@ -147,9 +147,9 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
         }
     }
 
-    result.push(format!("   ✅ {passed} 通过"));
+    result.push(format!("   {passed} 通过"));
     if failed > 0 {
-        result.push(format!("   ❌ {failed} 失败"));
+        result.push(format!("   {failed} 失败"));
     }
     if skipped > 0 {
         result.push(format!("   ⏭️  {skipped} 跳过"));
@@ -189,16 +189,16 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
     }
 
     if compiled > 0 {
-        result.push(format!("   📦 已编译 {compiled} 个 crate/文件"));
+        result.push(format!("   已编译 {compiled} 个 crate/文件"));
     }
     if errors > 0 {
-        result.push(format!("   ❌ {errors} 个错误"));
+        result.push(format!("   {errors} 个错误"));
     }
     if warnings > 0 {
-        result.push(format!("   ⚠️  {warnings} 个警告"));
+        result.push(format!("   {warnings} 个警告"));
     }
     if errors == 0 && warnings == 0 {
-        result.push("   ✅ 构建成功".to_string());
+        result.push("   构建成功".to_string());
     }
 
     if !error_msgs.is_empty() {
@@ -211,7 +211,7 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
 }
 
 fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
-    result.push("📝 日志摘要：".to_string());
+    result.push("日志摘要：".to_string());
 
     let mut errors = 0;
     let mut warnings = 0;
@@ -228,8 +228,8 @@ fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
         }
     }
 
-    result.push(format!("   ❌ {errors} 个错误"));
-    result.push(format!("   ⚠️  {warnings} 个警告"));
+        result.push(format!("   {errors} 个错误"));
+        result.push(format!("   {warnings} 个警告"));
     result.push(format!("   ℹ️  {info} 条信息"));
 }
 

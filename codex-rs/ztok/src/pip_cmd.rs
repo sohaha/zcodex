@@ -211,7 +211,7 @@ fn filter_pip_outdated(output: &str) -> String {
     };
 
     if packages.is_empty() {
-        return "✓ pip outdated: 所有包已是最新".to_string();
+        return "pip outdated: 所有包已是最新".to_string();
     }
 
     let mut result = String::new();
@@ -233,7 +233,7 @@ fn filter_pip_outdated(output: &str) -> String {
         result.push_str(&format!("\n... +{} 个包\n", packages.len() - 20));
     }
 
-    result.push_str("\n💡 运行 `pip install --upgrade <package>` 进行更新\n");
+        result.push_str("\n运行 `pip install --upgrade <package>` 进行更新\n");
 
     result.trim().to_string()
 }
@@ -268,7 +268,7 @@ mod tests {
     fn test_filter_pip_outdated_none() {
         let output = "[]";
         let result = filter_pip_outdated(output);
-        assert!(result.contains("✓"));
+        assert!(result.contains("pip outdated: 所有包已是最新"));
         assert!(result.contains("所有包已是最新"));
     }
 

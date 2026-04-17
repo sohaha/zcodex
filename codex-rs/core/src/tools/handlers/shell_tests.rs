@@ -262,9 +262,9 @@ fn shell_command_prepare_command_routes_safe_commands_via_ztok() {
             "FOO=1 /tmp/codex ztok git status".to_string(),
             Some("FOO=1 codex ztok git status".to_string()),
             Some("FOO=1 git status".to_string()),
-            Some(
-                "[shell_command routed via embedded ZTOK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex ztok git status".to_string()
-            )
+           Some(
+                "ztok: FOO=1 git status → FOO=1 codex ztok git status".to_string()
+           )
         )
     );
 }
@@ -280,9 +280,9 @@ fn shell_command_prepare_command_reports_candidate_passthrough_reason() {
             "git status | head".to_string(),
             None,
             None,
-            Some(
-                "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax".to_string()
-            )
+           Some(
+                "raw: git status | head (contains compound shell syntax)".to_string()
+           )
         )
     );
 }
