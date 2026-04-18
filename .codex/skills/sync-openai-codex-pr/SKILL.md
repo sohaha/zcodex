@@ -1,542 +1,207 @@
 ---
 name: sync-openai-codex-pr
-description: 在独立 worktree（从 web 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才阻塞并请求选择；完成验证后直接合并回原分支，并汇总合并功能与影响。
+description: 在独立 worktree 中把 `openai/codex` 的 `main` 同步到当前分支：先做范围审计，再本地优先解决冲突；仅在“同功能两套实现必须二选一”或“上游原生功能已被 upstream 删除/回滚”时阻塞询问；合并回当前分支前后都要用本地分叉特性清单做审查，并更新同步基线与特性清单。
 ---
 
-# sync-openai-codex-pr（上游同步）
+# Sync OpenAI Codex PR
+
+仅在把 `openai/codex` 的 `main` 同步到当前分叉仓库时使用这个技能。
+
+## 先读这些文件
+
+- `/workspace/.codex/skills/sync-openai-codex-pr/STATE.md`
+- `/workspace/.codex/skills/sync-openai-codex-pr/references/checklist.md`
+- `/workspace/.codex/skills/sync-openai-codex-pr/references/local-fork-features.md`
+- `/workspace/.agents/llmdoc/guides/upstream-sync-preservation-rules.md`
+
+如果 `STATE.md` 不存在，先按 `references/checklist.md` 里的模板初始化，再继续同步。
 
 ## 目标
-- 拉取 `https://github.com/openai/codex.git` 的 `main` 并同步到当前仓库。
-- 在独立 `git worktree` 内完成合并、修冲突、验证；不污染当前分支/工作区。
-- 默认策略：**本地代码/行为优先**（除非你明确选择采纳上游实现）。
-- 同步完成后，对新增/变更的用户可见文案执行**汉化处理**：优先自然中文表达，保留不适合硬翻译的专有名词（命令名、协议名、产品名、crate 名、API 字段名等）。
-- 完成后**直接合并回原分支**，不走 PR 流程。
-- 最终必须输出：**本次合并进来的功能**、**影响范围**、**是否有原功能丢失/覆盖/冲突**。
 
-## 前置检查（开始前 2 分钟）
-- 确认当前仓库无会被误带入的已跟踪改动；若存在未跟踪目录/文件，先确认是否忽略。
-- 若 `openai` remote 已存在但指向错误，先修正地址。
-- 记录当前分支名，后续同步完成后要合并回它。
-- 固定使用技能目录下的 `STATE.md` 作为同步基线登记点；不要只依赖 commit message 追踪历史。
-- 在开始真正合并前，先确认这次准备产出的“同步提交”能否被未来审计：
-  - 最好是标准 `merge`，让 upstream commit 直接成为父提交之一。
-  - 若最终只能用 squash、cherry-pick 或人工整理式提交，必须提前准备把 upstream 基线和目标 SHA 明写进提交正文与总结，不能只写 `sync: merge openai/codex main` 这类无法自证的标题。
+- 在独立 `git worktree` 中完成 upstream merge、冲突解决、验证和审查。
+- 默认保护本地分叉行为、中文化输出和社区分支 branding。
+- 区分：
+  - `本地分叉独有能力`：默认不能被上游直接覆盖。
+  - `上游原生能力`：如果 upstream 已删除或回滚，不能静默保留，必须请求用户决定是否跟随删除。
+- 通过 `STATE.md` 和本技能目录里的本地分叉特性清单保持同步过程可审计。
 
-## 决策规则（先 code-review 再动手）
-- 先做**改动范围审计**：哪些目录/模块变了、风险点在哪（比如多 agent/agent teams、hooks/cleanup、TUI 命令 `/clear` `/theme` 等）。
-- 先区分两类能力来源：
-  1) **本地分叉独有能力**：例如本地新增命令、协议事件、中文化交互、兼容层、额外恢复/路由逻辑。**默认不能被上游直接覆盖**；若上游改到同一区域，应先尝试融合并保住本地能力。
-  2) **上游原生能力**：即功能最初来自 upstream，后来 upstream 又删除、回滚或重构。**不要因为“当前本地还有这段代码”就默认保留**；如果同步会让该能力消失，必须明确提醒用户这是“上游原生功能删除/回滚”，并请求是否跟随上游。
-- 冲突分类（按优先级）：
-  1) **机械冲突**（format/import/rename/move/并行改同一段但语义一致）：直接合并，保持最小 diff。
-  2) **逻辑可融合**（两边改动互补，功能不重复）：融合到一个实现，默认保持本地行为不回退。
-  3) **同功能双实现（必须二选一）**：不要私自拍板；必须汇总差异并请求你选择，然后**阻塞流程**等待决定。
-  4) **行为变更检测（汉化恢复时必做）**：在恢复本地独有能力（尤其是中文化）时，对每个被恢复的区域，必须对比上游当前实现和本地恢复后的实现是否在**功能行为**上一致。
-     - 典型反例：上游已把进度条改为百分比显示，本地恢复时只做了文案翻译但沿用了旧的行为实现（如进度条函数），导致功能行为与上游不一致。正确做法：先采纳上游行为实现，再做文案翻译。
-     - 检查点：格式/展示方式、条件分支、默认值/阈值、函数签名、调用方行为。
-     - 执行方式：对每个被恢复的文件区域，用 `git diff` 对比上游版本和本地恢复版本的**非文案差异**（排除纯字符串/注释变更），确认逻辑结构一致。
-- 额外规则：
-  - **本地分叉独有功能**：默认保留；除非用户明确同意，不要为了贴 upstream 而直接删掉。
-  - **上游原生功能被 upstream 删除/回滚**：必须单独提醒并询问是否跟随 upstream 删除；不能把“本地仍存在”误判成“必须保留的分叉功能”。
-- 对每个关键冲突做最小化修复后，记录关键决策点，便于最后汇总影响。
+## 本技能的两个基线文件
+
+- `STATE.md`
+  - 记录最近一次已经落地、且可准确审计的 upstream 基线。
+  - 只有在同步真正落地后才能更新。
+- `references/local-fork-features.md`
+  - 这是本地分叉特性的独立事实源。
+  - 文件里同时包含：
+    - 手工维护的特性规范
+    - 脚本刷新出来的最新审查报告
+  - 任何新增、删除、迁移或等效替换的本地分叉特性，都要回写这个文件。
+
+## 必用脚本
+
+用下面的脚本刷新或审查本地分叉特性清单：
+
+```bash
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs refresh --repo /workspace
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs check --repo <repo-or-worktree>
+```
+
+规则：
+
+- `refresh`
+  - 重新扫描指定仓库，并把最新审查报告写回 `references/local-fork-features.md`。
+  - 默认在当前分支开始同步前执行一次，最终合并落地后再执行一次。
+- `check`
+  - 只检查，不改文件。
+  - 默认在 worktree 内冲突解决完成后执行一次。
+  - 默认在把同步分支合并回当前分支、但尚未提交时再执行一次。
+- 重要：
+  - 审查 worktree 时，必须使用 worktree 自己的脚本和清单副本，而不是主工作区 `/workspace` 下的技能文件。
+  - 否则你会在 worktree 阶段误改主工作区清单，导致审查和落地结果脱节。
+
+如果脚本报错或返回缺失项：
+
+1. 先定位缺失/覆盖发生在哪个文件和符号。
+2. 再判断原因：
+   - 真丢了
+   - 被 rename / move
+   - 被 upstream 用更好的等效实现替换了
+3. 处理规则：
+   - 如果不是“明确更好且行为不回退”的替换，必须修回来。
+   - 如果确实已经换成更好的方式，就更新 `references/local-fork-features.md` 的特性定义和更优实现判定条件，再重新 `refresh`。
+
+## 决策规则
+
+### 默认优先级
+
+1. 本地代码/行为不回退
+2. 再吸收 upstream 新能力
+3. 最后最小化 diff
+
+### 冲突分类
+
+1. `机械冲突`
+   - import、rename、格式、同语义并行修改
+   - 直接融合，保持最小 diff
+2. `逻辑可融合`
+   - 两边改动互补、不需要牺牲一方功能
+   - 默认融合，并保住本地行为
+3. `同功能双实现`
+   - 同一能力有两套实现，无法合理融合
+   - 停下，请求用户二选一
+4. `上游原生功能已被删除/回滚`
+   - 先查历史确认它最初来自 upstream，而不是本地分叉
+   - 停下，请求用户决定是否跟随 upstream 删除
+
+### 只有这两类情况才允许阻塞问用户
+
+- 同功能双实现，必须二选一
+- 上游原生能力已被 upstream 删除/回滚，需要决定是否继续作为本地分叉保留
 
 ## 工作流
 
-### 0) 预步骤：整理本地特性清单
+详细命令见 `references/checklist.md`。默认按这个顺序执行：
 
-在执行任何合并操作之前，必须先完整梳理当前分支（本地分叉）的所有独有功能、特性和修改点，并以结构化表格形式写入本技能文件的 `### 7.1.5)` 小节。
+1. 刷新当前分支的本地分叉特性基线。
+   - 运行 `refresh --repo /workspace`
+   - 如果失败，说明当前分支本身已偏离基线，先修正或更新特性定义，再开始同步
+2. 创建独立 worktree，并记录 `base_branch`
+3. 读取 `STATE.md`，拉取 `openai/main`
+   - 如果 `openai` remote 已存在，先校验 URL；若不是 `https://github.com/openai/codex.git`，先修正再拉取
+4. 做两次审计
+   - `origin/$base_branch...openai/main`
+   - 如果 `STATE.md` 里有 `last_synced_sha`，再看 `last_synced_sha..openai_sha`
+5. 在 worktree 里 `git merge --no-edit openai/main`
+6. 按冲突分类解决问题
+7. 做定向验证
+8. 在 worktree 里执行一次 `check --repo "$path"` 审查
+9. 合并回当前分支，但先不要提交
+10. 在当前分支工作区再执行一次 `check --repo /workspace`
+11. 若审查通过，执行一次 `refresh --repo /workspace`，更新落地后的特性报告
+12. 更新 `STATE.md`，把同步代码、技能改动、特性清单和状态文件一起提交
 
-**目的**：
-- 为后续冲突解决提供决策依据（哪些代码不能被上游覆盖）
-- 为合并后审查提供检查清单
-- 确保即使经过大规模冲突解决，本地关键特性也不会意外丢失
+## Rust 验证要求
 
-**执行方式**：
-1. 扫描本地独有 crate（zmemory、ztok、codex-api 等）
-2. 扫描核心修改（WireApi streaming、zconfig.toml 加载、models-manager 补丁、max_output_tokens、auto_tldr_routing 等）
-3. 扫描汉化范围（TUI、CLI、core 中文文本）
-4. 扫描其他本地化修改（URL 替换、中文 README、slash_command 本地化等）
-5. 将结果写入技能文件 `### 7.1.5) 本次同步前本地分叉功能清单` 表格
-
-**表格格式**：
-
-| # | 功能 | 涉及文件/模块 | 说明 |
-|---|------|-------------|------|
-| N | 功能名 | 文件路径 | 简要描述为何是本地分叉独有 |
-
-### 1) 从当前分支创建 worktree（不污染当前分支）
-在仓库根目录执行：
-
-```bash
-ts="$(date +%Y%m%d-%H%M%S)"
-base_branch="$(git branch --show-current)"
-branch="sync/openai-codex-$ts"
-path=".worktrees/sync-openai-codex-$ts"
-git fetch origin "$base_branch"
-git worktree add -b "$branch" "$path" "origin/$base_branch"
-```
-
-进入 worktree：
+改了 Rust 代码后：
 
 ```bash
-cd "$path"
-```
-
-### 2) 读取上次基线，再拉取上游并确认最新 commit（再合并）
-
-先读取技能目录中的状态文件；若不存在则新建：
-
-```bash
-skill_dir="/workspace/.codex/skills/sync-openai-codex-pr"
-state_file="$skill_dir/STATE.md"
-
-if [ ! -f "$state_file" ]; then
-  cat > "$state_file" <<'EOF'
-# sync-openai-codex-pr state
-
-- upstream_repo: https://github.com/openai/codex.git
-- upstream_branch: main
-- last_synced_sha: <none>
-- last_synced_at_utc: <none>
-- last_synced_base_branch: <none>
-- last_sync_commit: <none>
-- notes: 初始化，尚未执行同步。
-EOF
-fi
-
-echo "Current sync baseline:"
-cat "$state_file"
-previous_sha="$(sed -n 's/^- last_synced_sha: //p' "$state_file")"
-echo "previous upstream sha: ${previous_sha:-<none>}"
-```
-
-再拉取上游：
-
-```bash
-git remote add openai https://github.com/openai/codex.git 2>/dev/null || true
-git fetch openai main
-openai_sha="$(git rev-parse openai/main)"
-echo "openai/codex main: $openai_sha"
-```
-
-如果 `previous_sha` 不是 `<none>`，后续审计和最终总结都必须明确给出：
-- 上次基线：`$previous_sha`
-- 本次目标：`$openai_sha`
-- 本次实际增量：`$previous_sha..$openai_sha`
-
-### 3) 先做改动范围审计（冲突前/后都做一次）
-
-```bash
-git diff --name-status "origin/$base_branch"...openai/main
-git diff --stat "origin/$base_branch"...openai/main
-```
-
-如果你怀疑某些用户可见能力被“同步时舍弃”，在这里就能直接定位文件范围（例如 `/clear`、`/theme`、agent teams 等）。
-如果 `previous_sha` 有值，再额外审计一次“上次同步基线到本次上游”的真实增量，避免把仓库自身偏移误判为上游新增：
-
-```bash
-if [ "${previous_sha:-<none>}" != "<none>" ]; then
-  git diff --name-status "$previous_sha..$openai_sha"
-  git diff --stat "$previous_sha..$openai_sha"
-fi
-```
-
-### 4) 合并上游并处理冲突
-
-```bash
-git merge --no-edit openai/main
-```
-
-如果出现冲突：
-1) 先列出冲突文件：`git status`
-2) 对每个冲突做快速 code-review 分类（机械 / 逻辑可融合 / 同功能二选一）
-3) 机械冲突、逻辑可融合：直接解决并继续
-4) 只有“同功能二选一”才停下来请求你选择
-
-### 5) 仅在“同功能二选一”时阻塞并请求选择
-当且仅当你确认两边是**同一个功能**的两套实现，且无法合理融合：
-- 汇总并发给你：
-  - 文件路径 + 关键函数/结构体
-  - 行为差异（接口、边界条件、失败模式）
-  - trade-off（复杂度、可维护性、性能、安全性、测试覆盖）
-  - 选项：**保留本地** / **采用上游**
-- 在你选择前，停止继续推进。
-
-此外，遇到下面这个特殊场景也必须阻塞并请求选择：
-- **上游原生功能被 upstream 明确删除/回滚，而本地当前还保留该实现**
-  - 必须说明：
-    - 该功能最初来自 upstream 还是本地分叉
-    - upstream 删除/回滚它的提交和原因（如果能从 commit message 看出）
-    - 当前本地保留会带来的持续分叉成本
-  - 选项必须写成：**跟随上游删除** / **继续作为本地分叉保留**
-
-### 6) 最小化修复 + 格式化 + 目标测试
-Rust（改 Rust 代码后）：
-
-```bash
-cd codex-rs
+cd /workspace/codex-rs
 just fmt
 ```
 
-优先跑最窄的相关测试（例）：
+然后先跑最窄的相关测试。优先 `cargo nextest run -p <crate>` 或仓库已有 fast wrapper。
+
+如果改了 `Cargo.toml` 或 `Cargo.lock`，额外执行：
 
 ```bash
-cargo test -p codex-core
-```
-
-如果改了 `Cargo.toml` / `Cargo.lock`：
-
-```bash
-cd ..
+cd /workspace
 just bazel-lock-update
 just bazel-lock-check
 ```
 
-### 7) 同步后汉化（新增必做）
-在完成冲突解决后、提交前，检查上游引入的用户可见文本（CLI/TUI 文案、帮助信息、提示语、错误提示、文档说明）并进行汉化：
-- `执行闭环（默认）`：
-  1) **先定位**：先只看本次上游同步实际改到的用户可见文件，不做全仓漫游。
-  2) **先统一术语**：先写出本轮高频术语及目标译法，再开始改代码。
-  3) **先改源码**：优先修改真实用户可见源码，不先改 snapshot。
-  4) **再补镜像实现**：若 `tui` / `tui_app_server` 有平行实现，必须同步处理。
-  5) **最后收测试**：统一 snapshot、断言、帮助输出、文档说明，再跑验证。
-- `必做检查清单`：
-  1) 文案是否“全中文优先”（含状态标签），避免半汉化（如 `[default]` 与中文混用）。
-  2) 占位符与结构是否保持不变（如 `{thread_id}`、`{agent_role}`、Markdown/ANSI/快捷键）。
-  3) 术语是否全局一致（同一词在全仓保持同一译法）。
-  4) 是否仅改文案，不改行为逻辑。
-  5) **行为对齐检查**：翻译前先确认上游是否改了该区域的功能行为（格式、分支、阈值、签名等）；若有变更，先采纳上游行为再做文案翻译，不要沿用本地旧实现。
-- `翻译策略（默认）`：
-  1) **先看平行实现**：若 `codex-rs/tui` 与 `codex-rs/tui_app_server` 存在平行实现，先对照已汉化的一侧，优先复用现有译法，避免同一功能两套文案风格不一致。
-  2) **自然中文优先**：优先表达自然、完整、符合中文习惯的句子，不做逐词硬译；必要时可重组语序，但不得改变信息结构。
-  3) **固定保留英文**：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名、快捷键（如 `Enter`/`Esc`/`Ctrl+C`）默认保留英文。
-  4) **先定术语表再批量改**：先从现有仓内文案抽取本轮高频术语，确定统一译法后再修改源码/快照/断言；不要边改边发明新译法，避免同一词在不同弹窗中漂移。
-  5) **慎翻功能术语**：`Fast mode`、`Plan mode`、`Guardian Approvals`、`Windows sandbox` 这类仓内高频术语，优先遵循现有仓内叫法；若仓内未统一，先在本次改动范围内统一，不要一半中文一半英文。
-  6) **先改源码，再补快照与断言**：优先修正真正的用户可见源码，再同步 snapshot、测试断言、帮助文本测试；避免只改 snapshot 掩盖源码仍是英文。
-  7) **状态标签也算文案**：`(current)`、`[default]`、`Running` 这类状态标签与列表项标题同等重要，必须一起统一，避免正文中文、状态仍英文。
-  8) **测试文案也要同步**：若源码文案变化会影响 snapshot、断言、帮助文本测试，必须同步更新测试期望，避免“代码已汉化、测试仍断言英文”。
-  9) **避免放宽断言规避问题**：不要把测试改成“中英文任一即可”来绕过本地化；应更新为精确中文预期，或做稳定的规范化后再精确断言。
-- `双层自检（默认执行）`：
-  1) 固定关键词扫描：
-     ```bash
-     rg -n "Main \\[default\\]|\\[default\\]|\\bAgent spawn failed\\b|\\bAgent interaction failed\\b|\\bAgent resume failed\\b|\\bAgent close failed\\b|\\bAgent turn complete\\b|\\bSpawned\\b|\\bWaiting for\\b|\\bFinished waiting\\b|\\bResuming\\b|\\bResumed\\b|\\bClosed\\b|\\bNo agents completed yet\\b|\\bPending init\\b|\\bRunning\\b|\\bInterrupted\\b|\\bCompleted\\b|\\bNot found\\b" codex-rs/tui/src codex-rs/tui_app_server/src
-     ```
-  2) 增量差异扫描：
-     ```bash
-     git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | rg -n "^\\+.*[A-Za-z]{4,}"
-     ```
-- `保留英文（不要硬翻）`：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名。
-- 目标：自然中文，不做逐词直译；汉化后重新检查相关快照/测试，确保输出稳定。
+如果改动触及 `common`、`core` 或 `protocol` 这类共享区域，局部验证通过后再决定是否扩大。
 
-### 8) 汇总“合进来了什么”和“影响了什么”
-在 worktree 内完成验证后，必须先写出一份结构化总结，至少覆盖：
-1) **主要合并内容**：本次从上游带来了哪些功能/模块/基础设施变更。
-2) **关键冲突如何处理**：哪些地方是融合、哪些地方是保留本地、哪些地方是跟随上游重构。
-3) **影响范围**：协议、核心逻辑、TUI、测试、CI、依赖、Bazel 等哪些受影响。
-4) **是否有功能丢失/覆盖**：
-   - 明确写“未发现明显丢失/覆盖”，或
-   - 明确列出存在风险的点。
-5) **依据**：你实际跑过哪些验证、哪些没跑。
-6) **同步基线变化**：
-   - 上次基线 SHA
-   - 本次上游 SHA
-   - 是否已把新 SHA 回写到 `STATE.md`
-7) **可审计性说明**：
-   - 本次同步是否是标准 merge-parent 型提交
-   - 如果不是，是否已在提交正文中显式写出 `Previous upstream baseline`、`Upstream target sha` 和 `Actual upstream range`
+## Responses / reasoning 相关专项检查
 
-默认输出结构：
-```text
-- 同步基线变化
-- 主要合并内容
-- 冲突与融合决策
-- 影响范围
-- 是否造成原逻辑丢失/覆盖
-- 验证依据与剩余风险
-```
+如果本次同步触及 Responses 输入序列化、Prompt 格式化、历史 replay 或 reasoning item 相关链路，例如：
 
-### 8.5) 合并回原分支前的本地特性审查（必做）
+- `codex-rs/core/src/client_common.rs`
+- `codex-rs/protocol/src/models.rs`
+- `codex-rs/codex-api/src/common.rs`
+- `codex-rs/codex-api/src/endpoint/responses*.rs`
 
-在将同步分支合并回原分支之前，必须使用子代理（spawn_agent）对合并结果进行系统性审查，确认 `### 7.1.5)` 清单中的所有本地分叉特性未被覆盖或丢失。
+额外执行以下检查：
 
-**审查触发时机**：冲突解决完成 + 格式化 + 编译验证通过后，合并回原分支之前。
+- 确认 replay 到 Responses API 的 `ResponseItem::Reasoning` 不会回传 raw `content`
+- 允许保留 `summary` / `encrypted_content`，但出站输入里不能再带 `reasoning_text`
+- 若看到 `invalid_request_error` 指向 `input[n].content`，先抓真实请求体再判断，不要只凭报错文案猜测
+- 若仓库现有测试被无关编译错误阻塞，至少补一条靠近出站层的断言或单测，防止这个约束在同步时回归
 
-**审查执行方式**：
-1. 读取技能文件中 `### 7.1.5)` 的本地特性清单
-2. 对每个特性项，用子代理在 worktree 中验证对应文件/模块是否仍包含本地实现
-3. 使用多个子代理并行审查不同区域（如：core 基础设施 / TUI 汉化 / 独有 crate / 配置层）
+## 合并回当前分支时的强制审查
 
-**审查检查项**：
-- 本地独有 crate（zmemory、ztok、codex-api）的文件是否完整存在
-- WireApi::Chat/Anthropic streaming 实现是否保留（client.rs 中的 stream_chat_api / stream_anthropic_api）
-- effort/summary/service_tier 参数透传是否完整
-- zconfig.toml 配置层加载是否保留
-- models-manager 的 model_catalog 过滤、skip_reasoning_popup 传播、default_remote_models_for_provider 是否保留
-- max_output_tokens 从 provider 读取的逻辑是否保留
-- auto_tldr_routing 默认启用是否保留
-- TUI/CLI/core 中文汉化文本是否完整（对比合并前后 diff，确认无中文被替换为英文）
-- URL 替换（openai/codex → sohaha/zcodex）是否保留
-- 中文 README.md 是否保留
-- slash_command 中文描述是否保留
+这是本次优化后的核心规则：
 
-**审查不通过的处理**：
-1. 对每个丢失/被覆盖的特性，记录具体位置和丢失内容
-2. 立即修复：恢复或重新实现被覆盖的本地特性
-3. 修复后重新触发审查，直到所有特性项通过
-4. 审查结果和修复过程记录在最终汇总中
+- `references/local-fork-features.md` 不再只是备注，而是 merge-back gate
+- 合并回当前分支之前，必须至少做两次审查：
+  - worktree 内一次
+  - 当前分支 `git merge --no-ff --no-commit "$branch"` 之后再一次
+- 只要 `check` 报缺失项，就不能提交
+- worktree 审查时要读写 worktree 自己的 `.codex/skills/sync-openai-codex-pr/references/local-fork-features.md`
 
-**审查通过标准**：
-所有 `### 7.1.5)` 清单中的特性项均在合并后的代码中可验证存在，且功能行为未被上游等效替换改变。
+对每个缺失/覆盖项，必须给出原因：
 
-**子代理审查 prompt 模板**：
-```
-你在 worktree 目录 `<worktree-path>` 中工作。
-你的任务是对上游同步合并结果进行本地特性审查。
+- 被上游覆盖
+- 本地冲突解决丢失
+- 文件或符号被移动
+- 已被更好的等效实现替代
 
-请逐项检查以下本地分叉特性是否完整保留（未被上游覆盖或丢失）：
-<从 7.1.5 清单中提取具体检查项>
+如果不能证明是“更好的等效实现”，就按功能回归处理并修复。
 
-对每个特性：
-1. 用 rg/grep 在对应文件中搜索关键标识（函数名、中文文本、配置字段等）
-2. 确认搜索结果非空且内容正确
-3. 如果发现丢失，记录文件路径和丢失的具体内容
+修复后，重新执行 `check`，直到通过为止。
 
-最终输出：
-- 通过的特性项列表
-- 丢失/被覆盖的特性项列表（含具体位置和丢失内容）
-```
+## `STATE.md` 规则
 
-### 9) 回写 `STATE.md`，再直接合并回原分支（不走 PR）
-在 worktree 内验证完成后、回到主工作区前，先更新技能目录下的 `STATE.md`：
-
-```bash
-sync_time_utc="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cat > "$state_file" <<EOF
-# sync-openai-codex-pr state
-
-- upstream_repo: https://github.com/openai/codex.git
-- upstream_branch: main
-- last_synced_sha: $openai_sha
-- last_synced_at_utc: $sync_time_utc
-- last_synced_base_branch: $base_branch
-- last_sync_commit: <fill-after-commit>
-- notes: 最近一次已完成同步的上游基线。若本次最终未提交，必须回滚此文件或改回真实已落地状态。
-EOF
-```
-
-注意：
-- `STATE.md` 记录的是**最近一次已落地同步的真实基线**，不是“准备同步到哪”。
-- 如果后续合并回原分支失败、放弃提交、或你中止流程，必须把 `STATE.md` 恢复到旧值，不能留下虚假的已同步状态。
-- 如果这次同步已经落地代码，但你**无法准确确认**本次 upstream target SHA：
+- `STATE.md` 只记录最近一次已落地的真实 upstream 基线
+- 如果这轮代码最后没有落地，不得留下新的 `last_synced_sha`
+- 如果同步内容已经吸收，但无法精确核定 target SHA：
   - 不要伪造 `last_synced_sha`
-  - 保持 `last_synced_sha` 指向最近一次可准确审计的基线
-  - 在 `notes` 里明确写出“已有更晚同步提交落地，但因提交结构/记录不足，当前仍需重新核定 target SHA”
-- 只要 `STATE.md` 中的 `last_synced_sha`、`last_sync_commit` 仍是旧值，就必须在 `notes` 中同步写明原因，避免后续把旧基线误当成“仓库当前已同步到的最新状态”
+  - 在 `notes` 中明确写出原因
 
-然后回到主工作区，将同步分支直接合回原分支：
+优先保留标准 merge 结构，让 upstream commit 成为父提交之一。若最终只能 squash、cherry-pick 或人工整理式提交，提交正文必须写清：
 
-```bash
-cd <repo-root>
-git checkout "$base_branch"
-git merge --no-ff --no-commit "$branch"
-```
+- `Previous upstream baseline`
+- `Upstream target sha`
+- `Actual upstream range`
 
-然后：
-- 确认工作区中只包含本次同步相关改动。
-- 把**技能文档更新**、`STATE.md` 更新和**同步代码**一起纳入同一次提交。
-- 提交信息必须写成**完整说明型**，而不是只写短标题；正文应至少包含：
-  - 上次基线 SHA
-  - 上游 commit
-  - 若不是标准 merge-parent，同步范围是如何核定的
-  - `STATE.md` 是否已更新到最新准确基线；若未更新，原因是什么
-  - 合并的主要功能
-  - 关键融合点
-  - 是否发现功能丢失/覆盖
-  - 实际验证情况
+## 最终输出必须覆盖
 
-建议格式：
-
-```bash
-git commit -m "sync: merge openai/codex main into $base_branch" \
-  -m "Previous upstream baseline: <previous_sha>" \
-  -m "Upstream: <sha>" \
-  -m "Merged features: <功能 1>; <功能 2>; <功能 3>." \
-  -m "Conflict resolution: <关键融合点>." \
-  -m "Impact: <影响范围>." \
-  -m "Compatibility: <是否发现原功能丢失/覆盖>." \
-  -m "Verified with: <命令列表>."
-```
-
-提交后立刻把 `STATE.md` 里的 `last_sync_commit` 从 `<fill-after-commit>` 改成真实提交 SHA，并执行一次补充提交（amend）或在首次提交前先拿到 commit SHA 后回填；总之不要把占位符留在仓库里。
-
-如无后续用途，最后清理 worktree：
-
-```bash
-git worktree remove "$path"
-```
-
-## 阻塞模板（仅二选一场景）
-```
-同功能双实现冲突，需要选择：
-- 位置：<file>:<symbol>
-- 行为差异：<差异点 1/2/3>
-- 影响：复杂度 / 可维护性 / 性能 / 安全 / 测试覆盖
-- 选项：保留本地 / 采用上游
-```
-
-### 7.1) 合并前审查循环（新增 2026-04-17）
-
-在合并回原分支之前，必须执行审查循环以确保本地特色功能未被覆盖：
-
-1. **触发审查**：
-   ```bash
-   codex -P cch -m gpt-5.4 exec "审查最近的 upstream 同步合并，检查本地特色功能（汉化、fallback provider 等）是否完整保留"
-   ```
-
-2. **审查重点**：
-   - 检查本地特色功能是否保留（汉化、本地化、fallback provider 等）
-   - 确认没有本地代码被上游覆盖导致功能丢失
-   - 验证冲突解决方案是否正确
-   - 确认编译通过
-
-3. **审查不通过的处理**：
-   - 如果发现功能丢失或覆盖，重新处理冲突
-   - 再次触发审查直到通过
-   - 记录审查结果和修复过程
-
-4. **模型回退策略**：
-   - 如果 `-m gpt-5.4` 连续失败多次，切换到 `-m glm-5.1` 继续审查
-
-5. **审查通过后才能合并**：
-   - 只有审查通过后才能执行合并回原分支
-   - 在技能文档中记录审查结果
-
-**已验证通过的审查案例**：
-- 2026-04-17: 上游 dd00efe78 合并，fallback provider 功能成功保留，编译通过
-
-
-- 2026-04-17: 上游同步 API 适配（22→0 编译错误），codex-core 编译通过
-
-### 7.1.1) 深度审查发现的功能退化修复（2026-04-17）
-
-多 agent 并行深度验证发现并修复了两个功能退化：
-
-| 退化项 | 根因 | 修复 |
-|-------|------|------|
-| `max_output_tokens` 被硬编码为 `None` | 上游移除了 `client.rs` 中从 provider 读取的逻辑，sync 时直接替换为 `None` | 恢复为 `self.client.state.provider.info().max_output_tokens.filter(\|v\| *v > 0)` |
-| `auto_tldr_routing` 调用丢失 | 上游从 `Config` 移除该字段，sync 时误删了 `.with_auto_tldr_routing()` 调用 | 改用 `AutoTldrRoutingMode::default()` 保持 tldr 路由功能启用 |
-
-### 7.1.2) WireApi::Chat / WireApi::Anthropic 流式 streaming 实现（2026-04-18）
-
-**问题**：上游 `codex-rs/core/src/client.rs` 的 `ModelClientSession::stream()` 对 `WireApi::Chat` 和 `WireApi::Anthropic` 仅有 `unimplemented!()` 占位，导致运行时 panic：
-```
-not implemented: wire_api streaming not yet supported for Anthropicspace
-Location: codex-rs/core/src/client.rs:1476
-```
-
-**本地分叉实现**（**不能被上游 sync 覆盖**）：
-
-| 新增文件/位置 | 内容 |
-|-------------|------|
-| `codex-rs/codex-api/src/endpoint/anthropic.rs` | 新增 `AnthropicClient<T>` struct，参照 `ChatCompletionsClient` 实现 `stream_request()`，路径为 `messages`，调用 `anthropic::build_request_body` + `anthropic::spawn_response_stream` |
-| `codex-rs/codex-api/src/endpoint/mod.rs` | 新增 `pub mod anthropic;` 和 `pub use anthropic::AnthropicClient;` |
-| `codex-rs/codex-api/src/lib.rs` | 新增 `pub use crate::endpoint::AnthropicClient;` |
-| `codex-rs/core/src/client.rs` | 导入 `ApiAnthropicClient`、`ApiChatCompletionsClient`；添加 `stream_chat_api()` 和 `stream_anthropic_api()` 两个方法；`WireApi::Chat | WireApi::Anthropic => unimplemented!()` 拆分为各自调用对应方法 |
-
-**同步时检查点**：
-- 若上游 `client.rs` 的 `stream()` 仍为 `unimplemented!`：**保留本地实现，不要跟随上游**
-- 若上游新增了自己的实现：对比行为差异，按"同功能二选一"流程决策
-- `codex-api/src/endpoint/anthropic.rs` 是**本地分叉新增文件**，上游不存在，sync 不会自动删除；但若上游同步导致 `anthropic.rs`/`chat_completions.rs` 的 API 签名变更，需同步更新该文件
-
-**2026-04-18 补丁：effort/summary/service_tier 参数透传修复**
-
-初版实现中 `stream_chat_api` 和 `stream_anthropic_api` 的 `build_responses_request` 硬编码了 `effort=None, summary=Auto, service_tier=None`，未从 `stream()` 入口透传。已修复：
-
-- `stream_chat_api` / `stream_anthropic_api` 新增 `effort: Option<ReasoningEffortConfig>`, `summary: ReasoningSummaryConfig`, `service_tier: Option<ServiceTier>` 参数
-- `stream()` 调用点同步传递这三个参数
-- telemetry endpoint label 由错误的 `RESPONSES_ENDPOINT` 改为 `CHAT_COMPLETIONS_ENDPOINT` / `ANTHROPIC_MESSAGES_ENDPOINT`
-- 新增常量 `CHAT_COMPLETIONS_ENDPOINT = "/chat/completions"` 和 `ANTHROPIC_MESSAGES_ENDPOINT = "/messages"`
-
-同步后若重新覆盖此实现，上述四点必须同步恢复。
-
-### 7.1.3) zconfig.toml 支持与 name 字段留空（2026-04-18）
-
-**变更 1：`$CODEX_HOME/zconfig.toml` 配置合并**
-
-- `codex_config::ZCONFIG_TOML_FILE` 常量早已定义，`ConfigLayerSource::ZConfig` 变体也已存在（优先级 21，介于 `User`=20 和 `Project`=25 之间）
-- 但 `config_loader/mod.rs` 的 `load_config_layers_state` 从未实际加载它
-- **本地分叉修复**：在 `layers.push(user_layer)` 后，加载 `$CODEX_HOME/zconfig.toml` 作为 `ConfigLayerSource::ZConfig` 层推入 stack
-- 文件不存在时静默跳过（`NotFound` → 空 Table），不影响正常启动
-- **同步时检查点**：若上游也实现了此功能，对比优先级顺序是否一致（本地：User→ZConfig→Project），按"逻辑可融合"处理
-
-**变更 2：`model_providers.*.name` 字段可留空**
-
-- `config_toml.rs` 的 `deserialize_model_providers` 已自动用 map key 填充空 `name`——**无需任何代码修改**，这是现有行为
-- `validate()` 不检查 `name` 字段
-- 已确认：`zconfig.toml` 中的 `[model_providers.mm]`（无 `name` 字段）可正常反序列化，`name` 自动设为 `"mm"`
-
-### 7.1.4) models-manager 退化恢复（2026-04-18）
-
-upstream sync 重写了 `models-manager/src/manager.rs`，删除了以下本地特性：
-
-**退化 1：`build_available_models` 中 `provider.model_catalog` 过滤缺失**
-- 修复：`build_available_models` 恢复 `presets.retain(|p| catalog_slugs.contains(&p.model))`
-- 效果：zconfig.toml 配 `model_catalog = ["glm-5", ...]` 后 TUI 模型选择器只显示指定模型
-
-**退化 2：`build_available_models` 中 `provider.skip_reasoning_popup` 传播缺失**
-- 修复：恢复在转换为 presets 前将 `skip_reasoning_popup` 覆盖到所有 `ModelInfo`
-
-**退化 3：`default_remote_models_for_provider` 函数完全丢失**
-- 效果：Anthropic provider 初始化时用的是 OpenAI bundled models 而非内置 Anthropic catalog
-- 修复：恢复完整函数（WireApi::Anthropic → `anthropic_model_catalog()`），含 slug 自动合成 ModelInfo 逻辑
-- `new_with_provider` 改为调用此函数而非 `load_remote_models_from_file()`
-
-**同步时检查点**：
-- `build_available_models` 必须保留 `provider_info.model_catalog` 过滤和 `skip_reasoning_popup` 传播
-- `default_remote_models_for_provider` 必须保留，且 `new_with_provider` 必须调用它
-
-**验证通过的完整检查清单**：
-- ✅ Fallback provider：6 核心函数、4 config 字段、8 测试完整
-- ✅ 汉化：cli 256行、tui 2100+行、core 360行中文，HEAD~5..HEAD diff 无中文删除
-- ✅ 本地模块：ztok(2126行)、zmemory(12570行)、buddy(1920行)、compact_remote(344行)、agent/role(434行) 均未被修改
-- ✅ 公共 API：lib.rs 40+ pub use、codex.rs 28 pub 函数、config/mod.rs 7 pub struct 全部保留
-- ✅ max_output_tokens：已恢复从 provider 配置读取
-- ✅ auto_tldr_routing：已恢复默认值调用
-- ✅ 全量编译：`cargo check` 0 error 通过
-
-### 7.2) 上游 API 适配经验库（新增 2026-04-17）
-
-上游同步后常见的 API 变更模式及修复方法：
-
-| 变更模式 | 典型案例 | 修复方法 |
-|---------|---------|---------|
-| 模块移除/重构 | `project_doc` → `agents_md` | 替换导入和调用，使用 `AgentsMdManager` |
-| 函数重命名 | `merge_plugin_apps_with_accessible` → `merge_plugin_connectors_with_accessible` | 更新函数名 + 添加 `pub use` 导出 |
-| 类型变化 | `AppConnectorId` → `String` | `.into_iter().map(\|id\| id.0).collect::<Vec<_>>()` |
-| 结构体字段移除 | `file_system_sandbox_policy` 从 `FileSystemSandboxContext` 移除 | 删除字段赋值行 |
-| 结构体字段类型变化 | `file_system_sandbox_policy: T` → `Option<T>` | 包装为 `Some(...)` |
-| 方法签名变更 | `resolve_mcp_tool_info(&ToolName)` → `(&str, Option<&str>)` | 修改参数传递方式 |
-| 新增枚举变体 | `PatchApplyUpdated`, `ToolCallInputDelta` | 在 match 中添加 `_ => {}` 或显式分支 |
-| 函数参数增加 | `load_config_layers_state` 从 5→6 参数 | 添加缺失参数（通常是 `fs`） |
-| 表达式不完整 | `max_output_tokens` 表达式被截断 | 补全表达式或用 `None` 替代 |
-| 私有字段访问 | `ModelClientSession.client` 私有 | 添加 `pub(crate)` 代理方法 |
-| 方法移除 | `token_usage_info()` 从 `Session` 移除 | 返回 `None` 或注释掉 |
-
-**修复优先级**：
-1. 先修复 `codex-core`（`cargo check -p codex-core`）
-2. 再修复依赖 `codex-core` 的其他 crate
-3. 最后修复测试和 CLI 相关
-
-**验证命令**：
-```bash
-# 核心编译检查
-RUSTC_WRAPPER="" cargo check -p codex-core
-# 完整编译检查（可能暴露依赖问题）
-RUSTC_WRAPPER="" cargo check
-```
-
-**注意事项**：
-- 修复时优先使用 `apply_patch` 工具，避免 `sed` 导致的多行替换问题
-- 每修复一个类别后立即验证编译，不要积累错误
-- 保留所有本地特色功能（汉化、fallback provider、buddy 反应库等）
-- ToolName 结构体字段：`.name`（String）和 `.namespace`（Option<String>），不是元组
+- 上次基线 SHA
+- 本次目标 upstream SHA
+- 本次实际同步范围
+- 主要合并内容
+- 关键冲突如何处理
+- 哪些本地分叉特性被审查
+- 是否发现功能丢失/覆盖，以及原因
+- 是否存在“更好的等效替换”，以及因此更新了哪些特性定义
+- 跑了哪些验证
+- `STATE.md` 和 `references/local-fork-features.md` 是否已更新

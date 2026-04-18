@@ -28,6 +28,31 @@
   - `Actual upstream range`
 - `STATE.md` 只记录最近一次**可准确审计**的已落地基线；若代码已经吸收了更晚同步内容，但 target SHA 仍无法精确确认，不要伪造 `last_synced_sha`，而是在 `notes` 中明确说明原因。
 
+## 本地特性清单应独立外置
+- 不要把本地分叉特性清单长期堆在技能正文里；应维护独立的事实源文件，供同步前刷新、同步后审查和落地后更新。
+- 当前仓库的 upstream sync 使用：
+  - `.codex/skills/sync-openai-codex-pr/references/local-fork-features.md`
+  - `.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs`
+- 这份清单至少要能表达：
+  - 特性 ID / 作用区域 / 为什么要保留
+  - “什么情况下算被更好的实现替换”
+  - 可脚本化的存在性或文本证据检查
+
+## merge-back 前必须做两次特性审查
+- 第一次：worktree 内冲突解决和定向验证之后
+- 第二次：回到当前分支，`git merge --no-ff --no-commit "$branch"` 之后
+- 两次都应该跑独立特性清单的 `check`，不要只凭肉眼 diff 或记忆判断“应该没丢”
+
+## 缺失项的处理顺序
+- 先找原因，再决定动作；不要一看到 `check` 失败就立即把特性重新抄回去。
+- 合理原因只有四类：
+  - 真丢了
+  - rename / move 了
+  - 冲突解决时被覆盖了
+  - 已被更好的等效实现替代
+- 只有在“行为不回退”且“特性清单定义已经更新到新实现”时，才允许把缺失项判定为等效替换。
+- 否则，一律按本地功能回归处理并修复。
+
 ## 本次同步验证到的例子
 - `codex-rs/account` 属于上游原生功能，不是本地分叉独有能力。
 - 它由 `9f2a58515` 引入，又被 `930e5adb7` 回滚，因此本地应先按“是否跟随 upstream 删除”来处理，而不是直接保留。
