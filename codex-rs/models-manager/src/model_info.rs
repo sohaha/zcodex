@@ -178,6 +178,7 @@ fn anthropic_model(
         supports_image_detail_original: false,
         context_window: Some(200_000),
         auto_compact_token_limit: None,
+        max_context_window: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
         input_modalities: default_input_modalities(),
