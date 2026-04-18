@@ -94,7 +94,7 @@ async fn plugins_popup_loading_state_snapshot() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        popup.replace(' ', "").contains("正在加载可用插件..."),
+        popup.contains("Loading available plugins..."),
         "expected /plugins to open in a loading state before the marketplace arrives, got:\n{popup}"
     );
     assert_chatwidget_snapshot!("plugins_popup_loading_state", popup);
@@ -105,7 +105,7 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
 
-    let mut response = plugins_test_response(vec![
+    let response = plugins_test_response(vec![
         plugins_test_curated_marketplace(vec![
             plugins_test_summary(
                 "plugin-bravo",
@@ -145,8 +145,6 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
             PluginInstallPolicy::Available,
         )]),
     ]);
-    response.remote_sync_error = Some("remote sync timed out".to_string());
-
     let popup = render_loaded_plugins_popup(&mut chat, response);
     assert_chatwidget_snapshot!("plugins_popup_curated_marketplace", popup);
     assert!(
@@ -239,7 +237,7 @@ async fn plugin_detail_popup_hides_disclosure_for_installed_plugins() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        !popup.contains("与此 App 共享的数据将受其"),
+        !popup.contains("Data shared with this app is subject to the app's"),
         "expected installed plugin details to hide the disclosure line, got:\n{popup}"
     );
     assert_chatwidget_snapshot!(
@@ -249,7 +247,7 @@ async fn plugin_detail_popup_hides_disclosure_for_installed_plugins() {
 }
 
 #[tokio::test]
-async fn plugins_popup_refresh_replaces_selection_with_first_row() {
+async fn plugins_popup_refresh_preserves_selected_row_position() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
 
@@ -278,7 +276,7 @@ async fn plugins_popup_refresh_replaces_selection_with_first_row() {
 
     let before = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        before.contains("› Slack"),
+        before.contains("› [-] Slack"),
         "expected Slack to be selected before refresh, got:\n{before}"
     );
 
@@ -316,8 +314,12 @@ async fn plugins_popup_refresh_replaces_selection_with_first_row() {
 
     let after = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        after.contains("› Airtable"),
-        "expected refresh to rebuild the popup from the new first row, got:\n{after}"
+        after.contains("› [-] Notion"),
+        "expected refresh to preserve the selected row position, got:\n{after}"
+    );
+    assert!(
+        after.contains("Airtable"),
+        "expected refreshed popup to include the updated plugin list, got:\n{after}"
     );
     assert!(
         after.contains("Slack"),
@@ -352,13 +354,11 @@ async fn plugins_popup_refreshes_installed_counts_after_install() {
     ])]);
     let before = render_loaded_plugins_popup(&mut chat, initial);
     assert!(
-        before
-            .replace(' ', "")
-            .contains("共2个可用插件，已安装1个。"),
+        before.contains("Installed 1 of 2 available plugins."),
         "expected initial installed count before refresh, got:\n{before}"
     );
     assert!(
-        before.replace(' ', "").contains("可用"),
+        before.contains("Available"),
         "expected pre-install popup copy before refresh, got:\n{before}"
     );
 
@@ -387,17 +387,154 @@ async fn plugins_popup_refreshes_installed_counts_after_install() {
 
     let after = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        after
-            .replace(' ', "")
-            .contains("共2个可用插件，已安装2个。"),
+        after.contains("Installed 2 of 2 available plugins."),
         "expected /plugins to refresh installed counts after install, got:\n{after}"
     );
     assert!(
-        after
-            .split_whitespace()
-            .collect::<String>()
-            .contains("已安装按Enter查看插件详情。"),
+        after.contains("Installed   Space to disable; Enter view details."),
         "expected refreshed selected row copy to reflect the installed plugin state, got:\n{after}"
+    );
+}
+
+#[tokio::test]
+async fn plugins_popup_space_toggles_installed_plugin_from_list() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    let cwd = chat.config.cwd.to_path_buf();
+    render_loaded_plugins_popup(
+        &mut chat,
+        plugins_test_response(vec![plugins_test_curated_marketplace(vec![
+            plugins_test_summary(
+                "plugin-calendar",
+                "calendar",
+                Some("Calendar"),
+                Some("Schedule management."),
+                /*installed*/ true,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+            plugins_test_summary(
+                "plugin-drive",
+                "drive",
+                Some("Drive"),
+                Some("Document access."),
+                /*installed*/ true,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+        ])]),
+    );
+
+    while rx.try_recv().is_ok() {}
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+
+    match rx.try_recv() {
+        Ok(AppEvent::SetPluginEnabled {
+            cwd: event_cwd,
+            plugin_id,
+            enabled,
+        }) => {
+            assert_eq!(event_cwd, cwd);
+            assert_eq!(plugin_id, "plugin-drive");
+            assert!(!enabled);
+        }
+        other => panic!("expected SetPluginEnabled event, got {other:?}"),
+    }
+
+    chat.on_plugin_enabled_set(
+        cwd,
+        "plugin-drive".to_string(),
+        /*enabled*/ false,
+        Ok(()),
+    );
+
+    let popup = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(
+        popup.contains("› [ ] Drive"),
+        "expected selected plugin row to stay selected after refresh, got:\n{popup}"
+    );
+}
+
+#[tokio::test]
+async fn plugins_popup_space_on_uninstalled_row_does_not_start_search() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    render_loaded_plugins_popup(
+        &mut chat,
+        plugins_test_response(vec![plugins_test_curated_marketplace(vec![
+            plugins_test_summary(
+                "plugin-calendar",
+                "calendar",
+                Some("Calendar"),
+                Some("Schedule management."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+            plugins_test_summary(
+                "plugin-drive",
+                "drive",
+                Some("Drive"),
+                Some("Document access."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+        ])]),
+    );
+
+    while rx.try_recv().is_ok() {}
+    let before = render_bottom_popup(&chat, /*width*/ 100);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    let after = render_bottom_popup(&chat, /*width*/ 100);
+
+    assert!(
+        rx.try_recv().is_err(),
+        "did not expect Space on an uninstalled plugin to emit an event"
+    );
+    assert_eq!(after, before);
+}
+
+#[tokio::test]
+async fn plugins_popup_space_with_active_search_does_not_toggle_installed_plugin() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    render_loaded_plugins_popup(
+        &mut chat,
+        plugins_test_response(vec![plugins_test_curated_marketplace(vec![
+            plugins_test_summary(
+                "plugin-calendar",
+                "calendar",
+                Some("Calendar"),
+                Some("Schedule management."),
+                /*installed*/ true,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+            plugins_test_summary(
+                "plugin-drive",
+                "drive",
+                Some("Drive"),
+                Some("Document access."),
+                /*installed*/ true,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+        ])]),
+    );
+
+    while rx.try_recv().is_ok() {}
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    type_plugins_search_query(&mut chat, "dr");
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+
+    assert!(
+        rx.try_recv().is_err(),
+        "did not expect Space with an active plugin search to emit a toggle event"
     );
 }
 
@@ -450,6 +587,164 @@ async fn plugins_popup_search_filters_visible_rows_snapshot() {
 }
 
 #[tokio::test]
+async fn plugins_popup_installed_tab_filters_rows_and_clears_search() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    render_loaded_plugins_popup(
+        &mut chat,
+        plugins_test_response(vec![plugins_test_curated_marketplace(vec![
+            plugins_test_summary(
+                "plugin-calendar",
+                "calendar",
+                Some("Calendar"),
+                Some("Schedule management."),
+                /*installed*/ true,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+            plugins_test_summary(
+                "plugin-slack",
+                "slack",
+                Some("Slack"),
+                Some("Team chat."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            ),
+        ])]),
+    );
+
+    type_plugins_search_query(&mut chat, "sla");
+    chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+
+    let popup = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(
+        popup.contains("Installed plugins.") && popup.contains("Showing 1 installed plugins."),
+        "expected Installed tab header, got:\n{popup}"
+    );
+    assert!(
+        popup.contains("Calendar") && !popup.contains("Slack"),
+        "expected Installed tab to show only installed plugins, got:\n{popup}"
+    );
+    assert!(
+        !popup.contains("sla"),
+        "expected tab switch to clear search query, got:\n{popup}"
+    );
+}
+
+#[tokio::test]
+async fn plugins_popup_openai_curated_tab_omits_marketplace_in_rows() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    render_loaded_plugins_popup(
+        &mut chat,
+        plugins_test_response(vec![
+            plugins_test_curated_marketplace(vec![plugins_test_summary(
+                "plugin-calendar",
+                "calendar",
+                Some("Calendar"),
+                Some("Schedule management."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            )]),
+            plugins_test_repo_marketplace(vec![plugins_test_summary(
+                "plugin-repo",
+                "repo",
+                Some("Repo Plugin"),
+                Some("Repo-only plugin."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            )]),
+        ]),
+    );
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+
+    let popup = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(
+        popup.contains("OpenAI Curated marketplace."),
+        "expected OpenAI Curated tab header, got:\n{popup}"
+    );
+    assert!(
+        popup.contains("Calendar") && !popup.contains("Repo Plugin"),
+        "expected OpenAI Curated tab to show only official marketplace plugins, got:\n{popup}"
+    );
+    assert!(
+        !popup.contains("ChatGPT Marketplace ·"),
+        "expected marketplace-specific rows to omit marketplace labels, got:\n{popup}"
+    );
+}
+
+#[tokio::test]
+async fn plugins_popup_refresh_preserves_duplicate_marketplace_tab_by_path() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
+
+    let response = plugins_test_response(vec![
+        PluginMarketplaceEntry {
+            name: "duplicate".to_string(),
+            path: Some(plugins_test_absolute_path(
+                "marketplaces/home/marketplace.json",
+            )),
+            interface: Some(MarketplaceInterface {
+                display_name: Some("Duplicate Marketplace".to_string()),
+            }),
+            plugins: vec![plugins_test_summary(
+                "plugin-home",
+                "home",
+                Some("Home Plugin"),
+                Some("Home marketplace plugin."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            )],
+        },
+        PluginMarketplaceEntry {
+            name: "duplicate".to_string(),
+            path: Some(plugins_test_absolute_path(
+                "marketplaces/repo/marketplace.json",
+            )),
+            interface: Some(MarketplaceInterface {
+                display_name: Some("Duplicate Marketplace".to_string()),
+            }),
+            plugins: vec![plugins_test_summary(
+                "plugin-repo",
+                "repo",
+                Some("Repo Plugin"),
+                Some("Repo marketplace plugin."),
+                /*installed*/ false,
+                /*enabled*/ true,
+                PluginInstallPolicy::Available,
+            )],
+        },
+    ]);
+    let cwd = chat.config.cwd.to_path_buf();
+    chat.on_plugins_loaded(cwd.clone(), Ok(response.clone()));
+    chat.add_plugins_output();
+
+    for _ in 0..4 {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Right));
+    }
+
+    chat.on_plugins_loaded(cwd, Ok(response));
+
+    let popup = render_bottom_popup(&chat, /*width*/ 100);
+    assert!(
+        popup.contains("Duplicate Marketplace (2/2)."),
+        "expected refresh to preserve the second duplicate marketplace tab, got:\n{popup}"
+    );
+    assert!(
+        popup.contains("Repo Plugin") && !popup.contains("Home Plugin"),
+        "expected second duplicate marketplace rows after refresh, got:\n{popup}"
+    );
+}
+
+#[tokio::test]
 async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
@@ -486,7 +781,7 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
         "expected popup to show the typed search query, got:\n{no_matches}"
     );
     assert!(
-        compact_rendered_text(&no_matches).contains("没有匹配项"),
+        no_matches.contains("no matches"),
         "expected popup to render the no-matches UX, got:\n{no_matches}"
     );
 
@@ -500,7 +795,7 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
         "expected clearing the query to restore the plugin rows, got:\n{restored}"
     );
     assert!(
-        !compact_rendered_text(&restored).contains("没有匹配项"),
+        !restored.contains("no matches"),
         "did not expect the no-matches state after clearing the query, got:\n{restored}"
     );
 }
@@ -545,9 +840,7 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let before = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        before
-            .replace(' ', "")
-            .contains("正在加载已安装和可用的应用..."),
+        before.contains("Loading installed and available apps..."),
         "expected /apps to stay in the loading state until the full list arrives, got:\n{before}"
     );
     assert_chatwidget_snapshot!("apps_popup_loading_state", before);
@@ -592,9 +885,7 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let after = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        after
-            .replace(' ', "")
-            .contains("共2个可用应用，已安装2个。"),
+        after.contains("Installed 2 of 2 available apps."),
         "expected refreshed apps popup snapshot, got:\n{after}"
     );
     assert!(
@@ -687,9 +978,7 @@ async fn apps_refresh_failure_keeps_existing_full_snapshot() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("共2个可用应用，已安装1个。"),
+        popup.contains("Installed 1 of 2 available apps."),
         "expected previous full snapshot to be preserved, got:\n{popup}"
     );
 }
@@ -953,9 +1242,7 @@ async fn apps_popup_keeps_existing_full_snapshot_while_partial_refresh_loads() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("共2个可用应用，已安装1个。"),
+        popup.contains("Installed 1 of 2 available apps."),
         "expected popup to keep the last full snapshot while partial refresh loads, got:\n{popup}"
     );
     assert!(
@@ -998,9 +1285,7 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
     chat.add_connectors_output();
     let loading_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        loading_popup
-            .replace(' ', "")
-            .contains("正在加载已安装和可用的应用..."),
+        loading_popup.contains("Loading installed and available apps..."),
         "expected /apps to keep showing loading before the final result, got:\n{loading_popup}"
     );
 
@@ -1016,15 +1301,11 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("共1个可用应用，已安装1个。"),
+        popup.contains("Installed 1 of 1 available apps."),
         "expected /apps to fall back to the installed apps snapshot, got:\n{popup}"
     );
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("已安装。按Enter打开应用页面"),
+        popup.contains("Installed. Press Enter to open the app page"),
         "expected the fallback popup to behave like the installed apps view, got:\n{popup}"
     );
 }
@@ -1063,16 +1344,11 @@ async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("已安装·已停用。按Enter打开应用页面"),
+        popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected selected app description to include disabled status, got:\n{popup}"
     );
     assert!(
-        popup
-            .split_whitespace()
-            .collect::<String>()
-            .contains("启用/停用这个应用。"),
+        popup.contains("enable/disable this app."),
         "expected selected app description to mention enable/disable action, got:\n{popup}"
     );
 }
@@ -1198,9 +1474,7 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_with_user_ove
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("已安装·已停用。按Enter打开应用页面"),
+        popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1264,9 +1538,7 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_without_user_
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("已安装·已停用。按Enter打开应用页面"),
+        popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1337,9 +1609,7 @@ async fn apps_refresh_preserves_toggled_enabled_state() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("已安装·已停用。按Enter打开应用页面"),
+        popup.contains("Installed · Disabled. Press Enter to open the app page"),
         "expected disabled status to persist after reload, got:\n{popup}"
     );
 }
@@ -1378,16 +1648,11 @@ async fn apps_popup_for_not_installed_app_uses_install_only_selected_description
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup
-            .replace(' ', "")
-            .contains("可安装。按Enter打开应用页面安装这个应用。"),
+        popup.contains("Can be installed. Press Enter to open the app page to install"),
         "expected selected app description to be install-only for not-installed apps, got:\n{popup}"
     );
     assert!(
-        !popup
-            .split_whitespace()
-            .collect::<String>()
-            .contains("启用/停用这个应用。"),
+        !popup.contains("enable/disable this app."),
         "did not expect enable/disable text for not-installed apps, got:\n{popup}"
     );
 }
@@ -1467,21 +1732,16 @@ async fn experimental_popup_shows_js_repl_node_requirement() {
         .and_then(|spec| spec.stage.experimental_menu_description())
         .expect("expected js_repl experimental description");
     let node_requirement = js_repl_description
-        .split('。')
-        .find(|sentence| sentence.contains("Node >= v"))
-        .map(str::trim)
+        .split(". ")
+        .find(|sentence| sentence.starts_with("Requires Node >= v"))
+        .map(|sentence| sentence.trim_end_matches(" installed."))
         .expect("expected js_repl description to mention the Node requirement");
 
     chat.open_experimental_popup();
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
-    let compact_popup: String = popup.chars().filter(|c| !c.is_whitespace()).collect();
-    let compact_node_requirement: String = node_requirement
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
     assert!(
-        compact_popup.contains(&compact_node_requirement),
+        popup.contains(node_requirement),
         "expected js_repl feature description to mention the required Node version, got:\n{popup}"
     );
 }
@@ -1505,23 +1765,13 @@ async fn experimental_popup_includes_guardian_approval() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
-    let compact_popup: String = popup.chars().filter(|c| !c.is_whitespace()).collect();
-    let compact_guardian_name: String = guardian_name
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    let compact_guardian_description: String = guardian_description
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
     assert!(
-        compact_popup.contains(&compact_guardian_name),
-        "expected guardian approvals entry in experimental popup, got:\n{popup}"
+        popup.contains(guardian_name),
+        "expected auto-review entry in experimental popup, got:\n{popup}"
     );
     assert!(
-        normalized_popup.contains(guardian_description)
-            || compact_popup.contains(&compact_guardian_description),
-        "expected guardian approvals description in experimental popup, got:\n{popup}"
+        normalized_popup.contains(guardian_description),
+        "expected auto-review description in experimental popup, got:\n{popup}"
     );
 }
 
@@ -1551,70 +1801,7 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
         other => panic!("expected InsertHistoryCell event, got {other:?}"),
     };
     let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 120));
-    assert!(rendered.contains("子代理将在下一个会话中启用。"));
-}
-
-#[tokio::test]
-async fn memories_enable_prompt_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_feature_enabled(Feature::MemoryTool, /*enabled*/ false);
-
-    chat.open_memories_popup();
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("memories_enable_prompt", popup);
-}
-
-#[tokio::test]
-async fn memories_enable_prompt_updates_feature_without_notice() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_feature_enabled(Feature::MemoryTool, /*enabled*/ false);
-
-    chat.open_memories_popup();
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::UpdateFeatureFlags { updates }) if updates == vec![(Feature::MemoryTool, true)]
-    );
-    assert!(
-        rx.try_recv().is_err(),
-        "memory enable prompt should not emit the success notice before persistence succeeds"
-    );
-}
-
-#[tokio::test]
-async fn memories_settings_popup_snapshot() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_feature_enabled(Feature::MemoryTool, /*enabled*/ true);
-    chat.config.memories.use_memories = true;
-    chat.config.memories.generate_memories = false;
-
-    chat.open_memories_popup();
-
-    let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert_chatwidget_snapshot!("memories_settings_popup", popup);
-}
-
-#[tokio::test]
-async fn memories_settings_toggle_saves_on_enter() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_feature_enabled(Feature::MemoryTool, /*enabled*/ true);
-    chat.config.memories.use_memories = true;
-    chat.config.memories.generate_memories = false;
-
-    chat.open_memories_popup();
-    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Char(' ')));
-    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
-
-    assert_matches!(
-        rx.try_recv(),
-        Ok(AppEvent::UpdateMemorySettings {
-            use_memories: true,
-            generate_memories: true,
-        })
-    );
+    assert!(rendered.contains("Subagents will be enabled in the next session."));
 }
 
 #[tokio::test]
@@ -1900,13 +2087,12 @@ async fn reasoning_popup_shows_extra_high_with_space() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
-    let compact_popup = compact_rendered_text(&popup);
     assert!(
-        compact_popup.contains("极高"),
-        "expected popup to include '极高'; popup: {popup}"
+        popup.contains("Extra high"),
+        "expected popup to include 'Extra high'; popup: {popup}"
     );
     assert!(
-        !compact_popup.contains("Extrahigh"),
+        !popup.contains("Extrahigh"),
         "expected popup not to include 'Extrahigh'; popup: {popup}"
     );
 }
@@ -1939,7 +2125,7 @@ async fn single_reasoning_option_skips_selection() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !compact_rendered_text(&popup).contains("选择model-with-single-reasoning的推理级别"),
+        !popup.contains("Select Reasoning Level"),
         "expected reasoning selection popup to be skipped"
     );
 
@@ -2015,11 +2201,11 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.open_reasoning_popup(preset);
 
     let before_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(compact_rendered_text(&before_escape).contains("选择gpt-5.1-codex-max的推理级别"));
+    assert!(before_escape.contains("Select Reasoning Level"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(compact_rendered_text(&after_escape).contains("选择模型"));
-    assert!(!compact_rendered_text(&after_escape).contains("选择gpt-5.1-codex-max的推理级别"));
+    assert!(after_escape.contains("Select Model"));
+    assert!(!after_escape.contains("Select Reasoning Level"));
 }

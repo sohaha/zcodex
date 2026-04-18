@@ -18,8 +18,6 @@ use codex_app_server_protocol::AdditionalPermissionProfile as V2AdditionalPermis
 use codex_app_server_protocol::AgentMessageDeltaNotification;
 use codex_app_server_protocol::ApplyPatchApprovalParams;
 use codex_app_server_protocol::ApplyPatchApprovalResponse;
-use codex_app_server_protocol::BuddyReactionNotification;
-use codex_app_server_protocol::BuddySoulGeneratedNotification;
 use codex_app_server_protocol::CodexErrorInfo as V2CodexErrorInfo;
 use codex_app_server_protocol::CollabAgentState as V2CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
@@ -103,6 +101,7 @@ use codex_app_server_protocol::TurnPlanStep;
 use codex_app_server_protocol::TurnPlanUpdatedNotification;
 use codex_app_server_protocol::TurnStartedNotification;
 use codex_app_server_protocol::TurnStatus;
+use codex_app_server_protocol::WarningNotification;
 use codex_app_server_protocol::build_command_execution_end_item;
 use codex_app_server_protocol::build_file_change_approval_request_item;
 use codex_app_server_protocol::build_file_change_begin_item;
@@ -270,7 +269,22 @@ pub(crate) async fn apply_bespoke_event_handling(
                     .await;
             }
         }
-        EventMsg::Warning(_warning_event) => {}
+        EventMsg::Warning(warning_event) => {
+            if let ApiVersion::V2 = api_version {
+                let notification = WarningNotification {
+                    thread_id: Some(conversation_id.to_string()),
+                    message: warning_event.message,
+                };
+                if let Some(analytics_events_client) = analytics_events_client.as_ref() {
+                    analytics_events_client
+                        .track_notification(ServerNotification::Warning(notification.clone()));
+                }
+                outgoing
+                    .send_server_notification(ServerNotification::Warning(notification))
+                    .await;
+            }
+        }
+        EventMsg::GuardianAssessment(assessment) => {
         EventMsg::BuddySoulGenerated(event) => {
             if let ApiVersion::V2 = api_version {
                 let notification = BuddySoulGeneratedNotification {
@@ -294,7 +308,6 @@ pub(crate) async fn apply_bespoke_event_handling(
                     .await;
             }
         }
-        EventMsg::GuardianAssessment(assessment) => {
             if let ApiVersion::V2 = api_version {
                 let pending_command_execution = match build_item_from_guardian_event(
                     &assessment,
@@ -1883,7 +1896,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                                 let error = JSONRPCErrorError {
                                     code: INTERNAL_ERROR_CODE,
                                     message: format!(
-                                        "加载 rollout `{}` 失败：{err}",
+                                        "failed to load rollout `{}`: {err}",
                                         rollout_path.display()
                                     ),
                                     data: None,
@@ -1897,7 +1910,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                         let error = JSONRPCErrorError {
                             code: INTERNAL_ERROR_CODE,
                             message: format!(
-                                "加载 rollout `{}` 失败：{err}",
+                                "failed to load rollout `{}`: {err}",
                                 rollout_path.display()
                             ),
                             data: None,
@@ -2041,9 +2054,12 @@ async fn complete_file_change_item(
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
 ) {
-    let mut state = thread_state.lock().await;
-    state.turn_summary.file_change_started.remove(&item_id);
-    drop(state);
+    thread_state
+        .lock()
+        .await
+        .turn_summary
+        .file_change_started
+        .remove(&item_id);
 
     let notification = ItemCompletedNotification {
         thread_id: conversation_id.to_string(),
@@ -2112,12 +2128,12 @@ async fn complete_command_execution_item(
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
 ) {
-    let mut state = thread_state.lock().await;
-    let should_emit = state
+    let should_emit = thread_state
+        .lock()
+        .await
         .turn_summary
         .command_execution_started
         .remove(&item_id);
-    drop(state);
     if !should_emit {
         return;
     }
@@ -2649,7 +2665,7 @@ fn request_permissions_response_from_client_result(
     })
 }
 
-const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
+const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
 
 fn render_review_output_text(output: &ReviewOutputEvent) -> String {
     let mut sections = Vec::new();
@@ -4163,6 +4179,7 @@ mod tests {
                 balance: Some("5".to_string()),
             }),
             plan_type: None,
+            rate_limit_reached_type: None,
         };
 
         handle_token_count_event(

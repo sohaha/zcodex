@@ -1,17 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 150
 expression: popup
 ---
-  插 件
-  浏 览 可 用 市 场 中 的 插 件 。
-  共  4 个 可 用 插 件 ， 已 安 装  1 个 。
-  正 在 使 用 缓 存 的 市 场 数 据 ： remote sync timed out
+  Plugins
+  Browse plugins from available marketplaces.
+  Installed 1 of 4 available plugins.
 
-  输 入 关 键 词 搜 索 插 件
-› Alpha Sync          已 安 装  · 已 禁 用    按  Enter 查 看 插 件 详 情 。
-  Bravo Search        可 用         · ChatGPT Marketplace · Search docs and tickets.
-  Hidden Repo Plugin  可 用         · Repo Marketplace · Should not be shown in /plugins.
-  Starter             默 认 可 用       · ChatGPT Marketplace · Included by default.
+  [All Plugins]  Installed (1)  OpenAI Curated  Repo Marketplace
 
-  按  Esc 关 闭 。
+  Type to search plugins
+› [ ] Alpha Sync          Disabled    Space to enable; Enter view details.
+  [-] Bravo Search        Available · ChatGPT Marketplace · Search docs and tickets.
+  [-] Hidden Repo Plugin  Available · Repo Marketplace · Should not be shown in /plugins.
+  [-] Starter             Available · ChatGPT Marketplace · Included by default.
+
+  space enable/disable · ←/→ select marketplace · enter view details · esc close

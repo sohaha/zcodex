@@ -79,7 +79,6 @@ mod fuzzy_file_search;
 pub mod in_process;
 mod message_processor;
 mod models;
-mod openai_compat;
 mod outgoing_message;
 mod server_request_error;
 mod thread_state;
@@ -88,8 +87,6 @@ mod transport;
 
 pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
 pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
-pub use crate::openai_compat::OpenAiCompatServerArgs;
-pub use crate::openai_compat::run_openai_compat_server;
 pub use crate::transport::AppServerTransport;
 pub use crate::transport::auth::AppServerWebsocketAuthArgs;
 pub use crate::transport::auth::AppServerWebsocketAuthSettings;
@@ -283,21 +280,16 @@ fn project_config_warning(config: &Config) -> Option<ConfigWarningNotification> 
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ true,
     ) {
-        if !matches!(layer.name, ConfigLayerSource::Project { .. })
-            || layer.disabled_reason.is_none()
-        {
+        let ConfigLayerSource::Project { dot_codex_folder } = &layer.name else {
             continue;
-        }
-        if let ConfigLayerSource::Project { dot_codex_folder } = &layer.name {
-            disabled_folders.push((
-                dot_codex_folder.as_path().display().to_string(),
-                layer
-                    .disabled_reason
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
-            ));
-        }
+        };
+        let Some(disabled_reason) = &layer.disabled_reason else {
+            continue;
+        };
+        disabled_folders.push((
+            dot_codex_folder.as_path().display().to_string(),
+            disabled_reason.clone(),
+        ));
     }
 
     if disabled_folders.is_empty() {
@@ -306,7 +298,7 @@ fn project_config_warning(config: &Config) -> Option<ConfigWarningNotification> 
 
     let mut message = concat!(
         "以下文件夹中的 Project config.toml 被禁用。 ",
-        "这些文件中的设置会被忽略，但技能与 exec 策略仍会加载。\n",
+        "这些文件中的设置会被忽略，但技能与 exec 策略仍会加载。.\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -449,7 +441,7 @@ pub async fn run_main_with_transport(
     if let Ok(Some(err)) = check_execpolicy_for_warnings(&config.config_layer_stack).await {
         let (path, range) = exec_policy_warning_location(&err);
         let message = ConfigWarningNotification {
-            summary: "解析规则失败；未应用自定义规则。".to_string(),
+            summary: "Error parsing rules; custom rules not applied.".to_string(),
             details: Some(err.to_string()),
             path,
             range,
@@ -462,7 +454,7 @@ pub async fn run_main_with_transport(
     }
     for warning in &config.startup_warnings {
         config_warnings.push(ConfigWarningNotification {
-            summary: warning.to_string(),
+            summary: warning.clone(),
             details: None,
             path: None,
             range: None,
