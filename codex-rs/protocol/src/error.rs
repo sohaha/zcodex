@@ -172,7 +172,6 @@ impl CodexErr {
             | CodexErr::EnvVar(_)
             | CodexErr::Fatal(_)
             | CodexErr::UsageNotIncluded
-            | CodexErr::QuotaExceeded
             | CodexErr::InvalidImageRequest()
             | CodexErr::InvalidRequest(_)
             | CodexErr::RefreshTokenFailed(_)
@@ -187,6 +186,7 @@ impl CodexErr {
             | CodexErr::SessionConfiguredNotFirstEvent
             | CodexErr::UsageLimitReached(_) => false,
             CodexErr::Stream(..)
+            | CodexErr::QuotaExceeded
             | CodexErr::ServerOverloaded
             | CodexErr::Timeout
             | CodexErr::UnexpectedStatus(_)
