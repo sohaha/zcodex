@@ -28,6 +28,7 @@
 - 时间窗按当前日期 `2026-04-18` 计算，覆盖 `2026-04-16` 至 `2026-04-18`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-18-responses-replay-reasoning-content-strip.md`：Responses API replay 历史时不能回传 `reasoning.content`；应在出站输入整理层统一剥离 raw reasoning，并用请求级测试锁住。
+- `.agents/llmdoc/memory/reflections/2026-04-18-inter-agent-envelope-visible-turn-item-leak.md`：inter-agent JSON envelope 不能泄露到 turn-item / last-agent-message 这类可见 assistant 文本提取层。
 - `.agents/llmdoc/memory/reflections/2026-04-18-tui-startup-and-realtime-audio-localization.md`：TUI 汉化应按用户链路而不是按单文件收口，实时音频相关术语优先从共享枚举源头统一，同时记录当前 `fmt` / `lib test` 被仓库既有问题阻塞的验证边界。
 - `.agents/llmdoc/memory/reflections/2026-04-18-provider-model-precedence-after-provider-selection.md`：provider 默认模型必须在最终 provider 选择之后解析，`-P` / `--model-provider` 切换 provider 时同样适用，并且要把仓库现有 `fmt` / lib test 阻塞与本次改动区分开。
 - `.agents/llmdoc/memory/reflections/2026-04-18-upstream-sync-external-feature-inventory-and-mergeback-gate.md`：上游同步的本地分叉特性应拆成 `json` 权威基线、`discover/promote` 候选流程和 merge-back 审查门，且 `discover` 默认基线只能来自祖先关系仍有效的 `last_sync_commit`。

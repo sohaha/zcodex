@@ -9,6 +9,7 @@ import { MarkdownView } from "../components/MarkdownView"
 import { ScrollArea } from "../components/ui/scroll-area"
 import { Skeleton } from "../components/ui/skeleton"
 import { Button } from "../components/ui/button"
+import { isHomeRepo } from "../lib/homeDocs"
 import { Route as RootRoute } from "./__root"
 import type { GitNode } from "../types"
 
@@ -18,8 +19,32 @@ export const Route = createRoute({
   component: RepoViewer,
 })
 
+function getActiveTabForPath(
+  path: string | undefined,
+  tabs: {
+    claudeMd?: GitNode
+    agentsMd?: GitNode
+    docsTree: GitNode[]
+  }
+): "claude" | "agents" | "docs" | undefined {
+  if (!path) {
+    return undefined
+  }
+
+  if (tabs.claudeMd?.path === path) {
+    return "claude"
+  }
+
+  if (tabs.agentsMd?.path === path) {
+    return "agents"
+  }
+
+  return tabs.docsTree.some((node) => node.path === path) ? "docs" : undefined
+}
+
 function RepoViewer() {
   const { owner, repo, _splat } = Route.useParams()
+  const isHomeSource = isHomeRepo(owner, repo)
   const navigate = useNavigate({ from: Route.fullPath })
   const { token, login } = useAuth()
   const {
@@ -34,7 +59,7 @@ function RepoViewer() {
     selectFile,
   } = useRepo({ owner, repo, token })
 
-  const [activeTab, setActiveTab] = useState<"claude" | "agents" | "docs">("docs") // Default to docs
+  const [activeTab, setActiveTab] = useState<"claude" | "agents" | "docs">("docs")
   const [copied, setCopied] = useState(false)
 
   // Sync URL with State
@@ -71,25 +96,17 @@ function RepoViewer() {
     // If splat exists, find the file and select it
     // Determine which tab this file belongs to
     let foundNode: GitNode | undefined
-    let newTab: "claude" | "agents" | "docs" = "docs"
-
     if (tabs.claudeMd && tabs.claudeMd.path === _splat) {
       foundNode = tabs.claudeMd
-      newTab = "claude"
     } else if (tabs.agentsMd && tabs.agentsMd.path === _splat) {
       foundNode = tabs.agentsMd
-      newTab = "agents"
     } else {
       foundNode = tabs.docsTree.find(n => n.path === _splat)
-      newTab = "docs"
     }
 
     if (foundNode) {
       if (selectedFile !== foundNode.path) {
         selectFile(foundNode.path, foundNode.sha)
-      }
-      if (activeTab !== newTab) {
-        setActiveTab(newTab)
       }
     } else {
        // File not found in our tree, maybe 404 or just invalid URL
@@ -97,7 +114,7 @@ function RepoViewer() {
        // But selectFile requires SHA. If we don't have it, we can't load.
     }
 
-  }, [_splat, isLoading, hasContent, tabs, owner, repo, navigate, selectFile, selectedFile, activeTab])
+  }, [_splat, isLoading, hasContent, tabs, owner, repo, navigate, selectFile, selectedFile])
 
 
   // Handle user interaction
@@ -139,11 +156,11 @@ function RepoViewer() {
     return <LoadingSkeleton />
   }
 
-  if (error === "REPO_NOT_FOUND") {
+  if (!isHomeSource && error === "REPO_NOT_FOUND") {
     return <EmptyState type="not-found" owner={owner} repo={repo} />
   }
 
-  if (error === "RATE_LIMIT") {
+  if (!isHomeSource && error === "RATE_LIMIT") {
     return <EmptyState type="rate-limit" onLogin={() => login(`/${owner}/${repo}`)} />
   }
 
@@ -162,6 +179,7 @@ function RepoViewer() {
     return <EmptyState type="no-docs" />
   }
 
+  const resolvedActiveTab = getActiveTabForPath(_splat, tabs) ?? activeTab
   // Get current file name from splat or state
   const currentFileName = selectedFile?.split("/").pop() || _splat?.split("/").pop() || ""
 
@@ -176,9 +194,15 @@ function RepoViewer() {
           </a>
           <div className="h-4 w-px bg-border/60" />
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">{owner}</span>
-            <span className="text-muted-foreground">/</span>
-            <span className="font-bold text-foreground">{repo}</span>
+            {isHomeSource ? (
+              <span className="font-bold text-foreground">home</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">{owner}</span>
+                <span className="text-muted-foreground">/</span>
+                <span className="font-bold text-foreground">{repo}</span>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -186,12 +210,14 @@ function RepoViewer() {
             {copied ? <Check className="h-3 w-3 mr-1.5" /> : <Copy className="h-3 w-3 mr-1.5" />}
             {copied ? "Copied" : "Copy Link"}
           </Button>
-          <Button variant="ghost" size="sm" asChild className="h-8 text-xs">
-            <a href={`https://github.com/${owner}/${repo}`} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3 w-3 mr-1.5" />
-              GitHub
-            </a>
-          </Button>
+          {!isHomeSource && (
+            <Button variant="ghost" size="sm" asChild className="h-8 text-xs">
+              <a href={`https://github.com/${owner}/${repo}`} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="h-3 w-3 mr-1.5" />
+                GitHub
+              </a>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -204,7 +230,7 @@ function RepoViewer() {
                {/* Reorder tabs: Docs (LLMDoc) first */}
               {tree.length > 0 && (
                 <TabButton
-                  active={activeTab === "docs"}
+                  active={resolvedActiveTab === "docs"}
                   onClick={() => handleTabChange("docs")}
                   icon={<FolderOpen className="h-3.5 w-3.5" />}
                   label="llmdoc/"
@@ -212,7 +238,7 @@ function RepoViewer() {
               )}
               {tabs.claudeMd && (
                 <TabButton
-                  active={activeTab === "claude"}
+                  active={resolvedActiveTab === "claude"}
                   onClick={() => handleTabChange("claude")}
                   icon={<FileText className="h-3.5 w-3.5" />}
                   label="claude.md"
@@ -220,7 +246,7 @@ function RepoViewer() {
               )}
               {tabs.agentsMd && (
                 <TabButton
-                  active={activeTab === "agents"}
+                  active={resolvedActiveTab === "agents"}
                   onClick={() => handleTabChange("agents")}
                   icon={<FileText className="h-3.5 w-3.5" />}
                   label="agents.md"
@@ -230,7 +256,7 @@ function RepoViewer() {
           </div>
 
           {/* 文件树 */}
-          {activeTab === "docs" && tree.length > 0 && (
+          {resolvedActiveTab === "docs" && tree.length > 0 && (
             <ScrollArea className="flex-1">
               <div className="p-3">
                 <FileTree
@@ -243,12 +269,12 @@ function RepoViewer() {
           )}
 
           {/* claude.md / agents.md 不需要文件树 */}
-          {(activeTab === "claude" || activeTab === "agents") && (
+          {(resolvedActiveTab === "claude" || resolvedActiveTab === "agents") && (
             <div className="flex-1 flex items-center justify-center p-6">
               <div className="text-center text-muted-foreground">
                 <FileText className="h-12 w-12 mx-auto mb-3 opacity-10" />
                 <p className="text-xs font-medium uppercase tracking-wider opacity-50">
-                  {activeTab === "claude" ? "claude.md" : "agents.md"}
+                  {resolvedActiveTab === "claude" ? "claude.md" : "agents.md"}
                 </p>
               </div>
             </div>

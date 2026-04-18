@@ -3,6 +3,7 @@ import { createRoute, useNavigate } from "@tanstack/react-router"
 import { ArrowRight, Search } from "lucide-react"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
+import { getHomeRouteParams } from "../lib/homeDocs"
 import { Route as RootRoute } from "./__root"
 
 export const Route = createRoute({
@@ -17,10 +18,15 @@ function HomePage() {
   const navigate = useNavigate()
 
   const parseAndNavigate = (input: string) => {
+    const trimmed = input.trim()
+    if (trimmed.toLowerCase() === "home") {
+      navigate({ to: "/$owner/$repo/$", params: getHomeRouteParams() })
+      return
+    }
+
     let owner: string | undefined
     let repo: string | undefined
 
-    const trimmed = input.trim()
     const urlMatch = trimmed.match(/github\.com\/([^/]+)\/([^/]+)/)
     if (urlMatch) {
       owner = urlMatch[1]
@@ -34,7 +40,7 @@ function HomePage() {
     }
 
     if (!owner || !repo) {
-      setError("Please enter a valid GitHub repository (e.g., owner/repo)")
+      setError("Please enter home or a valid GitHub repository (e.g., owner/repo)")
       return
     }
 
@@ -54,6 +60,7 @@ function HomePage() {
   }
 
   const quickLinks = [
+    { name: "home", desc: "Current workspace llmdoc" },
     { name: "TokenRollAI/minicc", desc: "Mini Claude Code" },
     { name: "pydantic/pydantic-ai", desc: "Agent Framework / shim to use Pydantic with LLMs" },
     { name: "langchain-ai/langchain", desc: "Build context-aware reasoning applications" },
@@ -71,7 +78,7 @@ function HomePage() {
               <Search className="ml-3 h-5 w-5 text-muted-foreground" />
               <Input
                 type="text"
-                placeholder="Enter GitHub repo (e.g., owner/repo)"
+                placeholder="Enter GitHub repo or home"
                 value={repoUrl}
                 onChange={(e) => setRepoUrl(e.target.value)}
                 className="border-0 shadow-none focus-visible:ring-0 bg-transparent h-12 text-base w-full placeholder:text-muted-foreground/50"

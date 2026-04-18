@@ -7,6 +7,11 @@ import {
   buildTreeStructure,
   fetchFileContent,
 } from "@/lib/github"
+import {
+  getHomeFileContent,
+  getHomeRepoTree,
+  isHomeRepo,
+} from "@/lib/homeDocs"
 
 interface UseRepoOptions {
   owner: string
@@ -48,23 +53,18 @@ export function useRepo({ owner, repo, token }: UseRepoOptions): UseRepoReturn {
       setState((s) => ({ ...s, isLoading: true, error: undefined }))
 
       try {
-        const options = token ? { token } : undefined
+        const fullTree = isHomeRepo(owner, repo)
+          ? getHomeRepoTree()
+          : await (async () => {
+              const options = token ? { token } : undefined
+              const repoInfo = await fetchRepoInfo(owner, repo, options)
+              return fetchRepoTree(owner, repo, repoInfo.defaultBranch, options)
+            })()
 
-        // 1. 获取仓库信息（默认分支）
-        const repoInfo = await fetchRepoInfo(owner, repo, options)
-
-        // 2. 获取完整文件树
-        const fullTree = await fetchRepoTree(
-          owner,
-          repo,
-          repoInfo.defaultBranch,
-          options
-        )
-
-        // 3. 过滤 LLM 文档
+        // 过滤 LLM 文档
         const filtered = filterLLMDocs(fullTree)
 
-        // 4. 构建树结构
+        // 构建树结构
         const treeStructure = buildTreeStructure(filtered.docsTree)
 
         if (cancelled) return
@@ -104,18 +104,31 @@ export function useRepo({ owner, repo, token }: UseRepoOptions): UseRepoReturn {
 
   // 加载文件内容
   useEffect(() => {
-    if (!selectedSha) {
+    if (!selectedSha || !selectedFile) {
       setFileContent(undefined)
       return
     }
 
+    const currentSelectedFile = selectedFile
+    const currentSelectedSha = selectedSha
     let cancelled = false
 
     async function loadFile() {
       setIsLoadingFile(true)
       try {
-        const options = token ? { token } : undefined
-        const content = await fetchFileContent(owner, repo, selectedSha!, options)
+        const content = isHomeRepo(owner, repo)
+          ? getHomeFileContent(currentSelectedFile)
+          : await fetchFileContent(
+              owner,
+              repo,
+              currentSelectedSha,
+              token ? { token } : undefined
+            )
+
+        if (!content) {
+          throw new Error("FILE_NOT_FOUND")
+        }
+
         if (!cancelled) {
           setFileContent(content)
         }
@@ -136,7 +149,7 @@ export function useRepo({ owner, repo, token }: UseRepoOptions): UseRepoReturn {
     return () => {
       cancelled = true
     }
-  }, [owner, repo, selectedSha, token])
+  }, [owner, repo, selectedFile, selectedSha, token])
 
   const selectFile = useCallback((path: string, sha: string) => {
     setSelectedFile(path)

@@ -5,6 +5,7 @@
 ## 功能特点
 
 - **智能视图**: 自动识别并展示 `claude.md`、`agents.md` 和 `llmdoc/` 目录
+- **本地 Home 入口**: 输入 `home` 可直接打开当前工作区的 `../.agents/llmdoc`
 - **GitHub 集成**: 支持 GitHub OAuth 登录，获取更高的 API 配额
 - **Markdown 渲染**: 支持 GFM 语法、代码高亮
 - **极简架构**: Serverless 无状态设计，部署在 Cloudflare Pages
