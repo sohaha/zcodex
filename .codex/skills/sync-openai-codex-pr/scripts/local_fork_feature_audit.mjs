@@ -12,6 +12,7 @@ const defaultMarkdown = path.join(skillDir, "references", "local-fork-features.m
 const defaultStateFile = path.join(skillDir, "STATE.md");
 const commandOptions = {
   discover: new Set(["repo", "inventory", "state-file", "base-ref", "merge-base-ref", "head-ref", "output"]),
+  "merge-candidates": new Set(["dir", "output"]),
   promote: new Set(["inventory", "candidate", "output"]),
   render: new Set(["repo", "inventory", "markdown"]),
   check: new Set(["repo", "inventory", "output"]),
@@ -20,10 +21,10 @@ const commandOptions = {
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const supported = ["discover", "promote", "render", "check", "refresh"];
+  const supported = ["discover", "merge-candidates", "promote", "render", "check", "refresh"];
   if (!supported.includes(command)) {
     throw new Error(
-      "usage: local_fork_feature_audit.mjs <discover|promote|render|check|refresh> [--flag value]",
+      "usage: local_fork_feature_audit.mjs <discover|merge-candidates|promote|render|check|refresh> [--flag value]",
     );
   }
 
@@ -259,6 +260,7 @@ function buildMarkdownDocument(inventory, auditMarkdown) {
     "",
     "```bash",
     "node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs discover --repo /workspace --base-ref <sha> --head-ref HEAD --output /tmp/sync-openai-codex-pr-discover.json",
+    "node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs merge-candidates --dir /tmp/sync-openai-codex-pr-candidates --output /tmp/sync-openai-codex-pr-candidate-ops.json",
     "node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs promote --candidate /tmp/sync-openai-codex-pr-candidate-ops.json",
     "node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs render --repo /workspace",
     "node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs check --repo /workspace",
@@ -268,6 +270,7 @@ function buildMarkdownDocument(inventory, auditMarkdown) {
     "`discover` 默认只会从 `STATE.md:last_sync_commit` 推断范围，而且该提交必须仍是 `HEAD` 的祖先。",
     "不会再隐式回退到 `last_synced_sha`；如果你刻意要看更宽的区间，显式传 `--base-ref <last_synced_sha>` 或 `--merge-base-ref <ref>`。",
     "`--base-ref` 和 `--merge-base-ref` 互斥；脚本会拒绝含糊调用。",
+    "`merge-candidates` 会把子代理目录里的 candidate ops 合并成一个待审阅文件；同一 feature id 出现互相矛盾的 upsert/remove 会直接失败。",
     "",
     "## Candidate Ops Shape",
     "",
@@ -541,15 +544,69 @@ function validateOperation(operation) {
   throw new Error(`unsupported candidate operation: ${operation.action}`);
 }
 
-function promote(inventory, candidatePath) {
+function readCandidateOperations(candidatePath) {
   const candidate = readJson(candidatePath);
   if (!Array.isArray(candidate.operations)) {
     throw new Error(`candidate file must contain an operations array: ${candidatePath}`);
   }
   candidate.operations.forEach(validateOperation);
+  return candidate.operations;
+}
+
+function mergeCandidateOperations(candidateDir) {
+  if (!fs.existsSync(candidateDir)) {
+    throw new Error(`candidate directory is missing: ${candidateDir}`);
+  }
+  if (!fs.statSync(candidateDir).isDirectory()) {
+    throw new Error(`candidate path is not a directory: ${candidateDir}`);
+  }
+
+  const files = fs
+    .readdirSync(candidateDir)
+    .filter((fileName) => fileName.endsWith(".json"))
+    .sort()
+    .map((fileName) => path.join(candidateDir, fileName));
+
+  if (files.length === 0) {
+    throw new Error(`candidate directory has no .json files: ${candidateDir}`);
+  }
+
+  const mergedOperations = [];
+  const byFeatureId = new Map();
+
+  for (const filePath of files) {
+    const operations = readCandidateOperations(filePath);
+    for (const operation of operations) {
+      const featureId = operation.action === "upsert" ? operation.feature.id : operation.id;
+      const serialized = JSON.stringify(operation);
+      const existing = byFeatureId.get(featureId);
+      if (!existing) {
+        byFeatureId.set(featureId, { serialized, action: operation.action, source: filePath });
+        mergedOperations.push(operation);
+        continue;
+      }
+      if (existing.serialized === serialized) {
+        continue;
+      }
+      throw new Error(
+        `conflicting candidate operations for feature ${featureId}: ${existing.source} (${existing.action}) vs ${filePath} (${operation.action})`,
+      );
+    }
+  }
+
+  return {
+    version: 1,
+    source_dir: candidateDir,
+    source_files: files,
+    operations: mergedOperations,
+  };
+}
+
+function promote(inventory, candidatePath) {
+  const operations = readCandidateOperations(candidatePath);
 
   let features = [...inventory.features];
-  for (const operation of candidate.operations) {
+  for (const operation of operations) {
     if (operation.action === "remove") {
       features = features.filter((feature) => feature.id !== operation.id);
       continue;
@@ -579,6 +636,21 @@ function main() {
     const repoRoot = path.resolve(options.repo);
     const result = discover(repoRoot, inventory, options);
     const text = `${JSON.stringify(result, null, 2)}\n`;
+    if (options.output) {
+      writeTextIfChanged(path.resolve(options.output), text);
+      console.log(`Wrote ${path.resolve(options.output)}`);
+    } else {
+      process.stdout.write(text);
+    }
+    return;
+  }
+
+  if (command === "merge-candidates") {
+    if (!options.dir) {
+      throw new Error("merge-candidates requires --dir <candidate-dir>");
+    }
+    const merged = mergeCandidateOperations(path.resolve(options.dir));
+    const text = `${JSON.stringify(merged, null, 2)}\n`;
     if (options.output) {
       writeTextIfChanged(path.resolve(options.output), text);
       console.log(`Wrote ${path.resolve(options.output)}`);

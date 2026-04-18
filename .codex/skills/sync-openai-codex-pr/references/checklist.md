@@ -86,7 +86,16 @@ fi
 主代理把多个子代理结果汇总成一个候选文件，例如：
 
 ```bash
+candidate_dir="/tmp/sync-openai-codex-pr-candidates-$ts"
+mkdir -p "$candidate_dir"
+# 子代理各自写入：
+#   "$candidate_dir/core-config-protocol.json"
+#   "$candidate_dir/tui-localization-branding.json"
+#   "$candidate_dir/workspace-local-crates.json"
 candidate_ops="/tmp/sync-openai-codex-pr-candidate-ops-$ts.json"
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs merge-candidates \
+  --dir "$candidate_dir" \
+  --output "$candidate_ops"
 ```
 
 ## 3. 审阅后晋升到权威基线

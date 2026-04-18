@@ -36,6 +36,7 @@ description: 在独立 worktree 中把 `openai/codex` 的 `main` 同步到当前
 
 ```bash
 node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs discover --repo /workspace --base-ref <sha> --head-ref HEAD --output /tmp/sync-openai-codex-pr-discover.json
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs merge-candidates --dir /tmp/sync-openai-codex-pr-candidates --output /tmp/sync-openai-codex-pr-candidate-ops.json
 node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs promote --candidate /tmp/sync-openai-codex-pr-candidate-ops.json
 node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs render --repo /workspace
 node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs check --repo <repo-or-worktree>
@@ -56,6 +57,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - `discover`
   - 只收集事实：提交、文件、既有特性命中、未覆盖路径。
   - 不直接发明或修改权威特性。
+- `merge-candidates`
+  - 把多个子代理写出的 candidate ops 文件合并成一个待审阅文件。
+  - 同一 feature id 只要出现互相矛盾的 upsert/remove，就直接失败，不允许静默覆盖。
 - `promote`
   - 只应用已经审阅过的 candidate ops。
   - 不做“自动批准”。
@@ -74,7 +78,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 1. 主代理先跑一次 `discover`
 2. 子代理并发阅读 `discover` 产物和相关提交
 3. 子代理只输出 candidate ops
-4. 主代理汇总、审阅后串行执行 `promote`
+4. 主代理先用 `merge-candidates` 汇总多个 candidate 文件，再审阅后串行执行 `promote`
 5. 再 `render`
 6. 再 `check`
 

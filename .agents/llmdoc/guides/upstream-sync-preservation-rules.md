@@ -47,10 +47,11 @@
 - 正确顺序：
   1. `discover` 先扫描本地提交历史，输出 commit / path / 既有特性命中 / 未覆盖路径
   2. 子代理并发分析 discover 结果，只产出 candidate ops
-  3. 主代理审阅后再 `promote` 到权威基线
+  3. 主代理先把多个 candidate 文件合并，再审阅后 `promote` 到权威基线
   4. `render` 生成新的展示报告
   5. `check` 作为 merge-back gate 审查当前 repo 或 worktree
 - 不要让子代理直接并发改权威基线；那会把“候选结论”和“最终批准”混在一起，容易把误判永久写进同步基线。
+- 更稳的做法是让子代理各自写独立 candidate 文件，再由主代理用脚本合并；同一 feature id 一旦出现互相矛盾的 upsert/remove，应该在合并阶段就失败，而不是靠人工肉眼发现。
 - `discover` 默认只能从 `STATE.md:last_sync_commit` 推断范围，而且这个提交必须仍是 `HEAD` 的祖先。
 - 不要把 `last_synced_sha` 当成“我们自己的提交范围”默认起点；它表示 upstream 基线，不等于本地已落地同步提交。
 - 如果 `last_sync_commit` 因 rebase、cherry-pick 或人工整理式同步而不再是祖先，必须显式改用 `--base-ref <trusted-local-commit>`，或在接受更宽噪音的前提下使用 `--merge-base-ref <ref>`。
