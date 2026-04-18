@@ -77,6 +77,16 @@ fn server_overloaded_is_retryable() {
 }
 
 #[test]
+fn invalid_request_is_retryable() {
+    assert!(CodexErr::InvalidRequest("bad request".to_string()).is_retryable());
+}
+
+#[test]
+fn quota_exceeded_is_retryable() {
+    assert!(CodexErr::QuotaExceeded.is_retryable());
+}
+
+#[test]
 fn sandbox_denied_uses_aggregated_output_when_stderr_empty() {
     let output = ExecToolCallOutput {
         exit_code: 77,
