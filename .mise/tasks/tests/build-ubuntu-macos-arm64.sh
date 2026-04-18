@@ -26,6 +26,8 @@ run_tests() {
   local sdk_dir
   local ssh_hint_file
   local output_bin
+  local rs_ext_args_file
+  local rs_ext_args
   local output
   temp_root="$(mktemp -d)"
   trap "rm -rf '$temp_root'" EXIT
@@ -36,6 +38,7 @@ run_tests() {
   sdk_dir="$sandbox_repo/.cache/macos-sdk/MacOSX.sdk"
   ssh_hint_file="$temp_root/nm"
   output_bin="$sandbox_repo/test-target/aarch64-apple-darwin/release/codex"
+  rs_ext_args_file="$temp_root/rs-ext-args"
 
   mkdir -p "$task_dir" "$codex_rs_scripts_dir" "$fake_bin_dir" "$sdk_dir"
   git -C "$sandbox_repo" init >/dev/null 2>&1
@@ -86,6 +89,7 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
+printf '%s\n' "$*" >"$TEST_RS_EXT_ARGS_FILE"
 mkdir -p "$(dirname "$TEST_OUTPUT_BIN")"
 perl - "$TEST_OUTPUT_BIN" <<'PL'
 use strict;
@@ -191,10 +195,13 @@ EOF
     PATH="$fake_bin_dir:$PATH" \
       TEST_FAKE_ZIG="$fake_bin_dir/zig" \
       TEST_OUTPUT_BIN="$output_bin" \
+      TEST_RS_EXT_ARGS_FILE="$rs_ext_args_file" \
       ZIG_GLOBAL_CACHE_DIR="$temp_root/zig-cache" \
       CNB_REMOTE_SSH_HINT_FILE="$ssh_hint_file" \
       bash "$task_dir/build-ubuntu-macos-arm64" 2>&1
   )"
+
+  rs_ext_args="$(cat "$rs_ext_args_file")"
 
   assert_contains \
     "$output" \
@@ -205,6 +212,11 @@ EOF
     "$output" \
     "scp user@example.com:$output_bin ~/.local/bin/codex" \
     "build-ubuntu-macos-arm64 should print the download command derived from the SSH hint file"
+
+  assert_contains \
+    "$rs_ext_args" \
+    "--features codex-tui/realtime-webrtc-stub" \
+    "build-ubuntu-macos-arm64 should enable the realtime stub on codex-tui instead of codex-cli"
 }
 
 run_tests

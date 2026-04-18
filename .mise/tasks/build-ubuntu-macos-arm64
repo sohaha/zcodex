@@ -558,7 +558,7 @@ if [ -z "${CODEX_UBUNTU_MACOS_ARM64_FORCE_WEBRTC_STUB+x}" ]; then
   echo "[build-ubuntu-macos-arm64] Linux 交叉构建默认启用 realtime-webrtc-stub，规避 libwebrtc/v8 的 macOS arm64 链接冲突" >&2
 fi
 if [ "${CODEX_UBUNTU_MACOS_ARM64_FORCE_WEBRTC_STUB:-0}" = "1" ]; then
-  build_args+=(--features realtime-webrtc-stub)
+  build_args+=(--features codex-tui/realtime-webrtc-stub)
 fi
 target_dir="$(resolve_rs_ext_target_dir "${build_args[@]}")"
 output_bin="$target_dir/$target/$profile_dir/codex"
