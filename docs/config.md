@@ -208,8 +208,9 @@ User-defined `model_providers` entries may also override built-in IDs such as
 `openai` when you want to change the default provider wiring.
 You can also set `model_providers.<id>.model` to give that provider its own
 default model; when present, it takes precedence over the global `model`
-setting for requests sent through that provider, while explicit CLI model
-overrides such as `--model` still win.
+setting for requests sent through that provider, including when the provider
+is selected via `-P` or `--model-provider`, while explicit CLI model overrides
+such as `--model` still win.
 
 Example overriding the built-in OpenAI provider to use Chat Completions:
 
