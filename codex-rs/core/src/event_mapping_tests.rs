@@ -1,4 +1,5 @@
 use super::parse_turn_item;
+use codex_protocol::AgentPath;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::HookPromptFragment;
 use codex_protocol::items::TurnItem;
@@ -9,6 +10,7 @@ use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::WebSearchAction;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::user_input::UserInput;
 use pretty_assertions::assert_eq;
 
@@ -130,6 +132,29 @@ fn parses_assistant_message_input_text_for_backward_compatibility() {
         }
         other => panic!("expected TurnItem::AgentMessage, got {other:?}"),
     }
+}
+
+#[test]
+fn skips_serialized_inter_agent_communication() {
+    let communication = InterAgentCommunication::new(
+        AgentPath::root(),
+        AgentPath::try_from("/root/worker").expect("agent path"),
+        Vec::new(),
+        "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+            .to_string(),
+        /*trigger_turn*/ false,
+    );
+    let item = ResponseItem::Message {
+        id: None,
+        role: "assistant".to_string(),
+        content: vec![ContentItem::OutputText {
+            text: serde_json::to_string(&communication).expect("serialize communication"),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+
+    assert!(parse_turn_item(&item).is_none());
 }
 
 #[test]

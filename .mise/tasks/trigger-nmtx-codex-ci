@@ -10,6 +10,7 @@ source_ref="web"
 targets="all"
 release_repo="sohaha/zcodex"
 release_tag=""
+publish_mode="full"
 dry_run=0
 token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
@@ -24,6 +25,8 @@ usage() {
   --targets <targets>          目标平台，默认 all
   --release-repo <repo>        发布仓库，默认 sohaha/zcodex
   --release-tag <tag>          可选，默认由工作流推导为 v<version>
+  --mode <mode>                发布模式，支持 full 或 npm-only，默认 full
+  --npm-only                   等价于 --mode npm-only，仅触发 npm 发布
   --ref <git-ref>              触发 nmtx 工作流所用分支，默认 master
   --repo <owner/name>          GitHub 仓库，默认 sohaha/nmtx
   --dry-run                    只打印请求，不实际触发
@@ -73,6 +76,15 @@ while [ "$#" -gt 0 ]; do
       release_tag="$2"
       shift 2
       ;;
+    --mode)
+      [ "$#" -ge 2 ] || die "--mode 缺少参数"
+      publish_mode="$2"
+      shift 2
+      ;;
+    --npm-only)
+      publish_mode="npm-only"
+      shift
+      ;;
     --ref)
       [ "$#" -ge 2 ] || die "--ref 缺少参数"
       ref="$2"
@@ -111,6 +123,14 @@ case "$version" in
     ;;
 esac
 
+case "$publish_mode" in
+  full|npm-only)
+    ;;
+  *)
+    die "mode 仅支持 full 或 npm-only: $publish_mode"
+    ;;
+esac
+
 require_command curl
 require_command jq
 
@@ -122,6 +142,7 @@ payload="$(
     --arg targets "$targets" \
     --arg release_repo "$release_repo" \
     --arg release_tag "$release_tag" \
+    --arg publish_mode "$publish_mode" \
     '
       {
         ref: $ref,
@@ -130,12 +151,14 @@ payload="$(
           source_ref: $source_ref,
           targets: $targets,
           release_repo: $release_repo,
-        } + if $release_tag == "" then {} else {release_tag: $release_tag} end),
+        }
+        + if $release_tag == "" then {} else {release_tag: $release_tag} end
+        + if $publish_mode == "full" then {} else {publish_mode: $publish_mode} end),
       }
     '
 )"
 
-echo "[mise] repo=$repo workflow=$workflow ref=$ref version=$version source_ref=$source_ref targets=$targets release_repo=$release_repo"
+echo "[mise] repo=$repo workflow=$workflow ref=$ref version=$version mode=$publish_mode source_ref=$source_ref targets=$targets release_repo=$release_repo"
 if [ -n "$release_tag" ]; then
   echo "[mise] release_tag=$release_tag"
 fi
@@ -161,6 +184,9 @@ status_code="$(
 
 if [ "$status_code" != "204" ]; then
   response="$(cat /tmp/trigger-nmtx-codex-ci-response.json 2>/dev/null || true)"
+  if [ "$publish_mode" != "full" ] && printf '%s' "$response" | jq -e '.message? | contains("Unexpected inputs provided: [\"publish_mode\"]")' >/dev/null 2>&1; then
+    die "远端 $repo:$workflow 还未部署 publish_mode 输入；先推送 nmtx 的 codex.yml 更新到远端，再重试 --mode $publish_mode"
+  fi
   die "触发失败: HTTP $status_code ${response:+- $response}"
 fi
 

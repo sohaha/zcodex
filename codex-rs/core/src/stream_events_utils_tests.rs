@@ -5,6 +5,7 @@ use super::last_assistant_message_from_item;
 use super::response_item_may_include_external_context;
 use super::save_image_generation_result;
 use crate::session::tests::make_session_and_context;
+use codex_protocol::AgentPath;
 use codex_protocol::error::CodexErr;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
@@ -14,6 +15,7 @@ use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 
@@ -173,6 +175,26 @@ fn last_assistant_message_from_item_returns_none_for_plan_only_hidden_message() 
 
     assert_eq!(
         last_assistant_message_from_item(&item, /*plan_mode*/ true),
+        None
+    );
+}
+
+#[test]
+fn last_assistant_message_from_item_returns_none_for_inter_agent_envelope() {
+    let communication = InterAgentCommunication::new(
+        AgentPath::root(),
+        AgentPath::try_from("/root/worker").expect("agent path"),
+        Vec::new(),
+        "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+            .to_string(),
+        /*trigger_turn*/ false,
+    );
+    let item = assistant_output_text(
+        &serde_json::to_string(&communication).expect("serialize communication"),
+    );
+
+    assert_eq!(
+        last_assistant_message_from_item(&item, /*plan_mode*/ false),
         None
     );
 }

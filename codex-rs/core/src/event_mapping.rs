@@ -15,6 +15,7 @@ use codex_protocol::models::is_image_open_tag_text;
 use codex_protocol::models::is_local_image_close_tag_text;
 use codex_protocol::models::is_local_image_open_tag_text;
 use codex_protocol::protocol::COLLABORATION_MODE_OPEN_TAG;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
 use codex_protocol::user_input::UserInput;
 use tracing::warn;
@@ -144,6 +145,7 @@ pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {
             "user" => parse_visible_hook_prompt_message(id.as_ref(), content)
                 .map(TurnItem::HookPrompt)
                 .or_else(|| parse_user_message(content).map(TurnItem::UserMessage)),
+            "assistant" if InterAgentCommunication::from_message_content(content).is_some() => None,
             "assistant" => Some(TurnItem::AgentMessage(parse_agent_message(
                 id.as_ref(),
                 content,
