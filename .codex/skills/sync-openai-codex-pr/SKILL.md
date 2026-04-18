@@ -156,6 +156,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 13. 在当前分支工作区再执行一次 `check --repo /workspace`
 14. 若审查通过，`render --repo /workspace`
 15. 更新 `STATE.md`，把同步代码、权威基线、渲染报告和状态文件一起提交
+   - `last_sync_commit` 必须写成当前分支真正落地的 sync 提交
+   - 如果 upstream SHA 未推进，空同步轮次要保留上一次真实落地的 sync 提交，不能改写成空同步状态提交、后续本地修复提交或临时 worktree SHA
 
 ## Rust 验证要求
 
@@ -177,6 +179,17 @@ just bazel-lock-check
 ```
 
 如果改动触及 `common`、`core` 或 `protocol` 这类共享区域，局部验证通过后再决定是否扩大。
+
+如果 upstream 在共享 struct 上新增字段，而本地又有 synthetic / fallback 构造，例如 `ModelInfo`：
+
+- 不要只看编译通过的主路径
+- 额外 grep 同类型的本地构造点，补齐新字段后再宣称同步完成
+
+如果本次同步触及 `codex-rs/protocol/src/error.rs` 或相关错误映射：
+
+- 不要只看枚举本身的 diff
+- 联动审查 `is_retryable()`、`to_codex_protocol_error()` 和 `codex-rs/core/src/session/turn.rs` 的调用方
+- 如果只补了协议层枚举测试，没有覆盖 turn 级自动重试或协议映射断言，不要把它当成验证充分
 
 ## Responses / reasoning 相关专项检查
 
@@ -201,6 +214,7 @@ just bazel-lock-check
   - 当前分支 `git merge --no-ff --no-commit "$branch"` 之后再一次
 - `check` 只要报缺失项，就不能提交
 - worktree 审查时必须使用 worktree 自己的脚本与 `json` 基线副本
+- 对 `local_surface` / `localized_behavior` 特性，检查点不能只停留在文案或模块存在性；要覆盖运行时桥接、事件 wiring、配置落盘等真实链路
 
 对每个缺失/覆盖项，都必须给出原因：
 

@@ -47,8 +47,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `reference-context-reinjection-baseline` | `local_behavior` | codex-rs/core session/context_manager |
 | `auto-tldr-routing-default` | `local_behavior` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `local_surface` | codex-rs workspace |
-| `buddy-surface` | `local_surface` | codex-rs/tui |
-| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/tui + codex-rs/tools |
+| `buddy-surface` | `local_surface` | codex-rs/tui + codex-rs/app-server |
+| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/tui + codex-rs/tools + codex-rs/app-server |
 | `community-branding-and-release-links` | `localized_behavior` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
@@ -76,13 +76,15 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/core/src/config_loader/mod.rs`: `layers\.push\(zconfig_layer\)`
 
 ### `models-manager-provider-overrides`
-- summary: 保留 provider.model_catalog 过滤、skip_reasoning_popup 传播，以及按 provider 选择默认远端模型目录。
-- better_when: upstream 把 provider.model_catalog、skip_reasoning_popup 和 Anthropic 默认模型目录都整合成更完整的实现，且本地配置行为不退化。
+- summary: 保留 provider.model_catalog 过滤、skip_reasoning_popup 传播、按 provider 选择默认远端模型目录，以及本地 synthetic/fallback ModelInfo 的字段完整性。
+- better_when: upstream 把 provider.model_catalog、skip_reasoning_popup、Anthropic 默认模型目录和本地 synthetic ModelInfo 的字段补齐都整合成更完整的实现，且本地配置行为不退化。
 - checks:
   - `regex` `codex-rs/models-manager/src/manager.rs`: `provider_info\.model_catalog`
   - `regex` `codex-rs/models-manager/src/manager.rs`: `provider_info\.skip_reasoning_popup`
   - `regex` `codex-rs/models-manager/src/manager.rs`: `default_remote_models_for_provider\(&provider_info\)`
   - `regex` `codex-rs/models-manager/src/manager.rs`: `anthropic_model_catalog\(`
+  - `regex` `codex-rs/models-manager/src/manager.rs`: `max_context_window: None`
+  - `regex` `codex-rs/models-manager/src/model_info.rs`: `max_context_window: None`
 
 ### `responses-reasoning-content-strip`
 - summary: Responses replay 时剥离 raw reasoning.content，保留 summary / encrypted_content，避免出站请求变成非法 payload。
@@ -115,12 +117,18 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `exists` `codex-rs/ztok`
 
 ### `buddy-surface`
-- summary: Buddy 交互面和中文提示仍然存在，不被 upstream TUI 改动吞掉。
+- summary: Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。
 - better_when: upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。
 - checks:
   - `regex` `codex-rs/tui/src/buddy/mod.rs`: `小伙伴已孵化`
   - `regex` `codex-rs/tui/src/chatwidget.rs`: `小伙伴命令：`
   - `regex` `codex-rs/tui/src/slash_command.rs`: `SlashCommand::Buddy`
+  - `regex` `codex-rs/tui/src/app_event.rs`: `PersistBuddyVisibility\(bool\)`
+  - `regex` `codex-rs/tui/src/app_event.rs`: `PersistBuddyFullVisibility`
+  - `regex` `codex-rs/tui/src/app.rs`: `AppEvent::PersistBuddyVisibility\(visible\)`
+  - `regex` `codex-rs/tui/src/app.rs`: `AppEvent::PersistBuddyFullVisibility`
+  - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `EventMsg::BuddySoulGenerated`
+  - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `EventMsg::BuddyReaction`
 
 ### `chinese-localization-sentinels`
 - summary: 用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。
@@ -129,6 +137,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/tui/src/slash_command.rs`: `创建 AGENTS\.md 文件，为 Codex 提供指令`
   - `regex` `codex-rs/tools/src/request_user_input_tool.rs`: `request_user_input 在 \{mode_name\} 模式不可用`
   - `regex` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: `请使用以下链接提交 Issue`
+  - `regex` `codex-rs/tui/src/app.rs`: `保存并关闭外部编辑器以继续`
+  - `regex` `codex-rs/tui/src/app.rs`: `因 SKILL\.md 文件无效，已跳过加载 \{error_count\} 个技能`
+  - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `加载 rollout`
+  - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `审查器未输出任何回复`
 
 ### `community-branding-and-release-links`
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
@@ -153,8 +165,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `reference-context-reinjection-baseline` | `PASS` | codex-rs/core session/context_manager |
 | `auto-tldr-routing-default` | `PASS` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `PASS` | codex-rs workspace |
-| `buddy-surface` | `PASS` | codex-rs/tui |
-| `chinese-localization-sentinels` | `PASS` | codex-rs/tui + codex-rs/tools |
+| `buddy-surface` | `PASS` | codex-rs/tui + codex-rs/app-server |
+| `chinese-localization-sentinels` | `PASS` | codex-rs/tui + codex-rs/tools + codex-rs/app-server |
 | `community-branding-and-release-links` | `PASS` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
@@ -190,13 +202,15 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 ### `models-manager-provider-overrides`
 - status: `PASS`
 - kind: `local_behavior`
-- summary: 保留 provider.model_catalog 过滤、skip_reasoning_popup 传播，以及按 provider 选择默认远端模型目录。
-- better_when: upstream 把 provider.model_catalog、skip_reasoning_popup 和 Anthropic 默认模型目录都整合成更完整的实现，且本地配置行为不退化。
+- summary: 保留 provider.model_catalog 过滤、skip_reasoning_popup 传播、按 provider 选择默认远端模型目录，以及本地 synthetic/fallback ModelInfo 的字段完整性。
+- better_when: upstream 把 provider.model_catalog、skip_reasoning_popup、Anthropic 默认模型目录和本地 synthetic ModelInfo 的字段补齐都整合成更完整的实现，且本地配置行为不退化。
 - evidence:
   - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:232 let remote_models = if let Some(ref catalog_slugs) = provider_info.model_catalog {
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:614 if provider_info.skip_reasoning_popup {
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:615 if provider_info.skip_reasoning_popup {
   - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:231 .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider_info));
   - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:517 WireApi::Anthropic => model_info::anthropic_model_catalog(),
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:559 max_context_window: None,
+  - `ok` `codex-rs/models-manager/src/model_info.rs`: codex-rs/models-manager/src/model_info.rs:181 max_context_window: None,
 
 ### `responses-reasoning-content-strip`
 - status: `PASS`
@@ -239,12 +253,18 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 ### `buddy-surface`
 - status: `PASS`
 - kind: `local_surface`
-- summary: Buddy 交互面和中文提示仍然存在，不被 upstream TUI 改动吞掉。
+- summary: Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。
 - better_when: upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。
 - evidence:
   - `ok` `codex-rs/tui/src/buddy/mod.rs`: codex-rs/tui/src/buddy/mod.rs:91 "小伙伴已孵化：{} {}。",
   - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:5284 "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:95 SlashCommand::Buddy => "孵化、抚摸或隐藏底部小伙伴",
+  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:534 PersistBuddyVisibility(bool),
+  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:537 PersistBuddyFullVisibility,
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5684 AppEvent::PersistBuddyVisibility(visible) => {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5687 AppEvent::PersistBuddyFullVisibility => {
+  - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:289 EventMsg::BuddySoulGenerated(event) => {
+  - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:301 EventMsg::BuddyReaction(event) => {
 
 ### `chinese-localization-sentinels`
 - status: `PASS`
@@ -255,6 +275,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:77 SlashCommand::Init => "创建 AGENTS.md 文件，为 Codex 提供指令",
   - `ok` `codex-rs/tools/src/request_user_input_tool.rs`: codex-rs/tools/src/request_user_input_tool.rs:91 Some(format!("request_user_input 在 {mode_name} 模式不可用"))
   - `ok` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: codex-rs/tui/src/bottom_pane/feedback_view.rs:325 Some(_) => format!("{prefix}请使用以下链接提交 Issue："),
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:183 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:464 "因 SKILL.md 文件无效，已跳过加载 {error_count} 个技能。"
+  - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:1902 "加载 rollout `{}` 失败：{err}",
+  - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2671 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 
 ### `community-branding-and-release-links`
 - status: `PASS`

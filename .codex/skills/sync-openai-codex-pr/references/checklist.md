@@ -166,6 +166,16 @@ just fmt
 
 然后跑最窄相关测试。共享区域改动按仓库规则决定是否扩大。
 
+如果本次同步碰到共享 struct 新增字段：
+
+- grep 本地同类型的 synthetic / fallback 构造点
+- 同时 grep 直接字段读取点，确认没有绕过新的 helper / resolved 字段语义
+
+如果本次同步碰到 `codex-rs/protocol/src/error.rs`：
+
+- 一并审查 `is_retryable()`、`to_codex_protocol_error()`、`codex-rs/core/src/session/turn.rs`
+- 不要只补协议枚举级单测；至少确认 turn 级自动重试和对外错误分类没有互相打架
+
 如果改了依赖：
 
 ```bash
@@ -224,6 +234,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - `last_synced_at_utc`
 - `last_synced_base_branch`
 - `last_sync_commit`
+- `last_sync_commit` 必须是当前分支真正落地的 sync 提交
+- 如果 upstream SHA 没变，空同步轮次继续保留上一次真实落地的 sync 提交
+- 不要把 `last_sync_commit` 改写成空同步状态提交、后续本地修复提交、补记 `STATE.md` 的提交，或临时 worktree / sync 分支上未落地的 SHA
 
 如果 target SHA 无法准确核定，不要伪造，改写 `notes` 说明原因。
 

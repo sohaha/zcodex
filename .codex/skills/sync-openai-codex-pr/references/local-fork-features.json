@@ -77,8 +77,8 @@
       "id": "models-manager-provider-overrides",
       "kind": "local_behavior",
       "area": "codex-rs/models-manager",
-      "summary": "保留 provider.model_catalog 过滤、skip_reasoning_popup 传播，以及按 provider 选择默认远端模型目录。",
-      "better_when": "upstream 把 provider.model_catalog、skip_reasoning_popup 和 Anthropic 默认模型目录都整合成更完整的实现，且本地配置行为不退化。",
+      "summary": "保留 provider.model_catalog 过滤、skip_reasoning_popup 传播、按 provider 选择默认远端模型目录，以及本地 synthetic/fallback ModelInfo 的字段完整性。",
+      "better_when": "upstream 把 provider.model_catalog、skip_reasoning_popup、Anthropic 默认模型目录和本地 synthetic ModelInfo 的字段补齐都整合成更完整的实现，且本地配置行为不退化。",
       "checks": [
         {
           "type": "regex",
@@ -99,6 +99,16 @@
           "type": "regex",
           "path": "codex-rs/models-manager/src/manager.rs",
           "pattern": "anthropic_model_catalog\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/src/manager.rs",
+          "pattern": "max_context_window: None"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/src/model_info.rs",
+          "pattern": "max_context_window: None"
         }
       ]
     },
@@ -189,8 +199,8 @@
     {
       "id": "buddy-surface",
       "kind": "local_surface",
-      "area": "codex-rs/tui",
-      "summary": "Buddy 交互面和中文提示仍然存在，不被 upstream TUI 改动吞掉。",
+      "area": "codex-rs/tui + codex-rs/app-server",
+      "summary": "Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。",
       "better_when": "upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。",
       "checks": [
         {
@@ -207,13 +217,43 @@
           "type": "regex",
           "path": "codex-rs/tui/src/slash_command.rs",
           "pattern": "SlashCommand::Buddy"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app_event.rs",
+          "pattern": "PersistBuddyVisibility\\(bool\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app_event.rs",
+          "pattern": "PersistBuddyFullVisibility"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "AppEvent::PersistBuddyVisibility\\(visible\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "AppEvent::PersistBuddyFullVisibility"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+          "pattern": "EventMsg::BuddySoulGenerated"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+          "pattern": "EventMsg::BuddyReaction"
         }
       ]
     },
     {
       "id": "chinese-localization-sentinels",
       "kind": "localized_behavior",
-      "area": "codex-rs/tui + codex-rs/tools",
+      "area": "codex-rs/tui + codex-rs/tools + codex-rs/app-server",
       "summary": "用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。",
       "better_when": "用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。",
       "checks": [
@@ -231,6 +271,26 @@
           "type": "regex",
           "path": "codex-rs/tui/src/bottom_pane/feedback_view.rs",
           "pattern": "请使用以下链接提交 Issue"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "保存并关闭外部编辑器以继续"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "因 SKILL\\.md 文件无效，已跳过加载 \\{error_count\\} 个技能"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+          "pattern": "加载 rollout"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+          "pattern": "审查器未输出任何回复"
         }
       ]
     },
