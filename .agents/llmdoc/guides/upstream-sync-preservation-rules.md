@@ -28,20 +28,37 @@
   - `Actual upstream range`
 - `STATE.md` 只记录最近一次**可准确审计**的已落地基线；若代码已经吸收了更晚同步内容，但 target SHA 仍无法精确确认，不要伪造 `last_synced_sha`，而是在 `notes` 中明确说明原因。
 
-## 本地特性清单应独立外置
-- 不要把本地分叉特性清单长期堆在技能正文里；应维护独立的事实源文件，供同步前刷新、同步后审查和落地后更新。
+## 本地特性基线应独立外置
+- 不要把本地分叉特性台账长期堆在技能正文里；应拆成：
+  - 权威基线 `json`
+  - 展示报告 `md`
+  - discover / promote / render / check 脚本
 - 当前仓库的 upstream sync 使用：
+  - `.codex/skills/sync-openai-codex-pr/references/local-fork-features.json`
   - `.codex/skills/sync-openai-codex-pr/references/local-fork-features.md`
   - `.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs`
-- 这份清单至少要能表达：
+- 权威基线至少要能表达：
   - 特性 ID / 作用区域 / 为什么要保留
   - “什么情况下算被更好的实现替换”
   - 可脚本化的存在性或文本证据检查
 
+## 先 discover，再 promote
+- 自动发现和最终批准不是同一个动作。
+- 正确顺序：
+  1. `discover` 先扫描本地提交历史，输出 commit / path / 既有特性命中 / 未覆盖路径
+  2. 子代理并发分析 discover 结果，只产出 candidate ops
+  3. 主代理审阅后再 `promote` 到权威基线
+  4. `render` 生成新的展示报告
+  5. `check` 作为 merge-back gate 审查当前 repo 或 worktree
+- 不要让子代理直接并发改权威基线；那会把“候选结论”和“最终批准”混在一起，容易把误判永久写进同步基线。
+- `discover` 默认只能从 `STATE.md:last_sync_commit` 推断范围，而且这个提交必须仍是 `HEAD` 的祖先。
+- 不要把 `last_synced_sha` 当成“我们自己的提交范围”默认起点；它表示 upstream 基线，不等于本地已落地同步提交。
+- 如果 `last_sync_commit` 因 rebase、cherry-pick 或人工整理式同步而不再是祖先，必须显式改用 `--base-ref <trusted-local-commit>`，或在接受更宽噪音的前提下使用 `--merge-base-ref <ref>`。
+
 ## merge-back 前必须做两次特性审查
 - 第一次：worktree 内冲突解决和定向验证之后
 - 第二次：回到当前分支，`git merge --no-ff --no-commit "$branch"` 之后
-- 两次都应该跑独立特性清单的 `check`，不要只凭肉眼 diff 或记忆判断“应该没丢”
+- 两次都应该跑权威基线的 `check`，不要只凭肉眼 diff 或记忆判断“应该没丢”
 
 ## 缺失项的处理顺序
 - 先找原因，再决定动作；不要一看到 `check` 失败就立即把特性重新抄回去。

@@ -29,7 +29,8 @@
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-18-responses-replay-reasoning-content-strip.md`：Responses API replay 历史时不能回传 `reasoning.content`；应在出站输入整理层统一剥离 raw reasoning，并用请求级测试锁住。
 - `.agents/llmdoc/memory/reflections/2026-04-18-tui-startup-and-realtime-audio-localization.md`：TUI 汉化应按用户链路而不是按单文件收口，实时音频相关术语优先从共享枚举源头统一，同时记录当前 `fmt` / `lib test` 被仓库既有问题阻塞的验证边界。
-- `.agents/llmdoc/memory/reflections/2026-04-18-upstream-sync-external-feature-inventory-and-mergeback-gate.md`：上游同步的本地分叉特性应独立外置成可刷新清单，并在 merge-back 前后都作为审查门执行。
+- `.agents/llmdoc/memory/reflections/2026-04-18-provider-model-precedence-after-provider-selection.md`：provider 默认模型必须在最终 provider 选择之后解析，`-P` / `--model-provider` 切换 provider 时同样适用，并且要把仓库现有 `fmt` / lib test 阻塞与本次改动区分开。
+- `.agents/llmdoc/memory/reflections/2026-04-18-upstream-sync-external-feature-inventory-and-mergeback-gate.md`：上游同步的本地分叉特性应拆成 `json` 权威基线、`discover/promote` 候选流程和 merge-back 审查门，且 `discover` 默认基线只能来自祖先关系仍有效的 `last_sync_commit`。
 - `.agents/llmdoc/memory/reflections/2026-04-16-wire-api-terminal-signal-gating.md`：`wire_api = "anthropic"` / `"chat"` 的流式 parser 需要区分“已有可收敛输出的断流”和“无有效输出的提前关闭”，不能只靠终止信号或连接关闭单独判定。
 - `.agents/llmdoc/memory/reflections/2026-04-16-anthropic-compat-done-and-top-level-error.md`：Anthropic 兼容 provider 可能用顶层 `error` 和 `[DONE]` 代替标准 `error` 事件与 `message_stop`，parser 需要显式识别这两类兼容信号。
 - `.agents/llmdoc/memory/reflections/2026-04-16-ztldr-literal-search-and-generic-symbol-routing.md`：`ztldr search` 默认 literal、非法 regex 结构化失败，以及通用 symbol 回退 exact-text 路由的反思。

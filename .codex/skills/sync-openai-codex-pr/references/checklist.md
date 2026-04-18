@@ -2,29 +2,7 @@
 
 按这份清单执行 `sync-openai-codex-pr`。命令中的 `/workspace` 是仓库根目录。
 
-## 0. 先刷新本地分叉特性基线
-
-```bash
-node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs refresh --repo /workspace
-```
-
-要求：
-
-- 若失败，先修当前分支基线或更新 `references/local-fork-features.md` 的特性定义
-- 不要在特性清单已经失真的情况下继续同步 upstream
-
-## 1. 创建独立 worktree
-
-```bash
-ts="$(date +%Y%m%d-%H%M%S)"
-base_branch="$(git -C /workspace branch --show-current)"
-branch="sync/openai-codex-$ts"
-path="/workspace/.worktrees/sync-openai-codex-$ts"
-git -C /workspace fetch origin "$base_branch"
-git -C /workspace worktree add -b "$branch" "$path" "origin/$base_branch"
-```
-
-## 2. 读取状态并拉取 upstream
+## 0. 初始化 `STATE.md`
 
 ```bash
 state_file="/workspace/.codex/skills/sync-openai-codex-pr/STATE.md"
@@ -43,6 +21,102 @@ EOF
 fi
 previous_sha="$(sed -n 's/^- last_synced_sha: //p' "$state_file")"
 previous_sha="${previous_sha:-<none>}"
+last_sync_commit="$(sed -n 's/^- last_sync_commit: //p' "$state_file")"
+last_sync_commit="${last_sync_commit:-<none>}"
+```
+
+## 1. 先做本地提交发现
+
+确定 discover 范围：
+
+- 默认只允许用 `STATE.md:last_sync_commit`
+- 只有当它仍是 `HEAD` 祖先时，脚本才会自动推断
+- 不要再隐式回退到 `last_synced_sha`
+- 如果默认基线不可用，必须显式二选一：
+  - `--base-ref <trusted-local-commit>`：本地提交范围
+  - `--merge-base-ref openai/main`：广域审计模式，可能带进更多 upstream 噪音
+
+```bash
+ts="$(date +%Y%m%d-%H%M%S)"
+discover_out="/tmp/sync-openai-codex-pr-discover-$ts.json"
+if [ "$last_sync_commit" != "<none>" ] && git -C /workspace merge-base --is-ancestor "$last_sync_commit" HEAD; then
+  node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs discover \
+    --repo /workspace \
+    --output "$discover_out"
+else
+  openai_url="$(git -C /workspace remote get-url openai 2>/dev/null || true)"
+  if [ -z "$openai_url" ]; then
+    git -C /workspace remote add openai https://github.com/openai/codex.git
+  elif [ "$openai_url" != "https://github.com/openai/codex.git" ]; then
+    git -C /workspace remote set-url openai https://github.com/openai/codex.git
+  fi
+  git -C /workspace fetch openai main
+  echo "discover 默认基线不可用：STATE.md:last_sync_commit 缺失或已不是 HEAD 祖先" >&2
+  echo "显式选择其一后再继续：" >&2
+  echo "  node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs discover --repo /workspace --base-ref <trusted-local-commit> --head-ref HEAD --output \"$discover_out\"" >&2
+  echo "  node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs discover --repo /workspace --merge-base-ref openai/main --head-ref HEAD --output \"$discover_out\"" >&2
+  exit 1
+fi
+```
+
+## 2. 并发子代理分析 discover 结果
+
+默认分成 3 组：
+
+- `core/config/protocol`
+- `tui/localization/branding`
+- `workspace/local-crates`
+
+要求：
+
+- 子代理只读分析 `discover_out` 和相关提交
+- 子代理只输出 candidate ops，不直接改 `local-fork-features.json`
+
+推荐输出结构：
+
+```json
+{
+  "operations": [
+    { "action": "upsert", "feature": { "...": "full feature object" } },
+    { "action": "remove", "id": "obsolete-feature-id", "reason": "why it is obsolete" }
+  ]
+}
+```
+
+主代理把多个子代理结果汇总成一个候选文件，例如：
+
+```bash
+candidate_ops="/tmp/sync-openai-codex-pr-candidate-ops-$ts.json"
+```
+
+## 3. 审阅后晋升到权威基线
+
+```bash
+if [ -f "$candidate_ops" ]; then
+  node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs promote \
+    --candidate "$candidate_ops"
+fi
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs render --repo /workspace
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs check --repo /workspace
+```
+
+要求：
+
+- 如果这里 `check` 不通过，先修权威基线或候选定义，不要继续同步 upstream
+
+## 4. 创建独立 worktree
+
+```bash
+base_branch="$(git -C /workspace branch --show-current)"
+branch="sync/openai-codex-$ts"
+path="/workspace/.worktrees/sync-openai-codex-$ts"
+git -C /workspace fetch origin "$base_branch"
+git -C /workspace worktree add -b "$branch" "$path" "origin/$base_branch"
+```
+
+## 5. worktree 内拉取 upstream 并做范围审计
+
+```bash
 openai_url="$(git -C "$path" remote get-url openai 2>/dev/null || true)"
 if [ -z "$openai_url" ]; then
   git -C "$path" remote add openai https://github.com/openai/codex.git
@@ -51,23 +125,15 @@ elif [ "$openai_url" != "https://github.com/openai/codex.git" ]; then
 fi
 git -C "$path" fetch openai main
 openai_sha="$(git -C "$path" rev-parse openai/main)"
-```
-
-## 3. 做改动范围审计
-
-```bash
 git -C "$path" diff --name-status "origin/$base_branch"...openai/main
 git -C "$path" diff --stat "origin/$base_branch"...openai/main
+if [ "$previous_sha" != "<none>" ]; then
+  git -C "$path" diff --name-status "$previous_sha..$openai_sha"
+  git -C "$path" diff --stat "$previous_sha..$openai_sha"
+fi
 ```
 
-如果 `previous_sha` 不是 `<none>`，再看一次真实 upstream 增量：
-
-```bash
-git -C "$path" diff --name-status "$previous_sha..$openai_sha"
-git -C "$path" diff --stat "$previous_sha..$openai_sha"
-```
-
-## 4. 合并 upstream
+## 6. 合并 upstream
 
 ```bash
 git -C "$path" merge --no-edit openai/main
@@ -80,7 +146,7 @@ git -C "$path" merge --no-edit openai/main
 3. 同功能双实现：阻塞并请用户选
 4. 上游原生功能被删：阻塞并请用户决定是否跟随删除
 
-## 5. 定向验证
+## 7. 定向验证
 
 Rust 改动后：
 
@@ -99,7 +165,7 @@ just bazel-lock-update
 just bazel-lock-check
 ```
 
-## 6. Worktree 审查门
+## 8. Worktree 审查门
 
 ```bash
 worktree_skill_dir="$path/.codex/skills/sync-openai-codex-pr"
@@ -111,15 +177,15 @@ node "$worktree_skill_dir/scripts/local_fork_feature_audit.mjs" check --repo "$p
 1. 记录缺失项和命中的失败检查
 2. 找出原因：丢失 / rename / move / upstream 更好实现
 3. 若不是更好实现，直接修复
-4. 若是更好实现，更新 `references/local-fork-features.md` 中对应特性定义
+4. 若是更好实现，先更新 worktree 里的 `local-fork-features.json`
 5. 重新执行：
 
 ```bash
-node "$worktree_skill_dir/scripts/local_fork_feature_audit.mjs" refresh --repo "$path"
+node "$worktree_skill_dir/scripts/local_fork_feature_audit.mjs" render --repo "$path"
 node "$worktree_skill_dir/scripts/local_fork_feature_audit.mjs" check --repo "$path"
 ```
 
-## 7. 合并回当前分支，但先不要提交
+## 9. 合并回当前分支，但先不要提交
 
 ```bash
 git -C /workspace checkout "$base_branch"
@@ -135,20 +201,15 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 要求：
 
 - 只要这里还有缺失项，就不能提交
-- 必须先修当前分支工作区里的实际结果，再继续
+- 如果 worktree 里已经更新了 `local-fork-features.json`，要先把对应变更带回当前分支，再重新 `render` 和 `check`
 
-## 8. 刷新最终落地特性清单
+## 10. 渲染最终报告并更新 `STATE.md`
 
 ```bash
-node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs refresh --repo /workspace
+node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_audit.mjs render --repo /workspace
 ```
 
-这一步会把最新扫描结果写回 `references/local-fork-features.md`。
-如果审查和刷新都通过，再把 worktree 中对 `local-fork-features.md` 的最终定义同步回当前分支对应文件。
-
-## 9. 更新 `STATE.md`
-
-在同步真正落地后再改。至少要回写：
+然后更新 `STATE.md`：
 
 - `last_synced_sha`
 - `last_synced_at_utc`
@@ -157,12 +218,13 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 
 如果 target SHA 无法准确核定，不要伪造，改写 `notes` 说明原因。
 
-## 10. 提交要求
+## 11. 提交要求
 
 把这些一起提交：
 
 - 同步代码
 - `STATE.md`
+- `references/local-fork-features.json`
 - `references/local-fork-features.md`
 - 技能目录里的其他辅助文件更新
 
@@ -171,16 +233,17 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - `Previous upstream baseline`
 - `Upstream target sha`
 - `Actual upstream range`
+- 这轮 `discover` / `promote` 处理了什么
+- 本地分叉特性审查结果
 - 主要合并内容
 - 关键融合点
-- 本地分叉特性审查结果
 - 验证命令
 
-## 审查失败时的判断标准
+## 缺失项允许判定为“更好的等效替换”的前提
 
-只有在同时满足下面两点时，才允许把缺失项判定为“更好的等效替换”：
+只有在同时满足下面两点时，才允许把缺失项按“更好的等效替换”处理：
 
-1. 功能行为没有回退，且目标实现已经完整覆盖旧特性意图
-2. `references/local-fork-features.md` 里的检查方式、说明和 `better_when` 已更新到新实现
+1. 功能行为没有回退，目标实现已经完整覆盖旧特性意图
+2. `local-fork-features.json` 已先更新为新实现，然后重新 `render` 和 `check`
 
 否则，一律按回归处理并修正。
