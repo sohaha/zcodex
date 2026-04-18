@@ -5681,6 +5681,12 @@ impl App {
             AppEvent::ResetMemories => {
                 self.reset_memories_with_app_server(app_server).await;
             }
+            AppEvent::PersistBuddyVisibility(visible) => {
+                self.chat_widget.sync_buddy_visibility(visible);
+            }
+            AppEvent::PersistBuddyFullVisibility => {
+                self.chat_widget.sync_buddy_full_visibility();
+            }
             AppEvent::SkipNextWorldWritableScan => {
                 self.windows_sandbox.skip_world_writable_scan_once = true;
             }

@@ -506,7 +506,9 @@ pub(crate) enum AppEvent {
         generate_memories: bool,
     },
 
-    /// Update whether the full access warning prompt has been acknowledged.
+    /// Clear all persisted local memory artifacts via the app-server.
+    ResetMemories,
+
     UpdateFullAccessWarningAcknowledged(bool),
 
     /// Update whether the world-writable directories warning has been acknowledged.
