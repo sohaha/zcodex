@@ -78,9 +78,6 @@ use codex_terminal_detection::TerminalName;
 )]
 struct MultitoolCli {
     #[clap(flatten)]
-    pub config_overrides: CliConfigOverrides,
-
-    #[clap(flatten)]
     pub feature_toggles: FeatureToggles,
 
     #[clap(flatten)]
@@ -669,13 +666,13 @@ fn main() -> anyhow::Result<()> {
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
-        config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
         mut interactive,
         subcommand,
     } = MultitoolCli::parse();
 
+    let mut root_config_overrides = std::mem::take(&mut interactive.config_overrides);
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
     root_config_overrides.raw_overrides.extend(toggle_overrides);
@@ -1568,12 +1565,12 @@ mod tests {
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
-            interactive,
-            config_overrides: root_overrides,
+            mut interactive,
             subcommand,
             feature_toggles: _,
             remote: _,
         } = cli;
+        let root_overrides = std::mem::take(&mut interactive.config_overrides);
 
         let Subcommand::Resume(ResumeCommand {
             session_id,
@@ -1601,12 +1598,12 @@ mod tests {
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
-            interactive,
-            config_overrides: root_overrides,
+            mut interactive,
             subcommand,
             feature_toggles: _,
             remote: _,
         } = cli;
+        let root_overrides = std::mem::take(&mut interactive.config_overrides);
 
         let Subcommand::Fork(ForkCommand {
             session_id,
@@ -2010,6 +2007,16 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(["codex", "--remote", "ws://127.0.0.1:4500"])
             .expect("parse");
         assert_eq!(cli.remote.remote.as_deref(), Some("ws://127.0.0.1:4500"));
+    }
+
+    #[test]
+    fn config_flag_parses_for_interactive_root() {
+        let cli =
+            MultitoolCli::try_parse_from(["codex", "--config", "model=\"o3\""]).expect("parse");
+        assert_eq!(
+            cli.interactive.config_overrides.raw_overrides,
+            vec!["model=\"o3\"".to_string()]
+        );
     }
 
     #[test]

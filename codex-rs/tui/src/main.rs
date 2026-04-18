@@ -6,7 +6,6 @@ use codex_tui::AppExitInfo;
 use codex_tui::Cli;
 use codex_tui::ExitReason;
 use codex_tui::run_main;
-use codex_utils_cli::CliConfigOverrides;
 use supports_color::Stream;
 
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
@@ -37,20 +36,12 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
 #[derive(Parser, Debug)]
 struct TopCli {
     #[clap(flatten)]
-    config_overrides: CliConfigOverrides,
-
-    #[clap(flatten)]
     inner: Cli,
 }
 
 fn main() -> anyhow::Result<()> {
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
-        let top_cli = TopCli::parse();
-        let mut inner = top_cli.inner;
-        inner
-            .config_overrides
-            .raw_overrides
-            .splice(0..0, top_cli.config_overrides.raw_overrides);
+        let inner = TopCli::parse().inner;
         let exit_info = run_main(
             inner,
             arg0_paths,
@@ -73,4 +64,21 @@ fn main() -> anyhow::Result<()> {
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn top_cli_parses_config_flag_into_inner_cli() {
+        let cli = TopCli::try_parse_from(["codex-tui", "--config", "model=\"o3\""])
+            .expect("parse should succeed");
+
+        assert_eq!(
+            cli.inner.config_overrides.raw_overrides,
+            vec!["model=\"o3\"".to_string()]
+        );
+    }
 }
