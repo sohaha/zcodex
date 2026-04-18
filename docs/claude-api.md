@@ -26,7 +26,7 @@ max_output_tokens = 16384
 
 - `wire_api = "anthropic"` 会使用 `/v1/messages` 的 Claude 接口。
 - `model_providers.anthropic.model` 需填写 Claude 模型名，例如 `claude-3-5-haiku-20241022`、`claude-sonnet-4-20250514`。
-- 如果同时设置了全局 `model`，当前 provider 自己的 `model` 会优先生效。
+- 如果同时设置了全局 `model`，当前 provider 自己的 `model` 会优先生效；但命令行显式传入的 `--model` 仍然优先。
 - 当 provider 配置了 `env_key` 时，Codex 会同时发送 `x-api-key` 与 `Authorization: Bearer ...`，
   以兼容官方 Anthropic API 以及 Claude Code 风格的兼容网关。
 - `max_output_tokens` 控制 Anthropic 请求中的 `max_tokens` 参数（默认 8192）。如果模型支持更大的输出窗口（例如 Claude Sonnet 4 支持 16384），设置此值可以避免长回复被截断。

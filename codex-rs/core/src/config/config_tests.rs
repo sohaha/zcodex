@@ -7147,8 +7147,8 @@ fn test_tui_pasted_image_compression_settings_can_be_configured() {
     assert_eq!(tui.pasted_image_jpeg_quality, 77);
 }
 
-#[test]
-fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
+#[tokio::test]
+async fn test_provider_specific_model_precedence() -> std::io::Result<()> {
     let codex_home = tempfile::tempdir()?;
     let cwd = tempfile::tempdir()?;
 
@@ -7159,10 +7159,11 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
         model_providers: HashMap::from([(
             "cc".to_string(),
             ModelProviderInfo {
-                name: "CC Provider".to_string(),
+                name: Some("CC Provider".to_string()),
                 model: Some("provider-model".to_string()),
                 base_url: Some("http://127.0.0.1:18100/v1".to_string()),
                 env_key: None,
+                model_catalog: None,
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
@@ -7179,6 +7180,7 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                max_output_tokens: None,
                 skip_reasoning_popup: false,
             },
         )]),
@@ -7199,7 +7201,8 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
         ..Default::default()
     };
     let config =
-        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())?;
+        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())
+            .await?;
 
     assert_eq!(config.model.as_deref(), Some("provider-model"));
 
@@ -7210,32 +7213,23 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
         ..Default::default()
     };
     let config =
-        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())?;
+        Config::load_from_base_config_with_overrides(cfg.clone(), overrides, codex_home.abs())
+            .await?;
 
     assert_eq!(config.model.as_deref(), Some("cli-model"));
 
-    // Test 3: Profile model should override global but not provider-specific
-    let overrides = ConfigOverrides {
-        config_profile: Some("test-profile".to_string()),
-        cwd: Some(cwd.path().to_path_buf()),
-        ..Default::default()
-    };
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
-
-    // Provider-specific model should still win over profile model
-    assert_eq!(config.model.as_deref(), Some("provider-model"));
-
-    // Test 4: Provider without specific model should fall back to global model
-    let cfg_no_provider_model = ConfigToml {
+    // Test 3: CLI provider override should switch to that provider's model
+    let switchable_provider_cfg = ConfigToml {
         model: Some("global-model".to_string()),
-        model_provider: Some("cc".to_string()),
+        model_provider: Some("openai".to_string()),
         model_providers: HashMap::from([(
             "cc".to_string(),
             ModelProviderInfo {
-                name: "CC Provider".to_string(),
-                model: None, // No provider-specific model
+                name: Some("CC Provider".to_string()),
+                model: Some("provider-model".to_string()),
                 base_url: Some("http://127.0.0.1:18100/v1".to_string()),
                 env_key: None,
+                model_catalog: None,
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
@@ -7252,6 +7246,68 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                max_output_tokens: None,
+                skip_reasoning_popup: false,
+            },
+        )]),
+        ..Default::default()
+    };
+    let overrides = ConfigOverrides {
+        model_provider: Some("cc".to_string()),
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config = Config::load_from_base_config_with_overrides(
+        switchable_provider_cfg,
+        overrides,
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(config.model_provider_id, "cc");
+    assert_eq!(config.model.as_deref(), Some("provider-model"));
+
+    // Test 4: Provider-specific model should still override profile model
+    let overrides = ConfigOverrides {
+        config_profile: Some("test-profile".to_string()),
+        cwd: Some(cwd.path().to_path_buf()),
+        ..Default::default()
+    };
+    let config =
+        Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs()).await?;
+
+    // Provider-specific model should still win over profile model
+    assert_eq!(config.model.as_deref(), Some("provider-model"));
+
+    // Test 5: Provider without specific model should fall back to global model
+    let cfg_no_provider_model = ConfigToml {
+        model: Some("global-model".to_string()),
+        model_provider: Some("cc".to_string()),
+        model_providers: HashMap::from([(
+            "cc".to_string(),
+            ModelProviderInfo {
+                name: Some("CC Provider".to_string()),
+                model: None, // No provider-specific model
+                base_url: Some("http://127.0.0.1:18100/v1".to_string()),
+                env_key: None,
+                model_catalog: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                wire_api: WireApi::Anthropic,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                retry_base_delay_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+                model_context_window: None,
+                model_auto_compact_token_limit: None,
+                max_output_tokens: None,
                 skip_reasoning_popup: false,
             },
         )]),
@@ -7266,15 +7322,16 @@ fn test_provider_specific_model_has_highest_priority() -> std::io::Result<()> {
         cfg_no_provider_model,
         overrides,
         codex_home.abs(),
-    )?;
+    )
+    .await?;
 
     assert_eq!(config.model.as_deref(), Some("global-model"));
 
     Ok(())
 }
 
-#[test]
-fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
+#[tokio::test]
+async fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
     let cwd = tempfile::tempdir()?;
     let codex_home = tempfile::tempdir()?;
 
@@ -7285,10 +7342,11 @@ fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
         model_providers: HashMap::from([(
             "test_provider".to_string(),
             ModelProviderInfo {
-                name: "Test Provider".to_string(),
+                name: Some("Test Provider".to_string()),
                 model: None,
                 base_url: Some("https://api.test.com/v1".to_string()),
                 env_key: None,
+                model_catalog: None,
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
@@ -7305,6 +7363,8 @@ fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: Some(16000),
                 model_auto_compact_token_limit: Some(14000),
+                max_output_tokens: None,
+                skip_reasoning_popup: false,
             },
         )]),
         ..Default::default()
@@ -7314,7 +7374,8 @@ fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
         ..Default::default()
     };
 
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
+    let config =
+        Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs()).await?;
 
     let manager_config = config.to_models_manager_config();
 
@@ -7325,8 +7386,8 @@ fn test_provider_specific_context_window_priority() -> std::io::Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_global_context_window_fallback() -> std::io::Result<()> {
+#[tokio::test]
+async fn test_global_context_window_fallback() -> std::io::Result<()> {
     let cwd = tempfile::tempdir()?;
     let codex_home = tempfile::tempdir()?;
 
@@ -7337,10 +7398,11 @@ fn test_global_context_window_fallback() -> std::io::Result<()> {
         model_providers: HashMap::from([(
             "test_provider".to_string(),
             ModelProviderInfo {
-                name: "Test Provider".to_string(),
+                name: Some("Test Provider".to_string()),
                 model: None,
                 base_url: Some("https://api.test.com/v1".to_string()),
                 env_key: None,
+                model_catalog: None,
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
@@ -7357,6 +7419,7 @@ fn test_global_context_window_fallback() -> std::io::Result<()> {
                 supports_websockets: false,
                 model_context_window: None,
                 model_auto_compact_token_limit: None,
+                max_output_tokens: None,
                 skip_reasoning_popup: false,
             },
         )]),
@@ -7367,7 +7430,8 @@ fn test_global_context_window_fallback() -> std::io::Result<()> {
         ..Default::default()
     };
 
-    let config = Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs())?;
+    let config =
+        Config::load_from_base_config_with_overrides(cfg, overrides, codex_home.abs()).await?;
 
     let manager_config = config.to_models_manager_config();
 

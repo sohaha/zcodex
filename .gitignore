@@ -111,3 +111,4 @@ __pycache__/
 .target-app-protocol/
 .target-app-start/
 backup/codex/codex.tar.gz
+d/package.json
