@@ -46,14 +46,17 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(Line::from(vec![
             "> ".into(),
-            "你当前位于 ".bold(),
+            "You are in ".bold(),
             self.cwd.to_string_lossy().to_string().into(),
         ]));
         column.push("");
 
         column.push(
             Paragraph::new(
-                "你信任此目录的内容吗？处理不受信任的内容存在更高的提示注入风险。".to_string(),
+                "你信任此目录的内容吗？ Working with untrusted \
+                 contents comes with higher risk of prompt injection. Trusting the \
+                 directory allows project-local config, hooks, and exec policies to load."
+                    .to_string(),
             )
             .wrap(Wrap { trim: true })
             .inset(Insets::tlbr(
@@ -63,8 +66,8 @@ impl WidgetRef for &TrustDirectoryWidget {
         column.push("");
 
         let options: Vec<(&str, TrustDirectorySelection)> = vec![
-            ("是，继续", TrustDirectorySelection::Trust),
-            ("否，退出", TrustDirectorySelection::Quit),
+            ("Yes, continue", TrustDirectorySelection::Trust),
+            ("No, quit", TrustDirectorySelection::Quit),
         ];
 
         for (idx, (text, selection)) in options.iter().enumerate() {
@@ -91,12 +94,12 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(
             Line::from(vec![
-                "按 ".dim(),
+                "Press ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
                 if self.show_windows_create_sandbox_hint {
-                    " 继续并创建沙盒...".dim()
+                    " to continue and create a sandbox...".dim()
                 } else {
-                    " 继续".dim()
+                    " to continue".dim()
                 },
             ])
             .inset(Insets::tlbr(
@@ -147,7 +150,7 @@ impl TrustDirectoryWidget {
         let target = self.trust_target.clone();
         if let Err(e) = set_project_trust_level(&self.codex_home, &target, TrustLevel::Trusted) {
             tracing::error!("Failed to set project trusted: {e:?}");
-            self.error = Some(format!("设置 {} 信任失败：{e}", target.display()));
+            self.error = Some(format!("Failed to set trust for {}: {e}", target.display()));
         }
 
         self.selection = Some(TrustDirectorySelection::Trust);

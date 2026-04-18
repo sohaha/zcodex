@@ -28,6 +28,8 @@ use crate::cwd_prompt::CwdPromptAction;
 use crate::diff_render::DiffSummary;
 use crate::exec_command::split_command_string;
 use crate::exec_command::strip_bash_lc_and_escape;
+use crate::external_agent_config_migration_startup::ExternalAgentConfigMigrationStartupOutcome;
+use crate::external_agent_config_migration_startup::handle_external_agent_config_migration_prompt_if_needed;
 use crate::external_editor;
 use crate::file_search::FileSearchManager;
 use crate::history_cell;
@@ -75,6 +77,8 @@ use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_app_server_protocol::ConfigValueWriteParams;
+use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::FeedbackUploadParams;
 use codex_app_server_protocol::FeedbackUploadResponse;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
@@ -82,6 +86,7 @@ use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
+use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginListParams;
@@ -93,6 +98,7 @@ use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SkillsListParams;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadLoadedListParams;
@@ -174,7 +180,7 @@ use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 
-const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续.";
+const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
 enum ThreadInteractiveRequest {
@@ -271,8 +277,8 @@ struct GuardianApprovalsMode {
     sandbox_policy: SandboxPolicy,
 }
 
-/// Enabling the 守护者审批 experiment in the TUI should also switch the
-/// current `/approvals` settings to the matching 守护者审批 mode. Users
+/// Enabling the Auto-review experiment in the TUI should also switch the
+/// current `/approvals` settings to the matching Auto-review mode. Users
 /// can still change `/approvals` afterward; this just assumes that opting into
 /// the experiment means they want guardian review enabled immediately.
 fn guardian_approvals_mode() -> GuardianApprovalsMode {
@@ -455,7 +461,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
     let error_count = errors.len();
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         crate::history_cell::new_warning_event(format!(
-            "由于 SKILL.md 文件无效，跳过了加载 {error_count} 个技能。"
+            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
         )),
     )));
 
@@ -463,7 +469,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
         let path = error.path.display();
         let message = error.message.as_str();
         app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-            crate::history_cell::new_warning_event(format!("{path}：{message}")),
+            crate::history_cell::new_warning_event(format!("{path}: {message}")),
         )));
     }
 }
@@ -478,16 +484,12 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
         let ConfigLayerSource::Project { dot_codex_folder } = &layer.name else {
             continue;
         };
-        if layer.disabled_reason.is_none() {
+        let Some(disabled_reason) = &layer.disabled_reason else {
             continue;
-        }
+        };
         disabled_folders.push((
             dot_codex_folder.as_path().display().to_string(),
-            layer
-                .disabled_reason
-                .as_ref()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
+            disabled_reason.clone(),
         ));
     }
 
@@ -497,7 +499,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
 
     let mut message = concat!(
         "以下文件夹中的项目 config.toml 文件已被禁用。 ",
-        "这些文件中的设置将被忽略，但技能和执行策略仍会加载。\n",
+        "这些文件中的设置将被忽略，但技能和执行策略仍会加载。.\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -1044,6 +1046,10 @@ pub(crate) struct App {
     primary_session_configured: Option<ThreadSessionState>,
     pending_primary_events: VecDeque<ThreadBufferedEvent>,
     pending_app_server_requests: PendingAppServerRequests,
+    // Serialize plugin enablement writes per plugin so stale completions cannot
+    // overwrite a newer toggle, even if the plugin is toggled from different
+    // cwd contexts.
+    pending_plugin_enabled_writes: HashMap<String, Option<bool>>,
 }
 
 #[derive(Default)]
@@ -1150,7 +1156,7 @@ impl App {
             .harness_overrides(overrides)
             .build()
             .await
-            .wrap_err_with(|| format!("无法为工作目录 {cwd_display} 重建配置"))
+            .wrap_err_with(|| format!("Failed to rebuild config for cwd {cwd_display}"))
     }
 
     async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
@@ -1201,15 +1207,17 @@ impl App {
             && let Err(err) = config.permissions.approval_policy.set(*policy)
         {
             tracing::warn!(%err, "failed to carry forward approval policy override");
-            self.chat_widget
-                .add_error_message(format!("无法传递审批策略覆盖： {err}"));
+            self.chat_widget.add_error_message(format!(
+                "Failed to carry forward approval policy override: {err}"
+            ));
         }
         if let Some(policy) = self.runtime_sandbox_policy_override.as_ref()
             && let Err(err) = config.permissions.sandbox_policy.set(policy.clone())
         {
             tracing::warn!(%err, "failed to carry forward sandbox policy override");
-            self.chat_widget
-                .add_error_message(format!("无法传递沙箱策略覆盖： {err}"));
+            self.chat_widget.add_error_message(format!(
+                "Failed to carry forward sandbox policy override: {err}"
+            ));
         }
     }
 
@@ -1277,7 +1285,7 @@ impl App {
         let mut approvals_reviewer_override = None;
         let mut sandbox_policy_override = None;
         let mut feature_updates_to_apply = Vec::with_capacity(updates.len());
-        // 守护者审批 owns `approvals_reviewer`, but disabling the feature
+        // Auto-Review owns `approvals_reviewer`, but disabling the feature
         // from inside a profile should not silently clear a value configured at
         // the root scope.
         let (root_approvals_reviewer_blocks_profile_disable, profile_approvals_reviewer_configured) = {
@@ -1310,7 +1318,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "无法在此配置文件中禁用 守护者审批，因为 `approvals_reviewer` 是在活动配置文件之外配置的。".to_string(),
+                        "Cannot disable Auto-review in this profile because `approvals_reviewer` is configured outside the active profile.".to_string(),
                     );
                 continue;
             }
@@ -1321,8 +1329,9 @@ impl App {
                     feature = feature_key,
                     "failed to update constrained feature flags"
                 );
-                self.chat_widget
-                    .add_error_message(format!("无法更新实验性功能 `{feature_key}`: {err}"));
+                self.chat_widget.add_error_message(format!(
+                    "Failed to update experimental feature `{feature_key}`: {err}"
+                ));
                 continue;
             }
             let effective_enabled = feature_config.features.enabled(feature);
@@ -1342,7 +1351,7 @@ impl App {
                             .into(),
                     });
                     if previous_approvals_reviewer != guardian_approvals_preset.approvals_reviewer {
-                        permissions_history_label = Some("守护者审批");
+                        permissions_history_label = Some("Auto-review");
                     }
                 } else if !effective_enabled {
                     if profile_approvals_reviewer_configured || self.active_profile.is_none() {
@@ -1365,7 +1374,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "无法启用 守护者审批",
+                    "Failed to enable Auto-review",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1373,7 +1382,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "无法启用 守护者审批",
+                    "Failed to enable Auto-review",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1404,7 +1413,7 @@ impl App {
         if let Err(err) = builder.apply().await {
             tracing::error!(error = %err, "failed to persist feature flags");
             self.chat_widget
-                .add_error_message(format!("无法更新实验性功能s: {err}"));
+                .add_error_message(format!("Failed to update experimental features: {err}"));
             return;
         }
 
@@ -1436,7 +1445,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("无法启用 守护者审批: {err}"));
+                .add_error_message(format!("Failed to enable Auto-review: {err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1495,8 +1504,10 @@ impl App {
         }
 
         if let Some(label) = permissions_history_label {
-            self.chat_widget
-                .add_info_message(format!("权限已更新为 {label}"), /*hint*/ None);
+            self.chat_widget.add_info_message(
+                format!("Permissions updated to {label}"),
+                /*hint*/ None,
+            );
         }
     }
 
@@ -1536,7 +1547,7 @@ impl App {
         {
             tracing::error!(error = %err, "failed to persist memory settings");
             self.chat_widget
-                .add_error_message(format!("无法保存记忆设置: {err}"));
+                .add_error_message(format!("Failed to save memory settings: {err}"));
             return false;
         }
 
@@ -1545,53 +1556,6 @@ impl App {
         self.chat_widget
             .set_memory_settings(use_memories, generate_memories);
         true
-    }
-
-    async fn persist_buddy_visibility(&mut self, visible: bool) {
-        self.persist_buddy_visibility_mode(visible, /*full*/ false)
-            .await;
-    }
-
-    async fn persist_buddy_full_visibility(&mut self) {
-        self.persist_buddy_visibility_mode(/*visible*/ true, /*full*/ true)
-            .await;
-    }
-
-    async fn persist_buddy_visibility_mode(&mut self, visible: bool, full: bool) {
-        let segments = if let Some(profile) = self.active_profile.as_deref() {
-            vec![
-                "profiles".to_string(),
-                profile.to_string(),
-                "tui".to_string(),
-                "show_buddy".to_string(),
-            ]
-        } else {
-            vec!["tui".to_string(), "show_buddy".to_string()]
-        };
-
-        if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
-            .with_edits([ConfigEdit::SetPath {
-                segments,
-                value: visible.into(),
-            }])
-            .apply()
-            .await
-        {
-            tracing::error!(error = %err, "failed to persist buddy visibility");
-            self.chat_widget
-                .add_error_message(format!("保存小伙伴显示状态失败：{err}"));
-            return;
-        }
-
-        self.config.tui_show_buddy = visible;
-        let result = if full {
-            self.chat_widget.sync_buddy_full_visibility()
-        } else {
-            self.chat_widget.sync_buddy_visibility(visible)
-        };
-        self.chat_widget
-            .add_info_message(result.message, result.hint);
-        self.chat_widget.submit_op(AppCommand::reload_user_config());
     }
 
     async fn update_memory_settings_with_app_server(
@@ -1624,20 +1588,33 @@ impl App {
 
         if let Err(err) = app_server.thread_memory_mode_set(thread_id, mode).await {
             tracing::error!(error = %err, %thread_id, "failed to update thread memory mode");
-            self.chat_widget
-                .add_error_message(format!("记忆设置已保存，但无法更新当前线程: {err}"));
+            self.chat_widget.add_error_message(format!(
+                "Saved memory settings, but failed to update the current thread: {err}"
+            ));
         }
+    }
+
+    async fn reset_memories_with_app_server(&mut self, app_server: &mut AppServerSession) {
+        if let Err(err) = app_server.memory_reset().await {
+            tracing::error!(error = %err, "failed to reset memories");
+            self.chat_widget
+                .add_error_message(format!("Failed to reset memories: {err}"));
+            return;
+        }
+
+        self.chat_widget
+            .add_info_message("Reset local memories.".to_string(), /*hint*/ None);
     }
 
     fn open_url_in_browser(&mut self, url: String) {
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
-                .add_error_message(format!("无法为以下地址打开浏览器 {url}: {err}"));
+                .add_error_message(format!("Failed to open browser for {url}: {err}"));
             return;
         }
 
         self.chat_widget
-            .add_info_message(format!("已在浏览器中打开 {url}."), /*hint*/ None);
+            .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
     }
 
     fn clear_ui_header_lines_with_version(
@@ -1655,6 +1632,7 @@ impl App {
             self.config.cwd.to_path_buf(),
             version,
         )
+        .with_yolo_mode(history_cell::is_yolo_mode(&self.config))
         .display_lines(width)
     }
 
@@ -1827,11 +1805,11 @@ impl App {
     fn thread_label(&self, thread_id: ThreadId) -> String {
         let is_primary = self.primary_thread_id == Some(thread_id);
         let fallback_label = if is_primary {
-            "主线程（默认）".to_string()
+            "Main [default]".to_string()
         } else {
             let thread_id = thread_id.to_string();
             let short_id: String = thread_id.chars().take(8).collect();
-            format!("代理（{short_id}）")
+            format!("Agent ({short_id})")
         };
         if let Some(entry) = self.agent_navigation.get(&thread_id) {
             let label = format_agent_picker_item_name(
@@ -1839,7 +1817,7 @@ impl App {
                 entry.agent_role.as_deref(),
                 is_primary,
             );
-            if label == "AI 助手" {
+            if label == "Agent" {
                 let thread_id = thread_id.to_string();
                 let short_id: String = thread_id.chars().take(8).collect();
                 format!("{label} ({short_id})")
@@ -1870,7 +1848,7 @@ impl App {
         };
 
         self.chat_widget.add_info_message(
-            format!("正在查看 {}.", target_session.display_label()),
+            format!("Already viewing {}.", target_session.display_label()),
             /*hint*/ None,
         );
         true
@@ -2016,7 +1994,7 @@ impl App {
     ) -> Result<()> {
         let Some(thread_id) = self.active_thread_id else {
             self.chat_widget
-                .add_error_message("没有可用的活动线程.".to_string());
+                .add_error_message("No active thread is available.".to_string());
             return Ok(());
         };
 
@@ -2054,7 +2032,7 @@ impl App {
         }
 
         self.chat_widget
-            .add_error_message(format!("线程在 TUI 中尚不可用 {thread_id}."));
+            .add_error_message(format!("Not available in TUI yet for thread {thread_id}."));
         Ok(())
     }
 
@@ -2097,6 +2075,25 @@ impl App {
                 .await
                 .map_err(|err| err.to_string());
             app_event_tx.send(AppEvent::RateLimitsLoaded { origin, result });
+        });
+    }
+
+    /// Starts the initial skills refresh without delaying the first interactive frame.
+    ///
+    /// Startup only needs skill metadata to populate skill mentions and the skills UI; the prompt can be
+    /// rendered before that metadata arrives. The result is routed through the normal app event queue so
+    /// the same response handler updates the chat widget and emits invalid `SKILL.md` warnings once the
+    /// app-server RPC finishes. User-initiated skills refreshes still use the blocking app command path so
+    /// callers that explicitly asked for fresh skill state do not race ahead of their own refresh.
+    fn refresh_startup_skills(&mut self, app_server: &AppServerSession) {
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        let cwd = self.config.cwd.to_path_buf();
+        tokio::spawn(async move {
+            let result = fetch_skills_list(request_handle, cwd)
+                .await
+                .map_err(|err| err.to_string());
+            app_event_tx.send(AppEvent::SkillsListLoaded { result });
         });
     }
 
@@ -2143,7 +2140,7 @@ impl App {
             let plugin_name_for_event = plugin_name.clone();
             let result = fetch_plugin_install(request_handle, marketplace_path, plugin_name)
                 .await
-                .map_err(|err| format!("无法安装插件: {err}"));
+                .map_err(|err| format!("Failed to install plugin: {err}"));
             app_event_tx.send(AppEvent::PluginInstallLoaded {
                 cwd: cwd_for_event,
                 marketplace_path: marketplace_path_for_event,
@@ -2168,11 +2165,53 @@ impl App {
             let plugin_id_for_event = plugin_id.clone();
             let result = fetch_plugin_uninstall(request_handle, plugin_id)
                 .await
-                .map_err(|err| format!("无法卸载插件: {err}"));
+                .map_err(|err| format!("Failed to uninstall plugin: {err}"));
             app_event_tx.send(AppEvent::PluginUninstallLoaded {
                 cwd: cwd_for_event,
                 plugin_id: plugin_id_for_event,
                 plugin_display_name,
+                result,
+            });
+        });
+    }
+
+    fn set_plugin_enabled(
+        &mut self,
+        app_server: &AppServerSession,
+        cwd: PathBuf,
+        plugin_id: String,
+        enabled: bool,
+    ) {
+        if let Some(queued_enabled) = self.pending_plugin_enabled_writes.get_mut(&plugin_id) {
+            *queued_enabled = Some(enabled);
+            return;
+        }
+
+        self.pending_plugin_enabled_writes
+            .insert(plugin_id.clone(), None);
+        self.spawn_plugin_enabled_write(app_server, cwd, plugin_id, enabled);
+    }
+
+    fn spawn_plugin_enabled_write(
+        &mut self,
+        app_server: &AppServerSession,
+        cwd: PathBuf,
+        plugin_id: String,
+        enabled: bool,
+    ) {
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let cwd_for_event = cwd.clone();
+            let plugin_id_for_event = plugin_id.clone();
+            let result = write_plugin_enabled(request_handle, plugin_id, enabled)
+                .await
+                .map(|_| ())
+                .map_err(|err| format!("Failed to update plugin config: {err}"));
+            app_event_tx.send(AppEvent::PluginEnabledSet {
+                cwd: cwd_for_event,
+                plugin_id: plugin_id_for_event,
+                enabled,
                 result,
             });
         });
@@ -2250,7 +2289,7 @@ impl App {
             Err(err) => self
                 .chat_widget
                 .add_to_history(history_cell::new_error_event(format!(
-                    "无法上传反馈: {err}"
+                    "Failed to upload feedback: {err}"
                 ))),
         }
     }
@@ -2332,7 +2371,7 @@ impl App {
             Ok(statuses) => statuses,
             Err(err) => {
                 self.chat_widget
-                    .add_error_message(format!("无法加载 MCP 清单: {err}"));
+                    .add_error_message(format!("Failed to load MCP inventory: {err}"));
                 return;
             }
         };
@@ -2664,8 +2703,9 @@ impl App {
                 Ok(true)
             }
             Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("无法解析线程的应用服务器请求 {thread_id}: {err}"));
+                self.chat_widget.add_error_message(format!(
+                    "Failed to resolve app-server request for thread {thread_id}: {err}"
+                ));
                 Ok(false)
             }
         }
@@ -3086,7 +3126,7 @@ impl App {
 
         if self.agent_navigation.is_empty() {
             self.chat_widget
-                .add_info_message("尚无可用代理.".to_string(), /*hint*/ None);
+                .add_info_message("No agents available yet.".to_string(), /*hint*/ None);
             return;
         }
 
@@ -3124,7 +3164,7 @@ impl App {
             .collect();
 
         self.chat_widget.show_selection_view(SelectionViewParams {
-            title: Some("子代理".to_string()),
+            title: Some("Subagents".to_string()),
             subtitle: Some(AgentNavigationState::picker_subtitle()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -3331,7 +3371,7 @@ impl App {
                     // A `thread/read` fallback without turns would create a blank local replay
                     // channel with no live listener attached, which blocks later real re-attach.
                     return Err(color_eyre::eyre::eyre!(
-                        "代理线程 {thread_id} 尚不可用于回放或实时连接."
+                        "Agent thread {thread_id} is not yet available for replay or live attach."
                     ));
                 }
                 let mut session = self.session_state_for_thread_read(thread_id, &thread).await;
@@ -3388,7 +3428,7 @@ impl App {
             .await
         {
             self.chat_widget
-                .add_error_message(format!("代理线程 {thread_id} 不再可用."));
+                .add_error_message(format!("Agent thread {thread_id} is no longer available."));
             return Ok(());
         }
 
@@ -3409,14 +3449,15 @@ impl App {
                     }
                 }
                 Err(err) => {
-                    self.chat_widget
-                        .add_error_message(format!("无法连接到代理线程 {thread_id}: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to attach to agent thread {thread_id}: {err}"
+                    ));
                     return Ok(());
                 }
             }
         } else if !self.thread_event_channels.contains_key(&thread_id) && is_replay_only {
             self.chat_widget
-                .add_error_message(format!("代理线程 {thread_id} 不再可用."));
+                .add_error_message(format!("Agent thread {thread_id} is no longer available."));
             return Ok(());
         }
 
@@ -3426,7 +3467,7 @@ impl App {
         let Some((receiver, mut snapshot)) = self.activate_thread_for_replay(thread_id).await
         else {
             self.chat_widget
-                .add_error_message(format!("代理线程 {thread_id} 已处于活动状态."));
+                .add_error_message(format!("Agent thread {thread_id} is already active."));
             if let Some(previous_thread_id) = previous_thread_id {
                 self.activate_thread_channel(previous_thread_id).await;
             }
@@ -3455,9 +3496,11 @@ impl App {
         self.replay_thread_snapshot(snapshot, !is_replay_only);
         if is_replay_only {
             let message = if attached_replay_only {
-                format!("代理线程 {thread_id} 无法实时恢复. 正在回放已保存的记录.")
+                format!(
+                    "Agent thread {thread_id} could not be resumed live. Replaying saved transcript."
+                )
             } else {
-                format!("代理线程 {thread_id} 已关闭. 正在回放已保存的记录.")
+                format!("Agent thread {thread_id} is closed. Replaying saved transcript.")
             };
             self.chat_widget.add_info_message(message, /*hint*/ None);
         }
@@ -3545,23 +3588,25 @@ impl App {
                     )
                     .await
                 {
-                    self.chat_widget
-                        .add_error_message(format!("无法连接到新的应用服务器线程: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to attach to fresh app-server thread: {err}"
+                    ));
                 } else if let Some(summary) = summary {
                     let mut lines: Vec<Line<'static>> = Vec::new();
                     if let Some(usage_line) = summary.usage_line {
                         lines.push(usage_line.into());
                     }
                     if let Some(command) = summary.resume_command {
-                        let spans = vec!["要继续此会话，请运行 ".into(), command.cyan()];
+                        let spans = vec!["To continue this session, run ".into(), command.cyan()];
                         lines.push(spans.into());
                     }
                     self.chat_widget.add_plain_history_lines(lines);
                 }
             }
             Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("无法通过应用服务器启动新会话: {err}"));
+                self.chat_widget.add_error_message(format!(
+                    "Failed to start a fresh session through the app server: {err}"
+                ));
                 self.config.model = Some(model);
             }
         }
@@ -3818,6 +3863,7 @@ impl App {
         session_selection: SessionSelection,
         feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
+        entered_trust_nux: bool,
         should_prompt_windows_sandbox_nux_at_startup: bool,
         remote_app_server_url: Option<String>,
         remote_app_server_auth_token: Option<String>,
@@ -3835,6 +3881,38 @@ impl App {
 
         let harness_overrides =
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
+        let external_agent_config_migration_outcome =
+            handle_external_agent_config_migration_prompt_if_needed(
+                tui,
+                &mut app_server,
+                &mut config,
+                &cli_kv_overrides,
+                &harness_overrides,
+                entered_trust_nux,
+            )
+            .await?;
+        let external_agent_config_migration_message = match external_agent_config_migration_outcome
+        {
+            ExternalAgentConfigMigrationStartupOutcome::Continue { success_message } => {
+                success_message
+            }
+            ExternalAgentConfigMigrationStartupOutcome::ExitRequested => {
+                app_server
+                    .shutdown()
+                    .await
+                    .inspect_err(|err| {
+                        tracing::warn!("app-server shutdown failed: {err}");
+                    })
+                    .ok();
+                return Ok(AppExitInfo {
+                    token_usage: TokenUsage::default(),
+                    thread_id: None,
+                    thread_name: None,
+                    update_action: None,
+                    exit_reason: ExitReason::UserRequested,
+                });
+            }
+        };
         let bootstrap = app_server.bootstrap(&config).await?;
         let mut model = bootstrap.default_model;
         let available_models = bootstrap.available_models;
@@ -3937,7 +4015,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("无法从以下位置恢复会话 {target_label}")
+                        format!("Failed to resume session from {target_label}")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -3976,7 +4054,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("无法从以下目标分叉会话： {target_label}")
+                        format!("Failed to fork session from {target_label}")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -4005,6 +4083,9 @@ impl App {
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
         };
+        if let Some(message) = external_agent_config_migration_message {
+            chat_widget.add_info_message(message, /*hint*/ None);
+        }
 
         chat_widget
             .maybe_prompt_windows_sandbox_enable(should_prompt_windows_sandbox_nux_at_startup);
@@ -4053,23 +4134,14 @@ impl App {
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
+            pending_plugin_enabled_writes: HashMap::new(),
         };
         if let Some(started) = initial_started_thread {
             app.enqueue_primary_thread_session(started.session, started.turns)
                 .await?;
         }
-        app.handle_skills_list_result(
-            app_server
-                .skills_list(codex_app_server_protocol::SkillsListParams {
-                    cwds: vec![app.config.cwd.to_path_buf()],
-                    force_reload: true,
-                    per_cwd_extra_user_roots: None,
-                })
-                .await,
-            "failed to load skills on startup",
-        );
 
-        // On startup, if AI 助手 mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
+        // On startup, if Agent mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
         #[cfg(target_os = "windows")]
         {
             let should_check = WindowsSandboxLevel::from_config(&app.config)
@@ -4098,6 +4170,7 @@ impl App {
         tokio::pin!(tui_events);
 
         tui.frame_requester().schedule_frame();
+        app.refresh_startup_skills(&app_server);
         // Kick off a non-blocking rate-limit prefetch so the first `/status`
         // already has data, without delaying the initial frame render.
         if requires_openai_auth && has_chatgpt_account {
@@ -4325,8 +4398,9 @@ impl App {
         {
             Ok(cfg) => cfg,
             Err(err) => {
-                self.chat_widget
-                    .add_error_message(format!("无法重建配置以恢复: {err}"));
+                self.chat_widget.add_error_message(format!(
+                    "Failed to rebuild configuration for resume: {err}"
+                ));
                 return Ok(AppRunControl::Continue);
             }
         };
@@ -4364,22 +4438,25 @@ impl App {
                                 lines.push(usage_line.into());
                             }
                             if let Some(command) = summary.resume_command {
-                                let spans = vec!["要继续此会话，请运行 ".into(), command.cyan()];
+                                let spans =
+                                    vec!["To continue this session, run ".into(), command.cyan()];
                                 lines.push(spans.into());
                             }
                             self.chat_widget.add_plain_history_lines(lines);
                         }
                     }
                     Err(err) => {
-                        self.chat_widget
-                            .add_error_message(format!("无法连接到已恢复的应用服务器线程: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to attach to resumed app-server thread: {err}"
+                        ));
                     }
                 }
             }
             Err(err) => {
                 let path_display = target_session.display_label();
-                self.chat_widget
-                    .add_error_message(format!("无法从以下位置恢复会话 {path_display}: {err}"));
+                self.chat_widget.add_error_message(format!(
+                    "Failed to resume session from {path_display}: {err}"
+                ));
             }
         }
 
@@ -4444,8 +4521,9 @@ impl App {
                 {
                     Ok(app_server) => app_server,
                     Err(err) => {
-                        self.chat_widget
-                            .add_error_message(format!("无法启动 TUI 会话选择器: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to start TUI session picker: {err}"
+                        ));
                         return Ok(AppRunControl::Continue);
                     }
                 };
@@ -4491,8 +4569,9 @@ impl App {
                             .await;
                     }
                     None => {
-                        self.chat_widget
-                            .add_error_message(format!("未找到匹配 '{id_or_name}'."));
+                        self.chat_widget.add_error_message(format!(
+                            "No saved chat found matching '{id_or_name}'."
+                        ));
                     }
                 }
             }
@@ -4530,7 +4609,7 @@ impl App {
                                         }
                                         if let Some(command) = summary.resume_command {
                                             let spans = vec![
-                                                "要继续此会话，请运行 ".into(),
+                                                "To continue this session, run ".into(),
                                                 command.cyan(),
                                             ];
                                             lines.push(spans.into());
@@ -4540,20 +4619,22 @@ impl App {
                                 }
                                 Err(err) => {
                                     self.chat_widget.add_error_message(format!(
-                                        "无法连接到分叉的应用服务器线程: {err}"
+                                        "Failed to attach to forked app-server thread: {err}"
                                     ));
                                 }
                             }
                         }
                         Err(err) => {
                             self.chat_widget.add_error_message(format!(
-                                "无法通过应用服务器分叉当前会话: {err}"
+                                "Failed to fork current session through the app server: {err}"
                             ));
                         }
                     }
                 } else {
-                    self.chat_widget
-                        .add_error_message("线程在分叉前必须至少包含一轮对话.".to_string());
+                    self.chat_widget.add_error_message(
+                        "A thread must contain at least one turn before it can be forked."
+                            .to_string(),
+                    );
                 }
 
                 tui.frame_requester().schedule_frame();
@@ -4646,13 +4727,13 @@ impl App {
                 // Enter alternate screen using TUI helper and build pager lines
                 let _ = tui.enter_alt_screen();
                 let pager_lines: Vec<ratatui::text::Line<'static>> = if text.trim().is_empty() {
-                    vec!["未检测到更改。".italic().into()]
+                    vec!["No changes detected.".italic().into()]
                 } else {
                     text.lines().map(ansi_escape_line).collect()
                 };
                 self.overlay = Some(Overlay::new_static_with_lines(
                     pager_lines,
-                    "差 异".to_string(),
+                    "D I F F".to_string(),
                 ));
                 tui.frame_requester().schedule_frame();
             }
@@ -4745,6 +4826,13 @@ impl App {
             } => {
                 self.fetch_plugin_uninstall(app_server, cwd, plugin_id, plugin_display_name);
             }
+            AppEvent::SetPluginEnabled {
+                cwd,
+                plugin_id,
+                enabled,
+            } => {
+                self.set_plugin_enabled(app_server, cwd, plugin_id, enabled);
+            }
             AppEvent::PluginInstallLoaded {
                 cwd,
                 marketplace_path,
@@ -4775,11 +4863,52 @@ impl App {
                             app_server,
                             cwd,
                             PluginReadParams {
-                                marketplace_path,
+                                marketplace_path: Some(marketplace_path),
+                                remote_marketplace_name: None,
                                 plugin_name,
                             },
                         );
                     }
+                }
+            }
+            AppEvent::PluginEnabledSet {
+                cwd,
+                plugin_id,
+                enabled,
+                result,
+            } => {
+                let queued_enabled = self
+                    .pending_plugin_enabled_writes
+                    .get_mut(&plugin_id)
+                    .and_then(Option::take);
+                let should_apply_result = if let Some(queued_enabled) = queued_enabled
+                    && (result.is_err() || queued_enabled != enabled)
+                {
+                    self.spawn_plugin_enabled_write(
+                        app_server,
+                        cwd.clone(),
+                        plugin_id.clone(),
+                        queued_enabled,
+                    );
+                    false
+                } else {
+                    true
+                };
+                if should_apply_result {
+                    self.pending_plugin_enabled_writes.remove(&plugin_id);
+                    let update_succeeded = result.is_ok();
+                    if update_succeeded {
+                        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
+                            tracing::warn!(
+                                error = %err,
+                                "failed to refresh config after plugin toggle"
+                            );
+                        }
+                        self.chat_widget.refresh_plugin_mentions();
+                        self.chat_widget.submit_op(AppCommand::reload_user_config());
+                    }
+                    self.chat_widget
+                        .on_plugin_enabled_set(cwd, plugin_id, enabled, result);
                 }
             }
             AppEvent::FetchMcpInventory => {
@@ -4787,6 +4916,12 @@ impl App {
             }
             AppEvent::McpInventoryLoaded { result } => {
                 self.handle_mcp_inventory_result(result);
+            }
+            AppEvent::SkillsListLoaded { result } => {
+                self.handle_skills_list_result(
+                    result.map_err(|err| color_eyre::eyre::eyre!(err)),
+                    "failed to load skills on startup",
+                );
             }
             AppEvent::StartFileSearch(query) => {
                 self.file_search.on_user_query(query);
@@ -5063,7 +5198,7 @@ impl App {
                 {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("正在授予沙箱读取权限 {path} ..."),
+                            format!("Granting sandbox read access to {path} ..."),
                             /*hint*/ None,
                         ));
 
@@ -5105,12 +5240,12 @@ impl App {
             AppEvent::WindowsSandboxGrantReadRootCompleted { path, error } => match error {
                 Some(err) => {
                     self.chat_widget
-                        .add_to_history(history_cell::new_error_event(format!("错误：{err}")));
+                        .add_to_history(history_cell::new_error_event(format!("Error: {err}")));
                 }
                 None => {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("已授予沙箱读取权限 {}", path.display()),
+                            format!("Sandbox read access granted for {}", path.display()),
                             /*hint*/ None,
                         ));
                 }
@@ -5204,10 +5339,11 @@ impl App {
                                     .send(AppEvent::UpdateSandboxPolicy(preset.sandbox.clone()));
                                 let _ = mode;
                                 self.chat_widget.add_plain_history_lines(vec![
-                                    Line::from(vec!["• ".dim(), "沙箱已就绪".into()]),
+                                    Line::from(vec!["• ".dim(), "Sandbox ready".into()]),
                                     Line::from(vec![
                                         "  ".into(),
-                                        "Codex 现在可以安全地编辑文件并执行命令".dark_gray(),
+                                        "Codex can now safely edit files and execute commands in your computer"
+                                            .dark_gray(),
                                     ]),
                                 ]);
                             }
@@ -5217,8 +5353,9 @@ impl App {
                                 error = %err,
                                 "failed to enable Windows sandbox feature"
                             );
-                            self.chat_widget
-                                .add_error_message(format!("无法启用 Windows 沙箱功能: {err}"));
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to enable the Windows sandbox feature: {err}"
+                            ));
                         }
                     }
                 }
@@ -5239,8 +5376,8 @@ impl App {
                         let effort_label = effort
                             .map(|selected_effort| selected_effort.to_string())
                             .unwrap_or_else(|| "default".to_string());
-                        tracing::info!("已选择模型：{model}，已选择推理级别： {effort_label}");
-                        let mut message = format!("模型已更改为 {model}");
+                        tracing::info!("Selected model: {model}, Selected effort: {effort_label}");
+                        let mut message = format!("Model changed to {model}");
                         if let Some(label) = Self::reasoning_label_for(&model, effort) {
                             message.push(' ');
                             message.push_str(label);
@@ -5259,11 +5396,11 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "无法保存配置文件的模型 `{profile}`: {err}"
+                                "Failed to save model for profile `{profile}`: {err}"
                             ));
                         } else {
                             self.chat_widget
-                                .add_error_message(format!("无法保存默认模型: {err}"));
+                                .add_error_message(format!("Failed to save default model: {err}"));
                         }
                     }
                 }
@@ -5315,7 +5452,7 @@ impl App {
                 {
                     Ok(()) => {
                         let label = Self::personality_label(personality);
-                        let mut message = format!("个性已设置为 {label}");
+                        let mut message = format!("Personality set to {label}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -5330,11 +5467,12 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "无法保存配置文件的个性化设置 `{profile}`: {err}"
+                                "Failed to save personality for profile `{profile}`: {err}"
                             ));
                         } else {
-                            self.chat_widget
-                                .add_error_message(format!("无法保存默认个性化设置: {err}"));
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to save default personality: {err}"
+                            ));
                         }
                     }
                 }
@@ -5350,7 +5488,7 @@ impl App {
                 {
                     Ok(()) => {
                         let status = if service_tier.is_some() { "on" } else { "off" };
-                        let mut message = format!("快速模式已设置为 {status}");
+                        let mut message = format!("Fast mode set to {status}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -5362,11 +5500,12 @@ impl App {
                         tracing::error!(error = %err, "failed to persist fast mode selection");
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "无法保存配置文件的 Fast 模式 `{profile}`: {err}"
+                                "Failed to save Fast mode for profile `{profile}`: {err}"
                             ));
                         } else {
-                            self.chat_widget
-                                .add_error_message(format!("无法保存默认 Fast 模式: {err}"));
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to save default Fast mode: {err}"
+                            ));
                         }
                     }
                 }
@@ -5399,9 +5538,9 @@ impl App {
                         if self.chat_widget.realtime_conversation_is_live() {
                             self.chat_widget.open_realtime_audio_restart_prompt(kind);
                         } else {
-                            let selection = name.unwrap_or_else(|| "系统默认".to_string());
+                            let selection = name.unwrap_or_else(|| "System default".to_string());
                             self.chat_widget.add_info_message(
-                                format!("实时{}已设置为 {selection}", kind.title()),
+                                format!("Realtime {} set to {selection}", kind.noun()),
                                 /*hint*/ None,
                             );
                         }
@@ -5411,8 +5550,10 @@ impl App {
                             error = %err,
                             "failed to persist realtime audio selection"
                         );
-                        self.chat_widget
-                            .add_error_message(format!("无法保存实时{}：{err}", kind.title()));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save realtime {}: {err}",
+                            kind.noun()
+                        ));
                     }
                 }
             }
@@ -5424,7 +5565,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut config,
                     policy,
-                    "无法设置审批策略",
+                    "Failed to set approval policy",
                     "failed to set approval policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5448,7 +5589,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut config,
                     policy,
-                    "无法设置沙箱策略",
+                    "Failed to set sandbox policy",
                     "failed to set sandbox policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5457,7 +5598,7 @@ impl App {
                 if let Err(err) = self.chat_widget.set_sandbox_policy(policy_for_chat) {
                     tracing::warn!(%err, "failed to set sandbox policy on chat config");
                     self.chat_widget
-                        .add_error_message(format!("无法设置沙箱策略: {err}"));
+                        .add_error_message(format!("Failed to set sandbox policy: {err}"));
                     return Ok(AppRunControl::Continue);
                 }
                 self.runtime_sandbox_policy_override =
@@ -5520,7 +5661,7 @@ impl App {
                         "failed to persist approvals reviewer update"
                     );
                     self.chat_widget
-                        .add_error_message(format!("无法保存审批审查者: {err}"));
+                        .add_error_message(format!("Failed to save approvals reviewer: {err}"));
                 }
             }
             AppEvent::UpdateFeatureFlags { updates } => {
@@ -5536,6 +5677,9 @@ impl App {
                     generate_memories,
                 )
                 .await;
+            }
+            AppEvent::ResetMemories => {
+                self.reset_memories_with_app_server(app_server).await;
             }
             AppEvent::SkipNextWorldWritableScan => {
                 self.windows_sandbox.skip_world_writable_scan_once = true;
@@ -5564,8 +5708,9 @@ impl App {
                         error = %err,
                         "failed to persist full access warning acknowledgement"
                     );
-                    self.chat_widget
-                        .add_error_message(format!("无法保存完全访问确认偏好: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save full access confirmation preference: {err}"
+                    ));
                 }
             }
             AppEvent::PersistWorldWritableWarningAcknowledged => {
@@ -5578,15 +5723,10 @@ impl App {
                         error = %err,
                         "failed to persist world-writable warning acknowledgement"
                     );
-                    self.chat_widget
-                        .add_error_message(format!("无法保存 AI 助手 模式警告偏好: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save Agent mode warning preference: {err}"
+                    ));
                 }
-            }
-            AppEvent::PersistBuddyVisibility(visible) => {
-                self.persist_buddy_visibility(visible).await;
-            }
-            AppEvent::PersistBuddyFullVisibility => {
-                self.persist_buddy_full_visibility().await;
             }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
                 if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
@@ -5598,8 +5738,9 @@ impl App {
                         error = %err,
                         "failed to persist rate limit switch prompt preference"
                     );
-                    self.chat_widget
-                        .add_error_message(format!("无法保存速率限制提醒偏好: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save rate limit reminder preference: {err}"
+                    ));
                 }
             }
             AppEvent::PersistPlanModeReasoningEffort(effort) => {
@@ -5632,11 +5773,12 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "无法保存配置文件的 Plan 模式推理强度 `{profile}`: {err}"
+                            "Failed to save Plan mode reasoning effort for profile `{profile}`: {err}"
                         ));
                     } else {
-                        self.chat_widget
-                            .add_error_message(format!("无法保存 Plan 模式推理强度: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save Plan mode reasoning effort: {err}"
+                        ));
                     }
                 }
             }
@@ -5653,8 +5795,9 @@ impl App {
                         error = %err,
                         "failed to persist model migration prompt acknowledgement"
                     );
-                    self.chat_widget
-                        .add_error_message(format!("无法保存模型迁移提示偏好: {err}"));
+                    self.chat_widget.add_error_message(format!(
+                        "Failed to save model migration prompt preference: {err}"
+                    ));
                 }
             }
             AppEvent::OpenApprovalsPopup => {
@@ -5693,8 +5836,9 @@ impl App {
                     }
                     Err(err) => {
                         let path_display = path.display();
-                        self.chat_widget
-                            .add_error_message(format!("无法更新技能配置 {path_display}: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to update skill config for {path_display}: {err}"
+                        ));
                     }
                 }
             }
@@ -5741,8 +5885,9 @@ impl App {
                         self.chat_widget.submit_op(AppCommand::reload_user_config());
                     }
                     Err(err) => {
-                        self.chat_widget
-                            .add_error_message(format!("无法更新应用配置 {id}: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to update app config for {id}: {err}"
+                        ));
                     }
                 }
             }
@@ -5774,7 +5919,7 @@ impl App {
                     let diff_summary = DiffSummary::new(changes, cwd);
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![diff_summary.into()],
-                        "补 丁".to_string(),
+                        "P A T C H".to_string(),
                     ));
                 }
                 ApprovalRequest::Exec { command, .. } => {
@@ -5783,7 +5928,7 @@ impl App {
                     let full_cmd_lines = highlight_bash_to_lines(&full_cmd);
                     self.overlay = Some(Overlay::new_static_with_lines(
                         full_cmd_lines,
-                        "执 行".to_string(),
+                        "E X E C".to_string(),
                     ));
                 }
                 ApprovalRequest::Permissions {
@@ -5794,17 +5939,20 @@ impl App {
                     let _ = tui.enter_alt_screen();
                     let mut lines = Vec::new();
                     if let Some(reason) = reason {
-                        lines.push(Line::from(vec!["原因：".into(), reason.italic()]));
+                        lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
                         lines.push(Line::from(""));
                     }
                     if let Some(rule_line) =
                         crate::bottom_pane::format_requested_permissions_rule(&permissions)
                     {
-                        lines.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
+                        lines.push(Line::from(vec![
+                            "Permission rule: ".into(),
+                            rule_line.cyan(),
+                        ]));
                     }
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
-                        "权 限".to_string(),
+                        "P E R M I S S I O N S".to_string(),
                     ));
                 }
                 ApprovalRequest::McpElicitation {
@@ -5814,7 +5962,7 @@ impl App {
                 } => {
                     let _ = tui.enter_alt_screen();
                     let paragraph = Paragraph::new(vec![
-                        Line::from(vec!["服务器：".into(), server_name.bold()]),
+                        Line::from(vec!["Server: ".into(), server_name.bold()]),
                         Line::from(""),
                         Line::from(message),
                     ])
@@ -5852,7 +6000,7 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist status line items; keeping previous selection");
                         self.chat_widget
-                            .add_error_message(format!("无法保存状态栏项目: {err}"));
+                            .add_error_message(format!("Failed to save status line items: {err}"));
                     }
                 }
             }
@@ -5878,8 +6026,9 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist terminal title items; keeping previous selection");
                         self.chat_widget.revert_terminal_title_setup_preview();
-                        self.chat_widget
-                            .add_error_message(format!("无法保存终端标题项目: {err}"));
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to save terminal title items: {err}"
+                        ));
                     }
                 }
             }
@@ -5913,7 +6062,7 @@ impl App {
                         self.restore_runtime_theme_from_config();
                         tracing::error!(error = %err, "failed to persist theme selection");
                         self.chat_widget
-                            .add_error_message(format!("无法保存主题: {err}"));
+                            .add_error_message(format!("Failed to save theme: {err}"));
                     }
                 }
             }
@@ -6072,13 +6221,15 @@ impl App {
                 .await?;
             if self.active_thread_id == Some(primary_thread_id) {
                 self.chat_widget.add_info_message(
-                    format!("代理线程 {closed_thread_id} 已关闭。已切换回主线程."),
+                    format!(
+                        "Agent thread {closed_thread_id} closed. Switched back to main thread."
+                    ),
                     /*hint*/ None,
                 );
             } else {
                 self.clear_active_thread().await;
                 self.chat_widget.add_error_message(format!(
-                    "代理线程 {closed_thread_id} 已关闭。无法切换回主线程 {primary_thread_id}.",
+                    "Agent thread {closed_thread_id} closed. Failed to switch back to main thread {primary_thread_id}.",
                 ));
             }
             return Ok(());
@@ -6172,15 +6323,16 @@ impl App {
             Err(external_editor::EditorError::MissingEditor) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(
-                        "无法打开外部编辑器：请在启动 Codex 前设置 $VISUAL 或 $EDITOR.".to_string(),
-                    ));
+                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Codex."
+                        .to_string(),
+                ));
                 self.reset_external_editor_state(tui);
                 return;
             }
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "无法打开编辑器: {err}",
+                        "Failed to open editor: {err}",
                     )));
                 self.reset_external_editor_state(tui);
                 return;
@@ -6204,7 +6356,7 @@ impl App {
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "无法打开编辑器: {err}",
+                        "Failed to open editor: {err}",
                     )));
             }
         }
@@ -6296,7 +6448,7 @@ impl App {
                 if let Err(err) = self.clear_terminal_ui(tui, /*redraw_header*/ false) {
                     tracing::warn!(error = %err, "failed to clear terminal UI");
                     self.chat_widget
-                        .add_error_message(format!("无法清除终端 UI: {err}"));
+                        .add_error_message(format!("Failed to clear terminal UI: {err}"));
                 } else {
                     self.reset_app_ui_state_after_clear();
                     self.queue_clear_ui_header(tui);
@@ -6451,22 +6603,51 @@ async fn fetch_account_rate_limits(
     Ok(app_server_rate_limit_snapshots_to_core(response))
 }
 
+async fn fetch_skills_list(
+    request_handle: AppServerRequestHandle,
+    cwd: PathBuf,
+) -> Result<SkillsListResponse> {
+    let request_id = RequestId::String(format!("startup-skills-list-{}", Uuid::new_v4()));
+    // Use the cloneable request handle so startup can issue this RPC from a background task without
+    // extending a borrow of `AppServerSession` across the first frame render.
+    request_handle
+        .request_typed(ClientRequest::SkillsList {
+            request_id,
+            params: SkillsListParams {
+                cwds: vec![cwd],
+                force_reload: true,
+                per_cwd_extra_user_roots: None,
+            },
+        })
+        .await
+        .wrap_err("skills/list failed in TUI")
+}
+
 async fn fetch_plugins_list(
     request_handle: AppServerRequestHandle,
     cwd: PathBuf,
 ) -> Result<PluginListResponse> {
     let cwd = AbsolutePathBuf::try_from(cwd).wrap_err("plugin list cwd must be absolute")?;
     let request_id = RequestId::String(format!("plugin-list-{}", Uuid::new_v4()));
-    request_handle
+    let mut response = request_handle
         .request_typed(ClientRequest::PluginList {
             request_id,
             params: PluginListParams {
                 cwds: Some(vec![cwd]),
-                force_remote_sync: false,
             },
         })
         .await
-        .wrap_err("plugin/list failed in TUI")
+        .wrap_err("plugin/list failed in TUI")?;
+    hide_cli_only_plugin_marketplaces(&mut response);
+    Ok(response)
+}
+
+const CLI_HIDDEN_PLUGIN_MARKETPLACES: &[&str] = &["openai-bundled"];
+
+fn hide_cli_only_plugin_marketplaces(response: &mut PluginListResponse) {
+    response
+        .marketplaces
+        .retain(|marketplace| !CLI_HIDDEN_PLUGIN_MARKETPLACES.contains(&marketplace.name.as_str()));
 }
 
 async fn fetch_plugin_detail(
@@ -6490,9 +6671,9 @@ async fn fetch_plugin_install(
         .request_typed(ClientRequest::PluginInstall {
             request_id,
             params: PluginInstallParams {
-                marketplace_path,
+                marketplace_path: Some(marketplace_path),
+                remote_marketplace_name: None,
                 plugin_name,
-                force_remote_sync: false,
             },
         })
         .await
@@ -6507,13 +6688,31 @@ async fn fetch_plugin_uninstall(
     request_handle
         .request_typed(ClientRequest::PluginUninstall {
             request_id,
-            params: PluginUninstallParams {
-                plugin_id,
-                force_remote_sync: false,
-            },
+            params: PluginUninstallParams { plugin_id },
         })
         .await
         .wrap_err("plugin/uninstall failed in TUI")
+}
+
+async fn write_plugin_enabled(
+    request_handle: AppServerRequestHandle,
+    plugin_id: String,
+    enabled: bool,
+) -> Result<ConfigWriteResponse> {
+    let request_id = RequestId::String(format!("plugin-enable-{}", Uuid::new_v4()));
+    request_handle
+        .request_typed(ClientRequest::ConfigValueWrite {
+            request_id,
+            params: ConfigValueWriteParams {
+                key_path: format!("plugins.{plugin_id}"),
+                value: serde_json::json!({ "enabled": enabled }),
+                merge_strategy: MergeStrategy::Upsert,
+                file_path: None,
+                expected_version: None,
+            },
+        })
+        .await
+        .wrap_err("config/value/write failed while updating plugin enablement in TUI")
 }
 
 fn build_feedback_upload_params(
@@ -6644,6 +6843,7 @@ mod tests {
     use codex_app_server_protocol::NetworkPolicyRuleAction as AppServerNetworkPolicyRuleAction;
     use codex_app_server_protocol::NonSteerableTurnKind as AppServerNonSteerableTurnKind;
     use codex_app_server_protocol::PermissionsRequestApprovalParams;
+    use codex_app_server_protocol::PluginMarketplaceEntry;
     use codex_app_server_protocol::RequestId as AppServerRequestId;
     use codex_app_server_protocol::ServerNotification;
     use codex_app_server_protocol::ServerRequest;
@@ -6700,6 +6900,40 @@ mod tests {
 
     fn test_absolute_path(path: &str) -> AbsolutePathBuf {
         AbsolutePathBuf::try_from(PathBuf::from(path)).expect("absolute test path")
+    }
+
+    #[test]
+    fn hide_cli_only_plugin_marketplaces_removes_openai_bundled() {
+        let mut response = PluginListResponse {
+            marketplaces: vec![
+                PluginMarketplaceEntry {
+                    name: "openai-bundled".to_string(),
+                    path: Some(test_absolute_path("/marketplaces/openai-bundled")),
+                    interface: None,
+                    plugins: Vec::new(),
+                },
+                PluginMarketplaceEntry {
+                    name: "openai-curated".to_string(),
+                    path: Some(test_absolute_path("/marketplaces/openai-curated")),
+                    interface: None,
+                    plugins: Vec::new(),
+                },
+            ],
+            marketplace_load_errors: Vec::new(),
+            featured_plugin_ids: Vec::new(),
+        };
+
+        hide_cli_only_plugin_marketplaces(&mut response);
+
+        assert_eq!(
+            response.marketplaces,
+            vec![PluginMarketplaceEntry {
+                name: "openai-curated".to_string(),
+                path: Some(test_absolute_path("/marketplaces/openai-curated")),
+                interface: None,
+                plugins: Vec::new(),
+            }]
+        );
     }
 
     #[test]
@@ -6915,7 +7149,10 @@ mod tests {
             other => panic!("expected info message after same-thread resume, saw {other:?}"),
         };
         let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-        assert!(rendered.contains(&format!("正在查看 {}.", test_path_display("/tmp/project"))));
+        assert!(rendered.contains(&format!(
+            "Already viewing {}.",
+            test_path_display("/tmp/project")
+        )));
     }
 
     #[tokio::test]
@@ -8107,7 +8344,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            format!("代理线程 {thread_id} 尚不可用于回放或实时连接.")
+            format!("Agent thread {thread_id} is not yet available for replay or live attach.")
         );
         assert!(!app.thread_event_channels.contains_key(&thread_id));
         Ok(())
@@ -8139,7 +8376,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            format!("代理线程 {thread_id} 尚不可用于回放或实时连接.")
+            format!("Agent thread {thread_id} is not yet available for replay or live attach.")
         );
         assert!(!app.thread_event_channels.contains_key(&thread_id));
         Ok(())
@@ -8224,7 +8461,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("子代理 will be enabled in the next session."));
+        assert!(rendered.contains("Subagents will be enabled in the next session."));
         Ok(())
     }
 
@@ -8308,6 +8545,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reset_memories_clears_local_memory_directories() -> Result<()> {
+        let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf().abs();
+        app.config.sqlite_home = codex_home.path().to_path_buf();
+
+        let memory_root = codex_home.path().join("memories");
+        let extensions_root = codex_home.path().join("memories_extensions");
+        std::fs::create_dir_all(memory_root.join("rollout_summaries"))?;
+        std::fs::create_dir_all(&extensions_root)?;
+        std::fs::write(memory_root.join("MEMORY.md"), "stale memory\n")?;
+        std::fs::write(
+            memory_root.join("rollout_summaries").join("stale.md"),
+            "stale summary\n",
+        )?;
+        std::fs::write(extensions_root.join("stale.txt"), "stale extension\n")?;
+
+        let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+
+        app.reset_memories_with_app_server(&mut app_server).await;
+
+        assert_eq!(std::fs::read_dir(&memory_root)?.count(), 0);
+        assert_eq!(std::fs::read_dir(&extensions_root)?.count(), 0);
+
+        app_server.shutdown().await?;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn update_feature_flags_enabling_guardian_selects_guardian_approvals() -> Result<()> {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
         let codex_home = tempdir()?;
@@ -8380,7 +8646,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 守护者审批"));
+        assert!(rendered.contains("Permissions updated to Auto-review"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -8471,7 +8737,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Default"));
+        assert!(rendered.contains("Permissions updated to Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8753,7 +9019,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Default"));
+        assert!(rendered.contains("Permissions updated to Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8819,7 +9085,7 @@ guardian_approval = true
                 AppEvent::InsertHistoryCell(cell) => cell
                     .display_lines(/*width*/ 120)
                     .iter()
-                    .any(|line| line.to_string().contains("权限已更新为")),
+                    .any(|line| line.to_string().contains("Permissions updated to")),
                 _ => false,
             }),
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"
@@ -9699,6 +9965,7 @@ guardian_approval = true
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
+            pending_plugin_enabled_writes: HashMap::new(),
         }
     }
 
@@ -9756,6 +10023,7 @@ guardian_approval = true
                 primary_session_configured: None,
                 pending_primary_events: VecDeque::new(),
                 pending_app_server_requests: PendingAppServerRequests::default(),
+                pending_plugin_enabled_writes: HashMap::new(),
             },
             rx,
             op_rx,
@@ -10123,7 +10391,7 @@ guardian_approval = true
         };
         assert_eq!(
             lines_to_single_string(&cell.display_lines(/*width*/ 120)),
-            "■ 无法上传反馈: boom"
+            "■ Failed to upload feedback: boom"
         );
     }
 
@@ -11065,7 +11333,7 @@ guardian_approval = true
                                     text_elements: Vec::new(),
                                 }],
                             },
-                            ThreadItem::AI 助手Message {
+                            ThreadItem::AgentMessage {
                                 id: "assistant-2".to_string(),
                                 text: "done".to_string(),
                                 phase: None,
@@ -11149,7 +11417,7 @@ guardian_approval = true
                         turn_id: "turn-1".to_string(),
                         item: ThreadItem::CollabAgentToolCall {
                             id: "wait-1".to_string(),
-                            tool: codex_app_server_protocol::CollabAI 助手Tool::Wait,
+                            tool: codex_app_server_protocol::CollabAgentTool::Wait,
                             status: codex_app_server_protocol::CollabAgentToolCallStatus::InProgress,
                             sender_thread_id: ThreadId::new().to_string(),
                             receiver_thread_ids: vec![receiver_thread_id.to_string()],
@@ -11568,7 +11836,7 @@ guardian_approval = true
         .expect("summary");
         assert_eq!(
             summary.usage_line,
-            Some("令牌使用量: 总计=12 输入=10 输出=2".to_string())
+            Some("Token usage: total=12 input=10 output=2".to_string())
         );
         assert_eq!(
             summary.resume_command,
