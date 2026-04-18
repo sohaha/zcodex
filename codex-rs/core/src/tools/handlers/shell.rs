@@ -571,7 +571,7 @@ impl ShellHandler {
             tool_name,
             exec_params,
             approval_command,
-            display_command: _,
+            display_command,
             interaction_input,
             model_output_prefix,
             hook_command,
@@ -674,7 +674,7 @@ impl ShellHandler {
         let source = ExecCommandSource::Agent;
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
-            /*display_command*/ None,
+            display_command,
             exec_params.cwd.clone(),
             source,
             freeform,
