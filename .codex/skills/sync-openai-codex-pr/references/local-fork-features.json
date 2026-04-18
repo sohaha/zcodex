@@ -183,9 +183,13 @@
       "id": "local-crates-zmemory-ztok",
       "kind": "local_surface",
       "area": "codex-rs workspace",
-      "summary": "本地分叉附加 crate `zmemory` 与 `ztok` 必须继续存在。",
-      "better_when": "只有在本地确定把它们整体迁移或替换到新的路径，并同步更新这里的检查路径时，才允许变更。",
+      "summary": "本地分叉附加 crate `native-tldr`、`zmemory` 与 `ztok` 必须继续存在，并保持 workspace member / dependency 接线完整。",
+      "better_when": "只有在本地确定把这些 crate 整体迁移或替换到新的路径，并同步更新这里的检查路径与 Cargo workspace 接线检查时，才允许变更。",
       "checks": [
+        {
+          "type": "exists",
+          "path": "codex-rs/native-tldr"
+        },
         {
           "type": "exists",
           "path": "codex-rs/zmemory"
@@ -193,6 +197,36 @@
         {
           "type": "exists",
           "path": "codex-rs/ztok"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "\"native-tldr\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "\"zmemory\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "\"ztok\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "codex-native-tldr\\s*=\\s*\\{\\s*path\\s*=\\s*\"native-tldr\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "codex-zmemory\\s*=\\s*\\{\\s*path\\s*=\\s*\"zmemory\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/Cargo.toml",
+          "pattern": "codex-ztok\\s*=\\s*\\{\\s*path\\s*=\\s*\"ztok\""
         }
       ]
     },

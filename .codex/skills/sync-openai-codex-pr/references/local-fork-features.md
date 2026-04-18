@@ -110,11 +110,18 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/tools/src/tool_config.rs`: `with_auto_tldr_routing`
 
 ### `local-crates-zmemory-ztok`
-- summary: 本地分叉附加 crate `zmemory` 与 `ztok` 必须继续存在。
-- better_when: 只有在本地确定把它们整体迁移或替换到新的路径，并同步更新这里的检查路径时，才允许变更。
+- summary: 本地分叉附加 crate `native-tldr`、`zmemory` 与 `ztok` 必须继续存在，并保持 workspace member / dependency 接线完整。
+- better_when: 只有在本地确定把这些 crate 整体迁移或替换到新的路径，并同步更新这里的检查路径与 Cargo workspace 接线检查时，才允许变更。
 - checks:
+  - `exists` `codex-rs/native-tldr`
   - `exists` `codex-rs/zmemory`
   - `exists` `codex-rs/ztok`
+  - `regex` `codex-rs/Cargo.toml`: `"native-tldr"`
+  - `regex` `codex-rs/Cargo.toml`: `"zmemory"`
+  - `regex` `codex-rs/Cargo.toml`: `"ztok"`
+  - `regex` `codex-rs/Cargo.toml`: `codex-native-tldr\s*=\s*\{\s*path\s*=\s*"native-tldr"`
+  - `regex` `codex-rs/Cargo.toml`: `codex-zmemory\s*=\s*\{\s*path\s*=\s*"zmemory"`
+  - `regex` `codex-rs/Cargo.toml`: `codex-ztok\s*=\s*\{\s*path\s*=\s*"ztok"`
 
 ### `buddy-surface`
 - summary: Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。
@@ -244,11 +251,18 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 ### `local-crates-zmemory-ztok`
 - status: `PASS`
 - kind: `local_surface`
-- summary: 本地分叉附加 crate `zmemory` 与 `ztok` 必须继续存在。
-- better_when: 只有在本地确定把它们整体迁移或替换到新的路径，并同步更新这里的检查路径时，才允许变更。
+- summary: 本地分叉附加 crate `native-tldr`、`zmemory` 与 `ztok` 必须继续存在，并保持 workspace member / dependency 接线完整。
+- better_when: 只有在本地确定把这些 crate 整体迁移或替换到新的路径，并同步更新这里的检查路径与 Cargo workspace 接线检查时，才允许变更。
 - evidence:
+  - `ok` `codex-rs/native-tldr`: codex-rs/native-tldr exists (dir)
   - `ok` `codex-rs/zmemory`: codex-rs/zmemory exists (dir)
   - `ok` `codex-rs/ztok`: codex-rs/ztok exists (dir)
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:49 "native-tldr",
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:50 "zmemory",
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:60 "ztok",
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:157 codex-native-tldr = { path = "native-tldr" }
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:158 codex-zmemory = { path = "zmemory" }
+  - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:169 codex-ztok = { path = "ztok" }
 
 ### `buddy-surface`
 - status: `PASS`

@@ -215,6 +215,7 @@ just bazel-lock-check
 - `check` 只要报缺失项，就不能提交
 - worktree 审查时必须使用 worktree 自己的脚本与 `json` 基线副本
 - 对 `local_surface` / `localized_behavior` 特性，检查点不能只停留在文案或模块存在性；要覆盖运行时桥接、事件 wiring、配置落盘等真实链路
+- 对 `workspace/local-crates` 这类本地 crate 面，检查点不能只保目录；还要覆盖 `codex-rs/Cargo.toml` 的 workspace members 和 workspace dependency 接线
 
 对每个缺失/覆盖项，都必须给出原因：
 

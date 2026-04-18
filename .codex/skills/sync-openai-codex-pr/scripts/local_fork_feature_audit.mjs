@@ -378,11 +378,19 @@ function isAncestor(repoRoot, ancestorRef, descendantRef) {
   }
 }
 
+function resolveCommitRef(repoRoot, ref, owner) {
+  try {
+    return git(repoRoot, ["rev-parse", "--verify", `${ref}^{commit}`]);
+  } catch (error) {
+    throw new Error(`${owner} ${ref} is not a valid commit`);
+  }
+}
+
 function resolveDiscoverBaseRef(repoRoot, options, headRef) {
   if (options["base-ref"]) {
     return {
       input: options["base-ref"],
-      resolved: git(repoRoot, ["rev-parse", options["base-ref"]]),
+      resolved: resolveCommitRef(repoRoot, options["base-ref"], "--base-ref"),
       strategy: "explicit-base-ref",
     };
   }
@@ -398,7 +406,11 @@ function resolveDiscoverBaseRef(repoRoot, options, headRef) {
   const stateFile = options["state-file"] ? path.resolve(options["state-file"]) : defaultStateFile;
   const state = readStateMetadata(stateFile);
   if (state.last_sync_commit) {
-    const resolvedSyncCommit = git(repoRoot, ["rev-parse", state.last_sync_commit]);
+    const resolvedSyncCommit = resolveCommitRef(
+      repoRoot,
+      state.last_sync_commit,
+      `state ${stateFile} last_sync_commit`,
+    );
     if (!isAncestor(repoRoot, resolvedSyncCommit, headRef)) {
       const branchDetail = state.last_synced_base_branch
         ? ` (recorded base branch: ${state.last_synced_base_branch})`

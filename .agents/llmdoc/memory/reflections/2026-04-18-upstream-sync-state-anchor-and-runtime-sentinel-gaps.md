@@ -14,6 +14,7 @@
 - `local_surface` / `localized_behavior` 不能只靠模块存在性或文案哨兵；如果真实行为依赖事件桥接、配置落盘、app-server notification 映射，这些链路也必须进基线检查。
 - upstream 给共享 struct 新增字段时，不能只看主路径编译；只要本地还有 synthetic / fallback 构造，就要额外 grep 同类型构造点补齐字段。
 - 如果同步触及 `protocol/src/error.rs`，不能只看枚举层 diff；`is_retryable()`、`to_codex_protocol_error()` 和 turn 级自动重试调用方要一起看，否则很容易把“错误分类”和“自动重试策略”改出互相矛盾的语义。
+- `workspace/local-crates` 也不能只保目录存在；像 `native-tldr`、`zmemory`、`ztok` 这类本地 crate 必须把 `Cargo.toml` 的 members / path dependency 接线一起纳入 gate。
 
 ## 后续做法
 
@@ -24,3 +25,4 @@
   - `last_sync_commit` 的落地语义
   - 共享 struct 增字段时的 synthetic constructor 审计要求
   - `protocol/error.rs` 变更时的 retryable / protocol mapping / turn 调用方联动审查
+  - 本地 workspace crate 的 members / dependency 接线审查

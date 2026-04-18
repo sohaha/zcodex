@@ -176,6 +176,11 @@ just fmt
 - 一并审查 `is_retryable()`、`to_codex_protocol_error()`、`codex-rs/core/src/session/turn.rs`
 - 不要只补协议枚举级单测；至少确认 turn 级自动重试和对外错误分类没有互相打架
 
+如果本次同步碰到本地 workspace crate 面：
+
+- 不要只检查目录是否还在
+- 额外审查 `codex-rs/Cargo.toml` 里的 members 和 workspace dependency path 接线
+
 如果改了依赖：
 
 ```bash
