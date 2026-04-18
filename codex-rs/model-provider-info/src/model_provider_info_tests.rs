@@ -149,6 +149,61 @@ api_key = "test-token"
 }
 
 #[test]
+fn log_safe_summary_redacts_sensitive_provider_fields() {
+    let provider = ModelProviderInfo {
+        name: Some("Example".into()),
+        model: Some("gpt-5.4".into()),
+        base_url: Some("https://example.com/v1".into()),
+        env_key: Some("EXAMPLE_API_KEY".into()),
+        env_key_instructions: Some("set EXAMPLE_API_KEY".into()),
+        experimental_bearer_token: Some("super-secret-token".into()),
+        auth: Some(ModelProviderAuthInfo {
+            command: "./print-token".to_string(),
+            args: vec!["inline-secret".to_string()],
+            timeout_ms: NonZeroU64::new(5_000).unwrap(),
+            refresh_interval_ms: 300_000,
+            cwd: AbsolutePathBuf::from("/tmp/provider-auth"),
+        }),
+        wire_api: WireApi::Responses,
+        query_params: Some(maplit::hashmap! {
+            "api-version".to_string() => "secret-value".to_string(),
+        }),
+        http_headers: Some(maplit::hashmap! {
+            "Authorization".to_string() => "Bearer super-secret-token".to_string(),
+            "X-Test".to_string() => "visible".to_string(),
+        }),
+        env_http_headers: Some(maplit::hashmap! {
+            "X-Env-Header".to_string() => "EXAMPLE_HEADER_ENV".to_string(),
+        }),
+        request_max_retries: Some(2),
+        stream_max_retries: Some(3),
+        stream_idle_timeout_ms: Some(4_000),
+        retry_base_delay_ms: Some(250),
+        websocket_connect_timeout_ms: Some(15_000),
+        requires_openai_auth: false,
+        supports_websockets: true,
+        model_context_window: Some(128_000),
+        model_auto_compact_token_limit: Some(96_000),
+        max_output_tokens: Some(16_000),
+        model_catalog: Some(vec!["gpt-5.4".into()]),
+        skip_reasoning_popup: true,
+    };
+
+    let summary = provider.log_safe_summary();
+
+    assert!(summary.contains("https://example.com/v1"));
+    assert!(summary.contains("EXAMPLE_API_KEY"));
+    assert!(summary.contains("experimental_bearer_token_configured: true"));
+    assert!(summary.contains("auth_configured: true"));
+    assert!(summary.contains("http_header_names: [\"Authorization\", \"X-Test\"]"));
+    assert!(!summary.contains("super-secret-token"));
+    assert!(!summary.contains("inline-secret"));
+    assert!(!summary.contains("./print-token"));
+    assert!(!summary.contains("/tmp/provider-auth"));
+    assert!(!summary.contains("secret-value"));
+}
+
+#[test]
 fn provider_supplied_auth_detects_configured_authorization_headers() {
     let provider = ModelProviderInfo {
         name: "Example".into(),

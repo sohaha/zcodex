@@ -78,8 +78,8 @@ fn server_overloaded_is_retryable() {
 }
 
 #[test]
-fn invalid_request_is_retryable() {
-    assert!(CodexErr::InvalidRequest("bad request".to_string()).is_retryable());
+fn invalid_request_is_not_retryable() {
+    assert!(!CodexErr::InvalidRequest("bad request".to_string()).is_retryable());
 }
 
 #[test]
@@ -559,4 +559,10 @@ fn usage_limit_reached_with_promo_message() {
         );
         assert_eq!(err.to_string(), expected);
     });
+}
+
+#[test]
+fn invalid_request_maps_to_bad_request() {
+    let err = CodexErr::InvalidRequest("test error".to_string());
+    assert_eq!(err.to_codex_protocol_error(), CodexErrorInfo::BadRequest);
 }

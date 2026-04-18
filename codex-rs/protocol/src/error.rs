@@ -174,6 +174,7 @@ impl CodexErr {
             | CodexErr::UsageNotIncluded
             | CodexErr::InvalidImageRequest()
             | CodexErr::RefreshTokenFailed(_)
+            | CodexErr::InvalidRequest(_)
             | CodexErr::UnsupportedOperation(_)
             | CodexErr::Sandbox(_)
             | CodexErr::LandlockSandboxExecutableNotProvided
@@ -183,9 +184,9 @@ impl CodexErr {
             | CodexErr::AgentLimitReached { .. }
             | CodexErr::Spawn
             | CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::UsageLimitReached(_) => false,
+            | CodexErr::UsageLimitReached(_)
+            | CodexErr::InvalidRequest(_) => false,
             CodexErr::Stream(..)
-            | CodexErr::InvalidRequest(_)
             | CodexErr::QuotaExceeded
             | CodexErr::ServerOverloaded
             | CodexErr::Timeout
@@ -230,7 +231,8 @@ impl CodexErr {
             CodexErr::SessionConfiguredNotFirstEvent
             | CodexErr::InternalServerError
             | CodexErr::InternalAgentDied => CodexErrorInfo::InternalServerError,
-            CodexErr::UnsupportedOperation(_)
+            CodexErr::InvalidRequest(_)
+            | CodexErr::UnsupportedOperation(_)
             | CodexErr::ThreadNotFound(_)
             | CodexErr::AgentLimitReached { .. } => CodexErrorInfo::BadRequest,
             CodexErr::Sandbox(_) => CodexErrorInfo::SandboxError,

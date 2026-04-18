@@ -166,6 +166,45 @@ pub struct ModelProviderInfo {
 }
 
 impl ModelProviderInfo {
+    pub fn log_safe_summary(&self) -> String {
+        let sorted_names = |values: Option<&HashMap<String, String>>| {
+            let mut names = values
+                .into_iter()
+                .flat_map(HashMap::keys)
+                .cloned()
+                .collect::<Vec<_>>();
+            names.sort_unstable();
+            names
+        };
+
+        format!(
+            "ModelProviderInfo {{ name: {:?}, model: {:?}, base_url: {:?}, env_key: {:?}, model_catalog: {:?}, env_key_instructions_present: {}, experimental_bearer_token_configured: {}, auth_configured: {}, wire_api: {:?}, query_param_names: {:?}, http_header_names: {:?}, env_http_header_names: {:?}, request_max_retries: {:?}, stream_max_retries: {:?}, stream_idle_timeout_ms: {:?}, retry_base_delay_ms: {:?}, websocket_connect_timeout_ms: {:?}, requires_openai_auth: {}, supports_websockets: {}, model_context_window: {:?}, model_auto_compact_token_limit: {:?}, max_output_tokens: {:?}, skip_reasoning_popup: {} }}",
+            self.name,
+            self.model,
+            self.base_url,
+            self.env_key,
+            self.model_catalog,
+            self.env_key_instructions.is_some(),
+            self.configured_bearer_token().is_some(),
+            self.auth.is_some(),
+            self.wire_api,
+            sorted_names(self.query_params.as_ref()),
+            sorted_names(self.http_headers.as_ref()),
+            sorted_names(self.env_http_headers.as_ref()),
+            self.request_max_retries,
+            self.stream_max_retries,
+            self.stream_idle_timeout_ms,
+            self.retry_base_delay_ms,
+            self.websocket_connect_timeout_ms,
+            self.requires_openai_auth,
+            self.supports_websockets,
+            self.model_context_window,
+            self.model_auto_compact_token_limit,
+            self.max_output_tokens,
+            self.skip_reasoning_popup
+        )
+    }
+
     pub fn validate(&self) -> std::result::Result<(), String> {
         let Some(auth) = self.auth.as_ref() else {
             return Ok(());

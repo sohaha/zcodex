@@ -29,6 +29,7 @@
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-18-responses-replay-reasoning-content-strip.md`：Responses API replay 历史时不能回传 `reasoning.content`；应在出站输入整理层统一剥离 raw reasoning，并用请求级测试锁住。
 - `.agents/llmdoc/memory/reflections/2026-04-18-inter-agent-envelope-visible-turn-item-leak.md`：inter-agent JSON envelope 不能泄露到 turn-item / last-agent-message 这类可见 assistant 文本提取层。
+- `.agents/llmdoc/memory/reflections/2026-04-18-provider-config-log-redaction.md`：provider 配置日志不能直接打印完整 `Debug`；应统一走安全摘要视图，并把 token/header/query 这类任意字符串载荷一并纳入脱敏范围。
 - `.agents/llmdoc/memory/reflections/2026-04-18-upstream-sync-state-anchor-and-runtime-sentinel-gaps.md`：upstream sync 的 `last_sync_commit` 必须锚定落地 sync 提交，`local_surface` 还要把事件桥接和 synthetic constructor 完整性纳入基线检查。
 - `.agents/llmdoc/memory/reflections/2026-04-18-tui-startup-and-realtime-audio-localization.md`：TUI 汉化应按用户链路而不是按单文件收口，实时音频相关术语优先从共享枚举源头统一，同时记录当前 `fmt` / `lib test` 被仓库既有问题阻塞的验证边界。
 - `.agents/llmdoc/memory/reflections/2026-04-18-provider-model-precedence-after-provider-selection.md`：provider 默认模型必须在最终 provider 选择之后解析，`-P` / `--model-provider` 切换 provider 时同样适用，并且要把仓库现有 `fmt` / lib test 阻塞与本次改动区分开。

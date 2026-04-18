@@ -228,9 +228,9 @@ impl Session {
         analytics_events_client: Option<AnalyticsEventsClient>,
     ) -> anyhow::Result<Arc<Self>> {
         debug!(
-            "Configuring session: model={}; provider={:?}",
+            "Configuring session: model={}; provider={}",
             session_configuration.collaboration_mode.model(),
-            session_configuration.provider
+            session_configuration.provider.log_safe_summary()
         );
         let forked_from_id = initial_history.forked_from_id();
 
