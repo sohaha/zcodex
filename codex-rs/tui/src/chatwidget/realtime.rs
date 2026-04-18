@@ -574,9 +574,7 @@ impl ChatWidget {
                         self.realtime_conversation.audio_player = Some(player);
                     }
                     Err(err) => {
-                        self.fail_realtime_conversation(format!(
-                            "Failed to start speaker output: {err}"
-                        ));
+                        self.fail_realtime_conversation(format!("启动扬声器输出失败：{err}"));
                     }
                 }
             }

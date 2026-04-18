@@ -5401,7 +5401,7 @@ impl App {
                         } else {
                             let selection = name.unwrap_or_else(|| "系统默认".to_string());
                             self.chat_widget.add_info_message(
-                                format!("实时 {} 已设置为 {selection}", kind.noun()),
+                                format!("实时{}已设置为 {selection}", kind.title()),
                                 /*hint*/ None,
                             );
                         }
@@ -5412,7 +5412,7 @@ impl App {
                             "failed to persist realtime audio selection"
                         );
                         self.chat_widget
-                            .add_error_message(format!("无法保存实时 {}: {err}", kind.noun()));
+                            .add_error_message(format!("无法保存实时{}：{err}", kind.title()));
                     }
                 }
             }

@@ -66,6 +66,13 @@ use color_eyre::eyre::WrapErr;
 use cwd_prompt::CwdPromptAction;
 use cwd_prompt::CwdPromptOutcome;
 use cwd_prompt::CwdSelection;
+use ratatui::layout::Alignment;
+use ratatui::style::Stylize as _;
+use ratatui::text::Line;
+use ratatui::widgets::Clear;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 use std::fs::OpenOptions;
 use std::future::Future;
 use std::path::Path;
@@ -98,9 +105,12 @@ mod audio_device {
     pub(crate) fn list_realtime_audio_device_names(
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
+        let kind_label = match kind {
+            RealtimeAudioDeviceKind::Microphone => "麦克风",
+            RealtimeAudioDeviceKind::Speaker => "扬声器",
+        };
         Err(format!(
-            "Failed to load realtime {} devices: voice input is unavailable in this build",
-            kind.noun()
+            "无法加载实时{kind_label}设备：当前构建不支持语音输入"
         ))
     }
 }
@@ -187,7 +197,7 @@ mod voice {
 
     impl VoiceCapture {
         pub fn start_realtime(_config: &Config, _tx: AppEventSender) -> Result<Self, String> {
-            Err("voice input is unavailable in this build".to_string())
+            Err("当前构建不支持语音输入".to_string())
         }
 
         pub fn stop(self) {}
@@ -213,11 +223,11 @@ mod voice {
 
     impl RealtimeAudioPlayer {
         pub(crate) fn start(_config: &Config) -> Result<Self, String> {
-            Err("voice output is unavailable in this build".to_string())
+            Err("当前构建不支持语音输出".to_string())
         }
 
         pub(crate) fn enqueue_frame(&self, _frame: &RealtimeAudioFrame) -> Result<(), String> {
-            Err("voice output is unavailable in this build".to_string())
+            Err("当前构建不支持语音输出".to_string())
         }
 
         pub(crate) fn clear(&self) {}
@@ -311,12 +321,29 @@ fn websocket_url_supports_auth_token(parsed: &Url) -> bool {
     }
 }
 
+fn draw_startup_placeholder(tui: &mut Tui) -> std::io::Result<()> {
+    let lines = vec![
+        Line::from(shimmer::shimmer_spans("Codex 正在启动")),
+        "".into(),
+        Line::from("正在初始化会话与界面，请稍候。".dim()),
+    ];
+
+    tui.draw(u16::MAX, |frame| {
+        let area = frame.area();
+        Clear.render(area, frame.buffer_mut());
+        Paragraph::new(lines.clone())
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: false })
+            .render(area, frame.buffer_mut());
+    })
+}
+
 pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
     let parsed = match Url::parse(addr) {
         Ok(parsed) => parsed,
         Err(_) => {
             color_eyre::eyre::bail!(
-                "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
+                "无效的远程地址 `{addr}`；应为 `ws://host:port` 或 `wss://host:port`"
             );
         }
     };
@@ -330,9 +357,7 @@ pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
         return Ok(parsed.to_string());
     }
 
-    color_eyre::eyre::bail!(
-        "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
-    );
+    color_eyre::eyre::bail!("无效的远程地址 `{addr}`；应为 `ws://host:port` 或 `wss://host:port`");
 }
 
 fn validate_remote_auth_token_transport(websocket_url: &str) -> color_eyre::Result<()> {
@@ -342,7 +367,7 @@ fn validate_remote_auth_token_transport(websocket_url: &str) -> color_eyre::Resu
     }
 
     color_eyre::eyre::bail!(
-        "remote auth tokens require `wss://` or loopback `ws://` URLs; got `{websocket_url}`"
+        "远程认证令牌要求使用 `wss://` 或回环地址 `ws://` URL；当前为 `{websocket_url}`"
     )
 }
 
@@ -360,7 +385,7 @@ async fn connect_remote_app_server(
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     })
     .await
-    .wrap_err("failed to connect to remote app server")?;
+    .wrap_err("连接远程 app server 失败")?;
     Ok(AppServerClient::Remote(app_server))
 }
 
@@ -468,7 +493,7 @@ where
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     })
     .await
-    .wrap_err("failed to start embedded app server")?;
+    .wrap_err("启动内嵌 app server 失败")?;
     Ok(client)
 }
 
@@ -715,16 +740,16 @@ pub async fn run_main(
     }
     let raw_overrides = cli.config_overrides.raw_overrides.clone();
     // `oss` model provider.
-    eprintln!("DEBUG: raw_overrides = {:?}", raw_overrides);
+    // eprintln!("DEBUG: raw_overrides = {:?}", raw_overrides);
     let overrides_cli = codex_utils_cli::CliConfigOverrides { raw_overrides };
     let cli_kv_overrides = match overrides_cli.parse_overrides() {
         Ok(v) => {
-            eprintln!("DEBUG: parsed overrides = {:?}", v);
+            // eprintln!("DEBUG: parsed overrides = {:?}", v);
             v
         }
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            // eprintln!("Error parsing -c overrides: {e}");
             std::process::exit(1);
         }
     };
@@ -734,7 +759,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            // eprintln!("Error finding codex home: {err}");
             std::process::exit(1);
         }
     };
@@ -765,11 +790,11 @@ pub async fn run_main(
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "Error loading config.toml:\n{}",
+                    "加载 config.toml 失败：\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("加载 config.toml 失败：{err}");
             }
             std::process::exit(1);
         }
@@ -801,9 +826,7 @@ pub async fn run_main(
             // No provider configured, prompt the user
             let provider = oss_selection::select_oss_provider(&codex_home).await?;
             if provider == "__CANCELLED__" {
-                return Err(std::io::Error::other(
-                    "OSS provider selection was cancelled by user",
-                ));
+                return Err(std::io::Error::other("用户已取消 OSS provider 选择"));
             }
             Some(provider)
         }
@@ -857,7 +880,7 @@ pub async fn run_main(
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "Error loading rules:\n{}",
+                "加载规则失败：\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -871,7 +894,7 @@ pub async fn run_main(
     {
         #[allow(clippy::print_stderr)]
         {
-            eprintln!("Error adding directories: {warning}");
+            eprintln!("添加目录失败：{warning}");
             std::process::exit(1);
         }
     }
@@ -941,7 +964,7 @@ pub async fn run_main(
             None => {
                 error!("OSS provider unexpectedly not set when oss flag is used");
                 return Err(std::io::Error::other(
-                    "OSS provider not set but oss flag was used",
+                    "已使用 oss 标志，但未设置 OSS provider",
                 ));
             }
         };
@@ -960,14 +983,14 @@ pub async fn run_main(
         Ok(Err(e)) => {
             #[allow(clippy::print_stderr)]
             {
-                eprintln!("Could not create otel exporter: {e}");
+                eprintln!("无法创建 otel exporter：{e}");
             }
             None
         }
         Err(_) => {
             #[allow(clippy::print_stderr)]
             {
-                eprintln!("Could not create otel exporter: panicked during initialization");
+                eprintln!("无法创建 otel exporter：初始化时发生 panic");
             }
             None
         }
@@ -1043,6 +1066,7 @@ async fn run_ratatui_app(
     terminal.clear()?;
 
     let mut tui = Tui::new(terminal);
+    draw_startup_placeholder(&mut tui)?;
     let mut terminal_restore_guard = TerminalRestoreGuard::new();
 
     #[cfg(not(debug_assertions))]
@@ -1220,7 +1244,7 @@ async fn run_ratatui_app(
             thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
+                "未找到 ID 为 {id_str} 的已保存会话。运行不带 ID 的 `codex {action}` 可从现有会话中选择。"
             )),
         })
     };
@@ -1623,9 +1647,7 @@ pub(crate) async fn resolve_cwd_for_resume_or_fork(
 )]
 fn restore() {
     if let Err(err) = tui::restore() {
-        eprintln!(
-            "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
-        );
+        eprintln!("恢复终端失败。请运行 `reset` 或重启终端以恢复：{err}");
     }
 }
 
@@ -1751,7 +1773,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("Error loading configuration: {err}");
+            eprintln!("加载配置失败：{err}");
             std::process::exit(1);
         }
     }
@@ -1836,7 +1858,7 @@ mod tests {
             thread_id,
         };
 
-        assert_eq!(target.display_label(), format!("thread {thread_id}"));
+        assert_eq!(target.display_label(), format!("会话 {thread_id}"));
     }
 
     #[test]
@@ -1866,7 +1888,7 @@ mod tests {
                 .expect_err("websocket URLs without an explicit port should be rejected");
             assert!(
                 err.to_string()
-                    .contains("expected `ws://host:port` or `wss://host:port`")
+                    .contains("应为 `ws://host:port` 或 `wss://host:port`")
             );
         }
     }
@@ -1877,7 +1899,7 @@ mod tests {
             .expect_err("https URLs should be rejected");
         assert!(
             err.to_string()
-                .contains("expected `ws://host:port` or `wss://host:port`")
+                .contains("应为 `ws://host:port` 或 `wss://host:port`")
         );
     }
 
@@ -1887,7 +1909,7 @@ mod tests {
             normalize_remote_addr("127.0.0.1:4500").expect_err("host:port should be rejected");
         assert!(
             err.to_string()
-                .contains("expected `ws://host:port` or `wss://host:port`")
+                .contains("应为 `ws://host:port` 或 `wss://host:port`")
         );
     }
 
@@ -1913,7 +1935,7 @@ mod tests {
             .expect_err("non-loopback ws should be rejected for auth tokens");
         assert!(
             err.to_string()
-                .contains("remote auth tokens require `wss://` or loopback `ws://` URLs")
+                .contains("远程认证令牌要求使用 `wss://` 或回环地址 `ws://` URL")
         );
     }
 
@@ -2224,8 +2246,7 @@ mod tests {
         };
 
         assert!(
-            err.to_string()
-                .contains("failed to start embedded app server"),
+            err.to_string().contains("启动内嵌 app server 失败"),
             "error should preserve the embedded app server startup context"
         );
         Ok(())

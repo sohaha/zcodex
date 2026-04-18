@@ -58,7 +58,7 @@ impl SessionTarget {
         self.path
             .as_ref()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| format!("thread {}", self.thread_id))
+            .unwrap_or_else(|| format!("会话 {}", self.thread_id))
     }
 }
 
@@ -1484,7 +1484,7 @@ fn render_column_headers(
     if visibility.show_cwd {
         let label = format!(
             "{text:<width$}",
-            text = "CWD",
+            text = "目录",
             width = metrics.max_cwd_width
         );
         spans.push(Span::from(label).bold());
@@ -1545,7 +1545,7 @@ fn calculate_column_metrics(rows: &[Row], include_cwd: bool) -> ColumnMetrics {
     let mut max_updated_width = UnicodeWidthStr::width("更新时间");
     let mut max_branch_width = UnicodeWidthStr::width("分支");
     let mut max_cwd_width = if include_cwd {
-        UnicodeWidthStr::width("CWD")
+        UnicodeWidthStr::width("目录")
     } else {
         0
     };

@@ -92,7 +92,10 @@ use codex_terminal_detection::TerminalName;
     long_about = "Codex 命令行工具\n\n若未指定子命令，选项会转发到交互式命令行界面。"
 )]
 struct MultitoolCli {
-    #[clap(flatten)]
+    /// Config overrides are provided via the flattened `interactive` field (TuiCli),
+    /// which already contains a `config_overrides` with the CLI arguments.
+    /// This field is skipped for CLI parsing and populated programmatically.
+    #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 
     #[clap(flatten)]
@@ -742,12 +745,15 @@ fn format_error_chain(err: &anyhow::Error) -> String {
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let MultitoolCli {
-        config_overrides: mut root_config_overrides,
         feature_toggles,
         remote,
         mut interactive,
         subcommand,
+        ..
     } = parse_multitool_cli_from_env();
+
+    // Config overrides are provided via the flattened `interactive` field (TuiCli).
+    let mut root_config_overrides = interactive.config_overrides.clone();
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;

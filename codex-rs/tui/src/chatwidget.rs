@@ -7761,8 +7761,8 @@ impl ChatWidget {
         .collect();
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("设置".to_string()),
-            subtitle: Some("配置 Codex 的设置。".to_string()),
+            title: Some("音频设置".to_string()),
+            subtitle: Some("配置 Codex 的实时语音设备。".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -7856,7 +7856,7 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: "立即重启".to_string(),
-                description: Some(format!("立即重启本地{}音频。", kind.noun())),
+                description: Some(format!("立即重启本地{}。", kind.title())),
                 actions: restart_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -7865,7 +7865,7 @@ impl ChatWidget {
                 name: "稍后应用".to_string(),
                 description: Some(format!(
                     "在本地音频下次启动前，继续使用当前{}。",
-                    kind.noun()
+                    kind.title()
                 )),
                 dismiss_on_select: true,
                 ..Default::default()
