@@ -4,6 +4,8 @@ use codex_api::TextControls;
 use codex_api::create_text_param_for_request;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::FunctionCallOutputPayload;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use pretty_assertions::assert_eq;
 
 use super::*;
@@ -138,6 +140,37 @@ fn serializes_flex_service_tier_when_set() {
     assert_eq!(
         v.get("service_tier").and_then(|tier| tier.as_str()),
         Some("flex")
+    );
+}
+
+#[test]
+fn formatted_input_strips_reasoning_content() {
+    let prompt = Prompt {
+        input: vec![ResponseItem::Reasoning {
+            id: "reasoning-id".to_string(),
+            summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                text: "summary".to_string(),
+            }],
+            content: Some(vec![ReasoningItemContent::ReasoningText {
+                text: "raw reasoning".to_string(),
+            }]),
+            encrypted_content: None,
+        }],
+        ..Prompt::default()
+    };
+
+    let formatted_input = prompt.get_formatted_input();
+
+    assert_eq!(
+        formatted_input,
+        vec![ResponseItem::Reasoning {
+            id: "reasoning-id".to_string(),
+            summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                text: "summary".to_string(),
+            }],
+            content: None,
+            encrypted_content: None,
+        }]
     );
 }
 

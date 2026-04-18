@@ -48,6 +48,14 @@ impl Prompt {
     pub(crate) fn get_formatted_input(&self) -> Vec<ResponseItem> {
         let mut input = self.input.clone();
 
+        input.iter_mut().for_each(|item| {
+            if let ResponseItem::Reasoning { content, .. } = item {
+                // Raw reasoning text is retained in local history/UI, but replaying it back to
+                // the Responses API can produce invalid reasoning input payloads.
+                *content = None;
+            }
+        });
+
         // when using the *Freeform* apply_patch tool specifically, tool outputs
         // should be structured text, not json. Do NOT reserialize when using
         // the Function tool - note that this differs from the check above for
