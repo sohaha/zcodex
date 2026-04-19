@@ -25,8 +25,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-18` 计算，覆盖 `2026-04-16` 至 `2026-04-18`。
+- 时间窗按当前日期 `2026-04-19` 计算，覆盖 `2026-04-17` 至 `2026-04-19`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-19-upstream-sync-image-detail-and-mergeback-compile-gate.md`：upstream 同步不能只看冲突文件；共享模型字段扩展要补全局匹配/构造扫描，并把 merge-back 编译阻塞显式写入 `STATE.md`。
 - `.agents/llmdoc/memory/reflections/2026-04-18-responses-replay-reasoning-content-strip.md`：Responses API replay 历史时不能回传 `reasoning.content`；应在出站输入整理层统一剥离 raw reasoning，并用请求级测试锁住。
 - `.agents/llmdoc/memory/reflections/2026-04-18-inter-agent-envelope-visible-turn-item-leak.md`：inter-agent JSON envelope 不能泄露到 turn-item / last-agent-message 这类可见 assistant 文本提取层。
 - `.agents/llmdoc/memory/reflections/2026-04-18-provider-config-log-redaction.md`：provider 配置日志不能直接打印完整 `Debug`；应统一走安全摘要视图，并把 token/header/query 这类任意字符串载荷一并纳入脱敏范围。
