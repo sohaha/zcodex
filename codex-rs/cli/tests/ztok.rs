@@ -856,6 +856,26 @@ fn ztok_json_keys_only_hides_values() -> Result<()> {
 }
 
 #[test]
+fn ztok_vitest_drops_reporter_value_pair() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let _fake_vitest = write_fake_command(&bin_dir, "vitest", echo_args_script())?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["ztok", "vitest", "--reporter", "verbose", "sample.test.ts"])
+        .assert()
+        .success()
+        .stdout(
+            contains("--reporter=json")
+                .and(contains("sample.test.ts"))
+                .and(contains("verbose").not()),
+        );
+
+    Ok(())
+}
+
+#[test]
 fn ztok_double_dash_tail_fallback_stays_raw() -> Result<()> {
     let codex_home = TempDir::new()?;
     let file = codex_home.path().join("sample.txt");

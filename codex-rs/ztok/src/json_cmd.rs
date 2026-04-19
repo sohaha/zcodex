@@ -105,8 +105,9 @@ fn compact_json(value: &Value, depth: usize, max_depth: usize) -> String {
         Value::Bool(flag) => format!("{indent}{flag}"),
         Value::Number(number) => format!("{indent}{number}"),
         Value::String(text) => {
-            if text.len() > 80 {
-                format!("{}\"{}...\"", indent, &text[..77])
+            if text.chars().count() > 80 {
+                let truncated = text.chars().take(77).collect::<String>();
+                format!("{indent}\"{truncated}...\"")
             } else {
                 format!("{}\"{}\"", indent, text)
             }
@@ -165,7 +166,10 @@ fn compact_json(value: &Value, depth: usize, max_depth: usize) -> String {
                     }
 
                     if index >= 20 {
-                        lines.push(format!("{}  ... +{} 个键", indent, keys.len() - index - 1));
+                        let remaining_keys = keys.len() - index - 1;
+                        if remaining_keys > 0 {
+                            lines.push(format!("{indent}  ... +{remaining_keys} 个键"));
+                        }
                         break;
                     }
                 }
@@ -351,5 +355,27 @@ mod tests {
             "实际得到：{compact}"
         );
         assert!(compact.contains("count: 2"), "实际得到：{compact}");
+    }
+
+    #[test]
+    fn test_filter_json_compact_truncates_utf8_safely() {
+        let compact =
+            filter_json_compact(&format!(r#"{{"msg":"{}"}}"#, "界".repeat(90)), 5).unwrap();
+        assert!(compact.contains(r#"msg: ""#), "实际得到：{compact}");
+        assert!(compact.contains("..."), "实际得到：{compact}");
+    }
+
+    #[test]
+    fn test_filter_json_compact_does_not_report_zero_remaining_keys() {
+        let json = serde_json::json!({
+            "k01": 1, "k02": 2, "k03": 3, "k04": 4, "k05": 5,
+            "k06": 6, "k07": 7, "k08": 8, "k09": 9, "k10": 10,
+            "k11": 11, "k12": 12, "k13": 13, "k14": 14, "k15": 15,
+            "k16": 16, "k17": 17, "k18": 18, "k19": 19, "k20": 20,
+            "k21": 21
+        });
+
+        let compact = compact_json(&json, 0, 5);
+        assert!(!compact.contains("... +0 个键"), "实际得到：{compact}");
     }
 }

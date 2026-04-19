@@ -225,8 +225,16 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     // 添加 JSON reporter，便于做结构化解析
     cmd.arg("--reporter=json");
 
-    for arg in args {
-        if arg == "run" || arg.starts_with("--reporter") || arg.starts_with("--watch") {
+    let mut args_iter = args.iter();
+    while let Some(arg) = args_iter.next() {
+        if arg == "run" || arg == "watch" || arg.starts_with("--watch") {
+            continue;
+        }
+        if arg == "--reporter" {
+            let _ = args_iter.next();
+            continue;
+        }
+        if arg.starts_with("--reporter=") {
             continue;
         }
         cmd.arg(arg);
