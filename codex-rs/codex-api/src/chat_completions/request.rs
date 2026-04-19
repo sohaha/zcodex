@@ -297,7 +297,7 @@ fn user_content(content: &[ContentItem]) -> Value {
                 ContentItem::InputText { text } | ContentItem::OutputText { text } => {
                     json!({ "type": "text", "text": text })
                 }
-                ContentItem::InputImage { image_url } => json!({
+                ContentItem::InputImage { image_url, .. } => json!({
                     "type": "image_url",
                     "image_url": { "url": image_url },
                 }),
