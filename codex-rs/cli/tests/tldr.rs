@@ -60,6 +60,42 @@ async fn tldr_structure_help_exposes_language_and_lang_alias() -> Result<()> {
 }
 
 #[tokio::test]
+async fn tldr_language_help_matrix_exposes_language_and_lang_alias() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    for subcommand in [
+        "structure",
+        "extract",
+        "slice",
+        "importers",
+        "change-impact",
+        "semantic",
+        "search",
+        "diagnostics",
+        "doctor",
+    ] {
+        let output = codex_command(codex_home.path())?
+            .args(["ztldr", subcommand, "--help"])
+            .assert()
+            .success()
+            .get_output()
+            .clone();
+        let help = String::from_utf8([output.stdout, output.stderr].concat())?;
+
+        assert!(
+            help.contains("--language <LANG>"),
+            "{subcommand} help should expose --language"
+        );
+        assert!(
+            help.contains("[别名： --lang]"),
+            "{subcommand} help should expose --lang alias"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn tldr_structure_accepts_language_long_flag() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
@@ -92,6 +128,48 @@ async fn tldr_structure_accepts_language_long_flag() -> Result<()> {
     let payload: serde_json::Value = serde_json::from_slice(&output)?;
     assert_eq!(payload["analysis"]["kind"], "ast");
     assert_eq!(payload["action"], "structure");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_extract_accepts_language_long_flag() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join("src/lib.rs"),
+        "use crate::auth::Session;\n\nfn helper(session: Session) {}\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "ztldr",
+            "extract",
+            "--language",
+            "rust",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            project
+                .path()
+                .join("src/lib.rs")
+                .to_str()
+                .expect("source path should be utf-8"),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "extract");
+    assert_eq!(payload["language"], "rust");
 
     Ok(())
 }
