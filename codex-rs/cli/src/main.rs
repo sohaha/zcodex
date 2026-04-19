@@ -665,6 +665,22 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    if let Some(argv0) = raw_args.first() {
+        if codex_ztok::is_alias_invocation(argv0) {
+            codex_ztok::run_from_os_args(raw_args.into_iter().skip(1).collect())?;
+            return Ok(());
+        }
+    }
+    if raw_args
+        .get(1)
+        .and_then(|arg| arg.to_str())
+        .is_some_and(|arg| arg == "ztok")
+    {
+        codex_ztok::run_from_os_args(raw_args.into_iter().skip(2).collect())?;
+        return Ok(());
+    }
+
     let MultitoolCli {
         feature_toggles,
         remote,

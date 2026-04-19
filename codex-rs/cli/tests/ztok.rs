@@ -386,6 +386,16 @@ fn ztok_help_exposes_codex_curated_command_surface() -> Result<()> {
             vec!["读取文件并智能过滤", "--max-lines", "--tail-lines"],
             vec!["rewrite"],
         ),
+        (
+            vec!["ztok", "json", "--help"],
+            vec!["仅显示键和类型，不显示值", "--keys-only"],
+            vec!["rewrite"],
+        ),
+        (
+            vec!["ztok", "vitest", "--help"],
+            vec!["Vitest 命令紧凑输出", "Vitest 参数"],
+            vec!["run", "rewrite"],
+        ),
     ];
 
     for (args, required, forbidden) in cases {
@@ -821,6 +831,26 @@ pretty_assertions = "1"
                 .and(contains("anyhow (1)"))
                 .and(contains("serde (1)")),
         );
+
+    Ok(())
+}
+
+#[test]
+fn ztok_json_keys_only_hides_values() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("payload.json");
+    std::fs::write(&file, r#"{"token":"secret-value","count":2}"#)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "json",
+        file.to_string_lossy().as_ref(),
+        "--keys-only",
+    ])
+    .assert()
+    .success()
+    .stdout(contains("token: string").and(contains("secret-value").not()));
 
     Ok(())
 }

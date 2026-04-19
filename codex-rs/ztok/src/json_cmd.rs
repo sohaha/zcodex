@@ -36,8 +36,8 @@ fn validate_json_extension(file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 展示不含具体值的 JSON 结构
-pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
+/// 展示 JSON：默认保留简化值，或通过 `schema_only` 仅展示键和类型。
+pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     validate_json_extension(file)?;
     let timer = tracking::TimedExecution::start();
 
@@ -48,19 +48,23 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     let content =
         fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
-    let schema = filter_json_string(&content, max_depth)?;
-    println!("{schema}");
+    let output = if schema_only {
+        filter_json_string(&content, max_depth)?
+    } else {
+        filter_json_compact(&content, max_depth)?
+    };
+    println!("{output}");
     timer.track(
         &format!("cat {}", file.display()),
         "ztok json",
         &content,
-        &schema,
+        &output,
     );
     Ok(())
 }
 
-/// 展示来自标准输入的 JSON 结构
-pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
+/// 展示来自标准输入的 JSON。
+pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
@@ -73,10 +77,103 @@ pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
         .read_to_string(&mut content)
         .context("从标准输入读取失败")?;
 
-    let schema = filter_json_string(&content, max_depth)?;
-    println!("{schema}");
-    timer.track("cat - (stdin)", "ztok json -", &content, &schema);
+    let output = if schema_only {
+        filter_json_string(&content, max_depth)?
+    } else {
+        filter_json_compact(&content, max_depth)?
+    };
+    println!("{output}");
+    timer.track("cat - (stdin)", "ztok json -", &content, &output);
     Ok(())
+}
+
+/// 解析 JSON 字符串并返回保留值的紧凑表示。
+pub fn filter_json_compact(json_str: &str, max_depth: usize) -> Result<String> {
+    let value: Value = serde_json::from_str(json_str).context("解析 JSON 失败")?;
+    Ok(compact_json(&value, /*depth*/ 0, max_depth))
+}
+
+fn compact_json(value: &Value, depth: usize, max_depth: usize) -> String {
+    let indent = "  ".repeat(depth);
+
+    if depth > max_depth {
+        return format!("{indent}...");
+    }
+
+    match value {
+        Value::Null => format!("{indent}null"),
+        Value::Bool(flag) => format!("{indent}{flag}"),
+        Value::Number(number) => format!("{indent}{number}"),
+        Value::String(text) => {
+            if text.len() > 80 {
+                format!("{}\"{}...\"", indent, &text[..77])
+            } else {
+                format!("{}\"{}\"", indent, text)
+            }
+        }
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                format!("{indent}[]")
+            } else if arr.len() > 5 {
+                let first = compact_json(&arr[0], depth + 1, max_depth);
+                format!("{}[{}, ... +{} more]", indent, first.trim(), arr.len() - 1)
+            } else {
+                let items: Vec<String> = arr
+                    .iter()
+                    .map(|item| compact_json(item, depth + 1, max_depth))
+                    .collect();
+                let all_simple = arr.iter().all(|item| {
+                    matches!(
+                        item,
+                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+                    )
+                });
+                if all_simple {
+                    let inline: Vec<&str> = items.iter().map(|item| item.trim()).collect();
+                    format!("{}[{}]", indent, inline.join(", "))
+                } else {
+                    let mut lines = vec![format!("{}[", indent)];
+                    for item in &items {
+                        lines.push(format!("{item},"));
+                    }
+                    lines.push(format!("{indent}]"));
+                    lines.join("\n")
+                }
+            }
+        }
+        Value::Object(map) => {
+            if map.is_empty() {
+                format!("{indent}{{}}")
+            } else {
+                let mut lines = vec![format!("{}{{", indent)];
+                let mut keys: Vec<_> = map.keys().collect();
+                keys.sort();
+
+                for (index, key) in keys.iter().enumerate() {
+                    let item = &map[*key];
+                    let is_simple = matches!(
+                        item,
+                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
+                    );
+
+                    if is_simple {
+                        let value_str = compact_json(item, /*depth*/ 0, max_depth);
+                        lines.push(format!("{}  {}: {}", indent, key, value_str.trim()));
+                    } else {
+                        lines.push(format!("{}  {}:", indent, key));
+                        lines.push(compact_json(item, depth + 1, max_depth));
+                    }
+
+                    if index >= 20 {
+                        lines.push(format!("{}  ... +{} 个键", indent, keys.len() - index - 1));
+                        break;
+                    }
+                }
+                lines.push(format!("{indent}}}"));
+                lines.join("\n")
+            }
+        }
+    }
 }
 
 /// 解析 JSON 字符串并返回其结构表示。
@@ -244,5 +341,15 @@ mod tests {
 
         let schema = extract_schema(&json, 0, 5);
         assert!(schema.contains("... +1 个键"), "实际得到：{schema}");
+    }
+
+    #[test]
+    fn test_filter_json_compact_preserves_values() {
+        let compact = filter_json_compact(r#"{"token":"secret","count":2}"#, 5).unwrap();
+        assert!(
+            compact.contains(r#"token: "secret""#),
+            "实际得到：{compact}"
+        );
+        assert!(compact.contains("count: 2"), "实际得到：{compact}");
     }
 }

@@ -216,18 +216,7 @@ fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
     failures
 }
 
-#[derive(Debug, Clone)]
-pub enum VitestCommand {
-    Run,
-}
-
-pub fn run(cmd: VitestCommand, args: &[String], verbose: u8) -> Result<()> {
-    match cmd {
-        VitestCommand::Run => run_vitest(args, verbose),
-    }
-}
-
-fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
+pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     let mut cmd = package_manager_exec("vitest");
@@ -237,6 +226,9 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     cmd.arg("--reporter=json");
 
     for arg in args {
+        if arg == "run" || arg.starts_with("--reporter") || arg.starts_with("--watch") {
+            continue;
+        }
         cmd.arg(arg);
     }
 

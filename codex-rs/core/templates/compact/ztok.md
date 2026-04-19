@@ -15,3 +15,11 @@ Use the generic wrappers when you need proxying for arbitrary commands:
 - `codex ztok test -- <command> [args...]` runs any test command and keeps
   failures plus the summary. Use this for generic test runners that do not
   already have a dedicated ztok subcommand.
+- `codex ztok log [file]` deduplicates noisy log streams into a compact
+  error/warning-heavy summary.
+- `codex ztok json <file> --keys-only` shows JSON keys and types without
+  echoing full values back into the context window.
+
+`err` and `test` execute programs directly instead of through a shell. For
+pipes, redirects, or shell operators, wrap the real shell explicitly, such as
+`bash -lc 'cargo test 2>&1 | tail -n 40'`.

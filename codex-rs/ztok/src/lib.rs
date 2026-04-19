@@ -262,6 +262,9 @@ enum Commands {
         /// 最大深度
         #[arg(short, long, default_value = "5")]
         depth: usize,
+        /// 仅显示键和类型，不显示值
+        #[arg(long)]
+        keys_only: bool,
     },
 
     /// 汇总项目依赖
@@ -332,7 +335,7 @@ enum Commands {
         #[arg(short = 'l', long, default_value = "80")]
         max_len: usize,
         /// 最大结果数
-        #[arg(short, long, default_value = "50")]
+        #[arg(short, long, default_value = "200")]
         max: usize,
         /// 仅显示匹配片段（不显示整行）
         #[arg(short, long)]
@@ -369,8 +372,9 @@ enum Commands {
 
     /// Vitest 命令紧凑输出
     Vitest {
-        #[command(subcommand)]
-        command: VitestCommands,
+        /// Vitest 参数
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 
     /// Prisma 命令紧凑输出（无 ASCII art）
@@ -684,16 +688,6 @@ enum KubectlCommands {
     /// 透传：直接运行不支持的 kubectl 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
-}
-
-#[derive(Subcommand)]
-enum VitestCommands {
-    /// 运行测试并过滤输出（约 90% token 缩减）
-    Run {
-        /// 额外 vitest 参数
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
 }
 
 #[derive(Subcommand)]
@@ -1382,11 +1376,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             runner::run_test(&command, cli.verbose)?;
         }
 
-        Commands::Json { file, depth } => {
+        Commands::Json {
+            file,
+            depth,
+            keys_only,
+        } => {
             if file == Path::new("-") {
-                json_cmd::run_stdin(depth, cli.verbose)?;
+                json_cmd::run_stdin(depth, keys_only, cli.verbose)?;
             } else {
-                json_cmd::run(&file, depth, cli.verbose)?;
+                json_cmd::run(&file, depth, keys_only, cli.verbose)?;
             }
         }
 
@@ -1522,11 +1520,9 @@ fn run_cli(cli: Cli) -> Result<()> {
             wc_cmd::run(&args, cli.verbose)?;
         }
 
-        Commands::Vitest { command } => match command {
-            VitestCommands::Run { args } => {
-                vitest_cmd::run(vitest_cmd::VitestCommand::Run, &args, cli.verbose)?;
-            }
-        },
+        Commands::Vitest { args } => {
+            vitest_cmd::run(&args, cli.verbose)?;
+        }
 
         Commands::Prisma { command } => match command {
             PrismaCommands::Generate { args } => {
