@@ -45,9 +45,9 @@ pub struct Cli {
     #[clap(skip)]
     pub resume_include_non_interactive: bool,
 
-    /// Internal: clean the selected CTF rollout before resuming it.
+    /// Internal: clean the selected zoffsec rollout before resuming it.
     #[clap(skip)]
-    pub resume_ctf_clean: bool,
+    pub resume_zoffsec_clean: bool,
 
     // Internal controls set by the top-level `codex fork` subcommand.
     // These are not exposed as user flags on the base `codex` command.

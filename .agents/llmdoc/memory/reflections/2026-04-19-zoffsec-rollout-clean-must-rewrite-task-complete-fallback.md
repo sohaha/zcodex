@@ -1,8 +1,8 @@
-# 2026-04-19 CTF rollout 清理要同时改写 `task_complete.last_agent_message`，拒绝检测要区分强短语和弱前缀
+# 2026-04-19 zoffsec rollout 清理要同时改写 `task_complete.last_agent_message`，拒绝检测要区分强短语和弱前缀
 
 ## 背景
 
-- 本仓 `codex ctf` 是参考 `ryfineZ/codex-session-patcher` 落地的，但之前没有做过一次真实的 upstream baseline sync。
+- 本仓 `codex zoffsec` 是参考 `ryfineZ/codex-session-patcher` 落地的，但之前没有做过一次真实的 upstream baseline sync。
 - 这次按最新 upstream `af401d3e53f3836788c4326e01499d7d7946ceb1` 审计 `core/formats.py`、`core/detector.py` 和 `core/patcher.py` 后，发现本地 `rollout/src/patch.rs` 有两个具体缺口：
   - 只改了 `event_msg.agent_message`，没改 `event_msg.task_complete.last_agent_message`
   - 拒绝检测只做了少量英文全文匹配，没有 upstream 那种“强短语全文 + 弱关键词开头”分层

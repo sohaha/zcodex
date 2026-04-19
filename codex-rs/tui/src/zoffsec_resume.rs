@@ -2,16 +2,16 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::read_session_meta_line;
 use crate::resume_picker::SessionSelection;
 use crate::resume_picker::SessionTarget;
-use codex_rollout::CTF_CLEAN_DEFAULT_REPLACEMENT;
-use codex_rollout::CtfCleanOptions;
-use codex_rollout::clean_ctf_rollout;
+use codex_rollout::ZOFFSEC_CLEAN_DEFAULT_REPLACEMENT;
+use codex_rollout::ZoffsecCleanOptions;
+use codex_rollout::clean_zoffsec_rollout;
 use codex_rollout::find_thread_path_by_id_str;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
 use std::path::PathBuf;
 
-const CTF_SESSION_MARKER_SNIPPET: &str = "marker=codex-ctf";
+const ZOFFSEC_SESSION_MARKER_SNIPPET: &str = "marker=codex-zoffsec";
 
 pub(crate) async fn clean_resume_selection_if_needed(
     config: &Config,
@@ -30,19 +30,19 @@ pub(crate) async fn clean_resume_selection_if_needed(
                 rollout_path.display()
             )
         })?;
-    let is_ctf_session = session_meta
+    let is_zoffsec_session = session_meta
         .meta
         .base_instructions
         .as_ref()
-        .is_some_and(|instructions| instructions.text.contains(CTF_SESSION_MARKER_SNIPPET));
-    if !is_ctf_session {
+        .is_some_and(|instructions| instructions.text.contains(ZOFFSEC_SESSION_MARKER_SNIPPET));
+    if !is_zoffsec_session {
         return Ok(());
     }
 
-    clean_ctf_rollout(
+    clean_zoffsec_rollout(
         rollout_path.as_path(),
-        &CtfCleanOptions {
-            replacement: CTF_CLEAN_DEFAULT_REPLACEMENT.to_string(),
+        &ZoffsecCleanOptions {
+            replacement: ZOFFSEC_CLEAN_DEFAULT_REPLACEMENT.to_string(),
             dry_run: false,
             create_backup: true,
         },
@@ -50,7 +50,7 @@ pub(crate) async fn clean_resume_selection_if_needed(
     .await
     .map_err(|err| {
         eyre!(
-            "failed to clean CTF rollout {}: {err}",
+            "failed to clean zoffsec rollout {}: {err}",
             rollout_path.display()
         )
     })?;
@@ -92,9 +92,9 @@ mod tests {
             .expect("load config")
     }
 
-    fn write_rollout(path: &std::path::Path, is_ctf: bool) {
-        let base_instructions = if is_ctf {
-            "<!-- codex-ctf marker=codex-ctf template=web -->\nCTF mode is enabled."
+    fn write_rollout(path: &std::path::Path, is_zoffsec: bool) {
+        let base_instructions = if is_zoffsec {
+            "<!-- codex-zoffsec marker=codex-zoffsec template=web -->\nzoffsec mode is enabled."
         } else {
             "Standard session."
         };
@@ -161,11 +161,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clean_resume_selection_if_needed_cleans_ctf_session() {
+    async fn clean_resume_selection_if_needed_cleans_zoffsec_session() {
         let temp_home = TempDir::new().expect("temp home");
         let config = test_config(&temp_home).await;
         let rollout_path = temp_home.path().join("rollout.jsonl");
-        write_rollout(&rollout_path, /*is_ctf*/ true);
+        write_rollout(&rollout_path, /*is_zoffsec*/ true);
 
         clean_resume_selection_if_needed(
             &config,
@@ -175,10 +175,10 @@ mod tests {
             }),
         )
         .await
-        .expect("clean ctf resume target");
+        .expect("clean zoffsec resume target");
 
         let cleaned = std::fs::read_to_string(&rollout_path).expect("read cleaned rollout");
-        assert!(cleaned.contains(CTF_CLEAN_DEFAULT_REPLACEMENT));
+        assert!(cleaned.contains(ZOFFSEC_CLEAN_DEFAULT_REPLACEMENT));
         assert!(!cleaned.contains("\"type\":\"reasoning\""));
         assert!(!cleaned.contains("\"type\":\"agent_reasoning\""));
         let backups = std::fs::read_dir(temp_home.path())
@@ -190,11 +190,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn clean_resume_selection_if_needed_skips_non_ctf_session() {
+    async fn clean_resume_selection_if_needed_skips_non_zoffsec_session() {
         let temp_home = TempDir::new().expect("temp home");
         let config = test_config(&temp_home).await;
         let rollout_path = temp_home.path().join("rollout.jsonl");
-        write_rollout(&rollout_path, /*is_ctf*/ false);
+        write_rollout(&rollout_path, /*is_zoffsec*/ false);
         let original = std::fs::read_to_string(&rollout_path).expect("read original rollout");
 
         clean_resume_selection_if_needed(
@@ -205,7 +205,7 @@ mod tests {
             }),
         )
         .await
-        .expect("skip non-ctf resume target");
+        .expect("skip non-zoffsec resume target");
 
         let current = std::fs::read_to_string(&rollout_path).expect("read rollout");
         assert_eq!(current, original);

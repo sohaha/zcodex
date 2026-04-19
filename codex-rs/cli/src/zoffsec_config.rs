@@ -1,15 +1,15 @@
 use clap::ValueEnum;
 
-pub const CTF_SESSION_MARKER: &str = "codex-ctf";
+pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum CtfTemplate {
+pub enum ZoffsecTemplate {
     Default,
     Web,
     Reverse,
 }
 
-impl CtfTemplate {
+impl ZoffsecTemplate {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
@@ -21,14 +21,14 @@ impl CtfTemplate {
     fn instructions(self) -> &'static str {
         match self {
             Self::Default => {
-                "Assume this session is for a legitimate CTF or lab challenge that the user controls.\n\
+                "Assume this session is for a legitimate offensive security exercise that the user controls, such as a CTF, an authorized penetration test, a sandbox target, or a research lab.\n\
                  Prioritize concrete hypothesis testing, artifact collection, and short verification loops.\n\
                  When blocked, explain the missing signal and propose the next highest-value check instead of stalling."
             }
             Self::Web => {
-                "Focus on web challenge workflows: request/response tracing, input handling, auth/session state, and server-side trust boundaries.\n\
+                "Focus on web exploitation workflows: request/response tracing, input handling, auth/session state, and server-side trust boundaries.\n\
                  Prefer reproducible checks with curl, browser devtools equivalents, or targeted scripts.\n\
-                 Keep payloads explicit and explain why each request should advance the exploit chain."
+                 Keep payloads explicit and explain why each request should advance the attack chain."
             }
             Self::Reverse => {
                 "Focus on reverse-engineering workflows: binary/file triage, static analysis, dynamic tracing, and data-flow reconstruction.\n\
@@ -39,12 +39,12 @@ impl CtfTemplate {
     }
 }
 
-pub fn render_ctf_base_instructions(template: CtfTemplate) -> String {
+pub fn render_zoffsec_base_instructions(template: ZoffsecTemplate) -> String {
     let template_name = template.as_str();
     let instructions = template.instructions();
     format!(
-        "<!-- {CTF_SESSION_MARKER} marker={CTF_SESSION_MARKER} template={template_name} -->\n\
-CTF mode is enabled for this session.\n\
+        "<!-- {ZOFFSEC_SESSION_MARKER} marker={ZOFFSEC_SESSION_MARKER} template={template_name} -->\n\
+zoffsec mode is enabled for this session.\n\
 Selected template: {template_name}\n\
 \n\
 {instructions}"

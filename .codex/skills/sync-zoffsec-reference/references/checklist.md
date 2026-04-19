@@ -1,18 +1,18 @@
-# Codex Session Patcher Sync Checklist
+# zoffsec Reference Sync Checklist
 
-Use this checklist for each `codex ctf` upstream sync.
+Use this checklist for each `codex zoffsec` upstream sync.
 
 ## Baseline
 
-- Read `/workspace/.codex/skills/sync-codex-session-patcher/STATE.md`
+- Read `/workspace/.codex/skills/sync-zoffsec-reference/STATE.md`
 - Confirm upstream repo and exact ref/hash
 - Confirm whether this round is:
   - selective sync
   - behavior alignment
   - broader sync
 - Read the current local scope docs:
-  - `/workspace/.agents/plan/2026-04-07-ctf-subcommand.md`
-  - `/workspace/.agents/issues/2026-04-07-ctf-subcommand.toml`
+  - `/workspace/.agents/plan/2026-04-07-zoffsec-subcommand.md`
+  - `/workspace/.agents/issues/2026-04-07-zoffsec-subcommand.toml`
 
 ## Audit
 
@@ -25,19 +25,19 @@ Use this checklist for each `codex ctf` upstream sync.
   - `codex_session_patcher/ctf_config/templates.py`
   - `codex_session_patcher/ctf_config/installer.py`
 - Review local Codex-specific behavior in:
-  - `codex-rs/cli/src/ctf_cmd.rs`
-  - `codex-rs/cli/src/ctf_config.rs`
+  - `codex-rs/cli/src/zoffsec_cmd.rs`
+  - `codex-rs/cli/src/zoffsec_config.rs`
   - `codex-rs/rollout/src/patch.rs`
-  - `codex-rs/tui/src/ctf_resume.rs`
+  - `codex-rs/tui/src/zoffsec_resume.rs`
 
 ## Implementation
 
 - Prefer selective parity updates over broad porting
 - Update Rust implementation first
 - Preserve:
-  - `codex ctf` subcommand entrypoint
+  - `codex zoffsec` subcommand entrypoint
   - marker-based session identification
-  - explicit `ctf clean`
+  - explicit `zoffsec clean`
   - explicit clean-then-resume behavior
 - Update plan/issue docs only when sync scope or recorded validation changes
 - Update `STATE.md` after a landed sync

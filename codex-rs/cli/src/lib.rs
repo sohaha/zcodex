@@ -1,8 +1,8 @@
-pub mod ctf_cmd;
-pub mod ctf_config;
 pub(crate) mod debug_sandbox;
 mod exit_status;
 pub(crate) mod login;
+pub mod zoffsec_cmd;
+pub mod zoffsec_config;
 
 use clap::Parser;
 use codex_utils_cli::CliConfigOverrides;

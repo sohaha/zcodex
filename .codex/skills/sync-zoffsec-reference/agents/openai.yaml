@@ -1,0 +1,7 @@
+interface:
+  display_name: "同步 zoffsec 上游"
+  short_description: "按最小范围把 codex-session-patcher 的 Codex zoffsec 相关逻辑同步到本仓"
+  default_prompt: "Use $sync-zoffsec-reference to compare the local `codex zoffsec` implementation with the upstream `ryfineZ/codex-session-patcher` repo, port the minimal necessary Codex-specific behavior, and update the recorded sync baseline."
+
+policy:
+  allow_implicit_invocation: true

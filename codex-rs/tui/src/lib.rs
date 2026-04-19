@@ -124,7 +124,6 @@ mod collaboration_modes;
 mod color;
 pub(crate) mod custom_terminal;
 pub use custom_terminal::Terminal;
-mod ctf_resume;
 mod cwd_prompt;
 mod debug_config;
 mod diff_render;
@@ -138,6 +137,7 @@ mod frames;
 mod get_git_diff;
 mod history_cell;
 pub(crate) mod insert_history;
+mod zoffsec_resume;
 pub use insert_history::insert_history_lines;
 mod key_hint;
 mod line_truncation;
@@ -1388,8 +1388,8 @@ async fn run_ratatui_app(
         resume_picker::SessionSelection::StartFresh
     };
 
-    if cli.resume_ctf_clean {
-        ctf_resume::clean_resume_selection_if_needed(&config, &session_selection).await?;
+    if cli.resume_zoffsec_clean {
+        zoffsec_resume::clean_resume_selection_if_needed(&config, &session_selection).await?;
     }
 
     let current_cwd = config.cwd.clone();

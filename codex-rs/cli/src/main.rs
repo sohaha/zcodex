@@ -16,6 +16,10 @@ use codex_cli::run_login_with_api_key;
 use codex_cli::run_login_with_chatgpt;
 use codex_cli::run_login_with_device_code;
 use codex_cli::run_logout;
+use codex_cli::zoffsec_cmd::ZoffsecCommand;
+use codex_cli::zoffsec_cmd::ZoffsecSubcommand;
+use codex_cli::zoffsec_cmd::apply_zoffsec_overrides;
+use codex_cli::zoffsec_cmd::run_zoffsec_clean_command;
 use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
 use codex_exec::Command as ExecCommand;
@@ -143,6 +147,9 @@ enum Subcommand {
 
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
+
+    /// Start or manage an offensive security workflow session.
+    Zoffsec(ZoffsecCommand),
 
     /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
@@ -666,11 +673,11 @@ fn main() -> anyhow::Result<()> {
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     let raw_args = std::env::args_os().collect::<Vec<_>>();
-    if let Some(argv0) = raw_args.first() {
-        if codex_ztok::is_alias_invocation(argv0) {
-            codex_ztok::run_from_os_args(raw_args.into_iter().skip(1).collect())?;
-            return Ok(());
-        }
+    if let Some(argv0) = raw_args.first()
+        && codex_ztok::is_alias_invocation(argv0)
+    {
+        codex_ztok::run_from_os_args(raw_args.into_iter().skip(1).collect())?;
+        return Ok(());
     }
     if raw_args
         .get(1)
@@ -709,6 +716,53 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             )
             .await?;
             handle_app_exit(exit_info)?;
+        }
+        Some(Subcommand::Zoffsec(zoffsec_cli)) => {
+            let ZoffsecCommand { start, subcommand } = zoffsec_cli;
+            match subcommand {
+                None => {
+                    let mut zoffsec_interactive = start.interactive;
+                    prepend_config_flags(
+                        &mut zoffsec_interactive.config_overrides,
+                        root_config_overrides.clone(),
+                    );
+                    apply_zoffsec_overrides(
+                        &mut zoffsec_interactive.config_overrides,
+                        start.template,
+                    );
+                    let exit_info = run_interactive_tui(
+                        zoffsec_interactive,
+                        root_remote.clone(),
+                        root_remote_auth_token_env.clone(),
+                        arg0_paths.clone(),
+                    )
+                    .await?;
+                    handle_app_exit(exit_info)?;
+                }
+                Some(ZoffsecSubcommand::Clean(clean)) => {
+                    reject_remote_mode_for_subcommand(
+                        root_remote.as_deref(),
+                        root_remote_auth_token_env.as_deref(),
+                        "zoffsec clean",
+                    )?;
+                    run_zoffsec_clean_command(clean, root_config_overrides.clone()).await?;
+                }
+                Some(ZoffsecSubcommand::Resume(resume)) => {
+                    interactive = finalize_zoffsec_resume_interactive(
+                        interactive,
+                        root_config_overrides.clone(),
+                        *resume,
+                    );
+                    let exit_info = run_interactive_tui(
+                        interactive,
+                        root_remote.clone(),
+                        root_remote_auth_token_env.clone(),
+                        arg0_paths.clone(),
+                    )
+                    .await?;
+                    handle_app_exit(exit_info)?;
+                }
+            }
         }
         Some(Subcommand::Exec(mut exec_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -1490,6 +1544,24 @@ fn finalize_resume_interactive(
     interactive
 }
 
+fn finalize_zoffsec_resume_interactive(
+    interactive: TuiCli,
+    root_config_overrides: CliConfigOverrides,
+    resume: codex_cli::zoffsec_cmd::ZoffsecResumeCommand,
+) -> TuiCli {
+    let mut interactive = finalize_resume_interactive(
+        interactive,
+        root_config_overrides,
+        resume.session_id,
+        resume.last,
+        resume.all,
+        /*include_non_interactive*/ false,
+        resume.interactive,
+    );
+    interactive.resume_zoffsec_clean = true;
+    interactive
+}
+
 /// Build the final `TuiCli` for a `codex fork` invocation.
 fn finalize_fork_interactive(
     mut interactive: TuiCli,
@@ -1633,6 +1705,27 @@ mod tests {
         };
 
         finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
+    }
+
+    fn finalize_zoffsec_resume_from_args(args: &[&str]) -> TuiCli {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let MultitoolCli {
+            mut interactive,
+            subcommand,
+            feature_toggles: _,
+            remote: _,
+        } = cli;
+        let root_overrides = std::mem::take(&mut interactive.config_overrides);
+
+        let Subcommand::Zoffsec(ZoffsecCommand {
+            subcommand: Some(ZoffsecSubcommand::Resume(resume)),
+            ..
+        }) = subcommand.expect("zoffsec present")
+        else {
+            unreachable!()
+        };
+
+        finalize_zoffsec_resume_interactive(interactive, root_overrides, *resume)
     }
 
     #[test]
@@ -2062,6 +2155,37 @@ mod tests {
             panic!("expected resume subcommand");
         };
         assert_eq!(remote.remote.as_deref(), Some("ws://127.0.0.1:4500"));
+    }
+
+    #[test]
+    fn zoffsec_subcommand_registers_at_top_level() {
+        let cli =
+            MultitoolCli::try_parse_from(["codex", "zoffsec", "--template", "reverse", "triage"])
+                .expect("parse");
+
+        let Some(Subcommand::Zoffsec(command)) = cli.subcommand else {
+            panic!("expected zoffsec subcommand");
+        };
+
+        assert_eq!(command.start.template.as_str(), "reverse");
+        assert_eq!(command.start.interactive.prompt.as_deref(), Some("triage"));
+        assert!(command.subcommand.is_none());
+    }
+
+    #[test]
+    fn finalize_zoffsec_resume_enables_clean_before_resume() {
+        let interactive = finalize_zoffsec_resume_from_args(&[
+            "codex",
+            "zoffsec",
+            "resume",
+            "--last",
+            "-m",
+            "gpt-5.1-test",
+        ]);
+
+        assert!(interactive.resume_last);
+        assert!(interactive.resume_zoffsec_clean);
+        assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
     }
 
     #[test]
