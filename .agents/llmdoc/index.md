@@ -27,7 +27,12 @@
 ## 最近三天反思
 - 时间窗按当前日期 `2026-04-19` 计算，覆盖 `2026-04-17` 至 `2026-04-19`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-19-ubuntu-macos-arm64-cross-cc-search-dirs-wrapper.md`：Linux 交叉构建 macOS arm64 时，不能只配 target-specific `CC/CXX`；还要兜住 PATH 里的裸 `cc` / `c++`，避免第三方 `build.rs` 把宿主 Linux linker path 注入 Apple 链接。
+- `.agents/llmdoc/memory/reflections/2026-04-19-core-compact-localization-boundary.md`：`core` 压缩链路汉化时，应区分用户可见事件流与内部模板；模板 `md` 不应按 UI 文案翻译，验证上优先拿 `cargo check -p codex-core --lib` 证据并显式隔离仓库现有测试阻塞。
+- `.agents/llmdoc/memory/reflections/2026-04-19-ctf-sync-skill-should-pin-reference-and-local-surface.md`：为参考型上游仓库补同步 skill 时，不能只写 upstream 地址；要同时固定首选参考文件、默认 selective sync 范围，以及本地必须保留的架构边界。
 - `.agents/llmdoc/memory/reflections/2026-04-19-upstream-sync-image-detail-and-mergeback-compile-gate.md`：upstream 同步不能只看冲突文件；共享模型字段扩展要补全局匹配/构造扫描，并把 merge-back 编译阻塞显式写入 `STATE.md`。
+- `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-half-wired-build-warnings.md`：`zmemory` / `ztldr` 构建告警往往来自“实现已写但生产未接线”的 prompt/runtime/state 缺口，应优先核对接线 seam，而不是先怀疑 Cargo feature。
+- `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-main-path-and-pending-input-gaps.md`：`zmemory recall` 和 `ztldr` 路由这类 turn 级派生逻辑，不能只接普通初始输入；还要核对主路径 producer、pending-input 和 mailbox-triggered turn 是否都覆盖。
 - `.agents/llmdoc/memory/reflections/2026-04-18-responses-replay-reasoning-content-strip.md`：Responses API replay 历史时不能回传 `reasoning.content`；应在出站输入整理层统一剥离 raw reasoning，并用请求级测试锁住。
 - `.agents/llmdoc/memory/reflections/2026-04-18-inter-agent-envelope-visible-turn-item-leak.md`：inter-agent JSON envelope 不能泄露到 turn-item / last-agent-message 这类可见 assistant 文本提取层。
 - `.agents/llmdoc/memory/reflections/2026-04-18-provider-config-log-redaction.md`：provider 配置日志不能直接打印完整 `Debug`；应统一走安全摘要视图，并把 token/header/query 这类任意字符串载荷一并纳入脱敏范围。
