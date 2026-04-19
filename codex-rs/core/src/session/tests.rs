@@ -13,7 +13,6 @@ use crate::config_loader::project_trust_key;
 use crate::exec::ExecCapturePolicy;
 use crate::function_tool::FunctionCallError;
 use crate::hook_runtime::PendingInputRecord;
-use crate::memories::zmemory_preferences::build_stable_preference_recall_note;
 use crate::shell::default_user_shell;
 use crate::skills::SkillRenderSideEffects;
 use crate::skills::render::SkillMetadataBudget;
@@ -57,6 +56,8 @@ use crate::tools::context::ToolPayload;
 use crate::tools::handlers::ShellHandler;
 use crate::tools::handlers::UnifiedExecHandler;
 use crate::tools::registry::ToolHandler;
+use crate::tools::rewrite::ProblemKind;
+use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::router::ToolCallSource;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_app_server_protocol::AppInfo;
@@ -5236,6 +5237,34 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
 }
 
 #[tokio::test]
+async fn record_context_updates_and_set_reference_context_item_emits_pending_zmemory_recall_note_for_steady_state_turns()
+ {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    {
+        let mut state = session.state.lock().await;
+        state.set_reference_context_item(Some(turn_context.to_turn_context_item()));
+        state.set_pending_zmemory_recall_note(
+            turn_context.sub_id.as_str(),
+            Some("## Zmemory Recall\n- `core://my_user`: Keep responses concise.".to_string()),
+        );
+    }
+
+    session
+        .record_context_updates_and_set_reference_context_item(&turn_context)
+        .await;
+
+    let history = session.clone_history().await;
+    let developer_texts = developer_input_texts(history.raw_items());
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected steady-state context updates to include pending recall note, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn record_context_updates_and_set_reference_context_item_persists_split_file_system_policy_to_rollout()
  {
     let (session, mut turn_context) = make_session_and_context().await;
@@ -5882,7 +5911,7 @@ async fn pending_user_input_updates_tldr_directives_and_captures_zmemory_prefere
         additional_contexts: Vec::new(),
     }];
 
-    crate::session::turn::apply_pending_user_input_side_effects(
+    let recall_items = crate::session::turn::apply_pending_user_input_side_effects(
         &session,
         &turn_context,
         &pending_input,
@@ -5893,19 +5922,83 @@ async fn pending_user_input_updates_tldr_directives_and_captures_zmemory_prefere
     assert!(directives.disable_auto_tldr_once);
     assert!(directives.force_raw_grep);
     assert!(!directives.prefer_context_search);
+    let recall_texts = developer_input_texts(&recall_items);
+    assert!(
+        recall_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall"))
+    );
+    assert!(
+        recall_texts
+            .iter()
+            .any(|text| text.contains("Respond in Chinese by default."))
+    );
+    assert!(
+        recall_texts
+            .iter()
+            .any(|text| text.contains("Keep responses concise by default."))
+    );
+}
 
-    let recall_note = build_stable_preference_recall_note(
+#[tokio::test]
+async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    *turn_context.tool_routing_directives.write().await = ToolRoutingDirectives {
+        problem_kind: ProblemKind::Structural,
+        disable_auto_tldr_once: true,
+        force_tldr: false,
+        force_raw_read: false,
+        force_raw_grep: true,
+        prefer_context_search: false,
+    };
+    crate::memories::zmemory_preferences::capture_stable_preference_memories(
         &session,
         &turn_context,
         &[UserInput::Text {
-            text: "继续按上次方式。".to_string(),
+            text: "以后默认用中文回答，尽量简洁一点。".to_string(),
             text_elements: Vec::new(),
         }],
     )
-    .await
-    .expect("pending user input should proactively capture stable preferences");
-    assert!(recall_note.contains("Respond in Chinese by default."));
-    assert!(recall_note.contains("Keep responses concise by default."));
+    .await;
+
+    let recall_items = crate::session::turn::apply_pending_user_input_side_effects(
+        &session,
+        &turn_context,
+        &[PendingInputRecord::UserMessage {
+            content: vec![UserInput::Text {
+                text: "继续按上次方式。".to_string(),
+                text_elements: Vec::new(),
+            }],
+            response_item: ResponseInputItem::from(vec![UserInput::Text {
+                text: "继续按上次方式。".to_string(),
+                text_elements: Vec::new(),
+            }])
+            .into(),
+            additional_contexts: Vec::new(),
+        }],
+    )
+    .await;
+
+    assert_eq!(
+        *turn_context.tool_routing_directives.read().await,
+        ToolRoutingDirectives {
+            problem_kind: ProblemKind::Structural,
+            disable_auto_tldr_once: true,
+            force_tldr: false,
+            force_raw_read: false,
+            force_raw_grep: true,
+            prefer_context_search: false,
+        }
+    );
+    let recall_texts = developer_input_texts(&recall_items);
+    assert!(
+        recall_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall"))
+    );
 }
 
 #[tokio::test]
@@ -5932,6 +6025,38 @@ async fn queued_response_items_for_next_turn_move_into_next_active_turn() {
     .await;
 
     assert_eq!(sess.get_pending_input().await, vec![queued_item]);
+}
+
+#[tokio::test]
+async fn empty_input_turn_seeds_tldr_directives_from_queued_user_input() {
+    let (sess, tc, _rx) = make_session_and_context_with_rx().await;
+    sess.queue_response_items_for_next_turn(vec![ResponseInputItem::from(vec![UserInput::Text {
+        text: "不要 ztldr，按 regex 用 ripgrep 精确 grep。".to_string(),
+        text_elements: Vec::new(),
+    }])])
+    .await;
+
+    sess.spawn_task(
+        Arc::clone(&tc),
+        Vec::new(),
+        NeverEndingTask {
+            kind: TaskKind::Regular,
+            listen_to_cancellation_token: false,
+        },
+    )
+    .await;
+
+    assert_eq!(
+        *tc.tool_routing_directives.read().await,
+        ToolRoutingDirectives {
+            problem_kind: ProblemKind::Structural,
+            disable_auto_tldr_once: true,
+            force_tldr: false,
+            force_raw_read: false,
+            force_raw_grep: true,
+            prefer_context_search: false,
+        }
+    );
 }
 
 #[tokio::test]
@@ -6001,6 +6126,40 @@ async fn trigger_turn_mailbox_mail_waits_for_next_turn_after_answer_boundary() {
     sess.abort_all_tasks(TurnAbortReason::Replaced).await;
 
     assert!(sess.has_trigger_turn_mailbox_items().await);
+}
+
+#[tokio::test]
+async fn empty_input_turn_seeds_tldr_directives_from_trigger_turn_mailbox_prompt() {
+    let (sess, tc, _rx) = make_session_and_context_with_rx().await;
+    sess.enqueue_mailbox_communication(InterAgentCommunication::new(
+        AgentPath::try_from("/root/worker").expect("worker path should parse"),
+        AgentPath::root(),
+        Vec::new(),
+        "不要 ztldr，按 regex 用 ripgrep 精确 grep。".to_string(),
+        /*trigger_turn*/ true,
+    ));
+
+    sess.spawn_task(
+        Arc::clone(&tc),
+        Vec::new(),
+        NeverEndingTask {
+            kind: TaskKind::Regular,
+            listen_to_cancellation_token: false,
+        },
+    )
+    .await;
+
+    assert_eq!(
+        *tc.tool_routing_directives.read().await,
+        ToolRoutingDirectives {
+            problem_kind: ProblemKind::Structural,
+            disable_auto_tldr_once: true,
+            force_tldr: false,
+            force_raw_read: false,
+            force_raw_grep: true,
+            prefer_context_search: false,
+        }
+    );
 }
 
 #[tokio::test]

@@ -1507,14 +1507,35 @@ impl Session {
         };
         let shell = self.user_shell();
         let exec_policy = self.services.exec_policy.current();
-        crate::context_manager::updates::build_settings_update_items(
+        let mut items = crate::context_manager::updates::build_settings_update_items(
             reference_context_item,
             previous_turn_settings.as_ref(),
             current_context,
             shell.as_ref(),
             exec_policy.as_ref(),
             self.features.enabled(Feature::Personality),
-        )
+        );
+        let pending_zmemory_recall_note = {
+            let state = self.state.lock().await;
+            state.pending_zmemory_recall_note_for(current_context.sub_id.as_str())
+        };
+        if current_context.features.enabled(Feature::Zmemory)
+            && let Some(recall_note) = pending_zmemory_recall_note
+            && let Some(recall_item) =
+                crate::context_manager::updates::build_developer_update_item(vec![recall_note])
+        {
+            if items.first().is_some_and(|item| {
+                matches!(
+                    item,
+                    ResponseItem::Message { role, .. } if role == "developer"
+                )
+            }) {
+                items.insert(1, recall_item);
+            } else {
+                items.insert(0, recall_item);
+            }
+        }
+        items
     }
 
     /// Persist the event to rollout and send it to clients.

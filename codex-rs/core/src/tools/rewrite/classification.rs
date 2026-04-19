@@ -31,24 +31,87 @@ impl Default for ToolRoutingIntent {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoTldrDirective {
+    DisableOnce,
+    ForceTldr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct ToolRoutingUpdate {
+    problem_kind: Option<ProblemKind>,
+    auto_tldr: Option<AutoTldrDirective>,
+    force_raw_read: bool,
+    force_raw_grep: bool,
+}
+
 pub(crate) fn classify_tool_routing_intent(input: &[UserInput]) -> ToolRoutingIntent {
-    let normalized = input
+    apply_tool_routing_updates(ToolRoutingIntent::default(), input)
+}
+
+pub(crate) fn apply_tool_routing_updates(
+    mut current: ToolRoutingIntent,
+    input: &[UserInput],
+) -> ToolRoutingIntent {
+    for normalized in normalized_text_inputs(input) {
+        current = apply_routing_update(current, classify_normalized_text(&normalized));
+    }
+    current
+}
+
+fn apply_routing_update(
+    mut current: ToolRoutingIntent,
+    update: ToolRoutingUpdate,
+) -> ToolRoutingIntent {
+    if let Some(problem_kind) = update.problem_kind {
+        current.problem_kind = problem_kind;
+    }
+
+    match update.auto_tldr {
+        Some(AutoTldrDirective::DisableOnce) => {
+            current.disable_auto_tldr_once = true;
+            current.force_tldr = false;
+        }
+        Some(AutoTldrDirective::ForceTldr) => {
+            current.disable_auto_tldr_once = false;
+            current.force_tldr = true;
+            current.force_raw_read = false;
+            current.force_raw_grep = false;
+        }
+        None => {}
+    }
+
+    if update.force_raw_read {
+        current.force_raw_read = true;
+        current.force_raw_grep = false;
+        current.force_tldr = false;
+    }
+    if update.force_raw_grep {
+        current.force_raw_grep = true;
+        current.force_raw_read = false;
+        current.force_tldr = false;
+    }
+
+    current.prefer_context_search = !current.disable_auto_tldr_once
+        && !current.force_raw_grep
+        && !matches!(current.problem_kind, ProblemKind::Factual);
+    current
+}
+
+fn normalized_text_inputs(input: &[UserInput]) -> Vec<String> {
+    input
         .iter()
         .filter_map(|item| match item {
             UserInput::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .to_lowercase()
-        .replace('`', "");
-
-    classify_normalized_text(&normalized)
+        .map(|text| text.to_lowercase().replace('`', ""))
+        .collect()
 }
 
-fn classify_normalized_text(normalized: &str) -> ToolRoutingIntent {
+fn classify_normalized_text(normalized: &str) -> ToolRoutingUpdate {
     let mentions_ztldr = normalized.contains("ztldr") || normalized.contains("tldr");
-    let disable_auto_tldr_once = mentions_ztldr
+    let auto_tldr = if mentions_ztldr
         && contains_any(
             normalized,
             &[
@@ -71,9 +134,9 @@ fn classify_normalized_text(normalized: &str) -> ToolRoutingIntent {
                 "skip ztldr",
                 "skip tldr",
             ],
-        );
-    let force_tldr = mentions_ztldr
-        && !disable_auto_tldr_once
+        ) {
+        Some(AutoTldrDirective::DisableOnce)
+    } else if mentions_ztldr
         && contains_any(
             normalized,
             &[
@@ -99,7 +162,12 @@ fn classify_normalized_text(normalized: &str) -> ToolRoutingIntent {
                 "use tldr",
                 "analyze with tldr",
             ],
-        );
+        )
+    {
+        Some(AutoTldrDirective::ForceTldr)
+    } else {
+        None
+    };
 
     let force_raw_read = contains_any(
         normalized,
@@ -161,19 +229,17 @@ fn classify_normalized_text(normalized: &str) -> ToolRoutingIntent {
         ],
     );
     let problem_kind = match (structural, factual) {
-        (true, true) => ProblemKind::Mixed,
-        (false, true) => ProblemKind::Factual,
-        _ => ProblemKind::Structural,
+        (true, true) => Some(ProblemKind::Mixed),
+        (false, true) => Some(ProblemKind::Factual),
+        (true, false) => Some(ProblemKind::Structural),
+        (false, false) => None,
     };
 
-    ToolRoutingIntent {
+    ToolRoutingUpdate {
         problem_kind,
-        disable_auto_tldr_once,
-        force_tldr,
+        auto_tldr,
         force_raw_read,
         force_raw_grep,
-        prefer_context_search: !disable_auto_tldr_once
-            && !matches!(problem_kind, ProblemKind::Factual),
     }
 }
 
@@ -185,6 +251,7 @@ fn contains_any(text: &str, needles: &[&str]) -> bool {
 mod tests {
     use super::ProblemKind;
     use super::ToolRoutingIntent;
+    use super::apply_tool_routing_updates;
     use super::classify_tool_routing_intent;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
@@ -302,6 +369,62 @@ mod tests {
                 force_raw_read: false,
                 force_raw_grep: true,
                 prefer_context_search: false,
+            }
+        );
+    }
+
+    #[test]
+    fn neutral_follow_up_preserves_existing_directives() {
+        let directives = apply_tool_routing_updates(
+            ToolRoutingIntent {
+                problem_kind: ProblemKind::Structural,
+                disable_auto_tldr_once: true,
+                force_tldr: false,
+                force_raw_read: false,
+                force_raw_grep: true,
+                prefer_context_search: false,
+            },
+            &[UserInput::Text {
+                text: "继续看一下。".to_string(),
+                text_elements: Vec::new(),
+            }],
+        );
+
+        assert_eq!(
+            directives,
+            ToolRoutingIntent {
+                problem_kind: ProblemKind::Structural,
+                disable_auto_tldr_once: true,
+                force_tldr: false,
+                force_raw_read: false,
+                force_raw_grep: true,
+                prefer_context_search: false,
+            }
+        );
+    }
+
+    #[test]
+    fn latest_follow_up_overrides_conflicting_prior_directives() {
+        let directives = classify_tool_routing_intent(&[
+            UserInput::Text {
+                text: "不要 ztldr，按 regex 用 ripgrep。".to_string(),
+                text_elements: Vec::new(),
+            },
+            UserInput::Text {
+                text: "还是用 ztldr 看调用关系。".to_string(),
+                text_elements: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(
+            directives,
+            ToolRoutingIntent {
+                problem_kind: ProblemKind::Structural,
+                disable_auto_tldr_once: false,
+                force_tldr: true,
+                force_raw_read: false,
+                force_raw_grep: false,
+                prefer_context_search: true,
             }
         );
     }

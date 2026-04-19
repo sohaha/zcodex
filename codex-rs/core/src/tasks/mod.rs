@@ -27,6 +27,7 @@ use crate::buddy::persist_buddy_soul;
 use crate::compact::collect_user_messages;
 use crate::contextual_user_message::TURN_ABORTED_CLOSE_TAG;
 use crate::contextual_user_message::TURN_ABORTED_OPEN_TAG;
+use crate::event_mapping::parse_turn_item;
 use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
@@ -37,6 +38,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
+use crate::tools::rewrite::merge_tool_routing_directives;
 use codex_analytics::TurnTokenUsageFact;
 use codex_login::AuthManager;
 use codex_models_manager::manager::ModelsManager;
@@ -51,6 +53,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::BuddyReactionEvent;
 use codex_protocol::protocol::BuddySoulGeneratedEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TokenUsage;
@@ -268,6 +271,35 @@ impl Session {
 
         let queued_response_items = self.take_queued_response_items_for_next_turn().await;
         let mailbox_items = self.get_pending_input().await;
+        if input.is_empty() {
+            let pending_turn_inputs = queued_response_items
+                .iter()
+                .chain(mailbox_items.iter())
+                .flat_map(response_item_turn_inputs)
+                .collect::<Vec<_>>();
+            if !pending_turn_inputs.is_empty() {
+                let current_directives = turn_context.tool_routing_directives.read().await.clone();
+                *turn_context.tool_routing_directives.write().await =
+                    merge_tool_routing_directives(current_directives, &pending_turn_inputs);
+            }
+            if turn_context.features.enabled(Feature::Zmemory) {
+                let pending_turn_texts = pending_turn_inputs
+                    .iter()
+                    .filter_map(|item| match item {
+                        UserInput::Text { text, .. } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let recall_note = build_stable_preference_recall_note_from_texts(
+                    self,
+                    &turn_context,
+                    pending_turn_texts.as_slice(),
+                )
+                .await;
+                self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
+                    .await;
+            }
+        }
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             let turn = active.get_or_insert_with(ActiveTurn::default);
@@ -387,24 +419,8 @@ impl Session {
         }
 
         let turn_context = self.new_default_turn_with_sub_id(sub_id).await;
-        if turn_context.features.enabled(Feature::Zmemory) {
-            let mailbox_contents = self.trigger_turn_mailbox_contents().await;
-            let mailbox_content_refs = mailbox_contents
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>();
-            let recall_note = build_stable_preference_recall_note_from_texts(
-                self,
-                &turn_context,
-                mailbox_content_refs.as_slice(),
-            )
+        self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), None)
             .await;
-            self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
-                .await;
-        } else {
-            self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), None)
-                .await;
-        }
         self.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
             .await;
         self.start_task(turn_context, Vec::new(), RegularTask::new())
@@ -664,6 +680,29 @@ impl Session {
             duration_ms,
         });
         self.send_event(task.turn_context.as_ref(), event).await;
+    }
+}
+
+fn response_item_turn_inputs(item: &ResponseInputItem) -> Vec<UserInput> {
+    let response_item = ResponseItem::from(item.clone());
+    if let Some(codex_protocol::items::TurnItem::UserMessage(user_message)) =
+        parse_turn_item(&response_item)
+    {
+        return user_message.content;
+    }
+
+    match response_item {
+        ResponseItem::Message { role, content, .. } if role == "assistant" => {
+            InterAgentCommunication::from_message_content(content.as_slice())
+                .map(|communication| {
+                    vec![UserInput::Text {
+                        text: communication.content,
+                        text_elements: Vec::new(),
+                    }]
+                })
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
     }
 }
 

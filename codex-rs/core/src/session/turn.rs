@@ -30,6 +30,7 @@ use crate::injection::app_id_from_path;
 use crate::injection::tool_kind_for_path;
 use crate::mcp_skill_dependencies::maybe_prompt_and_install_mcp_dependencies;
 use crate::mcp_tool_exposure::build_mcp_tool_exposure;
+use crate::memories::zmemory_preferences::build_stable_preference_recall_note;
 use crate::memories::zmemory_preferences::capture_stable_preference_memories;
 use crate::mentions::build_connector_slug_counts;
 use crate::mentions::build_skill_name_counts;
@@ -54,6 +55,7 @@ use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::rewrite::extract_tool_routing_directives;
+use crate::tools::rewrite::merge_tool_routing_directives;
 use crate::tools::router::ToolRouterParams;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::turn_timing::record_turn_ttft_metric;
@@ -81,6 +83,7 @@ use codex_protocol::items::UserMessageItem;
 use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
@@ -90,6 +93,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
 use codex_protocol::protocol::ReasoningRawContentDeltaEvent;
@@ -431,7 +435,13 @@ pub(crate) async fn run_turn(
         }
 
         let has_accepted_pending_input = !accepted_pending_input.is_empty();
-        apply_pending_user_input_side_effects(&sess, &turn_context, &accepted_pending_input).await;
+        let pending_side_effect_items =
+            apply_pending_user_input_side_effects(&sess, &turn_context, &accepted_pending_input)
+                .await;
+        if !pending_side_effect_items.is_empty() {
+            sess.record_conversation_items(&turn_context, &pending_side_effect_items)
+                .await;
+        }
         for pending_input in accepted_pending_input {
             record_pending_input(&sess, &turn_context, pending_input).await;
         }
@@ -678,7 +688,17 @@ pub(crate) async fn apply_pending_user_input_side_effects(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     pending_input: &[PendingInputRecord],
-) {
+) -> Vec<ResponseItem> {
+    let routing_inputs = pending_input
+        .iter()
+        .flat_map(pending_input_routing_inputs)
+        .collect::<Vec<_>>();
+    if !routing_inputs.is_empty() {
+        let current_directives = turn_context.tool_routing_directives.read().await.clone();
+        *turn_context.tool_routing_directives.write().await =
+            merge_tool_routing_directives(current_directives, &routing_inputs);
+    }
+
     let user_inputs = pending_input
         .iter()
         .filter_map(|pending_input| match pending_input {
@@ -689,13 +709,36 @@ pub(crate) async fn apply_pending_user_input_side_effects(
         .cloned()
         .collect::<Vec<_>>();
     if user_inputs.is_empty() {
-        return;
+        return Vec::new();
     }
 
-    *turn_context.tool_routing_directives.write().await =
-        extract_tool_routing_directives(&user_inputs);
     if turn_context.features.enabled(Feature::Zmemory) {
         capture_stable_preference_memories(sess, turn_context, &user_inputs).await;
+        if let Some(recall_note) =
+            build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
+        {
+            return vec![DeveloperInstructions::new(recall_note).into()];
+        }
+    }
+    Vec::new()
+}
+
+fn pending_input_routing_inputs(pending_input: &PendingInputRecord) -> Vec<UserInput> {
+    match pending_input {
+        PendingInputRecord::UserMessage { content, .. } => content.clone(),
+        PendingInputRecord::ConversationItem { response_item } => match response_item {
+            ResponseItem::Message { role, content, .. } if role == "assistant" => {
+                InterAgentCommunication::from_message_content(content)
+                    .map(|communication| {
+                        vec![UserInput::Text {
+                            text: communication.content,
+                            text_elements: Vec::new(),
+                        }]
+                    })
+                    .unwrap_or_default()
+            }
+            _ => Vec::new(),
+        },
     }
 }
 
