@@ -145,5 +145,5 @@ done <"$runs_file"
 if [ "$confirm_delete" -eq 1 ]; then
   echo "[mise] 已删除 $run_count 条 workflow run 记录"
 else
-  echo "[mise] dry-run 完成；如需真实删除，请追加 --yes"
+  echo "[mise] dry-run 完成；如需真实删除，请追加 mise run clear-actions --yes"
 fi
