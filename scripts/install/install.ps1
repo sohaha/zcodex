@@ -541,9 +541,9 @@ function Maybe-HandleConflictingInstall {
     $manager = $Conflict.Manager
 
     $uninstallArgs = if ($manager -eq "bun") {
-        @("remove", "-g", "@sohaha/zcodex")
+        @("remove", "-g", "@sohaha/codex")
     } else {
-        @("uninstall", "-g", "@sohaha/zcodex")
+        @("uninstall", "-g", "@sohaha/codex")
     }
     $uninstallCommand = if ($manager -eq "bun") { "bun" } else { "npm" }
 

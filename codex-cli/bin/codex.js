@@ -13,12 +13,12 @@ const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 
 const PLATFORM_PACKAGE_BY_TARGET = {
-  "x86_64-unknown-linux-musl": "@sohaha/zcodex-linux-x64",
-  "aarch64-unknown-linux-musl": "@sohaha/zcodex-linux-arm64",
-  "x86_64-apple-darwin": "@sohaha/zcodex-darwin-x64",
-  "aarch64-apple-darwin": "@sohaha/zcodex-darwin-arm64",
-  "x86_64-pc-windows-msvc": "@sohaha/zcodex-win32-x64",
-  "aarch64-pc-windows-msvc": "@sohaha/zcodex-win32-arm64",
+  "x86_64-unknown-linux-musl": "@sohaha/codex-linux-x64",
+  "aarch64-unknown-linux-musl": "@sohaha/codex-linux-arm64",
+  "x86_64-apple-darwin": "@sohaha/codex-darwin-x64",
+  "aarch64-apple-darwin": "@sohaha/codex-darwin-arm64",
+  "x86_64-pc-windows-msvc": "@sohaha/codex-win32-x64",
+  "aarch64-pc-windows-msvc": "@sohaha/codex-win32-arm64",
 };
 
 function getUpdatedPath(newDirs) {
@@ -170,8 +170,8 @@ async function main() {
       const packageManager = detectPackageManager();
       const updateCommand =
         packageManager === "bun"
-          ? "bun install -g @sohaha/zcodex@latest"
-          : "npm install -g @sohaha/zcodex@latest";
+          ? "bun install -g @sohaha/codex@latest"
+          : "npm install -g @sohaha/codex@latest";
       throw new Error(
         `缺少可选依赖 ${platformPackage}。请重新安装 Codex: ${updateCommand}`,
       );
@@ -182,8 +182,8 @@ async function main() {
     const packageManager = detectPackageManager();
     const updateCommand =
       packageManager === "bun"
-        ? "bun install -g @sohaha/zcodex@latest"
-        : "npm install -g @sohaha/zcodex@latest";
+        ? "bun install -g @sohaha/codex@latest"
+        : "npm install -g @sohaha/codex@latest";
     throw new Error(
       `缺少可选依赖 ${platformPackage}。请重新安装 Codex: ${updateCommand}`,
     );

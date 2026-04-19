@@ -1,11 +1,11 @@
 /// Update action the CLI should perform after the TUI exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAction {
-    /// Update via `npm install -g @sohaha/zcodex@latest`.
+    /// Update via `npm install -g @sohaha/codex@latest`.
     NpmGlobalLatest,
     /// Update via standalone Windows PowerShell installer.
     StandaloneWindows,
-    /// Update via `bun install -g @sohaha/zcodex@latest`.
+    /// Update via `bun install -g @sohaha/codex@latest`.
     BunGlobalLatest,
     /// Update via `brew upgrade codex`.
     BrewUpgrade,
@@ -15,7 +15,7 @@ impl UpdateAction {
     /// Returns the list of command-line arguments for invoking the update.
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
-            UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@sohaha/zcodex"]),
+            UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@sohaha/codex"]),
             UpdateAction::StandaloneWindows => (
                 "powershell",
                 &[
@@ -24,7 +24,7 @@ impl UpdateAction {
                     "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-Expression ((Invoke-WebRequest -UseBasicParsing 'https://cnb.cool/zcodex_install.ps1').Content) }",
                 ],
             ),
-            UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@sohaha/zcodex"]),
+            UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@sohaha/codex"]),
             UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "codex"]),
         }
     }
