@@ -113,7 +113,7 @@ fn assert_routed_shell_command_output(output: &str, original: &str, rewritten: &
         .replace('\r', "\n")
         .trim_end_matches('\n')
         .to_string();
-   let expected_pattern = format!(
+    let expected_pattern = format!(
         r"(?s)^ztok: {} → {}\n\n.+$",
         escape(original),
         escape(rewritten)
@@ -256,19 +256,20 @@ async fn shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> 
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-  if output.contains("[shell_command routed via embedded ZTOK]") {
-   if output.contains("ztok:") {
-       let rewritten = format!(
-           "codex ztok grep 'hello, world' {} -n",
-           file.path().display()
-       );
-        assert!(output.contains(&rewritten));
-        assert!(
-            output.contains("1: hello, world"),
-            "missing routed rg match: {output}"
-        );
-    } else {
-        assert_shell_command_output(&output, "1:hello, world")?;
+    if output.contains("[shell_command routed via embedded ZTOK]") {
+        if output.contains("ztok:") {
+            let rewritten = format!(
+                "codex ztok grep 'hello, world' {} -n",
+                file.path().display()
+            );
+            assert!(output.contains(&rewritten));
+            assert!(
+                output.contains("1: hello, world"),
+                "missing routed rg match: {output}"
+            );
+        } else {
+            assert_shell_command_output(&output, "1:hello, world")?;
+        }
     }
     assert!(
         !output.contains("ripgreprc"),
@@ -297,19 +298,20 @@ async fn shell_command_with_login_ignores_invalid_ripgrep_config_path_from_paren
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-  if output.contains("[shell_command routed via embedded ZTOK]") {
-   if output.contains("ztok:") {
-       let rewritten = format!(
-           "codex ztok grep 'hello with login' {} -n",
-           file.path().display()
-       );
-        assert!(output.contains(&rewritten));
-        assert!(
-            output.contains("1: hello with login"),
-            "missing routed rg match: {output}"
-        );
-    } else {
-        assert_shell_command_output(&output, "1:hello with login")?;
+    if output.contains("[shell_command routed via embedded ZTOK]") {
+        if output.contains("ztok:") {
+            let rewritten = format!(
+                "codex ztok grep 'hello with login' {} -n",
+                file.path().display()
+            );
+            assert!(output.contains(&rewritten));
+            assert!(
+                output.contains("1: hello with login"),
+                "missing routed rg match: {output}"
+            );
+        } else {
+            assert_shell_command_output(&output, "1:hello with login")?;
+        }
     }
     assert!(
         !output.contains("ripgreprc"),

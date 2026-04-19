@@ -227,7 +227,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - evidence:
   - `ok` `codex-rs/core/src/client_common.rs`: codex-rs/core/src/client_common.rs:52 if let ResponseItem::Reasoning { content, .. } = item {
   - `ok` `codex-rs/core/src/client_common.rs`: codex-rs/core/src/client_common.rs:55 *content = None;
-  - `ok` `codex-rs/protocol/src/models.rs`: codex-rs/protocol/src/models.rs:267 #[serde(default, skip_serializing_if = "should_serialize_reasoning_content")]
+  - `ok` `codex-rs/protocol/src/models.rs`: codex-rs/protocol/src/models.rs:278 #[serde(default, skip_serializing_if = "should_serialize_reasoning_content")]
 
 ### `reference-context-reinjection-baseline`
 - status: `PASS`
@@ -235,7 +235,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: resume、compact 和 replacement history 之后继续维护 reference_context_item 基线与全量上下文重注入。
 - better_when: upstream 改成新的上下文基线机制，但仍完整覆盖 replacement history、clear baseline 和 full reinjection 语义。
 - evidence:
-  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2547 pub(crate) async fn record_context_updates_and_set_reference_context_item(
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2549 pub(crate) async fn record_context_updates_and_set_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:190 pub(crate) fn replacement_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:450 self.reference_context_item = None;
 

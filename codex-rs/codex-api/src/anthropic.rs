@@ -889,10 +889,12 @@ fn content_text(content: &[ContentItem]) -> String {
         .iter()
         .map(|item| match item {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => text.clone(),
-            ContentItem::InputImage { image_url } if parse_base64_data_url(image_url).is_some() => {
+            ContentItem::InputImage { image_url, .. }
+                if parse_base64_data_url(image_url).is_some() =>
+            {
                 "[image: data-url]".to_string()
             }
-            ContentItem::InputImage { image_url } => format!("[image: {image_url}]"),
+            ContentItem::InputImage { image_url, .. } => format!("[image: {image_url}]"),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -910,7 +912,7 @@ fn content_blocks(content: &[ContentItem]) -> Vec<Value> {
                     "text": text,
                 }));
             }
-            ContentItem::InputImage { image_url } => {
+            ContentItem::InputImage { image_url, .. } => {
                 if let Some((media_type, data)) = parse_base64_data_url(image_url) {
                     blocks.push(json!({
                         "type": "image",
