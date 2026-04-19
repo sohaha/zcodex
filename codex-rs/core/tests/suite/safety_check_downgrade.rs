@@ -1,6 +1,6 @@
 use anyhow::Result;
-use codex_core::ModelProviderInfo;
-use codex_core::WireApi;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
@@ -277,10 +277,11 @@ async fn custom_provider_model_mismatch_does_not_emit_openai_safety_warning() ->
         .with_config(move |config| {
             config.model_provider_id = "relay".to_string();
             config.model_provider = ModelProviderInfo {
-                name: "relay".into(),
+                name: Some("relay".into()),
                 model: None,
                 base_url: Some(base_url),
                 env_key: None,
+                model_catalog: None,
                 env_key_instructions: None,
                 experimental_bearer_token: Some("relay-token".into()),
                 auth: None,
@@ -291,9 +292,14 @@ async fn custom_provider_model_mismatch_does_not_emit_openai_safety_warning() ->
                 request_max_retries: Some(0),
                 stream_max_retries: Some(0),
                 stream_idle_timeout_ms: Some(5_000),
+                retry_base_delay_ms: None,
                 websocket_connect_timeout_ms: None,
                 requires_openai_auth: false,
                 supports_websockets: false,
+                model_context_window: None,
+                model_auto_compact_token_limit: None,
+                max_output_tokens: None,
+                skip_reasoning_popup: false,
             };
         });
     let test = builder.build(&server).await?;
