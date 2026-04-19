@@ -47,8 +47,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `reference-context-reinjection-baseline` | `local_behavior` | codex-rs/core session/context_manager |
 | `auto-tldr-routing-default` | `local_behavior` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `local_surface` | codex-rs workspace |
+| `cli-zmemory-ztok-ztldr-surface` | `local_surface` | codex-rs/cli |
 | `buddy-surface` | `local_surface` | codex-rs/tui + codex-rs/app-server |
-| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
 | `community-branding-and-release-links` | `localized_behavior` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
@@ -123,6 +124,20 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/Cargo.toml`: `codex-zmemory\s*=\s*\{\s*path\s*=\s*"zmemory"`
   - `regex` `codex-rs/Cargo.toml`: `codex-ztok\s*=\s*\{\s*path\s*=\s*"ztok"`
 
+### `cli-zmemory-ztok-ztldr-surface`
+- summary: 顶层 `codex` CLI 必须继续暴露 `ztok`、`ztldr` 与 `zmemory` 子命令，并保留对应 dispatch 与 help 汉化哨兵。
+- better_when: 只有在 upstream 原生提供等效 CLI surface，且本地不再需要这些分叉入口或其汉化收口时，才允许迁移；迁移前必须先把新的入口路径与哨兵更新到这里。
+- checks:
+  - `regex` `codex-rs/cli/src/main.rs`: `Ztok\(ZtokArgs\)`
+  - `regex` `codex-rs/cli/src/main.rs`: `name = "ztldr"`
+  - `regex` `codex-rs/cli/src/main.rs`: `Zmemory\(ZmemoryCli\)`
+  - `regex` `codex-rs/cli/src/main.rs`: `visible_alias = "r"`
+  - `regex` `codex-rs/cli/src/main.rs`: `run_tldr_command\(tldr_cli\)`
+  - `regex` `codex-rs/cli/src/main.rs`: `run_zmemory_command\(zmemory_cli\)`
+  - `regex` `codex-rs/cli/src/main.rs`: `localize_help_output`
+  - `regex` `codex-rs/cli/src/main.rs`: `显示帮助（使用 '-h' 查看摘要）`
+  - `regex` `codex-rs/cli/src/main.rs`: `显示版本`
+
 ### `buddy-surface`
 - summary: Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。
 - better_when: upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。
@@ -141,6 +156,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。
 - better_when: 用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。
 - checks:
+  - `regex` `codex-rs/cli/src/main.rs`: `若未指定子命令，选项会转发到交互式命令行界面`
+  - `regex` `codex-rs/cli/src/main.rs`: `以非交互模式运行 Codex`
+  - `regex` `codex-rs/cli/src/main.rs`: `已在 config\.toml 中启用功能`
   - `regex` `codex-rs/tui/src/slash_command.rs`: `创建 AGENTS\.md 文件，为 Codex 提供指令`
   - `regex` `codex-rs/tools/src/request_user_input_tool.rs`: `request_user_input 在 \{mode_name\} 模式不可用`
   - `regex` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: `请使用以下链接提交 Issue`
@@ -160,7 +178,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 
 ## Latest Audit
 
-- overall: `11/11` passed
+- overall: `11/12` passed
 
 | ID | Status | Area |
 | --- | --- | --- |
@@ -172,9 +190,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `reference-context-reinjection-baseline` | `PASS` | codex-rs/core session/context_manager |
 | `auto-tldr-routing-default` | `PASS` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `PASS` | codex-rs workspace |
+| `cli-zmemory-ztok-ztldr-surface` | `PASS` | codex-rs/cli |
 | `buddy-surface` | `PASS` | codex-rs/tui + codex-rs/app-server |
-| `chinese-localization-sentinels` | `PASS` | codex-rs/tui + codex-rs/tools + codex-rs/app-server |
-| `community-branding-and-release-links` | `PASS` | README + install/update surfaces |
+| `chinese-localization-sentinels` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `community-branding-and-release-links` | `FAIL` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
 - status: `PASS`
@@ -235,7 +254,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: resume、compact 和 replacement history 之后继续维护 reference_context_item 基线与全量上下文重注入。
 - better_when: upstream 改成新的上下文基线机制，但仍完整覆盖 replacement history、clear baseline 和 full reinjection 语义。
 - evidence:
-  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2549 pub(crate) async fn record_context_updates_and_set_reference_context_item(
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2576 pub(crate) async fn record_context_updates_and_set_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:190 pub(crate) fn replacement_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:450 self.reference_context_item = None;
 
@@ -264,6 +283,22 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:158 codex-zmemory = { path = "zmemory" }
   - `ok` `codex-rs/Cargo.toml`: codex-rs/Cargo.toml:169 codex-ztok = { path = "ztok" }
 
+### `cli-zmemory-ztok-ztldr-surface`
+- status: `PASS`
+- kind: `local_surface`
+- summary: 顶层 `codex` CLI 必须继续暴露 `ztok`、`ztldr` 与 `zmemory` 子命令，并保留对应 dispatch 与 help 汉化哨兵。
+- better_when: 只有在 upstream 原生提供等效 CLI surface，且本地不再需要这些分叉入口或其汉化收口时，才允许迁移；迁移前必须先把新的入口路径与哨兵更新到这里。
+- evidence:
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:125 Ztok(ZtokArgs),
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:131 #[clap(name = "ztldr")]
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:135 Zmemory(ZmemoryCli),
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:165 #[clap(visible_alias = "r")]
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:868 tldr_cmd::run_tldr_command(tldr_cli).await?;
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:876 run_zmemory_command(zmemory_cli).await?;
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1711 let rendered = localize_help_output(err.to_string());
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1749 "显示帮助（使用 '-h' 查看摘要）",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1756 .replace("Print version", "显示版本")
+
 ### `buddy-surface`
 - status: `PASS`
 - kind: `local_surface`
@@ -286,6 +321,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。
 - better_when: 用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。
 - evidence:
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:78 /// 若未指定子命令，选项会转发到交互式命令行界面。
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:108 /// 以非交互模式运行 Codex。
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1293 println!("已在 config.toml 中启用功能 `{feature}`。");
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:77 SlashCommand::Init => "创建 AGENTS.md 文件，为 Codex 提供指令",
   - `ok` `codex-rs/tools/src/request_user_input_tool.rs`: codex-rs/tools/src/request_user_input_tool.rs:91 Some(format!("request_user_input 在 {mode_name} 模式不可用"))
   - `ok` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: codex-rs/tui/src/bottom_pane/feedback_view.rs:325 Some(_) => format!("{prefix}请使用以下链接提交 Issue："),
@@ -295,12 +333,12 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2671 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 
 ### `community-branding-and-release-links`
-- status: `PASS`
+- status: `FAIL`
 - kind: `localized_behavior`
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
 - better_when: 仓库决定统一回官方 branding，或者 branding 入口迁移到新文件并同步更新这里的检查路径。
 - evidence:
   - `ok` `README.md`: README.md:24 npm install -g @sohaha/zcodex
   - `ok` `codex-rs/README.md`: codex-rs/README.md:14 你也可以通过 Homebrew（`brew install --cask codex`）安装，或直接从 [GitHub Releases](https://github.com/sohaha/zcodex/releases) 下载平台...
-  - `ok` `codex-rs/tui/src/update_action.rs`: codex-rs/tui/src/update_action.rs:4 /// Update via `npm install -g @sohaha/zcodex@latest`.
+  - `missing` `codex-rs/tui/src/update_action.rs`: pattern not found: @sohaha/zcodex
   - `ok` `docs/install.md`: docs/install.md:19 git clone https://github.com/sohaha/zcodex.git

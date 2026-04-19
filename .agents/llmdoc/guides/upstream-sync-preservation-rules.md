@@ -41,6 +41,7 @@
   - 特性 ID / 作用区域 / 为什么要保留
   - “什么情况下算被更好的实现替换”
   - 可脚本化的存在性或文本证据检查
+- 对 `codex-rs/cli` 这类本地 CLI 面，不能只保底层 crate/模块存在；要把顶层 `Subcommand`、dispatch、help/localization 哨兵和本地别名一起纳入 checks
 
 ## 先 discover，再 promote
 - 自动发现和最终批准不是同一个动作。

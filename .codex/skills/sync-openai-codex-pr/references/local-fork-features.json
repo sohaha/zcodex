@@ -231,6 +231,60 @@
       ]
     },
     {
+      "id": "cli-zmemory-ztok-ztldr-surface",
+      "kind": "local_surface",
+      "area": "codex-rs/cli",
+      "summary": "顶层 `codex` CLI 必须继续暴露 `ztok`、`ztldr` 与 `zmemory` 子命令，并保留对应 dispatch 与 help 汉化哨兵。",
+      "better_when": "只有在 upstream 原生提供等效 CLI surface，且本地不再需要这些分叉入口或其汉化收口时，才允许迁移；迁移前必须先把新的入口路径与哨兵更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "Ztok\\(ZtokArgs\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "name = \"ztldr\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "Zmemory\\(ZmemoryCli\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "visible_alias = \"r\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "run_tldr_command\\(tldr_cli\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "run_zmemory_command\\(zmemory_cli\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "localize_help_output"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "显示帮助（使用 '-h' 查看摘要）"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "显示版本"
+        }
+      ]
+    },
+    {
       "id": "buddy-surface",
       "kind": "local_surface",
       "area": "codex-rs/tui + codex-rs/app-server",
@@ -287,10 +341,25 @@
     {
       "id": "chinese-localization-sentinels",
       "kind": "localized_behavior",
-      "area": "codex-rs/tui + codex-rs/tools + codex-rs/app-server",
+      "area": "codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server",
       "summary": "用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。",
       "better_when": "用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。",
       "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "若未指定子命令，选项会转发到交互式命令行界面"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "以非交互模式运行 Codex"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "已在 config\\.toml 中启用功能"
+        },
         {
           "type": "regex",
           "path": "codex-rs/tui/src/slash_command.rs",

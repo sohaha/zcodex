@@ -237,3 +237,4 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 6. No sycophantic openers or closing fluff.（不要有奉承的开场白或结束语。）
 7. Keep solutions simple and direct.（保持解决方案简单直接。）
 8. User instructions always override this file.（用户指令始终覆盖此文件。）
+9. 除非用户特别声明,不然使用中文交流,注释文案也优先始终中文。
