@@ -1,17 +1,22 @@
 ---
 source: core/tests/suite/pending_input.rs
+assertion_line: 232
 expression: snapshot
 ---
-Scenario: /responses POST bodies (input only, redacted like other suite snapshots)
+Scenario: /responses POST 请求体（仅 input，按其他 suite snapshot 一样脱敏）
 
-## First request
-00:message/developer:<PERMISSIONS_INSTRUCTIONS>
+## 第一个请求
+00:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] ## Embedded ZTOK\n\n`codex ztok` is the token-optimized CLI proxy for shell commands. Prefer\nrunning shell commands through `codex ztok` so output is filtered or\nsummarized before it enters the context window.\n\nWhen the shell rewrite layer can recognize a command shape, it will prefix the\ncommand for you. If you need to force the proxy explicitly, run\n`codex ztok <subcommand> ...`.\n\nUse the generic wrappers when you need proxying for arbitrary commands:\n\n- `codex ztok err -- <command> [args...]` runs any command and keeps only\n  error and warning lines. Use this for noisy build, lint, or compile output.\n- `codex ztok test -- <command> [args...]` runs any test command and keeps\n  failures plus the summary. Use this for generic test runners that do not\n  already have a dedicated ztok subcommand.\n- `codex ztok log [file]` deduplicates noisy log streams into a compact\n  error/warning-heavy summary.\n- `codex ztok json <file> --keys-only` shows JSON keys and types without\n  echoing full values back into the context window.\n\n`err` and `test` execute programs directly instead of through a shell. For\npipes, redirects, or shell operators, wrap the real shell explicitly, such as\n`bash -lc 'cargo test 2>&1 | tail -n 40'`.\n
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
-02:message/user:first prompt
+02:message/user:第一个提示
 
-## Second request
-00:message/developer:<PERMISSIONS_INSTRUCTIONS>
+## 第二个请求
+00:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] ## Embedded ZTOK\n\n`codex ztok` is the token-optimized CLI proxy for shell commands. Prefer\nrunning shell commands through `codex ztok` so output is filtered or\nsummarized before it enters the context window.\n\nWhen the shell rewrite layer can recognize a command shape, it will prefix the\ncommand for you. If you need to force the proxy explicitly, run\n`codex ztok <subcommand> ...`.\n\nUse the generic wrappers when you need proxying for arbitrary commands:\n\n- `codex ztok err -- <command> [args...]` runs any command and keeps only\n  error and warning lines. Use this for noisy build, lint, or compile output.\n- `codex ztok test -- <command> [args...]` runs any test command and keeps\n  failures plus the summary. Use this for generic test runners that do not\n  already have a dedicated ztok subcommand.\n- `codex ztok log [file]` deduplicates noisy log streams into a compact\n  error/warning-heavy summary.\n- `codex ztok json <file> --keys-only` shows JSON keys and types without\n  echoing full values back into the context window.\n\n`err` and `test` execute programs directly instead of through a shell. For\npipes, redirects, or shell operators, wrap the real shell explicitly, such as\n`bash -lc 'cargo test 2>&1 | tail -n 40'`.\n
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
-02:message/user:first prompt
-03:reasoning:summary=thinking:encrypted=true
-04:message/assistant:{"author":"/root/worker","recipient":"/root","other_recipients":[],"content":"queued child update","trigger_turn":false}
+02:message/user:第一个提示
+03:reasoning:summary=思考中:encrypted=true
+04:message/assistant:{"author":"/root/worker","recipient":"/root","other_recipients":[],"content":"排队的子代理更新","trigger_turn":false}

@@ -2322,6 +2322,82 @@ async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Res
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到，我之后默认用中文并保持简洁。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-2"),
+            ev_assistant_message("msg-2", "继续保持。"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("以后默认用中文回答，尽量简洁一点。")
+        .await?;
+
+    let contract_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        contract_memory.structured_content["result"]["content"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+
+    test.submit_turn("继续按上次方式。").await?;
+
+    let developer_texts = follow_up.single_request().message_input_texts("developer");
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected follow-up request to include zmemory recall note, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("Respond in Chinese by default.")),
+        "expected recall note to include Chinese preference, got {developer_texts:?}"
+    );
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("Keep responses concise by default.")),
+        "expected recall note to include concise preference, got {developer_texts:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_proactively_captures_explicit_preferences_even_in_high_load_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

@@ -1730,10 +1730,11 @@ fn websocket_provider_with_connect_timeout(
     websocket_connect_timeout_ms: Option<u64>,
 ) -> ModelProviderInfo {
     ModelProviderInfo {
-        name: "mock-ws".into(),
+        name: Some("mock-ws".into()),
         model: None,
         base_url: Some(format!("{}/v1", server.uri())),
         env_key: None,
+        model_catalog: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
@@ -1744,9 +1745,14 @@ fn websocket_provider_with_connect_timeout(
         request_max_retries: Some(0),
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms,
         requires_openai_auth: false,
         supports_websockets: true,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     }
 }
 

@@ -835,10 +835,11 @@ async fn provider_auth_command_refreshes_after_401() {
 #[expect(clippy::expect_used, clippy::unwrap_used)]
 async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuthInfo) {
     let provider = ModelProviderInfo {
-        name: "corp".into(),
+        name: Some("corp".into()),
         model: None,
         base_url: Some(format!("{}/v1", server.uri())),
         env_key: None,
+        model_catalog: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: Some(auth),
@@ -849,14 +850,19 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         request_max_retries: Some(0),
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     };
 
     let codex_home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&codex_home).await;
-    config.model_provider_id = provider.name.clone();
+    config.model_provider_id = "corp".to_string();
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
@@ -2133,10 +2139,11 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     let resp_mock = mount_sse_once(&server, sse_body.to_string()).await;
 
     let provider = ModelProviderInfo {
-        name: "azure".into(),
+        name: Some("azure".into()),
         model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         env_key: None,
+        model_catalog: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
@@ -2147,14 +2154,19 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         request_max_retries: Some(0),
         stream_max_retries: Some(0),
         stream_idle_timeout_ms: Some(5_000),
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     };
 
     let codex_home = TempDir::new().unwrap();
     let mut config = load_default_config_for_test(&codex_home).await;
-    config.model_provider_id = provider.name.clone();
+    config.model_provider_id = "azure".to_string();
     config.model_provider = provider.clone();
     let effort = config.model_reasoning_effort;
     let summary = config.model_reasoning_summary;
@@ -2753,11 +2765,12 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         .await;
 
     let provider = ModelProviderInfo {
-        name: "custom".to_string(),
+        name: Some("custom".to_string()),
         model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         // Reuse the existing environment variable to avoid using unsafe code
         env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
+        model_catalog: None,
         experimental_bearer_token: None,
         auth: None,
         query_params: Some(std::collections::HashMap::from([(
@@ -2774,9 +2787,14 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     };
 
     // Init session
@@ -2840,11 +2858,12 @@ async fn env_var_overrides_loaded_auth() {
         .await;
 
     let provider = ModelProviderInfo {
-        name: "custom".to_string(),
+        name: Some("custom".to_string()),
         model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         // Reuse the existing environment variable to avoid using unsafe code
         env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
+        model_catalog: None,
         query_params: Some(std::collections::HashMap::from([(
             "api-version".to_string(),
             "2025-04-01-preview".to_string(),
@@ -2861,9 +2880,14 @@ async fn env_var_overrides_loaded_auth() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     };
 
     // Init session
