@@ -364,7 +364,7 @@ pub struct Codex {
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 
-pub(crate) const THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE: &str = "Some enabled skills were not included in the model-visible skills list for this session. Mention a skill by name or path if you need it.";
+pub(crate) const THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE: &str = "部分已启用的技能未包含在此会话的模型可见技能列表中。如需使用某个技能，请通过名称或路径显式引用它。";
 
 /// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`] and
 /// the unique session id.
@@ -499,7 +499,7 @@ impl Codex {
             && let Err(err) = resolve_compatible_node(config.js_repl_node_path.as_deref()).await
         {
             let message = format!(
-                "Disabled `exec` for this session because the configured Node runtime is unavailable or incompatible. {err}"
+                "已为此会话禁用 `exec` 功能，因为配置的 Node 运行时不可用或版本不兼容。{err}"
             );
             warn!("{message}");
             let _ = config.features.disable(Feature::CodeMode);
@@ -1007,7 +1007,7 @@ impl Session {
     async fn fail_agent_identity_registration(self: &Arc<Self>, error: anyhow::Error) {
         warn!(error = %error, "agent identity registration failed");
         let message = format!(
-            "Agent identity registration failed while `features.use_agent_identity` is enabled: {error}"
+            "Agent 身份注册失败（`features.use_agent_identity` 已启用）：{error}"
         );
         self.send_event_raw(Event {
             id: self.next_internal_sub_id(),
@@ -1266,7 +1266,8 @@ impl Session {
                         &turn_context,
                         EventMsg::Warning(WarningEvent {
                             message: format!(
-                                "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
+                                "⚠ 此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。\n\
+                                建议切换回 `{prev}`，否则可能影响 Codex 性能`. \
                          Consider switching back to `{prev}` as it may affect Codex performance."
                             ),
                         }),
@@ -2227,7 +2228,7 @@ impl Session {
         warn!("server reported model {server_model} while requested model was {requested_model}");
 
         let warning_message = format!(
-            "Your account was flagged for potentially high-risk cyber activity and this request was routed to gpt-5.2 as a fallback. To regain access to gpt-5.3-codex, apply for trusted access: {CYBER_VERIFY_URL} or learn more: {CYBER_SAFETY_URL}"
+            "⚠ 您的账号因潜在高风险网络活动被标记，此请求已被路由到 {server_model} 作为后备方案。\n如需恢复 {requested_model} 访问权限，请申请可信访问：{CYBER_VERIFY_URL} 或了解更多信息：{CYBER_SAFETY_URL}"
         );
 
         self.send_event(
