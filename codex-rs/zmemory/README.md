@@ -118,29 +118,33 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 
 ## 常用命令
 
+静态示例里统一写 `<launcher> zmemory ...`。如果你把 launcher 改名为 `z` 或其他名称，
+把前缀替换成当前 launcher 即可；CLI 运行时生成的建议命令会自动跟随当前
+launcher 名。
+
 ```bash
-codex zmemory stats --json
-codex zmemory create core://agent-profile --content "Salem profile memory"
-codex zmemory read core://agent-profile --json
-codex zmemory batch-create --items-json '[{"uri":"core://agent-batch","content":"A"}]' --json
-codex zmemory batch-update --items-json '[{"uri":"core://agent-batch","append":" more"}]' --json
-codex zmemory history core://agent-profile --json
-codex zmemory search profile --json
-codex zmemory export-memory --uri core://agent-profile --json
-codex zmemory import-memory --items-json '[{"uri":"core://imported-profile","content":"Imported profile","keywords":["imported-profile"],"aliases":[{"uri":"core://imported-profile-alias"}]}]' --json
-codex zmemory export glossary --json
-codex zmemory audit --limit 10 --json
-codex zmemory rebuild-search --json
-codex zmemory doctor --json
+<launcher> zmemory stats --json
+<launcher> zmemory create core://agent-profile --content "Salem profile memory"
+<launcher> zmemory read core://agent-profile --json
+<launcher> zmemory batch-create --items-json '[{"uri":"core://agent-batch","content":"A"}]' --json
+<launcher> zmemory batch-update --items-json '[{"uri":"core://agent-batch","append":" more"}]' --json
+<launcher> zmemory history core://agent-profile --json
+<launcher> zmemory search profile --json
+<launcher> zmemory export-memory --uri core://agent-profile --json
+<launcher> zmemory import-memory --items-json '[{"uri":"core://imported-profile","content":"Imported profile","keywords":["imported-profile"],"aliases":[{"uri":"core://imported-profile-alias"}]}]' --json
+<launcher> zmemory export glossary --json
+<launcher> zmemory audit --limit 10 --json
+<launcher> zmemory rebuild-search --json
+<launcher> zmemory doctor --json
 ```
 
 ## 导出语义
 
 `export-memory` / `import-memory` 是真实记忆导入导出入口，直接桥接到底层动作层：
 
-- `codex zmemory export-memory --uri core://agent-profile`
-- `codex zmemory export-memory --domain core`
-- `codex zmemory import-memory --items-json '<json array>'`
+- `<launcher> zmemory export-memory --uri core://agent-profile`
+- `<launcher> zmemory export-memory --domain core`
+- `<launcher> zmemory import-memory --items-json '<json array>'`
 
 其中：
 
@@ -156,9 +160,9 @@ codex zmemory doctor --json
 示例：
 
 ```bash
-codex zmemory export-memory --uri core://agent-profile --json
-codex zmemory export-memory --domain core --json
-codex zmemory import-memory --items-json '[
+<launcher> zmemory export-memory --uri core://agent-profile --json
+<launcher> zmemory export-memory --domain core --json
+<launcher> zmemory import-memory --items-json '[
   {
     "uri": "core://imported-profile",
     "content": "Imported profile",
@@ -181,14 +185,14 @@ codex zmemory import-memory --items-json '[
 
 `export` 是本地 CLI 的薄封装，用来导出内置系统视图，不会扩成 REST API、daemon 或独立服务。
 
-- `codex zmemory export boot [--limit N]`
-- `codex zmemory export defaults`
-- `codex zmemory export workspace`
-- `codex zmemory export index [--domain core] [--limit N]`
-- `codex zmemory export paths [--domain core] [--limit N]`
-- `codex zmemory export recent [--limit N]`
-- `codex zmemory export glossary [--limit N]`
-- `codex zmemory export alias [--limit N]`
+- `<launcher> zmemory export boot [--limit N]`
+- `<launcher> zmemory export defaults`
+- `<launcher> zmemory export workspace`
+- `<launcher> zmemory export index [--domain core] [--limit N]`
+- `<launcher> zmemory export paths [--domain core] [--limit N]`
+- `<launcher> zmemory export recent [--limit N]`
+- `<launcher> zmemory export glossary [--limit N]`
+- `<launcher> zmemory export alias [--limit N]`
 
 这些 `export` 入口只是为了 discoverability；底层 contract 仍以 `read system://...` 为准。
 
@@ -227,17 +231,17 @@ codex zmemory import-memory --items-json '[
 
 当前本地 review 不额外引入独立服务，而是复用现有动作层：
 
-- `codex zmemory read system://workspace --json`：确认当前工作区实际 DB、默认路径差异、boot 健康度
-- `codex zmemory read system://defaults --json`：确认产品默认 domains / boot anchors / 默认路径策略
-- `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
-- `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
-- `codex zmemory audit --json`：查看最近元数据治理动作时间线；支持 `--action <create|update|add-alias|manage-triggers|delete-path>` 与 `--uri <core://...>` 精确过滤
-- `codex zmemory history <uri> --json`：查看单个节点的内容版本链，适合排查 update 产生的 deprecated 历史
-- `codex zmemory batch-create --items-json '<json array>' --json`：一次性创建多个节点，数组项支持 `uri`/`parentUri`/`content`/`title`/`priority`/`disclosure`，按 URI 顺序返回 `nodeUuid`
-- `codex zmemory batch-update --items-json '<json array>' --json`：一次性更新多个 URI，数组项支持 `uri`、`content`、`oldString`/`newString`、`append`、`priority`、`disclosure`，返回每条 `contentChanged`/`nodeUuid`
-- `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
-- `codex zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
-- `codex zmemory export glossary --json`：查看当前 trigger 网络
+- `<launcher> zmemory read system://workspace --json`：确认当前工作区实际 DB、默认路径差异、boot 健康度
+- `<launcher> zmemory read system://defaults --json`：确认产品默认 domains / boot anchors / 默认路径策略
+- `<launcher> zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
+- `<launcher> zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
+- `<launcher> zmemory audit --json`：查看最近元数据治理动作时间线；支持 `--action <create|update|add-alias|manage-triggers|delete-path>` 与 `--uri <core://...>` 精确过滤
+- `<launcher> zmemory history <uri> --json`：查看单个节点的内容版本链，适合排查 update 产生的 deprecated 历史
+- `<launcher> zmemory batch-create --items-json '<json array>' --json`：一次性创建多个节点，数组项支持 `uri`/`parentUri`/`content`/`title`/`priority`/`disclosure`，按 URI 顺序返回 `nodeUuid`
+- `<launcher> zmemory batch-update --items-json '<json array>' --json`：一次性更新多个 URI，数组项支持 `uri`、`content`、`oldString`/`newString`、`append`、`priority`、`disclosure`，返回每条 `contentChanged`/`nodeUuid`
+- `<launcher> zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
+- `<launcher> zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
+- `<launcher> zmemory export glossary --json`：查看当前 trigger 网络
 
 当前 `pathResolution` 的稳定字段为：
 
@@ -284,9 +288,9 @@ codex zmemory import-memory --items-json '[
 
 为了进一步支持 alias/trigger 审核，可直接 `read system://alias [limit]`，该视图汇总 alias nodes、trigger 覆盖与 alias-without-trigger 的列表：
 
-- `codex zmemory export alias --json`：查看 alias/trigger 总量与缺失概况。
-- `codex zmemory export alias --limit 5 --json`：按治理优先级排序，优先列出缺 trigger 且 alias 扇出更高的节点。
-- `codex zmemory read system://alias --json` / `read system://alias/5 --json`：仍保留为底层等价入口。
+- `<launcher> zmemory export alias --json`：查看 alias/trigger 总量与缺失概况。
+- `<launcher> zmemory export alias --limit 5 --json`：按治理优先级排序，优先列出缺 trigger 且 alias 扇出更高的节点。
+- `<launcher> zmemory read system://alias --json` / `read system://alias/5 --json`：仍保留为底层等价入口。
 
 这些信息配合 `stats`/`doctor` 能形成“alias coverage + trigger wiring”评估，为 alias review 清单提供输入。
 

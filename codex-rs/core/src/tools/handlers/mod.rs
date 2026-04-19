@@ -57,8 +57,6 @@ pub use unavailable_tool::UnavailableToolHandler;
 pub(crate) use unavailable_tool::unavailable_tool_message;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
-pub use zmemory::ZMEMORY_JSON_BEGIN;
-pub use zmemory::ZMEMORY_JSON_END;
 pub use zmemory::ZmemoryHandler;
 
 fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>

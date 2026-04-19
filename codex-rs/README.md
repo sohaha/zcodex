@@ -111,8 +111,8 @@ cargo build --release -p codex-cli --features tldr
 如果要一起验证 native-tldr 相关能力，可额外执行：
 
 ```shell
-./target/release/codex ztldr languages
-./target/release/codex ztldr daemon --project /path/to/project --json status
+./target/release/<launcher> ztldr languages
+./target/release/<launcher> ztldr daemon --project /path/to/project --json status
 ```
 
 当前 `ztldr` 的多语言关系分析能力已显式分级：Rust 使用 dedicated extractor，并能在结构化 analysis 输出中提供更精确的 owner / trait impl 关系；TypeScript、JavaScript、Python、Go、PHP、Zig 目前仍主要依赖 heuristic extractor，返回的类型/实现关系应视为启发式结果，而不是与 Rust 同等级的语义建模。
@@ -133,8 +133,9 @@ Rust CLI 当前不再向模型暴露 `ztok_*` tools。对于 `shell_command` 的
 过滤层，以减少噪声输出；只有简单单文件的 `cat/head/tail` 会改写为
 `ztok read ...`，而未加引号的 pipe / redirect / command substitution /
 backgrounding 等复杂 shell 语法仍会保留原始命令执行。被路由的命令在事件/
-输出里会显示成逻辑命令 `codex ztok ...`，但实际执行时会解析到当前 `codex`
-二进制的绝对路径再进入 `ztok`，避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
+输出里会显示成当前 launcher 的逻辑命令（例如 `<launcher> ztok ...` 或 `z ztok ...`），
+但实际执行时会解析到当前进程注入的 `CODEX_SELF_EXE` 绝对路径再进入 `ztok`，
+避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
 更详细的实现说明见 [`core/README.md`](./core/README.md)。
 
 ### 体验 Codex 沙箱

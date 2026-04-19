@@ -410,6 +410,33 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
             ]),
             vec!["uri"],
         ),
+        mcp_tool(
+            "delete_memory",
+            "删除某条记忆路径。",
+            BTreeMap::from([str_prop("uri", Some("要删除的记忆 URI。"))]),
+            vec!["uri"],
+        ),
+        mcp_tool(
+            "add_alias",
+            "为现有记忆创建别名路径。",
+            BTreeMap::from([
+                str_prop("new_uri", Some("新的别名 URI。")),
+                str_prop("target_uri", Some("别名指向的目标 URI。")),
+                int_prop("priority", Some("可选别名优先级。")),
+                str_prop("disclosure", Some("可选 alias disclosure。")),
+            ]),
+            vec!["new_uri", "target_uri"],
+        ),
+        mcp_tool(
+            "manage_triggers",
+            "为记忆管理 recall 触发词。",
+            BTreeMap::from([
+                str_prop("uri", Some("目标记忆 URI。")),
+                str_array_prop("add", Some("要新增的触发词列表。")),
+                str_array_prop("remove", Some("要删除的触发词列表。")),
+            ]),
+            vec!["uri"],
+        ),
     ]
 }
 

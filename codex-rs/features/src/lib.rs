@@ -866,8 +866,8 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ExternalMigration,
         key: "external_migration",
         stage: Stage::Experimental {
-            name: "External migration",
-            menu_description: "Show a startup prompt when Codex detects migratable external agent config for this machine or project.",
+            name: "外部配置迁移",
+            menu_description: "当 Codex 检测到此机器或项目存在可迁移的外部 agent 配置时，显示启动提示。",
             announcement: "",
         },
         default_enabled: false,

@@ -91,6 +91,7 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     let expected_env = create_env(
         &turn_context.shell_environment_policy,
         Some(session.conversation_id),
+        turn_context.codex_self_exe.as_deref(),
     );
 
     let params = ShellCommandToolCallParams {
@@ -204,7 +205,7 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
 #[tokio::test]
 async fn shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw() {
     let (session, mut turn_context) = make_session_and_context().await;
-    turn_context.codex_self_exe = Some(PathBuf::from("/tmp/codex"));
+    turn_context.codex_self_exe = Some(PathBuf::from("/tmp/z"));
     let params = ShellCommandToolCallParams {
         command: "git status".to_string(),
         workdir: None,
@@ -229,7 +230,7 @@ async fn shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw
         prepared.exec_params.command,
         session
             .user_shell()
-            .derive_exec_args("/tmp/codex ztok git status", /*use_login_shell*/ false)
+            .derive_exec_args("/tmp/z ztok git status", /*use_login_shell*/ false)
     );
     assert_eq!(
         prepared.approval_command,
@@ -242,7 +243,7 @@ async fn shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw
         Some(
             session
                 .user_shell()
-                .derive_exec_args("codex ztok git status", /*use_login_shell*/ false)
+                .derive_exec_args("z ztok git status", /*use_login_shell*/ false)
         )
     );
     assert_eq!(prepared.interaction_input, Some("git status".to_string()));
@@ -252,17 +253,17 @@ async fn shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw
 fn shell_command_prepare_command_routes_safe_commands_via_ztok() {
     let prepared = ShellCommandHandler::prepare_command(
         "FOO=1 git status",
-        Some(PathBuf::from("/tmp/codex").as_path()),
+        Some(PathBuf::from("/tmp/z").as_path()),
     )
     .expect("rewrite should succeed");
 
     assert_eq!(
         prepared,
         (
-            "FOO=1 /tmp/codex ztok git status".to_string(),
-            Some("FOO=1 codex ztok git status".to_string()),
+            "FOO=1 /tmp/z ztok git status".to_string(),
+            Some("FOO=1 z ztok git status".to_string()),
             Some("FOO=1 git status".to_string()),
-            Some("ztok: FOO=1 git status → FOO=1 codex ztok git status".to_string())
+            Some("ztok: FOO=1 git status → FOO=1 z ztok git status".to_string())
         )
     );
 }

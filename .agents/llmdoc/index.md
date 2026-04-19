@@ -36,6 +36,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-half-wired-build-warnings.md`：`zmemory` / `ztldr` 构建告警往往来自“实现已写但生产未接线”的 prompt/runtime/state 缺口，应优先核对接线 seam，而不是先怀疑 Cargo feature。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-main-path-and-pending-input-gaps.md`：`zmemory recall` 和 `ztldr` 路由这类 turn 级派生逻辑，不能只接普通初始输入；还要核对主路径 producer、pending-input 和 mailbox-triggered turn 是否都覆盖。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-finalization-needs-worktree-aware-git-root-and-subcommand-help-output-localization.md`：`zmemory` / `ztldr` 最后收口时，共享 `git-utils` 的 worktree root 解析和子命令 help 输出汉化都要单独验证，不能只看 crate 本体测试。
+- `.agents/llmdoc/memory/reflections/2026-04-19-local-analysis-tools-must-be-wired-in-tool-plan-and-all-rs.md`：判断本地分析工具是否真正保留时，不能只看 crate/CLI；还要核对共享 `tool_registry_plan.rs` 的 spec+handler 接线，以及 `core/tests/all` 是否真的聚合对应 e2e。
 - `.agents/llmdoc/memory/reflections/2026-04-19-pending-input-routing-should-preserve-turn-intent.md`：mid-turn `pending_input` 的 routing side effects 不能整包重算默认 directives；要保留 turn 基线并按最新 steer 决议。
 - `.agents/llmdoc/memory/reflections/2026-04-19-pending-input-test-verification-chain-and-ztok-boundary.md`：验证 `suite::pending_input` 时要先打通 `tests/all` 聚合编译面；grep 路由回归也应断言意图与工具种类，而不是写死 `ztok` 代理前的 stdout 形状。
 - `.agents/llmdoc/memory/reflections/2026-04-19-upstream-sync-cli-surface-baseline-must-cover-entrypoints-and-help-localization.md`：upstream sync 的本地特性基线不能只保 crate 存在；`codex-rs/cli/src/main.rs` 的子命令注册、dispatch、help 汉化与本地别名也必须纳入 merge-back gate。

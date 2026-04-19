@@ -2118,6 +2118,7 @@ impl CodexMessageProcessor {
         let mut env = create_env(
             &self.config.permissions.shell_environment_policy,
             /*thread_id*/ None,
+            self.config.codex_self_exe.as_deref(),
         );
         if let Some(env_overrides) = env_overrides {
             for (key, value) in env_overrides {

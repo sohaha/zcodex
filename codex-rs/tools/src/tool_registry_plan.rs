@@ -47,6 +47,7 @@ use crate::create_spawn_agent_tool_v1;
 use crate::create_spawn_agent_tool_v2;
 use crate::create_spawn_agents_on_csv_tool;
 use crate::create_test_sync_tool;
+use crate::create_tldr_tool;
 use crate::create_tool_search_tool;
 use crate::create_tool_suggest_tool;
 use crate::create_update_plan_tool;
@@ -56,6 +57,8 @@ use crate::create_wait_agent_tool_v2;
 use crate::create_wait_tool;
 use crate::create_web_search_tool;
 use crate::create_write_stdin_tool;
+use crate::create_zmemory_mcp_tools;
+use crate::create_zmemory_tool;
 use crate::default_namespace_description;
 use crate::dynamic_tool_to_responses_api_tool;
 use crate::mcp_tool_to_responses_api_tool;
@@ -251,6 +254,29 @@ pub fn build_tool_registry_plan(
             config.code_mode_enabled,
         );
         plan.register_handler("request_permissions", ToolHandlerKind::RequestPermissions);
+    }
+
+    if config.has_environment {
+        let spec = create_tldr_tool();
+        let name = spec.name().to_string();
+        plan.push_spec(
+            spec,
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
+        plan.register_handler(name, ToolHandlerKind::Tldr);
+    }
+
+    if config.zmemory_tool_enabled {
+        for spec in std::iter::once(create_zmemory_tool()).chain(create_zmemory_mcp_tools()) {
+            let name = spec.name().to_string();
+            plan.push_spec(
+                spec,
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.register_handler(name, ToolHandlerKind::Zmemory);
+        }
     }
 
     let deferred_dynamic_tools = params

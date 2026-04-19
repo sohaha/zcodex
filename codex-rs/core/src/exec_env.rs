@@ -2,10 +2,12 @@
 use codex_config::types::EnvironmentVariablePattern;
 use codex_config::types::ShellEnvironmentPolicy;
 use codex_protocol::ThreadId;
+use codex_utils_cli::inject_codex_self_exe_env;
 use std::collections::HashMap;
 use std::path::Path;
 
 pub use codex_config::shell_environment::CODEX_THREAD_ID_ENV_VAR;
+pub use codex_utils_cli::CODEX_SELF_EXE_ENV_VAR;
 
 /// Construct an environment map based on the rules in the specified policy. The
 /// resulting map can be passed directly to `Command::envs()` after calling
@@ -20,9 +22,12 @@ pub use codex_config::shell_environment::CODEX_THREAD_ID_ENV_VAR;
 pub fn create_env(
     policy: &ShellEnvironmentPolicy,
     thread_id: Option<ThreadId>,
+    codex_self_exe: Option<&Path>,
 ) -> HashMap<String, String> {
     let thread_id = thread_id.map(|thread_id| thread_id.to_string());
-    codex_config::shell_environment::create_env(policy, thread_id.as_deref())
+    let mut env = codex_config::shell_environment::create_env(policy, thread_id.as_deref());
+    inject_codex_self_exe_env(&mut env, codex_self_exe);
+    env
 }
 
 pub fn prepend_arg0_helper_dir_to_path(

@@ -718,6 +718,7 @@ impl UnifiedExecProcessManager {
         let local_policy_env = create_env(
             &context.turn.shell_environment_policy,
             /*thread_id*/ None,
+            context.turn.codex_self_exe.as_deref(),
         );
         let mut env = local_policy_env.clone();
         env.insert(

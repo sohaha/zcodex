@@ -33,6 +33,7 @@ use codex_tui::AppExitInfo;
 use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
 use codex_tui::UpdateAction;
+use codex_utils_cli::CODEX_SELF_EXE_ENV_VAR;
 use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -697,6 +698,12 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    if let Some(codex_self_exe) = arg0_paths.codex_self_exe.as_deref() {
+        // Library crates use this stable fact source for launcher-agnostic
+        // hints without depending on `current_exe()` inside test binaries.
+        unsafe { std::env::set_var(CODEX_SELF_EXE_ENV_VAR, codex_self_exe) };
+    }
+
     let raw_args = std::env::args_os().collect::<Vec<_>>();
     if let Some(argv0) = raw_args.first()
         && codex_ztok::is_alias_invocation(argv0)

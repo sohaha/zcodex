@@ -95,6 +95,8 @@ mod sqlite_state;
 mod stream_error_allows_next_turn;
 mod stream_no_completed;
 mod subagent_notifications;
+#[cfg(not(target_os = "windows"))]
+mod tldr_e2e;
 mod tool_harness;
 mod tool_parallelism;
 mod tool_suggest;
@@ -110,3 +112,5 @@ mod view_image;
 mod web_search;
 mod websocket_fallback;
 mod window_headers;
+#[cfg(not(target_os = "windows"))]
+mod zmemory_e2e;

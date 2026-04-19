@@ -3311,7 +3311,12 @@ mod lifecycle_tests {
                                 kind: StructuredFailureKind::DaemonUnavailable,
                                 reason: "daemon failed to start".to_string(),
                                 retryable: true,
-                                retry_hint: Some("run `codex ztldr daemon start`".to_string()),
+                                retry_hint: Some(format!(
+                                    "run `{}`",
+                                    codex_utils_cli::format_launcher_command_from_env(&[
+                                        "ztldr", "daemon", "start",
+                                    ])
+                                )),
                             }),
                             degraded_mode: Some(DegradedMode {
                                 kind: DegradedModeKind::DiagnosticOnly,
@@ -3336,7 +3341,12 @@ mod lifecycle_tests {
                         kind: StructuredFailureKind::DaemonUnavailable,
                         reason: "daemon failed to start".to_string(),
                         retryable: true,
-                        retry_hint: Some("run `codex ztldr daemon start`".to_string()),
+                        retry_hint: Some(format!(
+                            "run `{}`",
+                            codex_utils_cli::format_launcher_command_from_env(&[
+                                "ztldr", "daemon", "start",
+                            ])
+                        )),
                     }),
                     degraded_mode: Some(DegradedMode {
                         kind: DegradedModeKind::DiagnosticOnly,

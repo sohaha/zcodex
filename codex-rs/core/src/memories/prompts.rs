@@ -10,6 +10,7 @@ use codex_state::Phase2InputSelection;
 use codex_state::Stage1Output;
 use codex_state::Stage1OutputRef;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_cli::CODEX_SELF_EXE_ENV_VAR;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
 use codex_utils_template::Template;
@@ -313,7 +314,10 @@ pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
 
 pub(crate) fn build_ztok_tool_developer_instructions() -> String {
     ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE
-        .render::<[(&str, &str); 0], _, _>([])
+        .render([
+            ("codex_self_exe_env_var", CODEX_SELF_EXE_ENV_VAR),
+            ("posix_launcher_invocation", "\"$CODEX_SELF_EXE\""),
+        ])
         .unwrap_or_else(|err| panic!("embedded ztok prompt template should render: {err}"))
 }
 

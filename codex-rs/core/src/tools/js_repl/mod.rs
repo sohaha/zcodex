@@ -1013,7 +1013,11 @@ impl JsReplManager {
             .await
             .map_err(|err| err.to_string())?;
 
-        let mut env = create_env(&turn.shell_environment_policy, thread_id);
+        let mut env = create_env(
+            &turn.shell_environment_policy,
+            thread_id,
+            turn.codex_self_exe.as_deref(),
+        );
         prepend_arg0_helper_dir_to_path(
             &mut env,
             turn.config.main_execve_wrapper_exe.as_deref(),

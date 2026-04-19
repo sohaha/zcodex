@@ -1293,7 +1293,11 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
         recommendations[0]["command"]
             .as_str()
             .unwrap_or_default()
-            .contains("codex zmemory manage-triggers core://base")
+            .contains(&codex_utils_cli::format_launcher_command_from_env(&[
+                "zmemory",
+                "manage-triggers",
+                "core://base",
+            ]))
     );
     let entries = alias_payload["result"]["view"]["entries"]
         .as_array()

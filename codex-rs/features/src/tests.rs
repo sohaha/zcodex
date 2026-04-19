@@ -109,12 +109,10 @@ fn external_migration_is_experimental_and_disabled_by_default() {
     let stage = spec.stage;
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("External migration"));
+    assert_eq!(stage.experimental_menu_name(), Some("外部配置迁移"));
     assert_eq!(
         stage.experimental_menu_description(),
-        Some(
-            "Show a startup prompt when Codex detects migratable external agent config for this machine or project."
-        )
+        Some("当 Codex 检测到此机器或项目存在可迁移的外部 agent 配置时，显示启动提示。")
     );
     assert_eq!(stage.experimental_announcement(), None);
     assert_eq!(Feature::ExternalMigration.default_enabled(), false);

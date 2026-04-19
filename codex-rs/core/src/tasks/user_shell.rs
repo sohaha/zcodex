@@ -127,6 +127,7 @@ pub(crate) async fn execute_user_shell_command(
     let exec_env_map = create_env(
         &turn_context.shell_environment_policy,
         Some(session.conversation_id),
+        turn_context.codex_self_exe.as_deref(),
     );
     let exec_command = maybe_wrap_shell_lc_with_snapshot(
         &display_command,

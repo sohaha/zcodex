@@ -11,6 +11,7 @@ use crate::service::contracts::AliasReviewViewContract;
 use crate::service::contracts::ReviewRecommendationContract;
 use anyhow::Result;
 use anyhow::anyhow;
+use codex_utils_cli::format_launcher_command_from_env;
 use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
@@ -584,7 +585,14 @@ fn read_alias_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> R
 
 fn suggestion_command(node_uri: &str, suggested_keywords: &[String]) -> String {
     if suggested_keywords.is_empty() {
-        return format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json");
+        return format_launcher_command_from_env(&[
+            "zmemory",
+            "manage-triggers",
+            node_uri,
+            "--add",
+            "<keyword>",
+            "--json",
+        ]);
     }
 
     let args = suggested_keywords
@@ -592,5 +600,8 @@ fn suggestion_command(node_uri: &str, suggested_keywords: &[String]) -> String {
         .map(|keyword| format!("--add {keyword}"))
         .collect::<Vec<_>>()
         .join(" ");
-    format!("codex zmemory manage-triggers {node_uri} {args} --json")
+    format!(
+        "{} zmemory manage-triggers {node_uri} {args} --json",
+        codex_utils_cli::env_launcher_display_name()
+    )
 }

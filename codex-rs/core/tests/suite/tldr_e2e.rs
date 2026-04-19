@@ -28,6 +28,19 @@ fn extract_tldr_json_block(text: &str) -> Value {
     serde_json::from_str(json).expect("tldr json block should parse")
 }
 
+fn tool_names(body: &Value) -> Vec<String> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tldr_function_output_exposes_bounded_json_to_model() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -104,6 +117,27 @@ async fn tldr_function_output_exposes_bounded_json_to_model() -> Result<()> {
         .filter(|edge| edge["kind"] == "calls" && edge["from"] == "main" && edge["to"] == "helper")
         .count();
     assert_eq!(helper_call_edges, 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tldr_tool_request_exposes_ztldr() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let resp_mock = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let mut builder = test_codex();
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("inspect helper context").await?;
+
+    let body = resp_mock.single_request().body_json();
+    assert!(tool_names(&body).contains(&"ztldr".to_string()));
 
     Ok(())
 }

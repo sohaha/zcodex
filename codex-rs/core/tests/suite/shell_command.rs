@@ -258,11 +258,11 @@ async fn shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> 
     let output = harness.function_call_stdout(call_id).await;
     if output.contains("[shell_command routed via embedded ZTOK]") {
         if output.contains("ztok:") {
-            let rewritten = format!(
-                "codex ztok grep 'hello, world' {} -n",
-                file.path().display()
+            let rewritten_pattern = format!(
+                r"(?m)\b\S+ ztok grep 'hello, world' {} -n\b",
+                escape(&file.path().display().to_string())
             );
-            assert!(output.contains(&rewritten));
+            assert_regex_match(&rewritten_pattern, &output);
             assert!(
                 output.contains("1: hello, world"),
                 "missing routed rg match: {output}"
@@ -300,11 +300,11 @@ async fn shell_command_with_login_ignores_invalid_ripgrep_config_path_from_paren
     let output = harness.function_call_stdout(call_id).await;
     if output.contains("[shell_command routed via embedded ZTOK]") {
         if output.contains("ztok:") {
-            let rewritten = format!(
-                "codex ztok grep 'hello with login' {} -n",
-                file.path().display()
+            let rewritten_pattern = format!(
+                r"(?m)\b\S+ ztok grep 'hello with login' {} -n\b",
+                escape(&file.path().display().to_string())
             );
-            assert!(output.contains(&rewritten));
+            assert_regex_match(&rewritten_pattern, &output);
             assert!(
                 output.contains("1: hello with login"),
                 "missing routed rg match: {output}"

@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 codex-git-utils = { workspace = true }
+codex-utils-cli = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

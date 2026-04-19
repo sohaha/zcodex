@@ -166,12 +166,12 @@ fn build_ztok_tool_developer_instructions_renders_embedded_template() {
     let instructions = build_ztok_tool_developer_instructions();
 
     assert!(instructions.contains("## Embedded ZTOK"));
-    assert!(instructions.contains("`codex ztok` is the token-optimized CLI proxy"));
-    assert!(instructions.contains("Prefer running shell commands through `codex ztok`"));
-    assert!(instructions.contains("`codex ztok err -- <command> [args...]`"));
-    assert!(instructions.contains("`codex ztok test -- <command> [args...]`"));
-    assert!(instructions.contains("`codex ztok log [file]`"));
-    assert!(instructions.contains("`codex ztok json <file> --keys-only`"));
+    assert!(instructions.contains("`CODEX_SELF_EXE`"));
+    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok <subcommand> ...`"));
+    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok err -- <command> [args...]`"));
+    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok test -- <command> [args...]`"));
+    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok log [file]`"));
+    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok json <file> --keys-only`"));
     assert!(instructions.contains("`bash -lc 'cargo test 2>&1 | tail -n 40'`"));
     assert!(instructions.contains("[shell_command routed via embedded ZTOK]"));
     assert!(instructions.contains("[shell_command kept raw]"));

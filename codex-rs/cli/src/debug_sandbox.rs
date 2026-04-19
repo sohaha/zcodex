@@ -140,6 +140,7 @@ async fn run_command_under_sandbox(
     let mut env = create_env(
         &config.permissions.shell_environment_policy,
         /*thread_id*/ None,
+        config.codex_self_exe.as_deref(),
     );
     prepend_arg0_helper_dir_to_path(
         &mut env,

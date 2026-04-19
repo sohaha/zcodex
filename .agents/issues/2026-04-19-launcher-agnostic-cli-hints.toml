@@ -14,10 +14,10 @@ done_when = "运行时环境里存在稳定的 launcher 绝对路径事实源，
 validate_by = "cd /workspace/codex-rs && cargo check -p codex-core --lib && cargo check -p codex-cli --bin codex"
 regress_by = "none"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
+status = "done"
+validate_status = "passed"
 regress_status = "not_needed"
-notes = "none"
+notes = "已完成：引入共享 launcher helper 与 CODEX_SELF_EXE 运行时事实源，core/lib 与 cli/bin 编译检查通过。"
 
 [[issue]]
 id = "a2"
@@ -34,10 +34,10 @@ done_when = "Embedded ZTOK 提示、shell rewrite 展示命令和相关事件输
 validate_by = "cd /workspace/codex-rs && cargo test -p codex-core build_ztok_tool_developer_instructions_renders_embedded_template --lib && cargo test -p codex-core shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw --lib && cargo test -p codex-core shell_emitter_never_exposes_absolute_ztok_exec_path --lib"
 regress_by = "cd /workspace/codex-rs && cargo test -p codex-core session::tests::build_initial_context_includes_ztok_instructions"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
+status = "blocked"
+validate_status = "failed"
 regress_status = "not_run"
-notes = "none"
+notes = "实现已完成：Embedded ZTOK prompt、逻辑展示命令和 pending_input snapshots 已切到 CODEX_SELF_EXE / 当前 launcher 表达；但 validate_by 指定的 codex-core --lib test 入口被仓库既有测试漂移阻断，当前无法把该 issue 标记为 passed。"
 
 [[issue]]
 id = "a3"
@@ -47,13 +47,13 @@ scope = """
 将 `ztldr` 的 daemon retry hint、`zmemory` 的 alias review suggestion command，以及直接依赖这些文案的测试与必要 README 示例统一到 launcher 无关表达。
 本 issue 复用前置 issue 提供的共享事实源与展示边界，不重复设计 launcher 运行时变量，也不扩展 `ztldr` 或 `zmemory` 功能本身。
 """
-touch_points = ["module:cli", "module:zmemory", "command:ztldr", "command:zmemory", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/cli/tests/tldr.rs", "codex-rs/cli/tests/zmemory.rs", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/README.md"]
+touch_points = ["module:cli", "module:zmemory", "command:ztldr", "command:zmemory", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/cli/tests/tldr.rs", "codex-rs/cli/tests/zmemory.rs", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/README.md", "codex-rs/README.md"]
 depends_on = ["a1"]
-done_when = "`ztldr` 与 `zmemory` 不再向用户或 agent 返回写死 `codex ...` 的可执行 hint/建议命令，相关测试与直接依赖文案的 README 示例同步到 launcher 无关表达。"
+done_when = "`ztldr` 与 `zmemory` 不再向用户或 agent 返回写死 `codex ...` 的可执行 hint/建议命令，相关测试与直接依赖这些命令示例的 README 文案同步到 launcher 无关表达。"
 validate_by = "cd /workspace/codex-rs && cargo test -p codex-cli tldr && cargo test -p codex-cli zmemory"
-regress_by = "cd /workspace && rg -n \"codex ztldr|codex zmemory\" codex-rs/cli/src/tldr_cmd.rs codex-rs/cli/tests/tldr.rs codex-rs/cli/tests/zmemory.rs codex-rs/zmemory/src/system_views.rs codex-rs/zmemory/README.md"
+regress_by = "cd /workspace && rg -n \"codex ztldr|codex zmemory\" codex-rs/cli/src/tldr_cmd.rs codex-rs/cli/tests/tldr.rs codex-rs/cli/tests/zmemory.rs codex-rs/zmemory/src/system_views.rs codex-rs/zmemory/README.md codex-rs/README.md"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "none"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成：ztldr 与 zmemory 改为读取统一 launcher 事实源；codex-cli tldr 与 codex-cli zmemory 测试通过，指定文件中不再残留 codex ztldr / codex zmemory 硬编码。"

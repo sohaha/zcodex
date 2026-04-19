@@ -2090,6 +2090,7 @@ dependencies = [
  "codex-utils-absolute-path",
  "codex-utils-cache",
  "codex-utils-cargo-bin",
+ "codex-utils-cli",
  "codex-utils-home-dir",
  "codex-utils-image",
  "codex-utils-output-truncation",
@@ -2677,6 +2678,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "codex-file-search",
+ "codex-utils-cli",
  "fastembed",
  "ignore",
  "libc",
@@ -3483,6 +3485,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "codex-git-utils",
+ "codex-utils-cli",
  "pretty_assertions",
  "rusqlite",
  "schemars 0.8.22",

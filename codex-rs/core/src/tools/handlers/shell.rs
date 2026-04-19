@@ -41,6 +41,7 @@ use codex_protocol::protocol::ExecCommandSource;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::parse_command::shlex_join;
 use codex_tools::ShellCommandBackendConfig;
+use codex_utils_cli::launcher_display_name;
 use codex_ztok::ShellCommandRewriteKind;
 use codex_ztok::analyze_shell_command;
 use std::path::Path;
@@ -120,7 +121,11 @@ impl ShellHandler {
             cwd: turn_context.resolve_path(params.workdir.clone()),
             expiration: params.timeout_ms.into(),
             capture_policy: ExecCapturePolicy::ShellTool,
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+            env: create_env(
+                &turn_context.shell_environment_policy,
+                Some(thread_id),
+                turn_context.codex_self_exe.as_deref(),
+            ),
             network: turn_context.network.clone(),
             sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
             windows_sandbox_level: turn_context.windows_sandbox_level,
@@ -166,7 +171,8 @@ impl ShellCommandHandler {
         let analysis = analyze_shell_command(command);
         match analysis.kind {
             ShellCommandRewriteKind::AlreadyZtok => {
-                let Some(logical_command) = logical_ztok_command(&analysis.command) else {
+                let Some(logical_command) = logical_ztok_command(&analysis.command, codex_self_exe)
+                else {
                     return Ok((command.to_string(), None, None, None));
                 };
                 let Some(exec_command) = ztok_exec_command(&analysis.command, codex_self_exe)
@@ -176,7 +182,8 @@ impl ShellCommandHandler {
                 Ok((exec_command, Some(logical_command), None, None))
             }
             ShellCommandRewriteKind::Rewritten => {
-                let Some(logical_command) = logical_ztok_command(&analysis.command) else {
+                let Some(logical_command) = logical_ztok_command(&analysis.command, codex_self_exe)
+                else {
                     return Ok((command.to_string(), None, None, None));
                 };
                 let Some(exec_command) = ztok_exec_command(&analysis.command, codex_self_exe)
@@ -222,7 +229,11 @@ impl ShellCommandHandler {
                 cwd: turn_context.resolve_path(params.workdir.clone()),
                 expiration: params.timeout_ms.into(),
                 capture_policy: ExecCapturePolicy::ShellTool,
-                env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+                env: create_env(
+                    &turn_context.shell_environment_policy,
+                    Some(thread_id),
+                    turn_context.codex_self_exe.as_deref(),
+                ),
                 network: turn_context.network.clone(),
                 sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
                 windows_sandbox_level: turn_context.windows_sandbox_level,
@@ -242,12 +253,12 @@ impl ShellCommandHandler {
     }
 }
 
-fn logical_ztok_command(rewritten_command: &str) -> Option<String> {
+fn logical_ztok_command(rewritten_command: &str, codex_self_exe: Option<&Path>) -> Option<String> {
     let mut args = shlex::split(rewritten_command)?;
     let ztok_index = args.iter().position(|arg| arg == "ztok")?;
     args.splice(
         ztok_index..=ztok_index,
-        ["codex".to_string(), "ztok".to_string()],
+        [launcher_display_name(codex_self_exe), "ztok".to_string()],
     );
     serialize_shell_command(&args, ztok_index)
 }

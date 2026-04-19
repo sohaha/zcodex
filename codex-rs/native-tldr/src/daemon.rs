@@ -20,6 +20,7 @@ use crate::session::WarmReport;
 use crate::session::WarmStatus;
 use anyhow::Context;
 use anyhow::Result;
+use codex_utils_cli::format_launcher_command_from_env;
 use md5::compute as md5_compute;
 use serde::Deserialize;
 use serde::Serialize;
@@ -1417,10 +1418,10 @@ fn health_diagnostics(
             kind: StructuredFailureKind::DaemonUnavailable,
             reason: "daemon unavailable (missing socket and pid)".to_string(),
             retryable: true,
-            retry_hint: Some(
-                "run `codex ztldr ...` to auto-start the internal daemon or inspect logs"
-                    .to_string(),
-            ),
+            retry_hint: Some(format!(
+                "run `{}` to auto-start the internal daemon or inspect logs",
+                format_launcher_command_from_env(&["ztldr", "..."])
+            )),
         }),
         Some(DegradedMode {
             kind: DegradedModeKind::DiagnosticOnly,
