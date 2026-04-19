@@ -167,12 +167,14 @@ fn build_ztok_tool_developer_instructions_renders_embedded_template() {
 
     assert!(instructions.contains("## Embedded ZTOK"));
     assert!(instructions.contains("`CODEX_SELF_EXE`"));
-    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok <subcommand> ...`"));
-    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok err -- <command> [args...]`"));
-    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok test -- <command> [args...]`"));
-    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok log [file]`"));
-    assert!(instructions.contains("`\"$CODEX_SELF_EXE\" ztok json <file> --keys-only`"));
-    assert!(instructions.contains("`bash -lc 'cargo test 2>&1 | tail -n 40'`"));
+    assert!(instructions.contains("do not show `\"$CODEX_SELF_EXE\"`"));
+    assert!(instructions.contains("`codex ztok <subcommand> ...`"));
+    assert!(instructions.contains("`codex ztok shell <command> [args...]`"));
+    assert!(instructions.contains("`codex ztok shell --filter err <command> [args...]`"));
+    assert!(instructions.contains("`codex ztok shell --filter test <command> [args...]`"));
+    assert!(instructions.contains("`codex ztok log [file]`"));
+    assert!(instructions.contains("`codex ztok json <file> --keys-only`"));
+    assert!(instructions.contains("`codex ztok shell bash -lc 'cargo test 2>&1 | tail -n 40'`"));
     assert!(instructions.contains("[shell_command routed via embedded ZTOK]"));
     assert!(instructions.contains("[shell_command kept raw]"));
 }

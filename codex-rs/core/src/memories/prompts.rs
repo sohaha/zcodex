@@ -316,7 +316,7 @@ pub(crate) fn build_ztok_tool_developer_instructions() -> String {
     ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE
         .render([
             ("codex_self_exe_env_var", CODEX_SELF_EXE_ENV_VAR),
-            ("posix_launcher_invocation", "\"$CODEX_SELF_EXE\""),
+            ("logical_launcher_invocation", "codex"),
         ])
         .unwrap_or_else(|err| panic!("embedded ztok prompt template should render: {err}"))
 }

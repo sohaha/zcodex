@@ -176,6 +176,11 @@ just fmt
 - 一并审查 `is_retryable()`、`to_codex_protocol_error()`、`codex-rs/core/src/session/turn.rs`
 - 不要只补协议枚举级单测；至少确认 turn 级自动重试和对外错误分类没有互相打架
 
+如果本次同步碰到本地中文化 surface：
+
+- 不要只看视图入口文件；先追到真正的文案源头，例如 `FeatureSpec` 元数据、共享 helper、onboarding/history 组件
+- 同时检查直接字符串断言和相关 snapshot，避免“源码已改回英文但测试/快照仍没覆盖”或“只改了视图层，元数据源头仍是英文”
+
 如果本次同步碰到本地 workspace crate 面：
 
 - 不要只检查目录是否还在

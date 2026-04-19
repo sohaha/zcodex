@@ -1,10 +1,60 @@
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
+use clap::ValueEnum;
 use regex::Regex;
 use std::process::Command;
 use std::process::Output;
 use std::process::Stdio;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum ShellFilter {
+    Raw,
+    Err,
+    Test,
+}
+
+pub fn run_shell(command: &[String], filter: ShellFilter, verbose: u8) -> Result<()> {
+    match filter {
+        ShellFilter::Raw => run_raw(command, verbose),
+        ShellFilter::Err => run_err(command, verbose),
+        ShellFilter::Test => run_test(command, verbose),
+    }
+}
+
+fn run_raw(command: &[String], verbose: u8) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+    let command_display = command.join(" ");
+
+    if verbose > 0 {
+        eprintln!("运行 shell 命令：{command_display}");
+    }
+
+    let output = execute_command(command).context("执行 shell 命令失败")?;
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let raw = join_streams(&stdout, &stderr);
+    let rendered = if raw.trim().is_empty() {
+        render_empty_output(output.status.code(), output.status.success())
+    } else {
+        raw.clone()
+    };
+
+    let exit_code = output
+        .status
+        .code()
+        .unwrap_or(if output.status.success() { 0 } else { 1 });
+    if let Some(hint) = crate::tee::tee_and_hint(&raw, "shell", exit_code) {
+        println!("{rendered}\n{hint}");
+    } else {
+        println!("{rendered}");
+    }
+    timer.track(&command_display, "ztok shell", &raw, &rendered);
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+    Ok(())
+}
 
 /// 运行命令并过滤输出，只显示错误和警告
 pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
@@ -19,7 +69,7 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = join_streams(&stdout, &stderr);
     let filtered = filter_errors(&raw);
     let mut ztok = String::new();
 
@@ -69,7 +119,7 @@ pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = join_streams(&stdout, &stderr);
 
     let exit_code = output
         .status
@@ -97,6 +147,24 @@ fn execute_command(command: &[String]) -> Result<Output> {
         .stderr(Stdio::piped())
         .output()
         .with_context(|| format!("启动命令失败：{program}"))
+}
+
+fn join_streams(stdout: &str, stderr: &str) -> String {
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) if stdout.ends_with('\n') => format!("{stdout}{stderr}"),
+        (false, false) => format!("{stdout}\n{stderr}"),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (true, true) => String::new(),
+    }
+}
+
+fn render_empty_output(exit_code: Option<i32>, success: bool) -> String {
+    if success {
+        "命令执行成功（无输出）".to_string()
+    } else {
+        format!("命令执行失败（退出码：{exit_code:?}）")
+    }
 }
 
 fn filter_errors(output: &str) -> String {

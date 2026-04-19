@@ -207,8 +207,21 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
     assert!(uri_description.contains("core://agent"));
     assert!(uri_description.contains("system://boot"));
     assert!(uri_description.contains("system://paths"));
-    assert!(tool_names.contains(&"read_memory".to_string()));
-    assert!(tool_names.contains(&"search_memory".to_string()));
+    for expected in [
+        "zmemory",
+        "read_memory",
+        "search_memory",
+        "create_memory",
+        "update_memory",
+        "delete_memory",
+        "add_alias",
+        "manage_triggers",
+    ] {
+        assert!(
+            tool_names.contains(&expected.to_string()),
+            "expected zmemory tool list to expose {expected}, got {tool_names:?}"
+        );
+    }
 
     Ok(())
 }

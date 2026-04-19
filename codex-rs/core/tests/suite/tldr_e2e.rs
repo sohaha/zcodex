@@ -41,6 +41,20 @@ fn tool_names(body: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn tool_description(body: &Value, tool_name: &str) -> Option<String> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .and_then(|tools| {
+            tools.iter().find_map(|tool| {
+                (tool.get("name").and_then(Value::as_str) == Some(tool_name))
+                    .then(|| tool.get("description"))
+                    .flatten()
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+        })
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tldr_function_output_exposes_bounded_json_to_model() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -137,7 +151,11 @@ async fn tldr_tool_request_exposes_ztldr() -> Result<()> {
     test.submit_turn("inspect helper context").await?;
 
     let body = resp_mock.single_request().body_json();
+    let description =
+        tool_description(&body, "ztldr").expect("ztldr description should be present");
     assert!(tool_names(&body).contains(&"ztldr".to_string()));
+    assert!(description.contains("Use ztldr first"));
+    assert!(description.contains("degradedMode or structuredFailure"));
 
     Ok(())
 }

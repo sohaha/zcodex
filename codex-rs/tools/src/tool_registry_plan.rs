@@ -383,18 +383,18 @@ pub fn build_tool_registry_plan(
         plan.register_handler("test_sync_tool", ToolHandlerKind::TestSync);
     }
 
-    if matches!(config.wire_api, WireApi::Responses) {
-        if let Some(web_search_tool) = create_web_search_tool(WebSearchToolOptions {
+    if matches!(config.wire_api, WireApi::Responses)
+        && let Some(web_search_tool) = create_web_search_tool(WebSearchToolOptions {
             web_search_mode: config.web_search_mode,
             web_search_config: config.web_search_config.as_ref(),
             web_search_tool_type: config.web_search_tool_type,
-        }) {
-            plan.push_spec(
-                web_search_tool,
-                /*supports_parallel_tool_calls*/ false,
-                config.code_mode_enabled,
-            );
-        }
+        })
+    {
+        plan.push_spec(
+            web_search_tool,
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
     }
 
     if config.image_gen_tool {

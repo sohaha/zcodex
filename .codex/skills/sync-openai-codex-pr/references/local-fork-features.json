@@ -387,6 +387,21 @@
         },
         {
           "type": "regex",
+          "path": "codex-rs/tui/src/onboarding/trust_directory.rs",
+          "pattern": "你当前位于 "
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/history_cell.rs",
+          "pattern": "开始使用时，请描述一个任务，或试试这些命令"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/features/src/lib.rs",
+          "pattern": "外部配置迁移"
+        },
+        {
+          "type": "regex",
           "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
           "pattern": "加载 rollout"
         },

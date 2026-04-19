@@ -189,7 +189,7 @@ pub struct TldrAnalyzeCommand {
     pub project: PathBuf,
 
     /// 目标语言。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: CliLanguage,
 
     /// 目标符号名。
@@ -212,7 +212,7 @@ pub struct TldrExtractCommand {
     pub path: PathBuf,
 
     /// 目标语言；未指定时按文件扩展名推断。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: Option<CliLanguage>,
 
     /// 以 JSON 输出。
@@ -239,7 +239,7 @@ pub struct TldrSliceCommand {
     pub line: usize,
 
     /// 目标语言；未指定时按文件扩展名推断。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: Option<CliLanguage>,
 
     /// 以 JSON 输出。
@@ -254,7 +254,7 @@ pub struct TldrChangeImpactCommand {
     pub project: PathBuf,
 
     /// 目标语言。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: CliLanguage,
 
     /// 发生变更的路径列表。
@@ -273,7 +273,7 @@ pub struct TldrImportersCommand {
     pub project: PathBuf,
 
     /// 目标语言。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: CliLanguage,
 
     /// 模块或 import 片段。
@@ -292,7 +292,7 @@ pub struct TldrSemanticCommand {
     pub project: PathBuf,
 
     /// 目标语言。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: CliLanguage,
 
     /// 自然语言查询。
@@ -322,7 +322,7 @@ pub struct TldrSearchCommand {
     pub project: PathBuf,
 
     /// 目标语言。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: Option<CliLanguage>,
 
     /// 匹配模式。
@@ -353,7 +353,7 @@ pub struct TldrDiagnosticsCommand {
     pub path: PathBuf,
 
     /// 目标语言；未指定时按文件扩展名推断。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: Option<CliLanguage>,
 
     /// 只运行这些诊断工具，可重复传入。
@@ -384,7 +384,7 @@ pub struct TldrDoctorCommand {
     pub project: PathBuf,
 
     /// 仅检查指定语言相关的工具。
-    #[arg(long, value_enum)]
+    #[arg(long = "language", visible_alias = "lang", value_enum)]
     pub lang: Option<CliLanguage>,
 
     /// 只检查这些工具，可重复传入。

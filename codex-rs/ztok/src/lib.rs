@@ -255,6 +255,16 @@ enum Commands {
         command: Vec<String>,
     },
 
+    /// 通用 shell 命令入口
+    Shell {
+        /// 输出过滤模式：raw、err、test
+        #[arg(long, value_enum, default_value_t = runner::ShellFilter::Raw)]
+        filter: runner::ShellFilter,
+        /// 要运行的命令
+        #[arg(required = true, num_args = 1.., trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+
     /// 仅显示 JSON 结构，不显示值
     Json {
         /// JSON 文件
@@ -1374,6 +1384,10 @@ fn run_cli(cli: Cli) -> Result<()> {
 
         Commands::Test { command } => {
             runner::run_test(&command, cli.verbose)?;
+        }
+
+        Commands::Shell { filter, command } => {
+            runner::run_shell(&command, filter, cli.verbose)?;
         }
 
         Commands::Json {

@@ -392,6 +392,11 @@ fn ztok_help_exposes_codex_curated_command_surface() -> Result<()> {
             vec!["rewrite"],
         ),
         (
+            vec!["ztok", "shell", "--help"],
+            vec!["通用 shell 命令入口", "--filter", "raw", "err", "test"],
+            vec!["rewrite"],
+        ),
+        (
             vec!["ztok", "vitest", "--help"],
             vec!["Vitest 命令紧凑输出", "Vitest 参数"],
             vec!["run", "rewrite"],
@@ -1175,6 +1180,52 @@ fn ztok_test_filters_failure_output_and_keeps_exit_code() -> Result<()> {
         .assert()
         .code(9)
         .stdout(contains("FAILED test_x").and(contains("test result: FAILED")));
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn ztok_shell_raw_preserves_stdout_and_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "shell",
+        "sh",
+        "-c",
+        "printf 'alpha\\n'; printf 'beta\\n' >&2",
+    ])
+    .assert()
+    .success()
+    .stdout(contains("alpha").and(contains("beta")));
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn ztok_shell_err_filter_keeps_error_context() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "shell",
+        "--filter",
+        "err",
+        "sh",
+        "-c",
+        "printf 'before\\nwarning: boom\\nafter\\n'",
+    ])
+    .assert()
+    .success()
+    .stdout(
+        contains("before")
+            .and(contains("warning: boom"))
+            .and(contains("after")),
+    );
 
     Ok(())
 }

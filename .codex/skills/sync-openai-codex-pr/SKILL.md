@@ -215,6 +215,7 @@ just bazel-lock-check
 - `check` 只要报缺失项，就不能提交
 - worktree 审查时必须使用 worktree 自己的脚本与 `json` 基线副本
 - 对 `local_surface` / `localized_behavior` 特性，检查点不能只停留在文案或模块存在性；要覆盖运行时桥接、事件 wiring、配置落盘等真实链路
+- 对 `localized_behavior` 特性，如果用户可见文案实际来自 `FeatureSpec` 元数据、共享 helper、onboarding/history 组件、直接字符串断言或 snapshot，不要只检查视图入口；要把真正的文案源头和锁定这些文案的测试/快照一起纳入审查
 - 对 `codex-rs/cli` 这类本地 CLI 面，检查点必须覆盖顶层 `Subcommand` 注册、dispatch 接线，以及 help/localization 哨兵；不能只看底层 crate 或模块目录还在
 - 对 `workspace/local-crates` 这类本地 crate 面，检查点不能只保目录；还要覆盖 `codex-rs/Cargo.toml` 的 workspace members 和 workspace dependency 接线
 

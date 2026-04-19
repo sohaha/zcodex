@@ -14,13 +14,13 @@ pub(crate) async fn run_responses_command(
     let mut payload_text = String::new();
     tokio::io::stdin().read_to_string(&mut payload_text).await?;
     if payload_text.trim().is_empty() {
-        anyhow::bail!("expected Responses API JSON payload on stdin");
+        anyhow::bail!("预期从 stdin 读取 Responses API 的 JSON 载荷");
     }
 
     let payload: serde_json::Value = serde_json::from_str(&payload_text)
-        .map_err(|err| anyhow::anyhow!("failed to parse Responses API JSON payload: {err}"))?;
+        .map_err(|err| anyhow::anyhow!("解析 Responses API JSON 载荷失败：{err}"))?;
     if payload.get("stream").and_then(serde_json::Value::as_bool) != Some(true) {
-        anyhow::bail!("codex responses expects a streaming payload with `\"stream\": true`");
+        anyhow::bail!("`codex responses` 需要 `\"stream\": true` 的流式载荷");
     }
 
     let cli_overrides = root_config_overrides

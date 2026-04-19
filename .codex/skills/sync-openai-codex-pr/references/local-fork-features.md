@@ -164,6 +164,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: `请使用以下链接提交 Issue`
   - `regex` `codex-rs/tui/src/app.rs`: `保存并关闭外部编辑器以继续`
   - `regex` `codex-rs/tui/src/app.rs`: `因 SKILL\.md 文件无效，已跳过加载 \{error_count\} 个技能`
+  - `regex` `codex-rs/tui/src/onboarding/trust_directory.rs`: `你当前位于 `
+  - `regex` `codex-rs/tui/src/history_cell.rs`: `开始使用时，请描述一个任务，或试试这些命令`
+  - `regex` `codex-rs/features/src/lib.rs`: `外部配置迁移`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `加载 rollout`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `审查器未输出任何回复`
 
@@ -289,15 +292,15 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 顶层 `codex` CLI 必须继续暴露 `ztok`、`ztldr` 与 `zmemory` 子命令，并保留对应 dispatch 与 help 汉化哨兵。
 - better_when: 只有在 upstream 原生提供等效 CLI surface，且本地不再需要这些分叉入口或其汉化收口时，才允许迁移；迁移前必须先把新的入口路径与哨兵更新到这里。
 - evidence:
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:125 Ztok(ZtokArgs),
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:131 #[clap(name = "ztldr")]
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:135 Zmemory(ZmemoryCli),
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:165 #[clap(visible_alias = "r")]
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:868 tldr_cmd::run_tldr_command(tldr_cli).await?;
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:876 run_zmemory_command(zmemory_cli).await?;
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1711 let rendered = localize_help_output(err.to_string());
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1749 "显示帮助（使用 '-h' 查看摘要）",
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1756 .replace("Print version", "显示版本")
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:126 Ztok(ZtokArgs),
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:132 #[clap(name = "ztldr")]
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:136 Zmemory(ZmemoryCli),
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:166 #[clap(visible_alias = "r")]
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:875 tldr_cmd::run_tldr_command(tldr_cli).await?;
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:883 run_zmemory_command(zmemory_cli).await?;
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1718 let rendered = localize_help_output(err.to_string());
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1782 "显示帮助（使用 '-h' 查看摘要）",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1789 .replace("Print version", "显示版本")
 
 ### `buddy-surface`
 - status: `PASS`
@@ -321,14 +324,17 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。
 - better_when: 用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。
 - evidence:
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:78 /// 若未指定子命令，选项会转发到交互式命令行界面。
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:108 /// 以非交互模式运行 Codex。
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1293 println!("已在 config.toml 中启用功能 `{feature}`。");
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:79 /// 若未指定子命令，选项会转发到交互式命令行界面。
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:109 /// 以非交互模式运行 Codex。
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1300 println!("已在 config.toml 中启用功能 `{feature}`。");
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:77 SlashCommand::Init => "创建 AGENTS.md 文件，为 Codex 提供指令",
   - `ok` `codex-rs/tools/src/request_user_input_tool.rs`: codex-rs/tools/src/request_user_input_tool.rs:91 Some(format!("request_user_input 在 {mode_name} 模式不可用"))
   - `ok` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: codex-rs/tui/src/bottom_pane/feedback_view.rs:325 Some(_) => format!("{prefix}请使用以下链接提交 Issue："),
   - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:183 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
   - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:464 "因 SKILL.md 文件无效，已跳过加载 {error_count} 个技能。"
+  - `ok` `codex-rs/tui/src/onboarding/trust_directory.rs`: codex-rs/tui/src/onboarding/trust_directory.rs:49 "你当前位于 ".bold(),
+  - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1203 " 开始使用时，请描述一个任务，或试试这些命令："
+  - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:869 name: "外部配置迁移",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:1902 "加载 rollout `{}` 失败：{err}",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2671 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 

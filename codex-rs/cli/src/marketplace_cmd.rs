@@ -30,8 +30,8 @@ enum MarketplaceSubcommand {
 
 #[derive(Debug, Parser)]
 struct AddMarketplaceArgs {
-    /// Marketplace source. Supports owner/repo[@ref], HTTP(S) Git URLs, SSH URLs,
-    /// or local marketplace root directories.
+    /// 市场源地址。支持 `owner/repo[@ref]`、HTTP(S) Git URL、SSH URL，
+    /// 以及本地市场源根目录。
     source: String,
 
     #[arg(long = "ref", value_name = "REF")]
@@ -52,7 +52,7 @@ struct UpgradeMarketplaceArgs {
 
 #[derive(Debug, Parser)]
 struct RemoveMarketplaceArgs {
-    /// Configured marketplace name to remove.
+    /// 要移除的已配置市场源名称。
     marketplace_name: String,
 }
 
@@ -84,7 +84,7 @@ async fn run_add(args: AddMarketplaceArgs) -> Result<()> {
         sparse_paths,
     } = args;
 
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
+    let codex_home = find_codex_home().context("解析 CODEX_HOME 失败")?;
     let outcome = add_marketplace(
         codex_home.to_path_buf(),
         MarketplaceAddRequest {
@@ -97,17 +97,17 @@ async fn run_add(args: AddMarketplaceArgs) -> Result<()> {
 
     if outcome.already_added {
         println!(
-            "Marketplace `{}` is already added from {}.",
+            "市场源 `{}` 已从 {} 添加。",
             outcome.marketplace_name, outcome.source_display
         );
     } else {
         println!(
-            "Added marketplace `{}` from {}.",
-            outcome.marketplace_name, outcome.source_display
+            "已从 {} 添加市场源 `{}`。",
+            outcome.source_display, outcome.marketplace_name
         );
     }
     println!(
-        "Installed marketplace root: {}",
+        "已安装的市场源根目录：{}",
         outcome.installed_root.as_path().display()
     );
 
@@ -121,8 +121,8 @@ async fn run_upgrade(
     let UpgradeMarketplaceArgs { marketplace_name } = args;
     let config = Config::load_with_cli_overrides(overrides)
         .await
-        .context("failed to load configuration")?;
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
+        .context("加载配置失败")?;
+    let codex_home = find_codex_home().context("解析 CODEX_HOME 失败")?;
     let manager = PluginsManager::new(codex_home.to_path_buf());
     let outcome = manager
         .upgrade_configured_marketplaces_for_config(&config, marketplace_name.as_deref())
@@ -132,17 +132,17 @@ async fn run_upgrade(
 
 async fn run_remove(args: RemoveMarketplaceArgs) -> Result<()> {
     let RemoveMarketplaceArgs { marketplace_name } = args;
-    let codex_home = find_codex_home().context("failed to resolve CODEX_HOME")?;
+    let codex_home = find_codex_home().context("解析 CODEX_HOME 失败")?;
     let outcome = remove_marketplace(
         codex_home.to_path_buf(),
         MarketplaceRemoveRequest { marketplace_name },
     )
     .await?;
 
-    println!("Removed marketplace `{}`.", outcome.marketplace_name);
+    println!("已移除市场源 `{}`。", outcome.marketplace_name);
     if let Some(installed_root) = outcome.removed_installed_root {
         println!(
-            "Removed installed marketplace root: {}",
+            "已移除的市场源安装目录：{}",
             installed_root.as_path().display()
         );
     }
@@ -156,32 +156,32 @@ fn print_upgrade_outcome(
 ) -> Result<()> {
     for error in &outcome.errors {
         eprintln!(
-            "Failed to upgrade marketplace `{}`: {}",
+            "升级市场源 `{}` 失败：{}",
             error.marketplace_name, error.message
         );
     }
     if !outcome.all_succeeded() {
-        bail!("{} upgrade failure(s) occurred.", outcome.errors.len());
+        bail!("发生了 {} 个市场源升级失败。", outcome.errors.len());
     }
 
-    let selection_label = marketplace_name.unwrap_or("all configured Git marketplaces");
+    let selection_label = marketplace_name.unwrap_or("所有已配置的 Git 市场源");
     if outcome.selected_marketplaces.is_empty() {
-        println!("No configured Git marketplaces to upgrade.");
+        println!("当前没有可升级的已配置 Git 市场源。");
     } else if outcome.upgraded_roots.is_empty() {
         if marketplace_name.is_some() {
-            println!("Marketplace `{selection_label}` is already up to date.");
+            println!("市场源 `{selection_label}` 已经是最新版本。");
         } else {
-            println!("All configured Git marketplaces are already up to date.");
+            println!("所有已配置的 Git 市场源都已经是最新版本。");
         }
     } else if marketplace_name.is_some() {
-        println!("Upgraded marketplace `{selection_label}` to the latest configured revision.");
+        println!("已将市场源 `{selection_label}` 升级到最新配置版本。");
         for root in &outcome.upgraded_roots {
-            println!("Installed marketplace root: {}", root.display());
+            println!("已安装的市场源根目录：{}", root.display());
         }
     } else {
-        println!("Upgraded {} marketplace(s).", outcome.upgraded_roots.len());
+        println!("已升级 {} 个市场源。", outcome.upgraded_roots.len());
         for root in &outcome.upgraded_roots {
-            println!("Installed marketplace root: {}", root.display());
+            println!("已安装的市场源根目录：{}", root.display());
         }
     }
 

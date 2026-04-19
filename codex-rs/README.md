@@ -133,9 +133,11 @@ Rust CLI 当前不再向模型暴露 `ztok_*` tools。对于 `shell_command` 的
 过滤层，以减少噪声输出；只有简单单文件的 `cat/head/tail` 会改写为
 `ztok read ...`，而未加引号的 pipe / redirect / command substitution /
 backgrounding 等复杂 shell 语法仍会保留原始命令执行。被路由的命令在事件/
-输出里会显示成当前 launcher 的逻辑命令（例如 `<launcher> ztok ...` 或 `z ztok ...`），
-但实际执行时会解析到当前进程注入的 `CODEX_SELF_EXE` 绝对路径再进入 `ztok`，
-避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
+输出里只应显示当前 launcher 的逻辑命令（例如 `<launcher> ztok ...` 或 `z ztok ...`），
+不会把 `CODEX_SELF_EXE` 绝对路径暴露给用户界面；实际执行时仍会解析到当前进程注入的
+`CODEX_SELF_EXE` 绝对路径再进入 `ztok`，避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
+如果需要显式走泛化 shell 代理，优先使用 `codex ztok shell ...`，再按需加
+`--filter err` 或 `--filter test`。
 更详细的实现说明见 [`core/README.md`](./core/README.md)。
 
 ### 体验 Codex 沙箱
