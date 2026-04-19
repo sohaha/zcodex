@@ -113,6 +113,7 @@ Do not copy upstream Python code mechanically. Port behavior into the local Rust
 - Do not import upstream Web UI, FastAPI, Vue, Claude Code, or OpenCode flows into this skill's default scope.
 - Do not replace the local fixed replacement flow with upstream AI rewriting unless the user explicitly asks for that expansion.
 - Do not reintroduce installer-style `ctf profile/global mode` UX over the current `codex zoffsec` subcommand without explicit approval.
+- Do not retroactively describe pre-skill local features as “already synced to upstream” unless you have contemporaneous state tracking or a fresh file-by-file audit that proves the exact parity scope.
 - Do not skip `STATE.md` updates after a landed sync.
 - Do not leave plan or issue docs behind the code when a sync round changes scope or verification status.
 

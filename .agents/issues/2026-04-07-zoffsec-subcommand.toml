@@ -19,7 +19,7 @@ regress_timing = "after_done"
 status = "done"
 validate_status = "passed"
 regress_status = "not_needed"
-notes = "重点确认模板名受控、帮助文本清晰、zoffsec 标记落点稳定且不污染普通 `codex` 会话；若需扩展 session meta 或 rollout 字段，必须同时评估兼容性与读取路径。\n2026-04-09 Execution：PASS。新增 `codex zoffsec` 启动入口与 `default`/`web`/`reverse` 三套内置模板，启动时通过 `base_instructions` 覆盖注入显式 zoffsec 头标记（`<!-- codex-zoffsec marker=codex-zoffsec template=... -->`），避免扩展 protocol/core 元数据链路。验证已通过 `cargo test -p codex-cli zoffsec`、`cargo nextest run -p codex-core --test all exec_cli_profile_applies_model_instructions_file` 与新增的 `cargo nextest run -p codex-core --test all exec_cli_persists_zoffsec_marker_in_session_meta`。Capability 适配：使用了 `llmdoc` 与 `ztldr`；其余为 none-applicable。"
+notes = "重点确认模板名受控、帮助文本清晰、zoffsec 标记落点稳定且不污染普通 `codex` 会话；若需扩展 session meta 或 rollout 字段，必须同时评估兼容性与读取路径。\n2026-04-09 Execution：PASS。新增 `codex zoffsec` 启动入口与 `default`/`web`/`reverse` 三套内置模板，启动时通过 `base_instructions` 覆盖注入显式 zoffsec 头标记（`<!-- codex-zoffsec marker=codex-zoffsec template=... -->`），避免扩展 protocol/core 元数据链路。验证已通过 `cargo test -p codex-cli zoffsec`、`cargo nextest run -p codex-core --test all exec_cli_profile_applies_model_instructions_file` 与新增的 `cargo nextest run -p codex-core --test all exec_cli_persists_zoffsec_marker_in_session_meta`。Capability 适配：使用了 `llmdoc` 与 `ztldr`；其余为 none-applicable。\n2026-04-19 Audit：该 issue 记录的是本地原生命令实现，不应回溯性表述为“已与 upstream 精确对齐”；当前可被审计确认的 upstream selective sync 仅覆盖 rollout cleaner。"
 
 [[issue]]
 id = "a2"
@@ -40,7 +40,7 @@ regress_timing = "before_fanout"
 status = "done"
 validate_status = "passed"
 regress_status = "passed"
-notes = "实现优先采用逐行 JSONL + `serde_json::Value` 定点修改，避免强类型整文件回写丢失未知字段；默认必须打印目标文件与备份路径。\n2026-04-09 Execution：PASS。新增 `codex zoffsec clean` CLI 接线，支持 `--last`/`--id`/`--path` 目标选择、`--dry-run` 预览、默认备份与拒绝替换文本覆盖。rollout 侧新增 `clean_zoffsec_rollout()`：先校验 zoffsec session marker，再在检测到 refusal 后替换 assistant `response_item` 与 `event_msg.agent_message`，并删除 reasoning 记录，最后以临时文件 + rename 原子写回。主代理本地 spec-reviewer/code-reviewer 结论均为 PASS，未发现超范围实现或明显回归缺口。验证已通过 `cargo check -p codex-cli --bin codex`、`cargo test -p codex-cli zoffsec`、`cargo nextest run -p codex-rollout`、`cargo nextest run -p codex-core --test all integration_creates_and_checks_session_file`。Capability 适配：延续本轮 `llmdoc` / `ztldr` 上下文，其余为 none-applicable。"
+notes = "实现优先采用逐行 JSONL + `serde_json::Value` 定点修改，避免强类型整文件回写丢失未知字段；默认必须打印目标文件与备份路径。\n2026-04-09 Execution：PASS。新增 `codex zoffsec clean` CLI 接线，支持 `--last`/`--id`/`--path` 目标选择、`--dry-run` 预览、默认备份与拒绝替换文本覆盖。rollout 侧新增 `clean_zoffsec_rollout()`：先校验 zoffsec session marker，再在检测到 refusal 后替换 assistant `response_item` 与 `event_msg.agent_message`，并删除 reasoning 记录，最后以临时文件 + rename 原子写回。主代理本地 spec-reviewer/code-reviewer 结论均为 PASS，未发现超范围实现或明显回归缺口。验证已通过 `cargo check -p codex-cli --bin codex`、`cargo test -p codex-cli zoffsec`、`cargo nextest run -p codex-rollout`、`cargo nextest run -p codex-core --test all integration_creates_and_checks_session_file`。Capability 适配：延续本轮 `llmdoc` / `ztldr` 上下文，其余为 none-applicable。\n2026-04-19 Audit：后续对 upstream `af401d3` 的审计确认，真实 selective sync 对齐范围在 cleaner 逻辑，而不是整个 zoffsec 工作流。"
 
 [[issue]]
 id = "a3"
@@ -61,4 +61,4 @@ regress_timing = "after_done"
 status = "done"
 validate_status = "passed"
 regress_status = "passed"
-notes = "恢复前触发 clean 必须显式、可观察、可关闭；如果无法平滑复用现有 resume 选择器，需要在执行前回看是否属于计划约定内的最小扩展。\n2026-04-09 Execution：PASS。已接入 `codex zoffsec resume` / `codex zoffsec r` 子命令，恢复参数沿用现有 resume 语义，并通过新的 `resume_zoffsec_clean` 内部标记把 clean-then-resume 逻辑下沉到 TUI 会话选择后执行。新增 `codex-rs/tui/src/zoffsec_resume.rs` 负责在选中的 resume 目标带有 zoffsec marker 时解析 rollout、执行默认备份的 `clean_zoffsec_rollout()`，普通会话则直接跳过；已补 `codex-tui` 单测覆盖 zoffsec/非 zoffsec 两条路径。后续重构阶段再补上 `codex-rs/cli/src/main.rs` 的顶层 `zoffsec` 注册与更窄的 CLI 验证。"
+notes = "恢复前触发 clean 必须显式、可观察、可关闭；如果无法平滑复用现有 resume 选择器，需要在执行前回看是否属于计划约定内的最小扩展。\n2026-04-09 Execution：PASS。已接入 `codex zoffsec resume` / `codex zoffsec r` 子命令，恢复参数沿用现有 resume 语义，并通过新的 `resume_zoffsec_clean` 内部标记把 clean-then-resume 逻辑下沉到 TUI 会话选择后执行。新增 `codex-rs/tui/src/zoffsec_resume.rs` 负责在选中的 resume 目标带有 zoffsec marker 时解析 rollout、执行默认备份的 `clean_zoffsec_rollout()`，普通会话则直接跳过；已补 `codex-tui` 单测覆盖 zoffsec/非 zoffsec 两条路径。后续重构阶段再补上 `codex-rs/cli/src/main.rs` 的顶层 `zoffsec` 注册与更窄的 CLI 验证。\n2026-04-19 Audit：该恢复链路是本地原生 UX 分叉，不应描述成 upstream `codex-session-patcher` 的等价实现；upstream README 仍是“清理后手动 `codex resume`”。"

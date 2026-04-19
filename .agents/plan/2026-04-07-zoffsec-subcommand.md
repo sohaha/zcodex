@@ -103,3 +103,8 @@
 - `codex-rs/rollout/src/list.rs:1130`
 - `https://github.com/ryfineZ/codex-session-patcher/blob/main/README.md`
 - `https://github.com/ryfineZ/codex-session-patcher/blob/main/codex_session_patcher/core/formats.py`
+
+## 审计补记
+- `2026-04-19` 审计确认：本计划覆盖的是本地原生命令工作流，不等于“整体 upstream 对齐”。
+- 当前可被审计确认的 upstream parity 仅覆盖 rollout cleaner 的 selective sync：拒绝检测两级模型，以及 `event_msg.agent_message` / `event_msg.task_complete.last_agent_message` 的改写。
+- `codex zoffsec` 启动入口、base-instructions marker、`zoffsec resume` clean hook 与本地模板体系，仍应视为受 upstream 启发的本地分叉实现。
