@@ -30,6 +30,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-19-ubuntu-macos-arm64-cross-cc-search-dirs-wrapper.md`：Linux 交叉构建 macOS arm64 时，不能只配 target-specific `CC/CXX`；还要兜住 PATH 里的裸 `cc` / `c++`，避免第三方 `build.rs` 把宿主 Linux linker path 注入 Apple 链接。
 - `.agents/llmdoc/memory/reflections/2026-04-19-core-compact-localization-boundary.md`：`core` 压缩链路汉化时，应区分用户可见事件流与内部模板；模板 `md` 不应按 UI 文案翻译，验证上优先拿 `cargo check -p codex-core --lib` 证据并显式隔离仓库现有测试阻塞。
 - `.agents/llmdoc/memory/reflections/2026-04-19-ctf-sync-skill-should-pin-reference-and-local-surface.md`：为参考型上游仓库补同步 skill 时，不能只写 upstream 地址；要同时固定首选参考文件、默认 selective sync 范围，以及本地必须保留的架构边界。
+- `.agents/llmdoc/memory/reflections/2026-04-19-ctf-rollout-clean-must-rewrite-task-complete-fallback.md`：Codex rollout 清理不能只改 `agent_message`；若 replay 会读取 `task_complete.last_agent_message` 兜底，就必须一起改写。拒绝检测也应区分强短语全文匹配与弱关键词开头匹配。
 - `.agents/llmdoc/memory/reflections/2026-04-19-upstream-sync-image-detail-and-mergeback-compile-gate.md`：upstream 同步不能只看冲突文件；共享模型字段扩展要补全局匹配/构造扫描，并把 merge-back 编译阻塞显式写入 `STATE.md`。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-half-wired-build-warnings.md`：`zmemory` / `ztldr` 构建告警往往来自“实现已写但生产未接线”的 prompt/runtime/state 缺口，应优先核对接线 seam，而不是先怀疑 Cargo feature。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zmemory-ztldr-main-path-and-pending-input-gaps.md`：`zmemory recall` 和 `ztldr` 路由这类 turn 级派生逻辑，不能只接普通初始输入；还要核对主路径 producer、pending-input 和 mailbox-triggered turn 是否都覆盖。
