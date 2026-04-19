@@ -1,0 +1,59 @@
+plan = ".agents/plan/2026-04-19-launcher-agnostic-cli-hints.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 launcher 无关的运行时事实源与共享展示边界"
+scope = """
+在 shell/agent 可见的运行时环境中引入稳定的 launcher 绝对路径变量，并补齐一套供提示、hint、suggestion 复用的共享展示边界。
+本 issue 只负责“真实 launcher 路径如何稳定获得、如何安全传递、如何避免直接暴露到用户可见文本”这层基础契约，不直接收敛 `ztok`、`ztldr`、`zmemory` 的具体文案。
+"""
+touch_points = ["module:core", "module:config", "codex-rs/core/src/exec_env.rs", "codex-rs/config/src/shell_environment.rs", "codex-rs/core/src/session", "codex-rs/core/src/tools/handlers/shell.rs"]
+depends_on = []
+done_when = "运行时环境里存在稳定的 launcher 绝对路径事实源，且共享展示边界已明确：后续提示与事件流可以引用它生成 launcher 无关表达，同时不直接暴露机器绝对路径。"
+validate_by = "cd /workspace/codex-rs && cargo check -p codex-core --lib && cargo check -p codex-cli --bin codex"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "收敛 ztok 的显式调用提示与展示输出"
+scope = """
+基于共享 launcher 事实源，更新 Embedded ZTOK developer instructions、shell rewrite 的逻辑展示命令，以及 tools events 中与 embedded ZTOK 相关的用户可见输出。
+本 issue 只处理 `ztok` 高频路径，确保 agent 不再因模板或回显去执行字面 `codex ztok ...`，同时继续隐藏真实绝对执行路径。
+不在本 issue 中处理 `ztldr` 或 `zmemory` 的 hint/suggestion。
+"""
+touch_points = ["module:core", "command:ztok", "codex-rs/core/templates/compact/ztok.md", "codex-rs/core/src/memories/prompts_tests.rs", "codex-rs/core/src/tools/handlers/shell.rs", "codex-rs/core/src/tools/handlers/shell_tests.rs", "codex-rs/core/src/tools/events.rs", "codex-rs/core/tests/suite/snapshots"]
+depends_on = ["a1"]
+done_when = "Embedded ZTOK 提示、shell rewrite 展示命令和相关事件输出都不再要求固定存在 `codex` launcher，且用户可见文本仍不泄露绝对路径。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core build_ztok_tool_developer_instructions_renders_embedded_template --lib && cargo test -p codex-core shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw --lib && cargo test -p codex-core shell_emitter_never_exposes_absolute_ztok_exec_path --lib"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-core session::tests::build_initial_context_includes_ztok_instructions"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "统一 ztldr 与 zmemory 的 launcher 无关 hint 与建议命令"
+scope = """
+将 `ztldr` 的 daemon retry hint、`zmemory` 的 alias review suggestion command，以及直接依赖这些文案的测试与必要 README 示例统一到 launcher 无关表达。
+本 issue 复用前置 issue 提供的共享事实源与展示边界，不重复设计 launcher 运行时变量，也不扩展 `ztldr` 或 `zmemory` 功能本身。
+"""
+touch_points = ["module:cli", "module:zmemory", "command:ztldr", "command:zmemory", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/cli/tests/tldr.rs", "codex-rs/cli/tests/zmemory.rs", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/README.md"]
+depends_on = ["a1"]
+done_when = "`ztldr` 与 `zmemory` 不再向用户或 agent 返回写死 `codex ...` 的可执行 hint/建议命令，相关测试与直接依赖文案的 README 示例同步到 launcher 无关表达。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-cli tldr && cargo test -p codex-cli zmemory"
+regress_by = "cd /workspace && rg -n \"codex ztldr|codex zmemory\" codex-rs/cli/src/tldr_cmd.rs codex-rs/cli/tests/tldr.rs codex-rs/cli/tests/zmemory.rs codex-rs/zmemory/src/system_views.rs codex-rs/zmemory/README.md"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
