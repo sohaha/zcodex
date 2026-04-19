@@ -207,6 +207,7 @@ async fn resolve_target_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::zoffsec_config::ZOFFSEC_SESSION_MARKER;
     use pretty_assertions::assert_eq;
 
     #[test]
