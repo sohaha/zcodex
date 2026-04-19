@@ -2229,7 +2229,7 @@ impl Session {
         warn!("server reported model {server_model} while requested model was {requested_model}");
 
         let warning_message = format!(
-            "⚠ 您的账号因潜在高风险网络活动被标记，此请求已被路由到 {server_model} 作为后备方案。\n如需恢复 {requested_model} 访问权限，请申请可信访问：{CYBER_VERIFY_URL} 或了解更多信息：{CYBER_SAFETY_URL}"
+            "⚠ 此请求已被路由到 {server_model} 作为后备方案。"
         );
 
         self.send_event(
