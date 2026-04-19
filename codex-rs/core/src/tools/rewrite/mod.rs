@@ -16,4 +16,5 @@ pub(crate) use context::AutoTldrContext;
 pub(crate) use context::should_auto_warm_tldr;
 pub(crate) use directives::ToolRoutingDirectives;
 pub(crate) use directives::extract_tool_routing_directives;
+pub(crate) use engine::rewrite_tool_call;
 pub(crate) use project_root::resolve_tldr_project_root;

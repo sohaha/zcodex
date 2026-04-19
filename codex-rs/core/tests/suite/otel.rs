@@ -253,7 +253,7 @@ async fn process_sse_records_failed_event_when_stream_closes_without_completed()
             .find(|line| {
                 line.contains("codex.sse_event")
                     && line.contains("error.message")
-                    && line.contains("stream closed before response.completed")
+                    && line.contains("流在收到 response.completed 前已关闭")
             })
             .map(|_| Ok(()))
             .unwrap_or(Err("missing codex.sse_event".to_string()))

@@ -28,6 +28,7 @@
 - 包级运行 `cargo nextest run -p codex-core` 时，如果 `cli_stream` 集成测试报 `codex_utils_cargo_bin::cargo_bin("codex")` 找不到二进制，先补 `cargo build -p codex-cli --bin codex` 再复跑。
 - Clouddev 使用 Rust 工具链镜像时，不要把 `/root/.local/bin` 或 `/root/.local/share/mise` 挂成 `copy-on-write`；这会遮住镜像里预装的 `mise`、`lnk` 和对应工具链。
 - `mise run build` 共享的 speed-first 构建脚本会在 `RUSTC_WRAPPER` 指向可选 `sccache` 但二进制缺失时显式取消 wrapper，避免半初始化环境直接卡死在 `sccache ... rustc -vV`。
+- `mise run build-ubuntu-macos-arm64` 这类 Apple 交叉构建不能只设置 `CC_aarch64_apple_darwin` / `CXX_aarch64_apple_darwin`；有些第三方 `build.rs`（例如 `webrtc-sys`）会直接调用 PATH 上的 `cc --print-search-dirs`，所以任务脚本还需要兜住裸 `cc` / `c++` 并提供目标感知的 compiler-rt 搜索根。
 
 ## 事实来源
 - `justfile`

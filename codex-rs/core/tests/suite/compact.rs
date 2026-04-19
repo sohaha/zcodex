@@ -2288,7 +2288,7 @@ async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
     })
     .await;
     assert!(
-        reconnect_message.contains("Reconnecting... 1/1"),
+        reconnect_message.contains("正在重新连接... 1/1"),
         "expected reconnect stream error message, got {reconnect_message}"
     );
 

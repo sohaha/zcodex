@@ -752,7 +752,7 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
 
     assert!(
-        error_message.contains("Error running remote compact task"),
+        error_message.contains("运行远程压缩任务时出错"),
         "expected remote compact task error prefix, got {error_message}"
     );
     assert_eq!(
@@ -1109,7 +1109,7 @@ async fn remote_manual_compact_failure_emits_task_error_event() -> Result<()> {
     })
     .await;
     assert!(
-        error_message.contains("Error running remote compact task"),
+        error_message.contains("运行远程压缩任务时出错"),
         "expected remote compact task error prefix, got {error_message}"
     );
     assert!(

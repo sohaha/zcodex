@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::load_config_layers_state;
+use crate::memories::zmemory_preferences::build_stable_preference_recall_note;
 use crate::realtime_context::REALTIME_TURN_TOKEN_BUDGET;
 use crate::realtime_context::truncate_realtime_text_to_token_budget;
 use crate::realtime_conversation::REALTIME_USER_TEXT_PREFIX;
@@ -211,6 +212,7 @@ pub(super) async fn user_input_or_turn_inner(
             current_context.session_telemetry.user_prompt(&items);
             sess.refresh_mcp_servers_if_requested(&current_context)
                 .await;
+            set_turn_start_zmemory_recall_note(sess, &current_context, &items).await;
             let accepted_items = items.clone();
             sess.spawn_task(
                 Arc::clone(&current_context),
@@ -232,6 +234,20 @@ pub(super) async fn user_input_or_turn_inner(
     if let (Some(items), Some(())) = (accepted_items, mirror_user_text_to_realtime) {
         self::mirror_user_text_to_realtime(sess, &items).await;
     }
+}
+
+pub(crate) async fn set_turn_start_zmemory_recall_note(
+    sess: &Arc<Session>,
+    turn_context: &Arc<crate::session::turn_context::TurnContext>,
+    items: &[UserInput],
+) {
+    let recall_note = if turn_context.features.enabled(Feature::Zmemory) {
+        build_stable_preference_recall_note(sess, turn_context, items).await
+    } else {
+        None
+    };
+    sess.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
+        .await;
 }
 
 async fn mirror_user_text_to_realtime(sess: &Arc<Session>, items: &[UserInput]) {
@@ -594,7 +610,7 @@ pub async fn compact(sess: &Arc<Session>, sub_id: String) {
         Arc::clone(&turn_context),
         vec![UserInput::Text {
             text: turn_context.compact_prompt().to_string(),
-            // Compaction prompt is synthesized; no UI element ranges to preserve.
+            // 压缩提示词是合成出来的，不需要保留任何 UI 元素范围。
             text_elements: Vec::new(),
         }],
         CompactTask,

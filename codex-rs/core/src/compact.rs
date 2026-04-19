@@ -43,15 +43,14 @@ pub const SUMMARIZATION_PROMPT: &str = include_str!("../templates/compact/prompt
 pub const SUMMARY_PREFIX: &str = include_str!("../templates/compact/summary_prefix.md");
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
 
-/// Controls whether compaction replacement history must include initial context.
+/// 控制压缩后的替换历史是否必须包含初始上下文。
 ///
-/// Pre-turn/manual compaction variants use `DoNotInject`: they replace history with a summary and
-/// clear `reference_context_item`, so the next regular turn will fully reinject initial context
-/// after compaction.
+/// 回合前/手动压缩使用 `DoNotInject`：它们会用摘要替换历史，并清空
+/// `reference_context_item`，这样下一次常规回合会在压缩后重新完整注入初始上下文。
 ///
-/// Mid-turn compaction must use `BeforeLastUserMessage` because the model is trained to see the
-/// compaction summary as the last item in history after mid-turn compaction; we therefore inject
-/// initial context into the replacement history just above the last real user message.
+/// 回合中压缩必须使用 `BeforeLastUserMessage`，因为模型被训练为在回合中压缩后，
+/// 将压缩摘要视为历史中的最后一项；因此我们会把初始上下文注入到替换历史中，
+/// 位置放在最后一条真实用户消息之上。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum InitialContextInjection {
     BeforeLastUserMessage,
@@ -72,7 +71,7 @@ pub(crate) async fn run_inline_auto_compact_task(
     let prompt = turn_context.compact_prompt().to_string();
     let input = vec![UserInput::Text {
         text: prompt,
-        // Compaction prompt is synthesized; no UI element ranges to preserve.
+        // 压缩提示词是合成出来的，不需要保留任何 UI 元素范围。
         text_elements: Vec::new(),
     }];
 
@@ -170,9 +169,8 @@ async fn run_compact_task_inner_impl(
     let max_retries = turn_context.provider.info().stream_max_retries();
     let mut retries = 0;
     let mut client_session = sess.services.model_client.new_session();
-    // Reuse one client session so turn-scoped state (sticky routing, websocket incremental
-    // request tracking)
-    // survives retries within this compact turn.
+    // 复用同一个 client session，让回合级状态（粘性路由、WebSocket 增量请求跟踪）
+    // 能在本次压缩回合的重试之间保留下来。
 
     loop {
         // Clone is required because of the loop
@@ -202,7 +200,7 @@ async fn run_compact_task_inner_impl(
                     sess.notify_background_event(
                         turn_context.as_ref(),
                         format!(
-                            "Trimmed {truncated_count} older thread item(s) before compacting so the prompt fits the model context window."
+                            "压缩前已裁剪 {truncated_count} 条较早的线程项，以便提示适配模型上下文窗口。"
                         ),
                     )
                     .await;
@@ -214,10 +212,8 @@ async fn run_compact_task_inner_impl(
             }
             Err(e @ CodexErr::ContextWindowExceeded) => {
                 if turn_input_len > 1 {
-                    // Trim from the beginning to preserve cache (prefix-based) and keep recent messages intact.
-                    error!(
-                        "Context window exceeded while compacting; removing oldest history item. Error: {e}"
-                    );
+                    // 从开头裁剪，以保留基于前缀的缓存，同时让最近的消息保持完整。
+                    error!("压缩时超出上下文窗口；正在移除最旧的历史项。错误：{e}");
                     history.remove_first_item();
                     truncated_count += 1;
                     retries = 0;
@@ -234,7 +230,7 @@ async fn run_compact_task_inner_impl(
                     let delay = backoff(retries);
                     sess.notify_stream_error(
                         turn_context.as_ref(),
-                        format!("Reconnecting... {retries}/{max_retries}"),
+                        format!("正在重新连接... {retries}/{max_retries}"),
                         e,
                     )
                     .await;
@@ -287,7 +283,7 @@ async fn run_compact_task_inner_impl(
     sess.emit_turn_item_completed(&turn_context, compaction_item)
         .await;
     let warning = EventMsg::Warning(WarningEvent {
-        message: "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.".to_string(),
+        message: "提示：线程过长且多次压缩后，模型的准确性可能下降。尽量新开线程，让每个线程保持更小且更聚焦。".to_string(),
     });
     sess.send_event(&turn_context, warning).await;
     Ok(())
@@ -411,16 +407,14 @@ pub(crate) fn is_summary_message(message: &str) -> bool {
     message.starts_with(format!("{SUMMARY_PREFIX}\n").as_str())
 }
 
-/// Inserts canonical initial context into compacted replacement history at the
-/// model-expected boundary.
+/// 在模型预期的边界位置，把规范化的初始上下文插入压缩后的替换历史。
 ///
-/// Placement rules:
-/// - Prefer immediately before the last real user message.
-/// - If no real user messages remain, insert before the compaction summary so
-///   the summary stays last.
-/// - If there are no user messages, insert before the last compaction item so
-///   that item remains last (remote compaction may return only compaction items).
-/// - If there are no user messages or compaction items, append the context.
+/// 放置规则：
+/// - 优先插在最后一条真实用户消息之前。
+/// - 如果已经没有真实用户消息，则插在压缩摘要之前，让摘要保持最后一项。
+/// - 如果没有用户消息，则插在最后一个压缩项之前，让该项保持最后一项
+///   （远程压缩可能只返回压缩项）。
+/// - 如果既没有用户消息也没有压缩项，则把上下文追加到末尾。
 pub(crate) fn insert_initial_context_before_last_real_user_or_summary(
     mut compacted_history: Vec<ResponseItem>,
     initial_context: Vec<ResponseItem>,
@@ -431,9 +425,9 @@ pub(crate) fn insert_initial_context_before_last_real_user_or_summary(
         let Some(TurnItem::UserMessage(user)) = crate::event_mapping::parse_turn_item(item) else {
             continue;
         };
-        // Compaction summaries are encoded as user messages, so track both:
-        // the last real user message (preferred insertion point) and the last
-        // user-message-like item (fallback summary insertion point).
+        // 压缩摘要会被编码成用户消息，因此需要同时追踪：
+        // 最后一条真实用户消息（首选插入点）和最后一个类似用户消息的项
+        // （回退到摘要插入点时使用）。
         last_user_or_summary_index.get_or_insert(i);
         if !is_summary_message(&user.message()) {
             last_real_user_index = Some(i);
@@ -449,10 +443,9 @@ pub(crate) fn insert_initial_context_before_last_real_user_or_summary(
         .or(last_user_or_summary_index)
         .or(last_compaction_index);
 
-    // Re-inject canonical context from the current session since we stripped it
-    // from the pre-compaction history. Prefer placing it before the last real
-    // user message; if there is no real user message left, place it before the
-    // summary or compaction item so the compaction item remains last.
+    // 由于我们已经从压缩前历史里剥离了规范化上下文，这里需要从当前 session
+    // 重新注入。优先放在最后一条真实用户消息之前；如果没有真实用户消息，则放在
+    // 摘要或压缩项之前，让压缩项继续保持在最后。
     if let Some(insertion_index) = insertion_index {
         compacted_history.splice(insertion_index..insertion_index, initial_context);
     } else {
@@ -514,7 +507,7 @@ fn build_compacted_history_with_limit(
     }
 
     let summary_text = if summary_text.is_empty() {
-        "(no summary available)".to_string()
+        "（暂无摘要）".to_string()
     } else {
         summary_text.to_string()
     };
@@ -552,7 +545,7 @@ async fn drain_to_completed(
         let maybe_event = stream.next().await;
         let Some(event) = maybe_event else {
             return Err(CodexErr::Stream(
-                "stream closed before response.completed".into(),
+                "流在收到 response.completed 前已关闭".into(),
                 None,
             ));
         };

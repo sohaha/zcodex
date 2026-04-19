@@ -1007,9 +1007,8 @@ impl Session {
 
     async fn fail_agent_identity_registration(self: &Arc<Self>, error: anyhow::Error) {
         warn!(error = %error, "agent identity registration failed");
-        let message = format!(
-            "Agent 身份注册失败（`features.use_agent_identity` 已启用）：{error}"
-        );
+        let message =
+            format!("Agent 身份注册失败（`features.use_agent_identity` 已启用）：{error}");
         self.send_event_raw(Event {
             id: self.next_internal_sub_id(),
             msg: EventMsg::Error(ErrorEvent {
@@ -2228,9 +2227,7 @@ impl Session {
 
         warn!("server reported model {server_model} while requested model was {requested_model}");
 
-        let warning_message = format!(
-            "⚠ 此请求已被路由到 {server_model} 作为后备方案。"
-        );
+        let warning_message = format!("⚠ 此请求已被路由到 {server_model} 作为后备方案。");
 
         self.send_event(
             turn_context,
@@ -2326,6 +2323,7 @@ impl Session {
             collaboration_mode,
             base_instructions,
             session_source,
+            pending_zmemory_recall_note,
         ) = {
             let state = self.state.lock().await;
             (
@@ -2334,6 +2332,7 @@ impl Session {
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
+                state.pending_zmemory_recall_note_for(turn_context.sub_id.as_str()),
             )
         };
         if let Some(model_switch_message) =
@@ -2380,6 +2379,13 @@ impl Session {
         {
             developer_sections.push(memory_prompt);
         }
+        if turn_context.features.enabled(Feature::Zmemory) {
+            developer_sections.push(build_zmemory_tool_developer_instructions());
+            if let Some(recall_note) = pending_zmemory_recall_note {
+                developer_sections.push(recall_note);
+            }
+        }
+        developer_sections.push(build_ztok_tool_developer_instructions());
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
@@ -3118,6 +3124,8 @@ fn errors_to_info(errors: &[SkillError]) -> Vec<SkillErrorInfo> {
 }
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
+use crate::memories::prompts::build_zmemory_tool_developer_instructions;
+use crate::memories::prompts::build_ztok_tool_developer_instructions;
 
 #[cfg(test)]
 pub(crate) mod tests;

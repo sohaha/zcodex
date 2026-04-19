@@ -27,7 +27,9 @@ run_tests() {
   local ssh_hint_file
   local output_bin
   local rs_ext_args_file
+  local cc_search_dirs_file
   local rs_ext_args
+  local cc_search_dirs
   local output
   temp_root="$(mktemp -d)"
   trap "rm -rf '$temp_root'" EXIT
@@ -39,6 +41,7 @@ run_tests() {
   ssh_hint_file="$temp_root/nm"
   output_bin="$sandbox_repo/test-target/aarch64-apple-darwin/release/codex"
   rs_ext_args_file="$temp_root/rs-ext-args"
+  cc_search_dirs_file="$temp_root/cc-search-dirs"
 
   mkdir -p "$task_dir" "$codex_rs_scripts_dir" "$fake_bin_dir" "$sdk_dir"
   git -C "$sandbox_repo" init >/dev/null 2>&1
@@ -90,6 +93,7 @@ EOF
 set -euo pipefail
 
 printf '%s\n' "$*" >"$TEST_RS_EXT_ARGS_FILE"
+cc --print-search-dirs >"$TEST_CC_SEARCH_DIRS_FILE"
 mkdir -p "$(dirname "$TEST_OUTPUT_BIN")"
 perl - "$TEST_OUTPUT_BIN" <<'PL'
 use strict;
@@ -196,12 +200,14 @@ EOF
       TEST_FAKE_ZIG="$fake_bin_dir/zig" \
       TEST_OUTPUT_BIN="$output_bin" \
       TEST_RS_EXT_ARGS_FILE="$rs_ext_args_file" \
+      TEST_CC_SEARCH_DIRS_FILE="$cc_search_dirs_file" \
       ZIG_GLOBAL_CACHE_DIR="$temp_root/zig-cache" \
       CNB_REMOTE_SSH_HINT_FILE="$ssh_hint_file" \
       bash "$task_dir/build-ubuntu-macos-arm64" 2>&1
   )"
 
   rs_ext_args="$(cat "$rs_ext_args_file")"
+  cc_search_dirs="$(cat "$cc_search_dirs_file")"
 
   assert_contains \
     "$output" \
@@ -217,6 +223,22 @@ EOF
     "$rs_ext_args" \
     "--features codex-tui/realtime-webrtc-stub" \
     "build-ubuntu-macos-arm64 should enable the realtime stub on codex-tui instead of codex-cli"
+
+  assert_contains \
+    "$cc_search_dirs" \
+    "libraries: =$sandbox_repo/.cache/ubuntu-macos-arm64-toolchain/compiler-rt" \
+    "build-ubuntu-macos-arm64 should expose a target-aware compiler runtime search root via cc --print-search-dirs"
+
+  if [[ "$cc_search_dirs" == *"x86_64-linux-gnu"* ]]; then
+    echo "assertion failed: build-ubuntu-macos-arm64 should not expose host linux linker paths via cc --print-search-dirs" >&2
+    echo "  actual output: $cc_search_dirs" >&2
+    exit 1
+  fi
+
+  if [ ! -e "$sandbox_repo/.cache/ubuntu-macos-arm64-toolchain/compiler-rt/lib/darwin/libclang_rt.osx.a" ]; then
+    echo "assertion failed: build-ubuntu-macos-arm64 should materialize libclang_rt.osx.a in the synthetic darwin runtime search dir" >&2
+    exit 1
+  fi
 }
 
 run_tests

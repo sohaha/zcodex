@@ -100,9 +100,7 @@ async fn run_remote_compact_task_inner(
         )
         .await;
     if let Err(err) = result {
-        let event = EventMsg::Error(
-            err.to_error_event(Some("Error running remote compact task".to_string())),
-        );
+        let event = EventMsg::Error(err.to_error_event(Some("运行远程压缩任务时出错".to_string())));
         sess.send_event(turn_context, event).await;
         return Err(err);
     }
@@ -215,9 +213,9 @@ pub(crate) async fn process_compacted_history(
     mut compacted_history: Vec<ResponseItem>,
     initial_context_injection: InitialContextInjection,
 ) -> Vec<ResponseItem> {
-    // Mid-turn compaction is the only path that must inject initial context above the last user
-    // message in the replacement history. Pre-turn compaction instead injects context after the
-    // compaction item, but mid-turn compaction keeps the compaction item last for model training.
+    // 只有回合中压缩必须把初始上下文注入到替换历史里最后一条用户消息之上。
+    // 回合前压缩会把上下文放在压缩项之后，而回合中压缩需要让压缩项保持最后一项，
+    // 以符合模型训练时的历史结构。
     let initial_context = if matches!(
         initial_context_injection,
         InitialContextInjection::BeforeLastUserMessage
@@ -231,21 +229,20 @@ pub(crate) async fn process_compacted_history(
     insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context)
 }
 
-/// Returns whether an item from remote compaction output should be preserved.
+/// 返回远程压缩输出中的某个项是否应当被保留。
 ///
-/// Called while processing the model-provided compacted transcript, before we
-/// append fresh canonical context from the current session.
+/// 该函数在处理模型返回的压缩后 transcript 时调用，发生在我们把当前 session
+/// 的最新规范化上下文追加进去之前。
 ///
-/// We drop:
-/// - `developer` messages because remote output can include stale/duplicated
-///   instruction content.
-/// - non-user-content `user` messages (session prefix/instruction wrappers),
-///   while preserving real user messages and persisted hook prompts.
+/// 我们会丢弃：
+/// - `developer` 消息，因为远程输出可能包含过期或重复的指令内容。
+/// - 非真实用户内容的 `user` 消息（例如 session 前缀/指令包装层），
+///   但会保留真实用户消息和已持久化的 hook 提示。
 ///
-/// This intentionally keeps:
-/// - `assistant` messages (future remote compaction models may emit them)
-/// - `user`-role warnings and compaction-generated summary messages because
-///   they parse as `TurnItem::UserMessage`.
+/// 这里会刻意保留：
+/// - `assistant` 消息（未来的远程压缩模型可能会输出它们）
+/// - `user` 角色的警告和压缩生成的摘要消息，因为它们会被解析为
+///   `TurnItem::UserMessage`。
 fn should_keep_compacted_history_item(item: &ResponseItem) -> bool {
     match item {
         ResponseItem::Message { role, .. } if role == "developer" => false,

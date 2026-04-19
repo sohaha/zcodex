@@ -12,6 +12,8 @@ use crate::config_loader::Sourced;
 use crate::config_loader::project_trust_key;
 use crate::exec::ExecCapturePolicy;
 use crate::function_tool::FunctionCallError;
+use crate::hook_runtime::PendingInputRecord;
+use crate::memories::zmemory_preferences::build_stable_preference_recall_note;
 use crate::shell::default_user_shell;
 use crate::skills::SkillRenderSideEffects;
 use crate::skills::render::SkillMetadataBudget;
@@ -4694,6 +4696,45 @@ async fn build_initial_context_does_not_leak_pending_zmemory_recall_note_to_othe
 }
 
 #[tokio::test]
+async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let preference_input = vec![UserInput::Text {
+        text: "以后默认用中文回答，尽量简洁一点。".to_string(),
+        text_elements: Vec::new(),
+    }];
+    crate::memories::zmemory_preferences::capture_stable_preference_memories(
+        &session,
+        &turn_context,
+        &preference_input,
+    )
+    .await;
+
+    let recall_trigger = vec![UserInput::Text {
+        text: "继续按上次方式。".to_string(),
+        text_elements: Vec::new(),
+    }];
+    crate::session::handlers::set_turn_start_zmemory_recall_note(
+        &session,
+        &turn_context,
+        &recall_trigger,
+    )
+    .await;
+
+    let pending = session
+        .state
+        .lock()
+        .await
+        .pending_zmemory_recall_note_for(turn_context.sub_id.as_str());
+    let recall_note = pending.expect("regular turn should queue recall note");
+    assert!(recall_note.contains("## Zmemory Recall"));
+    assert!(recall_note.contains("Respond in Chinese by default."));
+    assert!(recall_note.contains("Keep responses concise by default."));
+}
+
+#[tokio::test]
 async fn build_initial_context_omits_default_image_save_location_with_image_history() {
     let (session, turn_context) = make_session_and_context().await;
     session
@@ -5822,6 +5863,49 @@ async fn prepend_pending_input_keeps_older_tail_ahead_of_newer_input() {
         .expect("requeue later pending input at the front of the queue");
 
     assert_eq!(sess.get_pending_input().await, vec![later, newer]);
+}
+
+#[tokio::test]
+async fn pending_user_input_updates_tldr_directives_and_captures_zmemory_preferences() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let pending_message = vec![UserInput::Text {
+        text: "以后默认用中文回答，尽量简洁一点。不要 ztldr，按 regex 用 ripgrep 精确 grep。"
+            .to_string(),
+        text_elements: Vec::new(),
+    }];
+    let pending_input = vec![PendingInputRecord::UserMessage {
+        content: pending_message.clone(),
+        response_item: ResponseInputItem::from(pending_message.clone()).into(),
+        additional_contexts: Vec::new(),
+    }];
+
+    crate::session::turn::apply_pending_user_input_side_effects(
+        &session,
+        &turn_context,
+        &pending_input,
+    )
+    .await;
+
+    let directives = turn_context.tool_routing_directives.read().await.clone();
+    assert!(directives.disable_auto_tldr_once);
+    assert!(directives.force_raw_grep);
+    assert!(!directives.prefer_context_search);
+
+    let recall_note = build_stable_preference_recall_note(
+        &session,
+        &turn_context,
+        &[UserInput::Text {
+            text: "继续按上次方式。".to_string(),
+            text_elements: Vec::new(),
+        }],
+    )
+    .await
+    .expect("pending user input should proactively capture stable preferences");
+    assert!(recall_note.contains("Respond in Chinese by default."));
+    assert!(recall_note.contains("Keep responses concise by default."));
 }
 
 #[tokio::test]

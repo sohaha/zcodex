@@ -18,6 +18,7 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::connectors;
 use crate::feedback_tags;
 use crate::hook_runtime::PendingInputHookDisposition;
+use crate::hook_runtime::PendingInputRecord;
 use crate::hook_runtime::emit_hook_completed_events;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
@@ -29,6 +30,7 @@ use crate::injection::app_id_from_path;
 use crate::injection::tool_kind_for_path;
 use crate::mcp_skill_dependencies::maybe_prompt_and_install_mcp_dependencies;
 use crate::mcp_tool_exposure::build_mcp_tool_exposure;
+use crate::memories::zmemory_preferences::capture_stable_preference_memories;
 use crate::mentions::build_connector_slug_counts;
 use crate::mentions::build_skill_name_counts;
 use crate::mentions::collect_explicit_app_ids;
@@ -51,6 +53,7 @@ use crate::tools::ToolRouter;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::registry::ToolArgumentDiffConsumer;
+use crate::tools::rewrite::extract_tool_routing_directives;
 use crate::tools::router::ToolRouterParams;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::turn_timing::record_turn_ttft_metric;
@@ -141,6 +144,10 @@ pub(crate) async fn run_turn(
     let model_info = turn_context.model_info.clone();
     let auto_compact_limit = model_info.auto_compact_token_limit().unwrap_or(i64::MAX);
     let mut prewarmed_client_session = prewarmed_client_session;
+    if !input.is_empty() {
+        *turn_context.tool_routing_directives.write().await =
+            extract_tool_routing_directives(&input);
+    }
     // TODO(ccunningham): Pre-turn compaction runs before context updates and the
     // new user message are recorded. Estimate pending incoming items (context
     // diffs/full reinjection + user input) and trigger compaction preemptively
@@ -332,6 +339,9 @@ pub(crate) async fn run_turn(
             realtime_active: Some(turn_context.realtime_active),
         }))
         .await;
+        if turn_context.features.enabled(Feature::Zmemory) {
+            capture_stable_preference_memories(&sess, &turn_context, &input).await;
+        }
     }
     if let Err(error) = sess.ensure_agent_task_registered().await {
         warn!(error = %error, "agent task registration failed");
@@ -421,6 +431,7 @@ pub(crate) async fn run_turn(
         }
 
         let has_accepted_pending_input = !accepted_pending_input.is_empty();
+        apply_pending_user_input_side_effects(&sess, &turn_context, &accepted_pending_input).await;
         for pending_input in accepted_pending_input {
             record_pending_input(&sess, &turn_context, pending_input).await;
         }
@@ -661,6 +672,31 @@ pub(crate) async fn run_turn(
     }
 
     last_agent_message
+}
+
+pub(crate) async fn apply_pending_user_input_side_effects(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    pending_input: &[PendingInputRecord],
+) {
+    let user_inputs = pending_input
+        .iter()
+        .filter_map(|pending_input| match pending_input {
+            PendingInputRecord::UserMessage { content, .. } => Some(content.as_slice()),
+            PendingInputRecord::ConversationItem { .. } => None,
+        })
+        .flatten()
+        .cloned()
+        .collect::<Vec<_>>();
+    if user_inputs.is_empty() {
+        return;
+    }
+
+    *turn_context.tool_routing_directives.write().await =
+        extract_tool_routing_directives(&user_inputs);
+    if turn_context.features.enabled(Feature::Zmemory) {
+        capture_stable_preference_memories(sess, turn_context, &user_inputs).await;
+    }
 }
 
 async fn track_turn_resolved_config_analytics(
@@ -1085,7 +1121,7 @@ async fn run_sampling_request(
             sess.send_event(
                 &turn_context,
                 EventMsg::Warning(WarningEvent {
-                    message: format!("Falling back from WebSockets to HTTPS transport. {err:#}"),
+                    message: format!("正在从 WebSocket 回退到 HTTPS 传输。{err:#}"),
                 }),
             )
             .await;
@@ -1104,18 +1140,17 @@ async fn run_sampling_request(
                 "stream disconnected - retrying sampling request ({retries}/{max_retries} in {delay:?})...",
             );
 
-            // In release builds, hide the first websocket retry notification to reduce noisy
-            // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
+            // 在 release 构建中，隐藏第一次 websocket 重试提示，减少短暂断线带来的
+            // 噪声消息；在 debug 构建中则保留完整可见性，便于诊断。
             let report_error = retries > 1
                 || cfg!(debug_assertions)
                 || !sess.services.model_client.responses_websocket_enabled();
             if report_error {
-                // Surface retry information to any UI/front‑end so the
-                // user understands what is happening instead of staring
-                // at a seemingly frozen screen.
+                // 把重试信息透出给 UI/前端，让用户知道发生了什么，而不是盯着一个
+                // 看似卡住的界面。
                 sess.notify_stream_error(
                     &turn_context,
-                    format!("Reconnecting... {retries}/{max_retries}"),
+                    format!("正在重新连接... {retries}/{max_retries}"),
                     err,
                 )
                 .await;
@@ -1897,7 +1932,7 @@ async fn try_run_sampling_request(
             Some(Err(err)) => break Err(err),
             None => {
                 break Err(CodexErr::Stream(
-                    "stream closed before response.completed".into(),
+                    "流在收到 response.completed 前已关闭".into(),
                     None,
                 ));
             }
