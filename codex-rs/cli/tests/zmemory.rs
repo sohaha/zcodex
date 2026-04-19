@@ -33,6 +33,23 @@ async fn zmemory_help_renders() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_help_localizes_nested_help_subcommand() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let output = codex_command(codex_home.path())?
+        .args(["zmemory", "--help"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let help = String::from_utf8([output.stdout, output.stderr].concat())?;
+
+    assert!(help.contains("显示此消息或指定子命令的帮助"));
+    assert!(!help.contains("Print this message or the help of the given subcommand(s)"));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_export_help_lists_system_views() -> Result<()> {
     let codex_home = TempDir::new()?;
     codex_command(codex_home.path())?

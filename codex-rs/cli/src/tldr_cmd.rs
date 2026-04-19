@@ -118,7 +118,7 @@ pub enum TldrSubcommand {
     /// 运行诊断工具侦测可用项。
     Doctor(TldrDoctorCommand),
 
-    /// 与 native-tldr daemon 直接交互。
+    /// 与 daemon 直接交互。
     Daemon(TldrDaemonCli),
 
     /// 内部：运行 native-tldr daemon 服务。
@@ -2028,6 +2028,7 @@ mod output_tests {
     use super::render_diagnostics_response_text;
     use super::render_importers_response_text;
     use super::render_imports_response_text;
+    use super::render_search_response_text;
     use super::render_semantic_response_text;
     use codex_native_tldr::api::AnalysisDetail;
     use codex_native_tldr::api::AnalysisEdgeDetail;

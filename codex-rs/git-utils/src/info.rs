@@ -4,10 +4,18 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 
-/// Synchronous wrapper that calls get_git_repo_root internally.
-/// Kept as a separate export for callers that expect this name.
+/// Resolve the trusted git project root for the given cwd.
+///
+/// Unlike `get_git_repo_root`, this helper also follows `.git` gitdir pointers
+/// for linked worktrees and returns the main repository root in that case.
 pub fn resolve_root_git_project_for_trust(cwd: &Path) -> Option<PathBuf> {
-    get_git_repo_root(cwd)
+    let base = if cwd.is_dir() { cwd } else { cwd.parent()? };
+    let (repo_root, dot_git) = find_ancestor_git_entry(base)?;
+    if dot_git.is_dir() {
+        return Some(repo_root);
+    }
+
+    resolve_worktree_main_repo_root(&repo_root, &dot_git)
 }
 use codex_exec_server::ExecutorFileSystem;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -637,6 +645,27 @@ fn find_ancestor_git_entry(base_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     }
 
     None
+}
+
+fn resolve_worktree_main_repo_root(repo_root: &Path, dot_git: &Path) -> Option<PathBuf> {
+    let git_dir_s = std::fs::read_to_string(dot_git).ok()?;
+    let git_dir_rel = git_dir_s.trim().strip_prefix("gitdir:")?.trim();
+    if git_dir_rel.is_empty() {
+        return None;
+    }
+
+    let git_dir_path = if Path::new(git_dir_rel).is_absolute() {
+        PathBuf::from(git_dir_rel)
+    } else {
+        repo_root.join(git_dir_rel)
+    };
+    let worktrees_dir = git_dir_path.parent()?;
+    if worktrees_dir.file_name() != Some(OsStr::new("worktrees")) {
+        return None;
+    }
+
+    let common_dir = worktrees_dir.parent()?;
+    common_dir.parent().map(Path::to_path_buf)
 }
 
 async fn find_ancestor_git_entry_with_fs(

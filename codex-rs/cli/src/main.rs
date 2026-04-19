@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -35,6 +36,7 @@ use codex_tui::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::path::PathBuf;
 use supports_color::Stream;
 
@@ -45,13 +47,19 @@ mod desktop_app;
 mod marketplace_cmd;
 mod mcp_cmd;
 mod responses_cmd;
+mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
+mod zmemory_cmd;
+mod zmemory_compat_server;
 
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 use crate::responses_cmd::ResponsesCommand;
 use crate::responses_cmd::run_responses_command;
+use crate::tldr_cmd::TldrCli;
+use crate::zmemory_cmd::ZmemoryCli;
+use crate::zmemory_cmd::run_zmemory_command;
 
 use codex_core::clear_memory_roots_contents;
 use codex_core::config::Config;
@@ -65,9 +73,9 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
 
-/// Codex CLI
+/// Codex 命令行工具
 ///
-/// If no subcommand is specified, options will be forwarded to the interactive CLI.
+/// 若未指定子命令，选项会转发到交互式命令行界面。
 #[derive(Debug, Parser)]
 #[clap(
     author,
@@ -78,7 +86,8 @@ use codex_terminal_detection::TerminalName;
     // `codex-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `codex` command name that users run.
     bin_name = "codex",
-    override_usage = "codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]"
+    override_usage = "codex [选项] [提示]\n       codex [选项] <命令> [参数]",
+    long_about = "Codex 命令行工具\n\n若未指定子命令，选项会转发到交互式命令行界面。"
 )]
 struct MultitoolCli {
     #[clap(flatten)]
@@ -96,62 +105,73 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Run Codex non-interactively.
+    /// 以非交互模式运行 Codex。
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
-    /// Run a code review non-interactively.
+    /// 以非交互模式执行代码评审。
     Review(ReviewArgs),
 
-    /// Manage login.
+    /// 管理登录。
     Login(LoginCommand),
 
-    /// Remove stored authentication credentials.
+    /// 删除已保存的认证凭据。
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// 管理 Codex 的外部 MCP 服务器。
     Mcp(McpCli),
 
-    /// Manage Codex plugins.
+    /// 运行 Token 优化的命令包装器。
+    Ztok(ZtokArgs),
+
+    /// 管理 Codex 插件。
     Plugin(PluginCli),
 
-    /// Start Codex as an MCP server (stdio).
+    /// 运行原生 TLDR 代码上下文分析命令。
+    #[clap(name = "ztldr")]
+    Tldr(TldrCli),
+
+    /// 管理本地 zmemory 长期记忆。
+    Zmemory(ZmemoryCli),
+
+    /// 以 MCP 服务器（标准输入/输出）模式启动 Codex。
     McpServer,
 
-    /// [experimental] Run the app server or related tooling.
+    /// [实验性] 运行应用服务器或相关工具。
     AppServer(AppServerCommand),
 
-    /// Launch the Codex desktop app (downloads the macOS installer if missing).
+    /// 启动 Codex 桌面应用（若缺失会下载 macOS 安装包）。
     #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
-    /// Generate shell completion scripts.
+    /// 生成命令行补全脚本。
     Completion(CompletionCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// 在 Codex 提供的沙箱中运行命令。
     Sandbox(SandboxArgs),
 
-    /// Debugging tools.
+    /// 调试工具。
     Debug(DebugCommand),
 
-    /// Execpolicy tooling.
+    /// Execpolicy 工具。
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
 
-    /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
+    /// 将 Codex agent 生成的最新 diff 以 `git apply` 方式应用到本地工作区。
     #[clap(visible_alias = "a")]
     Apply(ApplyCommand),
 
-    /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
+    /// 恢复之前的交互会话（默认打开选择器；使用 --last 可继续最近一次）。
+    #[clap(visible_alias = "r")]
     Resume(ResumeCommand),
 
-    /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
+    /// 从之前的交互会话分叉（默认打开选择器；使用 --last 可分叉最近一次）。
     Fork(ForkCommand),
 
-    /// Start or manage an offensive security workflow session.
+    /// 启动或管理 offensive security 工作流会话。
     Zoffsec(ZoffsecCommand),
 
-    /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
+    /// [实验性] 浏览 Codex Cloud 任务并将变更应用到本地。
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
 
@@ -167,11 +187,18 @@ enum Subcommand {
     #[clap(hide = true, name = "stdio-to-uds")]
     StdioToUds(StdioToUdsCommand),
 
-    /// [EXPERIMENTAL] Run the standalone exec-server service.
+    /// [实验性] 运行独立 exec-server 服务。
     ExecServer(ExecServerCommand),
 
-    /// Inspect feature flags.
+    /// 查看功能开关。
     Features(FeaturesCli),
+}
+
+#[derive(Debug, Args)]
+#[command(disable_help_flag = true, disable_version_flag = true)]
+struct ZtokArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
 }
 
 #[derive(Debug, Parser)]
@@ -185,13 +212,13 @@ struct PluginCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum PluginSubcommand {
-    /// Manage plugin marketplaces for Codex.
+    /// 管理 Codex 的插件市场。
     Marketplace(MarketplaceCli),
 }
 
 #[derive(Debug, Parser)]
 struct CompletionCommand {
-    /// Shell to generate completions for
+    /// 要生成补全脚本的 shell 类型。
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
 }
@@ -204,10 +231,10 @@ struct DebugCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugSubcommand {
-    /// Tooling: helps debug the app server.
+    /// 用于调试应用服务器的工具。
     AppServer(DebugAppServerCommand),
 
-    /// Render the model-visible prompt input list as JSON.
+    /// 将模型可见的提示输入列表渲染为 JSON。
     PromptInput(DebugPromptInputCommand),
 
     /// Internal: reset local memory state for a fresh start.
@@ -223,43 +250,43 @@ struct DebugAppServerCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugAppServerSubcommand {
-    // Send message to app server V2.
+    /// 向应用服务器的 v2 接口发送消息。
     SendMessageV2(DebugAppServerSendMessageV2Command),
 }
 
 #[derive(Debug, Parser)]
 struct DebugAppServerSendMessageV2Command {
-    #[arg(value_name = "USER_MESSAGE", required = true)]
+    #[arg(value_name = "用户消息", required = true)]
     user_message: String,
 }
 
 #[derive(Debug, Parser)]
 struct DebugPromptInputCommand {
-    /// Optional user prompt to append after session context.
-    #[arg(value_name = "PROMPT")]
+    /// 可选的用户提示，会附加在会话上下文之后。
+    #[arg(value_name = "提示")]
     prompt: Option<String>,
 
-    /// Optional image(s) to attach to the user prompt.
-    #[arg(long = "image", short = 'i', value_name = "FILE", value_delimiter = ',', num_args = 1..)]
+    /// 可选的图片，会附加到用户提示中。
+    #[arg(long = "image", short = 'i', value_name = "文件", value_delimiter = ',', num_args = 1..)]
     images: Vec<PathBuf>,
 }
 
 #[derive(Debug, Parser)]
 struct ResumeCommand {
-    /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
-    /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    /// 会话 ID（UUID）或线程名。若能解析为 UUID，则优先按 UUID 处理。
+    /// 省略时可用 --last 选择最近一次记录的会话。
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
-    /// Continue the most recent session without showing the picker.
+    /// 不显示选择器，直接继续最近一次会话。
     #[arg(long = "last", default_value_t = false)]
     last: bool,
 
-    /// Show all sessions (disables cwd filtering and shows CWD column).
+    /// 显示所有会话（关闭 cwd 过滤并显示 CWD 列）。
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
-    /// Include non-interactive sessions in the resume picker and --last selection.
+    /// 在恢复选择器和 `--last` 选择中包含非交互式会话。
     #[arg(long = "include-non-interactive", default_value_t = false)]
     include_non_interactive: bool,
 
@@ -272,16 +299,16 @@ struct ResumeCommand {
 
 #[derive(Debug, Parser)]
 struct ForkCommand {
-    /// Conversation/session id (UUID). When provided, forks this session.
-    /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    /// 会话 ID（UUID）。提供后会分叉该会话。
+    /// 省略时可用 --last 选择最近一次记录的会话。
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
-    /// Fork the most recent session without showing the picker.
+    /// 不显示选择器，直接分叉最近一次会话。
     #[arg(long = "last", default_value_t = false, conflicts_with = "session_id")]
     last: bool,
 
-    /// Show all sessions (disables cwd filtering and shows CWD column).
+    /// 显示所有会话（关闭 cwd 过滤并显示 CWD 列）。
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
@@ -300,15 +327,15 @@ struct SandboxArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum SandboxCommand {
-    /// Run a command under Seatbelt (macOS only).
+    /// 在 macOS 的 Seatbelt 沙箱中运行命令。
     #[clap(visible_alias = "seatbelt")]
     Macos(SeatbeltCommand),
 
-    /// Run a command under the Linux sandbox (bubblewrap by default).
+    /// 在 Linux 沙箱下运行命令（默认使用 `bubblewrap`）。
     #[clap(visible_alias = "landlock")]
     Linux(LandlockCommand),
 
-    /// Run a command under Windows restricted token (Windows only).
+    /// 在 Windows 受限令牌下运行命令（仅 Windows）。
     Windows(WindowsCommand),
 }
 
@@ -320,7 +347,7 @@ struct ExecpolicyCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum ExecpolicySubcommand {
-    /// Check execpolicy files against a command.
+    /// 使用命令检查 execpolicy 文件。
     #[clap(name = "check")]
     Check(ExecPolicyCheckCommand),
 }
@@ -332,7 +359,7 @@ struct LoginCommand {
 
     #[arg(
         long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`)"
+        help = "从标准输入读取 API 密钥（例如：`printenv OPENAI_API_KEY | codex login --with-api-key`）"
     )]
     with_api_key: bool,
 
@@ -340,22 +367,22 @@ struct LoginCommand {
         long = "api-key",
         num_args = 0..=1,
         default_missing_value = "",
-        value_name = "API_KEY",
-        help = "(deprecated) Previously accepted the API key directly; now exits with guidance to use --with-api-key",
+        value_name = "API密钥",
+        help = "（已弃用）此前可直接传 API 密钥；现在会退出并提示改用 --with-api-key",
         hide = true
     )]
     api_key: Option<String>,
 
-    #[arg(long = "device-auth")]
+    #[arg(long = "device-auth", help = "使用设备码流程登录。")]
     use_device_code: bool,
 
-    /// EXPERIMENTAL: Use custom OAuth issuer base URL (advanced)
-    /// Override the OAuth issuer base URL (advanced)
+    /// 实验性：使用自定义 OAuth issuer 基础 URL（高级）
+    /// 覆盖 OAuth issuer 基础 URL（高级）
     #[arg(long = "experimental_issuer", value_name = "URL", hide = true)]
     issuer_base_url: Option<String>,
 
-    /// EXPERIMENTAL: Use custom OAuth client ID (advanced)
-    #[arg(long = "experimental_client-id", value_name = "CLIENT_ID", hide = true)]
+    /// 实验性：使用自定义 OAuth client ID（高级）
+    #[arg(long = "experimental_client-id", value_name = "客户端ID", hide = true)]
     client_id: Option<String>,
 
     #[command(subcommand)]
@@ -364,7 +391,7 @@ struct LoginCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum LoginSubcommand {
-    /// Show login status.
+    /// 显示登录状态。
     Status,
 }
 
@@ -376,12 +403,12 @@ struct LogoutCommand {
 
 #[derive(Debug, Parser)]
 struct AppServerCommand {
-    /// Omit to run the app server; specify a subcommand for tooling.
+    /// 省略时直接运行应用服务器；指定子命令可执行工具能力。
     #[command(subcommand)]
     subcommand: Option<AppServerSubcommand>,
 
-    /// Transport endpoint URL. Supported values: `stdio://` (default),
-    /// `ws://IP:PORT`, `off`.
+    /// 传输监听地址。支持：`stdio://`（默认）、
+    /// `ws://IP:PORT`、`off`。
     #[arg(
         long = "listen",
         value_name = "URL",
@@ -389,21 +416,20 @@ struct AppServerCommand {
     )]
     listen: codex_app_server::AppServerTransport,
 
-    /// Controls whether analytics are enabled by default.
+    /// 控制是否默认启用分析上报。
     ///
-    /// Analytics are disabled by default for app-server. Users have to explicitly opt in
-    /// via the `analytics` section in the config.toml file.
+    /// app-server 默认关闭分析上报。用户需要在 config.toml 的 `analytics`
+    /// 配置段中显式选择启用。
     ///
-    /// However, for first-party use cases like the VSCode IDE extension, we default analytics
-    /// to be enabled by default by setting this flag. Users can still opt out by setting this
-    /// in their config.toml:
+    /// 但对于 VSCode IDE 扩展这类第一方用例，我们可通过此标志让分析上报默认启用。
+    /// 用户仍可在 config.toml 中这样设置来选择退出：
     ///
     /// ```toml
     /// [analytics]
     /// enabled = false
     /// ```
     ///
-    /// See https://developers.openai.com/codex/config-advanced/#metrics for more details.
+    /// 详情见 https://developers.openai.com/codex/config-advanced/#metrics 。
     #[arg(long = "analytics-default-enabled")]
     analytics_default_enabled: bool,
 
@@ -413,7 +439,7 @@ struct AppServerCommand {
 
 #[derive(Debug, Parser)]
 struct ExecServerCommand {
-    /// Transport endpoint URL. Supported values: `ws://IP:PORT` (default).
+    /// 传输监听地址。支持：`ws://IP:PORT`（默认）。
     #[arg(
         long = "listen",
         value_name = "URL",
@@ -425,54 +451,54 @@ struct ExecServerCommand {
 #[derive(Debug, clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AppServerSubcommand {
-    /// [experimental] Generate TypeScript bindings for the app server protocol.
+    /// [实验性] 为应用服务器协议生成 TypeScript 代码绑定。
     GenerateTs(GenerateTsCommand),
 
-    /// [experimental] Generate JSON Schema for the app server protocol.
+    /// [实验性] 为应用服务器协议生成 JSON Schema 文件。
     GenerateJsonSchema(GenerateJsonSchemaCommand),
 
-    /// [internal] Generate internal JSON Schema artifacts for Codex tooling.
+    /// [内部] 为 Codex 工具链生成内部 JSON Schema 文件。
     #[clap(hide = true)]
     GenerateInternalJsonSchema(GenerateInternalJsonSchemaCommand),
 }
 
 #[derive(Debug, Args)]
 struct GenerateTsCommand {
-    /// Output directory where .ts files will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入 TypeScript 文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
-    /// Optional path to the Prettier executable to format generated files
-    #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
+    /// 可选：用于格式化生成文件的 Prettier 可执行文件路径。
+    #[arg(short = 'p', long = "prettier", value_name = "Prettier路径")]
     prettier: Option<PathBuf>,
 
-    /// Include experimental methods and fields in the generated output
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
-    /// Output directory where the schema bundle will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入 Schema 汇总文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
-    /// Include experimental methods and fields in the generated output
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
 
 #[derive(Debug, Args)]
 struct GenerateInternalJsonSchemaCommand {
-    /// Output directory where internal JSON Schema artifacts will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入内部 JSON Schema 文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 struct StdioToUdsCommand {
-    /// Path to the Unix domain socket to connect to.
-    #[arg(value_name = "SOCKET_PATH")]
+    /// 要连接的 Unix 域套接字路径。
+    #[arg(value_name = "套接字路径")]
     socket_path: PathBuf,
 }
 
@@ -500,17 +526,17 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         } else {
             resume_cmd
         };
-        lines.push(format!("To continue this session, run {command}"));
+        lines.push(format!("若要继续此会话，请运行 {command}"));
     }
 
     lines
 }
 
-/// Handle the app exit and print the results. Optionally run the update action.
+/// 处理应用退出并打印结果。可选执行更新动作。
 fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     match exit_info.exit_reason {
         ExitReason::Fatal(message) => {
-            eprintln!("ERROR: {message}");
+            eprintln!("错误：{message}");
             std::process::exit(1);
         }
         ExitReason::UserRequested => { /* normal exit */ }
@@ -527,11 +553,11 @@ fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run the update action and print the result.
+/// 执行更新动作并输出结果。
 fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
     println!();
     let cmd_str = action.command_str();
-    println!("Updating Codex via `{cmd_str}`...");
+    println!("正在通过 `{cmd_str}` 更新 Codex...");
 
     let status = {
         #[cfg(windows)]
@@ -564,9 +590,9 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
         }
     };
     if !status.success() {
-        anyhow::bail!("`{cmd_str}` failed with status {status}");
+        anyhow::bail!("`{cmd_str}` 执行失败，状态码：{status}");
     }
-    println!("\n🎉 Update ran successfully! Please restart Codex.");
+    println!("\n🎉 更新成功！请重启 Codex。");
     Ok(())
 }
 
@@ -586,26 +612,25 @@ async fn run_debug_app_server_command(cmd: DebugAppServerCommand) -> anyhow::Res
 
 #[derive(Debug, Default, Parser, Clone)]
 struct FeatureToggles {
-    /// Enable a feature (repeatable). Equivalent to `-c features.<name>=true`.
-    #[arg(long = "enable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    /// 启用功能（可重复）。等价于 `-c features.<name>=true`。
+    #[arg(long = "enable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     enable: Vec<String>,
 
-    /// Disable a feature (repeatable). Equivalent to `-c features.<name>=false`.
-    #[arg(long = "disable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    /// 禁用功能（可重复）。等价于 `-c features.<name>=false`。
+    #[arg(long = "disable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     disable: Vec<String>,
 }
 
 #[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
-    /// Connect the TUI to a remote app server websocket endpoint.
+    /// 将 TUI 连接到远程应用服务器 WebSocket 端点。
     ///
-    /// Accepted forms: `ws://host:port` or `wss://host:port`.
-    #[arg(long = "remote", value_name = "ADDR")]
+    /// 支持格式：`ws://host:port` 或 `wss://host:port`。
+    #[arg(long = "remote", value_name = "地址")]
     remote: Option<String>,
 
-    /// Name of the environment variable containing the bearer token to send to
-    /// a remote app server websocket.
-    #[arg(long = "remote-auth-token-env", value_name = "ENV_VAR")]
+    /// 包含远程应用服务器 WebSocket 访问令牌的环境变量名。
+    #[arg(long = "remote-auth-token-env", value_name = "环境变量")]
     remote_auth_token_env: Option<String>,
 }
 
@@ -627,7 +652,7 @@ impl FeatureToggles {
         if is_known_feature_key(feature) {
             Ok(())
         } else {
-            anyhow::bail!("Unknown feature flag: {feature}")
+            anyhow::bail!("未知的功能开关：{feature}")
         }
     }
 }
@@ -640,27 +665,27 @@ struct FeaturesCli {
 
 #[derive(Debug, Parser)]
 enum FeaturesSubcommand {
-    /// List known features with their stage and effective state.
+    /// 列出已知功能及其所处阶段与当前状态。
     List,
-    /// Enable a feature in config.toml.
+    /// 在 config.toml 中启用功能。
     Enable(FeatureSetArgs),
-    /// Disable a feature in config.toml.
+    /// 在 config.toml 中禁用功能。
     Disable(FeatureSetArgs),
 }
 
 #[derive(Debug, Parser)]
 struct FeatureSetArgs {
-    /// Feature key to update (for example: unified_exec).
+    /// 要更新的功能键（例如：unified_exec）。
     feature: String,
 }
 
 fn stage_str(stage: Stage) -> &'static str {
     match stage {
-        Stage::UnderDevelopment => "under development",
-        Stage::Experimental { .. } => "experimental",
-        Stage::Stable => "stable",
-        Stage::Deprecated => "deprecated",
-        Stage::Removed => "removed",
+        Stage::UnderDevelopment => "开发中",
+        Stage::Experimental { .. } => "实验性",
+        Stage::Stable => "稳定",
+        Stage::Deprecated => "已弃用",
+        Stage::Removed => "已移除",
     }
 }
 
@@ -693,7 +718,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         remote,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli_from_env();
 
     let mut root_config_overrides = std::mem::take(&mut interactive.config_overrides);
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
@@ -808,6 +833,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
         }
+        Some(Subcommand::Ztok(ztok_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "ztok",
+            )?;
+            codex_ztok::run_from_os_args(ztok_cli.args)?;
+        }
         Some(Subcommand::Plugin(plugin_cli)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -825,6 +858,22 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     marketplace_cli.run().await?;
                 }
             }
+        }
+        Some(Subcommand::Tldr(tldr_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "ztldr",
+            )?;
+            tldr_cmd::run_tldr_command(tldr_cli).await?;
+        }
+        Some(Subcommand::Zmemory(zmemory_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "zmemory",
+            )?;
+            run_zmemory_command(zmemory_cli).await?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => {
             let AppServerCommand {
@@ -962,7 +1011,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                         .await;
                     } else if login_cli.api_key.is_some() {
                         eprintln!(
-                            "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`."
+                            "--api-key 参数已不再支持。请改为通过管道传入密钥，例如：`printenv OPENAI_API_KEY | codex login --with-api-key`。"
                         );
                         std::process::exit(1);
                     } else if login_cli.with_api_key {
@@ -1241,7 +1290,7 @@ async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow
         .set_feature_enabled(feature, /*enabled*/ true)
         .apply()
         .await?;
-    println!("Enabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中启用功能 `{feature}`。");
     maybe_print_under_development_feature_warning(&codex_home, interactive, feature);
     Ok(())
 }
@@ -1254,7 +1303,7 @@ async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyho
         .set_feature_enabled(feature, /*enabled*/ false)
         .apply()
         .await?;
-    println!("Disabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中禁用功能 `{feature}`。");
     Ok(())
 }
 
@@ -1637,9 +1686,110 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
+    let mut app = localized_multitool_command();
     let name = "codex";
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
+}
+
+fn parse_multitool_cli_from_env() -> MultitoolCli {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    if raw_args.is_empty() {
+        return MultitoolCli::parse();
+    }
+    parse_multitool_cli(raw_args)
+}
+
+fn parse_multitool_cli<I, T>(args: I) -> MultitoolCli
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let command = localized_multitool_command();
+    match command.try_get_matches_from(args) {
+        Ok(matches) => MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit()),
+        Err(err) => {
+            let rendered = localize_help_output(err.to_string());
+            let _ = std::io::stderr().write_all(rendered.as_bytes());
+            std::process::exit(err.exit_code());
+        }
+    }
+}
+
+fn localized_multitool_command() -> clap::Command {
+    localize_clap_command(MultitoolCli::command())
+}
+
+fn localize_clap_command(mut cmd: clap::Command) -> clap::Command {
+    cmd.build();
+    localize_clap_command_tree(cmd)
+}
+
+fn localize_clap_command_tree(cmd: clap::Command) -> clap::Command {
+    localize_help_subcommand(cmd.mut_subcommands(localize_clap_command_tree))
+}
+
+fn localize_help_subcommand(cmd: clap::Command) -> clap::Command {
+    if cmd
+        .get_subcommands()
+        .any(|subcmd| subcmd.get_name() == "help")
+    {
+        cmd.mut_subcommand("help", |subcmd| {
+            let subcmd = subcmd.about("显示此消息或指定子命令的帮助");
+            if subcmd
+                .get_arguments()
+                .any(|arg| arg.get_id().as_str() == "subcommand")
+            {
+                subcmd.mut_arg("subcommand", |arg| arg.help("显示指定子命令的帮助"))
+            } else {
+                subcmd
+            }
+        })
+    } else {
+        cmd
+    }
+}
+
+fn localize_help_output(output: String) -> String {
+    output
+        .replace("Usage:", "用法：")
+        .replace("Commands:", "命令：")
+        .replace("Arguments:", "参数：")
+        .replace("Options:", "选项：")
+        .replace("[aliases:", "[别名：")
+        .replace("[default:", "[默认：")
+        .replace(
+            "Print this message or the help of the given subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace(
+            "Print this message or the help of the given\nsubcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace(
+            "Print this message or the help of the given\n                 subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace("Print help for the subcommand(s)", "显示指定子命令的帮助")
+        .replace(
+            "Print help (see a summary with '-h')",
+            "显示帮助（使用 '-h' 查看摘要）",
+        )
+        .replace(
+            "Print help (see more with '--help')",
+            "显示帮助（使用 '--help' 查看更多）",
+        )
+        .replace("Print help", "显示帮助")
+        .replace("Print version", "显示版本")
+        .replace("Possible values:", "可选值：")
+        .replace("[possible values:", "[可选值：")
+        .replace("error: invalid value", "错误：无效的值")
+        .replace(
+            "For more information, try '--help'.",
+            "更多信息请使用 '--help'。",
+        )
+        .replace("[PROMPT]", "[提示]")
+        .replace("<FILE>", "<文件>")
+        .replace("<MODEL>", "<模型>")
 }
 
 #[cfg(test)]
@@ -1810,11 +1960,63 @@ mod tests {
 
     #[test]
     fn responses_subcommand_is_hidden_from_help_but_parses() {
-        let help = MultitoolCli::command().render_help().to_string();
+        let help = localize_help_output(localized_multitool_command().render_help().to_string());
         assert!(!help.contains("responses"));
 
         let cli = MultitoolCli::try_parse_from(["codex", "responses"]).expect("parse");
         assert!(matches!(cli.subcommand, Some(Subcommand::Responses(_))));
+    }
+
+    #[test]
+    fn help_output_lists_ztok_and_localizes_tail_defaults() {
+        let help = localize_help_output(localized_multitool_command().render_help().to_string());
+        assert!(help.contains("ztok"));
+        assert!(help.contains("显示此消息或指定子命令的帮助"));
+        assert!(help.contains("显示帮助"));
+        assert!(help.contains("显示版本"));
+        assert!(!help.contains("Print this message or the help of the given subcommand(s)"));
+        assert!(!help.contains("Print help"));
+        assert!(!help.contains("Print version"));
+    }
+
+    #[test]
+    fn autogenerated_help_subcommand_is_localized() {
+        let mut command = localized_multitool_command();
+        command.build();
+
+        let help_subcommand = command.find_subcommand("help").expect("help subcommand");
+        assert_eq!(
+            help_subcommand.get_about().map(ToString::to_string),
+            Some("显示此消息或指定子命令的帮助".to_string())
+        );
+
+        if let Some(arg) = help_subcommand
+            .get_arguments()
+            .find(|arg| arg.get_id().as_str() == "subcommand")
+        {
+            assert_eq!(
+                arg.get_help().map(ToString::to_string),
+                Some("显示指定子命令的帮助".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn ztldr_help_output_localizes_nested_help_subcommand() {
+        let rendered = localized_multitool_command()
+            .try_get_matches_from(["codex", "ztldr", "--help"])
+            .expect_err("help should short-circuit")
+            .to_string();
+        let help = localize_help_output(rendered);
+
+        assert!(help.contains("显示此消息或指定子命令的帮助"));
+        assert!(!help.contains("Print this message or the help"));
+    }
+
+    #[test]
+    fn resume_short_alias_r_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "r", "--last"]).expect("parse");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Resume(_))));
     }
 
     #[test]
@@ -1900,7 +2102,7 @@ mod tests {
             lines,
             vec![
                 "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume 123e4567-e89b-12d3-a456-426614174000"
+                "若要继续此会话，请运行 codex resume 123e4567-e89b-12d3-a456-426614174000"
                     .to_string(),
             ]
         );
@@ -1928,7 +2130,7 @@ mod tests {
             lines,
             vec![
                 "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume my-thread".to_string(),
+                "若要继续此会话，请运行 codex resume my-thread".to_string(),
             ]
         );
     }
@@ -2387,6 +2589,26 @@ mod tests {
     }
 
     #[test]
+    fn ztldr_daemon_status_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "ztldr", "daemon", "status"])
+            .expect("parse should succeed");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
+    }
+
+    #[test]
+    fn zmemory_read_parses_uri() {
+        let cli = MultitoolCli::try_parse_from(["codex", "zmemory", "read", "core://agent"])
+            .expect("parse should succeed");
+        let Some(Subcommand::Zmemory(zmemory_cli)) = cli.subcommand else {
+            panic!("expected zmemory subcommand");
+        };
+        let zmemory_cmd::ZmemorySubcommand::Read(read) = zmemory_cli.subcommand else {
+            panic!("expected zmemory read");
+        };
+        assert_eq!(read.uri, "core://agent");
+    }
+
+    #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
             enable: vec!["web_search_request".to_string()],
@@ -2437,6 +2659,6 @@ mod tests {
         let err = toggles
             .to_overrides()
             .expect_err("feature should be rejected");
-        assert_eq!(err.to_string(), "Unknown feature flag: does_not_exist");
+        assert_eq!(err.to_string(), "未知的功能开关：does_not_exist");
     }
 }

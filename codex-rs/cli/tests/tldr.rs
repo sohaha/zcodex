@@ -26,6 +26,23 @@ fn language_fixture(language: &str) -> (&'static str, &'static str) {
 }
 
 #[tokio::test]
+async fn tldr_help_localizes_nested_help_subcommand() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let output = codex_command(codex_home.path())?
+        .args(["ztldr", "--help"])
+        .assert()
+        .success()
+        .get_output()
+        .clone();
+    let help = String::from_utf8([output.stdout, output.stderr].concat())?;
+
+    assert!(help.contains("显示此消息或指定子命令的帮助"));
+    assert!(!help.contains("Print this message or the help of the given subcommand(s)"));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn tldr_structure_json_preserves_graph_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
