@@ -4,14 +4,12 @@ Codex exposes the current launcher path to shell commands as
 `{{ codex_self_exe_env_var }}` for internal execution plumbing. Treat that
 variable as internal only: do not show `"$CODEX_SELF_EXE"` in user-facing
 commentary or command examples. `ztok` is the token-optimized CLI proxy for
-shell commands. Prefer direct shell commands first and let the rewrite layer
-route them automatically when possible.
+shell commands.
 
-When the shell rewrite layer can recognize a command shape, it will prefix the
-command for you. If you need to force the proxy explicitly, use the logical
-launcher form `{{ logical_launcher_invocation }} ztok <subcommand> ...`. The
-runtime will resolve that logical form through `{{ codex_self_exe_env_var }}`
-internally when needed.
+Use the logical launcher form `{{ logical_launcher_invocation }} ztok ...` in
+all user-facing planning, commentary, and command examples. Do not plan around
+automatic shell rewrite; rewrite is an internal runtime optimization, not the
+model's default execution strategy.
 
 Use the dedicated shell entrypoint for arbitrary commands:
 
@@ -26,6 +24,17 @@ Use the dedicated shell entrypoint for arbitrary commands:
   error/warning-heavy summary.
 - `{{ logical_launcher_invocation }} ztok json <file> --keys-only` shows JSON keys and types without
   echoing full values back into the context window.
+
+Default priority:
+
+1. For general shell commands, explicitly use `{{ logical_launcher_invocation }} ztok shell <command> [args...]`.
+2. Use a dedicated `{{ logical_launcher_invocation }} ztok <subcommand> ...` form only when that subcommand
+   directly matches the task.
+3. Add `--filter err` or `--filter test` only when you specifically want filtered error or test output.
+
+If the user explicitly asks to use `ztok`, commentary and executed commands
+must explicitly use a `{{ logical_launcher_invocation }} ztok ...` form. Do not
+say you will run a raw shell command first and let rewrite take over.
 
 `shell --filter err` and `shell --filter test` execute programs directly
 instead of through a shell. For pipes, redirects, or shell operators, wrap the

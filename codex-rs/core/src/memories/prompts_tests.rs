@@ -169,12 +169,20 @@ fn build_ztok_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("`CODEX_SELF_EXE`"));
     assert!(instructions.contains("do not show `\"$CODEX_SELF_EXE\"`"));
     assert!(instructions.contains("`codex ztok <subcommand> ...`"));
+    assert!(instructions.contains("Do not plan around\nautomatic shell rewrite"));
     assert!(instructions.contains("`codex ztok shell <command> [args...]`"));
     assert!(instructions.contains("`codex ztok shell --filter err <command> [args...]`"));
     assert!(instructions.contains("`codex ztok shell --filter test <command> [args...]`"));
     assert!(instructions.contains("`codex ztok log [file]`"));
     assert!(instructions.contains("`codex ztok json <file> --keys-only`"));
+    assert!(instructions.contains("If the user explicitly asks to use `ztok`"));
+    assert!(
+        instructions.contains(
+            "Do not\nsay you will run a raw shell command first and let rewrite take over."
+        )
+    );
     assert!(instructions.contains("`codex ztok shell bash -lc 'cargo test 2>&1 | tail -n 40'`"));
+    assert!(!instructions.contains("Prefer direct shell commands first"));
     assert!(instructions.contains("[shell_command routed via embedded ZTOK]"));
     assert!(instructions.contains("[shell_command kept raw]"));
 }
