@@ -683,17 +683,7 @@ impl RolloutRecorder {
                 continue;
             }
             saw_non_empty_line = true;
-            let v: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("failed to parse line as JSON: {line:?}, error: {e}");
-                    parse_errors = parse_errors.saturating_add(1);
-                    continue;
-                }
-            };
-
-            // Parse the rollout line structure
-            match serde_json::from_value::<RolloutLine>(v) {
+            match serde_json::from_str::<RolloutLine>(&line) {
                 Ok(rollout_line) => match rollout_line.item {
                     RolloutItem::SessionMeta(session_meta_line) => {
                         // Use the FIRST SessionMeta encountered in the file as the canonical
@@ -712,12 +702,16 @@ impl RolloutRecorder {
                     RolloutItem::TurnContext(item) => {
                         items.push(RolloutItem::TurnContext(item));
                     }
-                    RolloutItem::EventMsg(_ev) => {
-                        items.push(RolloutItem::EventMsg(_ev));
+                    RolloutItem::EventMsg(event) => {
+                        items.push(RolloutItem::EventMsg(event));
                     }
                 },
-                Err(e) => {
-                    trace!("failed to parse rollout line: {e}");
+                Err(rollout_err) => {
+                    if let Err(json_err) = serde_json::from_str::<Value>(&line) {
+                        warn!("failed to parse line as JSON: {line:?}, error: {json_err}");
+                    } else {
+                        trace!("failed to parse rollout line: {rollout_err}");
+                    }
                     parse_errors = parse_errors.saturating_add(1);
                 }
             }

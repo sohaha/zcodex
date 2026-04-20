@@ -2517,6 +2517,14 @@ pub enum InitialHistory {
 }
 
 impl InitialHistory {
+    pub fn rollout_items(&self) -> &[RolloutItem] {
+        match self {
+            InitialHistory::New | InitialHistory::Cleared => &[],
+            InitialHistory::Resumed(resumed) => resumed.history.as_slice(),
+            InitialHistory::Forked(items) => items.as_slice(),
+        }
+    }
+
     pub fn scan_rollout_items(&self, mut predicate: impl FnMut(&RolloutItem) -> bool) -> bool {
         match self {
             InitialHistory::New | InitialHistory::Cleared => false,

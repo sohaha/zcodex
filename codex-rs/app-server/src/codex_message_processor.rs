@@ -4475,7 +4475,7 @@ impl CodexMessageProcessor {
                 let connection_id = request_id.connection_id;
                 let token_usage_thread = response.thread.clone();
                 let token_usage_turn_id = latest_token_usage_turn_id_from_rollout_items(
-                    &response_history.get_rollout_items(),
+                    response_history.rollout_items(),
                     &token_usage_thread,
                 );
                 self.outgoing.send_response(request_id, response).await;
@@ -4819,10 +4819,9 @@ impl CodexMessageProcessor {
         let mut thread = thread?;
         thread.id = thread_id.to_string();
         thread.path = Some(rollout_path.to_path_buf());
-        let history_items = thread_history.get_rollout_items();
         populate_thread_turns(
             &mut thread,
-            ThreadTurnSource::HistoryItems(&history_items),
+            ThreadTurnSource::HistoryItems(thread_history.rollout_items()),
             /*active_turn*/ None,
         )
         .await?;
