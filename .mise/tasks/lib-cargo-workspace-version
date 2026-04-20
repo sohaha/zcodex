@@ -68,6 +68,62 @@ export_codex_release_version_if_present() {
   fi
 }
 
+resolve_cargo_workspace_version_override_backup_path() {
+  local codex_rs_dir="$1"
+  local backup_root repo_key
+
+  backup_root="${TMPDIR:-/tmp}/codex-mise-cargo-workspace-version"
+  mkdir -p "$backup_root"
+  repo_key="$(printf '%s' "$codex_rs_dir" | cksum | awk '{print $1}')"
+  printf '%s\n' "$backup_root/${repo_key}.Cargo.toml.orig"
+}
+
+normalize_cargo_workspace_version_line() {
+  local cargo_toml="$1"
+
+  awk '
+    BEGIN {
+      in_workspace_package = 0
+    }
+    /^\[.*\]$/ {
+      in_workspace_package = ($0 == "[workspace.package]")
+    }
+    {
+      if (in_workspace_package && $0 ~ /^version = "[^"]+"$/) {
+        print "version = \"__CODEX_VERSION__\""
+        next
+      }
+      print
+    }
+  ' "$cargo_toml"
+}
+
+recover_stale_cargo_workspace_version_override() {
+  local codex_rs_dir="$1"
+  local cargo_toml backup
+
+  cargo_toml="$codex_rs_dir/Cargo.toml"
+  backup="$(resolve_cargo_workspace_version_override_backup_path "$codex_rs_dir")"
+
+  if [ ! -f "$backup" ]; then
+    return 0
+  fi
+
+  if cmp -s "$cargo_toml" "$backup"; then
+    rm -f "$backup"
+    return 0
+  fi
+
+  if cmp -s <(normalize_cargo_workspace_version_line "$cargo_toml") <(normalize_cargo_workspace_version_line "$backup"); then
+    cp "$backup" "$cargo_toml"
+    rm -f "$backup"
+    echo "[mise] 检测到上次构建残留的 workspace version 覆盖，已自动恢复 codex-rs/Cargo.toml" >&2
+    return 0
+  fi
+
+  echo "[mise] 检测到未恢复的 workspace version 备份，但当前 Cargo.toml 含额外改动，保留现场: $backup" >&2
+}
+
 restore_cargo_workspace_version_override() {
   local cargo_toml="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET:-}"
   local backup="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP:-}"
@@ -80,6 +136,12 @@ restore_cargo_workspace_version_override() {
   rm -f "$backup"
   unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET
   unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP
+}
+
+restore_cargo_workspace_version_override_on_signal() {
+  restore_cargo_workspace_version_override
+  trap - EXIT
+  exit 130
 }
 
 ensure_cargo_workspace_version_override_safe() {
@@ -109,16 +171,18 @@ activate_cargo_workspace_version_override() {
     return 0
   fi
 
+  recover_stale_cargo_workspace_version_override "$codex_rs_dir"
   ensure_cargo_workspace_version_override_safe "$codex_rs_dir"
 
   cargo_toml="$codex_rs_dir/Cargo.toml"
-  backup="$(mktemp "${TMPDIR:-/tmp}/codex-cargo-toml.XXXXXX")"
+  backup="$(resolve_cargo_workspace_version_override_backup_path "$codex_rs_dir")"
   patched="$(mktemp "${TMPDIR:-/tmp}/codex-cargo-toml.patched.XXXXXX")"
   cp "$cargo_toml" "$backup"
 
   export CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET="$cargo_toml"
   export CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP="$backup"
   trap restore_cargo_workspace_version_override EXIT
+  trap restore_cargo_workspace_version_override_on_signal INT TERM HUP
 
   if ! awk -v version="$version" '
     BEGIN {
