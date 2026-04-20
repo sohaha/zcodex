@@ -127,6 +127,7 @@ mod tests {
                     }),
                     agent_nickname: None,
                     agent_role: None,
+                    parent_model: None,
                     agent_path: None,
                     reasoning_effort: Some("medium".to_string()),
                     first_user_message: Some("hello".to_string()),
@@ -221,6 +222,7 @@ mod tests {
                 sub_agent_path: Some("/root/review/backend".to_string()),
                 sub_agent_nickname: Some("Navigator".to_string()),
                 sub_agent_role: Some("explorer".to_string()),
+                sub_agent_parent_model: Some("gpt-5.4".to_string()),
                 ..Default::default()
             }),
             git_info: Some(proto::GitInfo {
@@ -230,6 +232,7 @@ mod tests {
             }),
             agent_nickname: Some("Navigator".to_string()),
             agent_role: Some("explorer".to_string()),
+            parent_model: Some("gpt-5.4".to_string()),
             agent_path: Some("/root/review/backend".to_string()),
             reasoning_effort: Some("high".to_string()),
             first_user_message: Some("first message".to_string()),
@@ -239,6 +242,7 @@ mod tests {
 
         assert_eq!(stored.rollout_path, None);
         assert!(stored.history.is_none());
+        assert_eq!(stored.parent_model.as_deref(), Some("gpt-5.4"));
         assert_eq!(stored_thread_to_proto(stored), thread);
     }
 }

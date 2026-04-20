@@ -185,6 +185,14 @@ just bazel-lock-check
 - 不要只看编译通过的主路径
 - 额外 grep 同类型的本地构造点，补齐新字段后再宣称同步完成
 
+如果本次同步触及跨层共享字段，尤其是 `protocol/app-server/thread-store/state/proto/schema` 之间会重复出现的字段：
+
+- 不要只补协议层 struct、serde 字段或单个调用点
+- 额外审查所有镜像层：wire schema、protobuf、checked-in generated 文件、remote/local adapter、synthetic/fallback 构造、测试 fixture
+- 发现某字段只在解构或构造时“占位为 `None`”而没有跨层透传时，按功能回归处理，不能仅用 `_field`、`#[allow(dead_code)]` 或局部消警结束
+- 至少保留一条 round-trip 或端到端断言，锁定该字段跨层读写都不丢失
+- 对 `thread-store` 这类有 checked-in proto 产物的模块，`.proto` 与生成的 Rust 文件必须同次更新，不能只改一边
+
 如果本次同步触及 `codex-rs/protocol/src/error.rs` 或相关错误映射：
 
 - 不要只看枚举本身的 diff

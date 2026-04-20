@@ -73,6 +73,7 @@ pub(super) fn proto_session_source(source: &SessionSource) -> proto::SessionSour
             sub_agent_path: agent_path.as_ref().map(|path| path.as_str().to_string()),
             sub_agent_nickname: agent_nickname.clone(),
             sub_agent_role: agent_role.clone(),
+            sub_agent_parent_model: parent_model.clone(),
             ..Default::default()
         },
         SessionSource::SubAgent(SubAgentSource::MemoryConsolidation) => {
@@ -141,7 +142,7 @@ pub(super) fn stored_thread_from_proto(
         source,
         agent_nickname: thread.agent_nickname,
         agent_role: thread.agent_role,
-        parent_model: None,
+        parent_model: session_source_parent_model(thread.source.as_ref()),
         agent_path: thread.agent_path,
         git_info: thread.git_info.map(git_info_from_proto),
         approval_mode: AskForApproval::OnRequest,
@@ -170,7 +171,7 @@ pub(super) fn stored_thread_to_proto(thread: StoredThread) -> proto::StoredThrea
         git_info: thread.git_info.map(git_info_to_proto),
         agent_nickname: thread.agent_nickname,
         agent_role: thread.agent_role,
-        parent_model: None,
+        parent_model: thread.parent_model,
         agent_path: thread.agent_path,
         reasoning_effort: thread.reasoning_effort.map(|effort| effort.to_string()),
         first_user_message: thread.first_user_message,
@@ -223,7 +224,7 @@ fn session_source_from_proto(source: &proto::SessionSource) -> ThreadStoreResult
                     .map_err(|message| ThreadStoreError::InvalidRequest { message })?,
                 agent_nickname: source.sub_agent_nickname.clone(),
                 agent_role: source.sub_agent_role.clone(),
-                parent_model: None,
+                parent_model: source.sub_agent_parent_model.clone(),
             })
         }
         proto::SessionSourceKind::SubAgentMemoryConsolidation => {
@@ -256,4 +257,19 @@ fn parse_reasoning_effort(value: &str) -> ThreadStoreResult<ReasoningEffort> {
     ReasoningEffort::from_str(value).map_err(|message| ThreadStoreError::InvalidRequest {
         message: format!("remote thread store returned {message}"),
     })
+}
+
+fn session_source_parent_model(source: Option<&proto::SessionSource>) -> Option<String> {
+    match source {
+        Some(proto::SessionSource {
+            kind,
+            sub_agent_parent_model,
+            ..
+        }) if proto::SessionSourceKind::try_from(*kind)
+            == Ok(proto::SessionSourceKind::SubAgentThreadSpawn) =>
+        {
+            sub_agent_parent_model.clone()
+        }
+        _ => None,
+    }
 }

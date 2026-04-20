@@ -68,8 +68,10 @@ pub struct StoredThread {
     #[prost(string, optional, tag = "16")]
     pub agent_path: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "17")]
-    pub reasoning_effort: ::core::option::Option<::prost::alloc::string::String>,
+    pub parent_model: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "18")]
+    pub reasoning_effort: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "19")]
     pub first_user_message: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -90,6 +92,8 @@ pub struct SessionSource {
     pub sub_agent_nickname: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(string, optional, tag = "8")]
     pub sub_agent_role: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "9")]
+    pub sub_agent_parent_model: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GitInfo {

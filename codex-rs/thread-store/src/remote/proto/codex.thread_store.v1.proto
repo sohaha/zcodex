@@ -50,8 +50,9 @@ message StoredThread {
   optional string agent_nickname = 14;
   optional string agent_role = 15;
   optional string agent_path = 16;
-  optional string reasoning_effort = 17;
-  optional string first_user_message = 18;
+  optional string parent_model = 17;
+  optional string reasoning_effort = 18;
+  optional string first_user_message = 19;
 }
 
 message SessionSource {
@@ -63,6 +64,7 @@ message SessionSource {
   optional string sub_agent_path = 6;
   optional string sub_agent_nickname = 7;
   optional string sub_agent_role = 8;
+  optional string sub_agent_parent_model = 9;
 }
 
 enum SessionSourceKind {
