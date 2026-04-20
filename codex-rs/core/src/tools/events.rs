@@ -555,19 +555,19 @@ async fn emit_patch_end(
 mod tests {
     use super::ToolEmitter;
     use super::ToolEventCtx;
-    use crate::protocol::EventMsg;
-    use crate::protocol::ExecCommandBeginEvent;
-    use crate::protocol::ExecCommandEndEvent;
-    use crate::protocol::ExecCommandSource;
     use crate::session::tests::make_session_and_context_with_rx;
     use codex_protocol::exec_output::ExecToolCallOutput;
     use codex_protocol::exec_output::StreamOutput;
+    use codex_protocol::protocol::Event;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::ExecCommandBeginEvent;
+    use codex_protocol::protocol::ExecCommandEndEvent;
+    use codex_protocol::protocol::ExecCommandSource;
+    use codex_protocol::protocol::ExecCommandStatus;
     use pretty_assertions::assert_eq;
     use std::time::Duration;
 
-    async fn recv_exec_begin(
-        rx: &mut async_channel::Receiver<crate::protocol::Event>,
-    ) -> ExecCommandBeginEvent {
+    async fn recv_exec_begin(rx: &mut async_channel::Receiver<Event>) -> ExecCommandBeginEvent {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 let event = rx.recv().await.expect("event");
@@ -580,9 +580,7 @@ mod tests {
         .expect("timed out waiting for exec begin")
     }
 
-    async fn recv_exec_end(
-        rx: &mut async_channel::Receiver<crate::protocol::Event>,
-    ) -> ExecCommandEndEvent {
+    async fn recv_exec_end(rx: &mut async_channel::Receiver<Event>) -> ExecCommandEndEvent {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 let event = rx.recv().await.expect("event");
@@ -646,7 +644,7 @@ mod tests {
         let end = recv_exec_end(&mut rx).await;
         assert_eq!(end.interaction_input, Some("FOO=1 git status".to_string()));
         assert_eq!(end.stdout, "ok");
-        assert_eq!(end.status, crate::protocol::ExecCommandStatus::Completed);
+        assert_eq!(end.status, ExecCommandStatus::Completed);
     }
 
     #[tokio::test]

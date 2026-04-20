@@ -106,39 +106,15 @@ impl ToolHandler for TldrHandler {
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation { turn, payload, .. } = invocation;
         let args = prepare_tldr_args(payload, turn.cwd.as_path())?;
-
-        let saved_args = args.clone();
         let problem_kind = turn.tool_routing_directives.read().await.problem_kind;
-        maybe_issue_first_structural_warm(&turn, &saved_args, problem_kind).await;
-        let auto_start_enabled = matches!(
-            saved_args.action,
-            codex_native_tldr::tool_api::TldrToolAction::Ping
-                | codex_native_tldr::tool_api::TldrToolAction::Warm
-                | codex_native_tldr::tool_api::TldrToolAction::Snapshot
-                | codex_native_tldr::tool_api::TldrToolAction::Status
-                | codex_native_tldr::tool_api::TldrToolAction::Notify
-        );
-        let output = run_tldr_handler_with_hooks(
+        run_tldr_for_turn_with_hooks(
+            &turn,
             args,
-            &|project_root, command| Box::pin(query_daemon(project_root, command)),
-            &|project_root| {
-                Box::pin(async move {
-                    if auto_start_enabled {
-                        ensure_daemon_running(project_root).await
-                    } else {
-                        Ok(false)
-                    }
-                })
-            },
-        )
-        .await?;
-        let degraded_mode = extract_degraded_mode(&output);
-        turn.auto_tldr_context.write().await.record_result(
-            &saved_args,
             problem_kind,
-            degraded_mode,
-        );
-        Ok(output)
+            &|project_root, command| Box::pin(query_daemon(project_root, command)),
+            &|project_root| Box::pin(async move { ensure_daemon_running(project_root).await }),
+        )
+        .await
     }
 }
 
@@ -159,21 +135,6 @@ fn prepare_tldr_args(
         args.project = Some(default_tldr_project(cwd));
     }
     Ok(args)
-}
-
-async fn maybe_issue_first_structural_warm(
-    turn: &TurnContext,
-    args: &TldrToolCallParam,
-    problem_kind: ProblemKind,
-) {
-    try_issue_first_structural_warm_with_hooks(
-        turn,
-        args,
-        problem_kind,
-        &|project_root, command| Box::pin(query_daemon(project_root, command)),
-        &|project_root| Box::pin(async move { ensure_daemon_running(project_root).await }),
-    )
-    .await;
 }
 
 async fn try_issue_first_structural_warm_with_hooks<Q, E>(
@@ -219,10 +180,42 @@ async fn try_issue_first_structural_warm_with_hooks<Q, E>(
         include_install_hints: None,
     };
     if let Ok(output) = run_tldr_handler_with_hooks(warm_args, query, ensure_running).await
-        && output.success.unwrap_or(true)
+        && output_reports_real_daemon_success(&output)
     {
         turn.auto_tldr_context.write().await.note_warmup_requested();
     }
+}
+
+async fn run_tldr_for_turn_with_hooks<Q, E>(
+    turn: &TurnContext,
+    args: TldrToolCallParam,
+    problem_kind: ProblemKind,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<FunctionToolOutput, FunctionCallError>
+where
+    Q: for<'a> Fn(
+        &'a Path,
+        &'a TldrDaemonCommand,
+    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
+{
+    let saved_args = args.clone();
+    try_issue_first_structural_warm_with_hooks(
+        turn,
+        &saved_args,
+        problem_kind,
+        query,
+        ensure_running,
+    )
+    .await;
+    let output = run_tldr_handler_with_hooks(args, query, ensure_running).await?;
+    let degraded_mode = extract_degraded_mode(&output);
+    turn.auto_tldr_context
+        .write()
+        .await
+        .record_result(&saved_args, problem_kind, degraded_mode);
+    Ok(output)
 }
 
 async fn run_tldr_handler_with_hooks<Q, E>(
@@ -284,6 +277,8 @@ where
 
     match run_tldr_tool_with_hooks(args, query, ensure_running).await {
         Ok(result) => {
+            let mut structured_content = result.structured_content;
+            normalize_local_fallback_payload(&mut structured_content);
             let duration_ms = started_at
                 .elapsed()
                 .as_millis()
@@ -310,9 +305,9 @@ where
                     ("duration_ms", duration_ms.to_string()),
                 ],
             );
-            let json = serde_json::to_string_pretty(&result.structured_content)
+            let json = serde_json::to_string_pretty(&structured_content)
                 .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
-            let summary = render_tldr_summary(&result.structured_content);
+            let summary = render_tldr_summary(&structured_content);
             let rendered_text = sanitize_tldr_text(&result.text);
             Ok(FunctionToolOutput::from_text(
                 format!("{rendered_text}\n{summary}\n{TLDR_JSON_BEGIN}\n{json}\n{TLDR_JSON_END}"),
@@ -375,6 +370,7 @@ fn default_tldr_project(cwd: &Path) -> String {
 
 fn render_tldr_summary(payload: &serde_json::Value) -> String {
     let mut parts = Vec::new();
+    let source_details = summary_source_details(payload);
 
     if let Some(kind) = payload
         .get("analysis")
@@ -473,9 +469,53 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
     }
 
     if parts.is_empty() {
-        "structured payload attached".to_string()
+        if source_details.is_empty() {
+            "structured payload attached".to_string()
+        } else {
+            source_details.join(" | ")
+        }
     } else {
-        parts.join(" | ")
+        let mut summary_parts = source_details;
+        summary_parts.extend(parts);
+        summary_parts.join(" | ")
+    }
+}
+
+fn summary_source_details(payload: &serde_json::Value) -> Vec<String> {
+    let mut parts = Vec::new();
+    if payload.get("source").and_then(serde_json::Value::as_str) == Some("local") {
+        parts.push("source: local".to_string());
+    }
+    if let Some(mode) = payload
+        .get("degradedMode")
+        .and_then(|value| value.get("mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(format!("degraded mode: {mode}"));
+    }
+    parts
+}
+
+fn normalize_local_fallback_payload(payload: &mut serde_json::Value) {
+    if payload.get("source").and_then(serde_json::Value::as_str) != Some("local") {
+        return;
+    }
+    let has_degraded_mode = payload
+        .get("degradedMode")
+        .is_some_and(|value| !value.is_null());
+    if has_degraded_mode {
+        return;
+    }
+    if let Some(object) = payload.as_object_mut() {
+        object.insert(
+            "degradedMode".to_string(),
+            json!({
+                "is_degraded": true,
+                "mode": "local_fallback",
+                "fallback_path": "local",
+                "reason": "daemon-first path unavailable; used local engine",
+            }),
+        );
     }
 }
 
@@ -537,6 +577,10 @@ fn extract_degraded_mode(output: &FunctionToolOutput) -> Option<String> {
         .and_then(|value| value.get("mode"))
         .and_then(serde_json::Value::as_str)
         .map(str::to_string)
+}
+
+fn output_reports_real_daemon_success(output: &FunctionToolOutput) -> bool {
+    output.success.unwrap_or(true) && extract_degraded_mode(output).is_none()
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
@@ -816,6 +860,7 @@ mod helper_tests {
 mod tests {
     use super::*;
     use crate::session::tests::make_session_and_context;
+    use crate::tools::rewrite::AutoTldrContext;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_utils_absolute_path::AbsolutePathBuf;
@@ -823,6 +868,9 @@ mod tests {
     use serde_json::json;
     use std::sync::Arc;
     use std::sync::Mutex as StdMutex;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
     use tempfile::tempdir;
     use tokio::sync::Mutex;
 
@@ -859,6 +907,88 @@ mod tests {
         }
     }
 
+    fn degraded_daemon_status() -> codex_native_tldr::daemon::TldrDaemonStatus {
+        codex_native_tldr::daemon::TldrDaemonStatus {
+            project_root: PathBuf::from("/tmp/project"),
+            socket_path: PathBuf::from("/tmp/project.sock"),
+            pid_path: PathBuf::from("/tmp/project.pid"),
+            lock_path: PathBuf::from("/tmp/project.lock"),
+            socket_exists: true,
+            pid_is_live: true,
+            lock_is_held: true,
+            healthy: true,
+            stale_socket: false,
+            stale_pid: false,
+            health_reason: None,
+            recovery_hint: None,
+            structured_failure: None,
+            degraded_mode: Some(codex_native_tldr::daemon::DegradedMode {
+                kind: codex_native_tldr::daemon::DegradedModeKind::DiagnosticOnly,
+                fallback_path: "status_only".to_string(),
+                reason: Some("daemon degraded".to_string()),
+            }),
+            semantic_reindex_pending: false,
+            semantic_reindex_in_progress: false,
+            last_query_at: None,
+            config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                auto_start: true,
+                socket_mode: "unix".to_string(),
+                semantic_enabled: true,
+                semantic_auto_reindex_threshold: 20,
+                session_dirty_file_threshold: 20,
+                session_idle_timeout_secs: 1800,
+            },
+        }
+    }
+
+    fn semantic_daemon_response(query: &str) -> TldrDaemonResponse {
+        TldrDaemonResponse {
+            semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
+                enabled: true,
+                query: query.to_string(),
+                indexed_files: 1,
+                truncated: false,
+                matches: vec![codex_native_tldr::semantic::SemanticMatch {
+                    score: 10,
+                    path: PathBuf::from("src/lib.rs"),
+                    line: 1,
+                    snippet: "pub struct AuthService;".to_string(),
+                    unit: codex_native_tldr::semantic::EmbeddingUnit {
+                        path: PathBuf::from("src/lib.rs"),
+                        language: codex_native_tldr::lang_support::SupportedLanguage::Rust,
+                        symbol: Some("AuthService".to_string()),
+                        qualified_symbol: Some("auth::AuthService".to_string()),
+                        symbol_aliases: vec!["AuthService".to_string()],
+                        kind: "struct".to_string(),
+                        line: 1,
+                        span_end_line: 1,
+                        module_path: vec!["auth".to_string()],
+                        owner_symbol: None,
+                        owner_kind: None,
+                        implemented_trait: None,
+                        visibility: Some("pub".to_string()),
+                        signature: Some("pub struct AuthService".to_string()),
+                        docs: Vec::new(),
+                        imports: Vec::new(),
+                        references: Vec::new(),
+                        code_preview: "pub struct AuthService;".to_string(),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                        embedding_vector: None,
+                    },
+                    embedding_text: "internal".to_string(),
+                    embedding_score: Some(0.75),
+                }],
+                embedding_used: true,
+                message: "semantic search returned 1 matches".to_string(),
+            }),
+            ..daemon_ok("semantic")
+        }
+    }
+
     #[tokio::test]
     async fn first_structural_warm_only_marks_requested_after_success() {
         let (_, turn) = make_session_and_context().await;
@@ -880,6 +1010,23 @@ mod tests {
             &args,
             ProblemKind::Structural,
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+        assert_eq!(turn.auto_tldr_context.read().await.warmup_requested, false);
+
+        try_issue_first_structural_warm_with_hooks(
+            &turn,
+            &args,
+            ProblemKind::Structural,
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        daemon_status: Some(degraded_daemon_status()),
+                        ..daemon_ok("warm degraded")
+                    }))
+                })
+            },
             &|_project_root| Box::pin(async move { Ok(false) }),
         )
         .await;
@@ -974,54 +1121,7 @@ mod tests {
                 ..Default::default()
             },
             &|_project_root, _command| {
-                Box::pin(async move {
-                    Ok(Some(TldrDaemonResponse {
-                        semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
-                            enabled: true,
-                            query: "auth login".to_string(),
-                            indexed_files: 1,
-                            truncated: false,
-                            matches: vec![codex_native_tldr::semantic::SemanticMatch {
-                                score: 10,
-                                path: PathBuf::from("src/lib.rs"),
-                                line: 1,
-                                snippet: "pub struct AuthService;".to_string(),
-                                unit: codex_native_tldr::semantic::EmbeddingUnit {
-                                    path: PathBuf::from("src/lib.rs"),
-                                    language:
-                                        codex_native_tldr::lang_support::SupportedLanguage::Rust,
-                                    symbol: Some("AuthService".to_string()),
-                                    qualified_symbol: Some("auth::AuthService".to_string()),
-                                    symbol_aliases: vec!["AuthService".to_string()],
-                                    kind: "struct".to_string(),
-                                    line: 1,
-                                    span_end_line: 1,
-                                    module_path: vec!["auth".to_string()],
-                                    owner_symbol: None,
-                                    owner_kind: None,
-                                    implemented_trait: None,
-                                    visibility: Some("pub".to_string()),
-                                    signature: Some("pub struct AuthService".to_string()),
-                                    docs: Vec::new(),
-                                    imports: Vec::new(),
-                                    references: Vec::new(),
-                                    code_preview: "pub struct AuthService;".to_string(),
-                                    calls: Vec::new(),
-                                    called_by: Vec::new(),
-                                    dependencies: Vec::new(),
-                                    cfg_summary: "cfg".to_string(),
-                                    dfg_summary: "dfg".to_string(),
-                                    embedding_vector: None,
-                                },
-                                embedding_text: "internal".to_string(),
-                                embedding_score: Some(0.75),
-                            }],
-                            embedding_used: true,
-                            message: "semantic search returned 1 matches".to_string(),
-                        }),
-                        ..daemon_ok("semantic")
-                    }))
-                })
+                Box::pin(async move { Ok(Some(semantic_daemon_response("auth login"))) })
             },
             &|_project_root| Box::pin(async move { Ok(false) }),
         )
@@ -1040,6 +1140,50 @@ mod tests {
         assert!(text.contains(TLDR_JSON_END));
         assert_eq!(payload["action"], "semantic");
         assert_eq!(payload["semantic"]["query"], "auth login");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_marks_local_search_fallback_as_degraded() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join(".codex")).expect("config dir should exist");
+        let src_dir = tempdir.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            "pub struct AuthService;\nimpl AuthService { pub fn login(&self) {} }\n",
+        )
+        .expect("source should write");
+
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Search,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("AuthService".to_string()),
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+
+        assert_eq!(
+            extract_degraded_mode(&output).as_deref(),
+            Some("local_fallback")
+        );
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+        assert!(text.contains("search via local"));
+        assert!(text.contains("source: local | degraded mode: local_fallback"));
+        assert_eq!(payload["source"], "local");
+        assert_eq!(payload["degradedMode"]["mode"], "local_fallback");
+        assert_eq!(payload["degradedMode"]["fallback_path"], "local");
     }
 
     #[tokio::test]
@@ -1093,54 +1237,7 @@ mod tests {
                     ..Default::default()
                 },
                 &|_project_root, _command| {
-                    Box::pin(async move {
-                        Ok(Some(TldrDaemonResponse {
-                            semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
-                                enabled: true,
-                                query: "auth login".to_string(),
-                                indexed_files: 1,
-                                truncated: false,
-                                matches: vec![codex_native_tldr::semantic::SemanticMatch {
-                                    score: 10,
-                                    path: PathBuf::from("src/lib.rs"),
-                                    line: 1,
-                                    snippet: "pub struct AuthService;".to_string(),
-                                    unit: codex_native_tldr::semantic::EmbeddingUnit {
-                                        path: PathBuf::from("src/lib.rs"),
-                                        language:
-                                            codex_native_tldr::lang_support::SupportedLanguage::Rust,
-                                        symbol: Some("AuthService".to_string()),
-                                        qualified_symbol: Some("auth::AuthService".to_string()),
-                                        symbol_aliases: vec!["AuthService".to_string()],
-                                        kind: "struct".to_string(),
-                                        line: 1,
-                                        span_end_line: 1,
-                                        module_path: vec!["auth".to_string()],
-                                        owner_symbol: None,
-                                        owner_kind: None,
-                                        implemented_trait: None,
-                                        visibility: Some("pub".to_string()),
-                                        signature: Some("pub struct AuthService".to_string()),
-                                        docs: Vec::new(),
-                                        imports: Vec::new(),
-                                        references: Vec::new(),
-                                        code_preview: "pub struct AuthService;".to_string(),
-                                        calls: Vec::new(),
-                                        called_by: Vec::new(),
-                                        dependencies: Vec::new(),
-                                        cfg_summary: "cfg".to_string(),
-                                        dfg_summary: "dfg".to_string(),
-                                        embedding_vector: None,
-                                    },
-                                    embedding_text: "internal".to_string(),
-                                    embedding_score: Some(0.75),
-                                }],
-                                embedding_used: true,
-                                message: "semantic search returned 1 matches".to_string(),
-                            }),
-                            ..daemon_ok("semantic")
-                        }))
-                    })
+                    Box::pin(async move { Ok(Some(semantic_daemon_response("auth login"))) })
                 },
                 &|_project_root| Box::pin(async move { Ok(false) }),
             )
@@ -1174,6 +1271,101 @@ mod tests {
             Some("true")
         );
         assert!(events[1].fields.contains_key("duration_ms"));
+    }
+
+    #[tokio::test]
+    async fn run_tldr_for_turn_with_hooks_autostarts_semantic_after_warmup_was_consumed() {
+        let (_, turn) = make_session_and_context().await;
+        turn.auto_tldr_context.write().await.note_warmup_requested();
+        let daemon_ready = Arc::new(AtomicBool::new(false));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+        let args = TldrToolCallParam {
+            action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+            project: Some(turn.cwd.display().to_string()),
+            language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+            symbol: None,
+            query: Some("auth login".to_string()),
+            module: None,
+            path: None,
+            line: None,
+            paths: None,
+            ..Default::default()
+        };
+
+        let output = run_tldr_for_turn_with_hooks(
+            &turn,
+            args,
+            ProblemKind::Structural,
+            &{
+                let daemon_ready = Arc::clone(&daemon_ready);
+                move |_project_root, _command| {
+                    let daemon_ready = Arc::clone(&daemon_ready);
+                    Box::pin(async move {
+                        Ok(daemon_ready
+                            .load(Ordering::SeqCst)
+                            .then(|| semantic_daemon_response("auth login")))
+                    })
+                }
+            },
+            &{
+                let daemon_ready = Arc::clone(&daemon_ready);
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let daemon_ready = Arc::clone(&daemon_ready);
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        daemon_ready.store(true, Ordering::SeqCst);
+                        Ok(true)
+                    })
+                }
+            },
+        )
+        .await
+        .expect("semantic request should succeed after daemon auto-start");
+
+        let payload = extract_json_block(&output.into_text());
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(payload["source"], "daemon");
+        assert_eq!(payload["degradedMode"], serde_json::Value::Null);
+        assert_eq!(turn.auto_tldr_context.read().await.last_degraded_mode, None);
+    }
+
+    #[tokio::test]
+    async fn new_turn_resets_auto_tldr_context() {
+        let (session, turn) = make_session_and_context().await;
+        {
+            let mut context = turn.auto_tldr_context.write().await;
+            context.record_result(
+                &TldrToolCallParam {
+                    action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+                    project: Some(turn.cwd.display().to_string()),
+                    language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                    symbol: Some("AuthService".to_string()),
+                    query: Some("auth login".to_string()),
+                    match_mode: None,
+                    module: None,
+                    path: Some("src/lib.rs".to_string()),
+                    line: None,
+                    paths: None,
+                    only_tools: None,
+                    run_lint: None,
+                    run_typecheck: None,
+                    max_issues: None,
+                    include_install_hints: None,
+                },
+                ProblemKind::Structural,
+                Some("local_fallback".to_string()),
+            );
+            context.note_warmup_requested();
+        }
+
+        let next_turn = session.new_default_turn().await;
+
+        assert_eq!(
+            next_turn.auto_tldr_context.read().await.clone(),
+            AutoTldrContext::default()
+        );
     }
 
     #[tokio::test]

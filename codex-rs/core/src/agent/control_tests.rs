@@ -648,6 +648,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -741,6 +742,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -850,6 +852,7 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -1148,6 +1151,7 @@ async fn spawn_child_completion_notifies_parent_history() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1184,6 +1188,7 @@ async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(worker_path.clone()),
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1200,6 +1205,7 @@ async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: worker_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: Some(tester_path.clone()),
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1297,6 +1303,7 @@ async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
         Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id: worker_thread_id,
             depth: 2,
+            parent_model: None,
             agent_path: Some(tester_path.clone()),
             agent_nickname: None,
             agent_role: Some("explorer".to_string()),
@@ -1382,6 +1389,7 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
         Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id,
             depth: 1,
+            parent_model: None,
             agent_path: None,
             agent_nickname: None,
             agent_role: Some("explorer".to_string()),
@@ -1425,6 +1433,7 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1477,6 +1486,7 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("researcher".to_string()),
@@ -1534,6 +1544,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(agent_path.clone()),
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1603,6 +1614,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(agent_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -1704,6 +1716,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(worker_path.clone()),
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -1719,6 +1732,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: worker_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: Some(
                     worker_path
                         .join("child")
@@ -1738,6 +1752,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: worker_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -1753,6 +1768,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: no_path_child_thread_id,
                 depth: 3,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -1768,6 +1784,7 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(reviewer_path),
                 agent_nickname: None,
                 agent_role: Some("reviewer".to_string()),
@@ -1828,6 +1845,7 @@ async fn shutdown_agent_tree_closes_live_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1843,6 +1861,7 @@ async fn shutdown_agent_tree_closes_live_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -1913,6 +1932,7 @@ async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -1928,6 +1948,7 @@ async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -2004,6 +2025,7 @@ async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -2019,6 +2041,7 @@ async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -2099,6 +2122,7 @@ async fn resume_closed_child_reopens_open_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -2114,6 +2138,7 @@ async fn resume_closed_child_reopens_open_descendants() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -2154,6 +2179,7 @@ async fn resume_closed_child_reopens_open_descendants() {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -2196,6 +2222,7 @@ async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdo
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -2211,6 +2238,7 @@ async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdo
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -2287,6 +2315,7 @@ async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_sourc
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -2302,6 +2331,7 @@ async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_sourc
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),
@@ -2340,6 +2370,7 @@ async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_sourc
         serde_json::to_string(&SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id: ThreadId::new(),
             depth: 99,
+            parent_model: None,
             agent_path: None,
             agent_nickname: None,
             agent_role: Some("worker".to_string()),
@@ -2418,6 +2449,7 @@ async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() 
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
@@ -2433,6 +2465,7 @@ async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() 
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: child_thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: Some("worker".to_string()),

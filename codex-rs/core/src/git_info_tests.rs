@@ -440,14 +440,18 @@ async fn resolve_root_git_project_for_trust_returns_none_outside_repo() {
 async fn resolve_root_git_project_for_trust_regular_repo_returns_repo_root() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let repo_path = create_test_git_repo(&temp_dir).await.abs();
+    let expected_repo_path = repo_path.to_path_buf();
 
     assert_eq!(
         resolve_root_git_project_for_trust(&repo_path),
-        Some(repo_path.clone())
+        Some(expected_repo_path.clone())
     );
     let nested = repo_path.join("sub/dir");
     std::fs::create_dir_all(nested.as_path()).unwrap();
-    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(repo_path));
+    assert_eq!(
+        resolve_root_git_project_for_trust(&nested),
+        Some(expected_repo_path)
+    );
 }
 
 #[tokio::test]
@@ -509,13 +513,17 @@ async fn resolve_root_git_project_for_trust_detects_worktree_pointer_without_git
     .unwrap();
 
     let expected = repo_root.abs();
+    let expected_repo_root = expected.to_path_buf();
     let worktree_root = worktree_root.abs();
     assert_eq!(
         resolve_root_git_project_for_trust(&worktree_root),
-        Some(expected.clone())
+        Some(expected_repo_root.clone())
     );
     let nested = worktree_root.join("nested");
-    assert_eq!(resolve_root_git_project_for_trust(&nested), Some(expected));
+    assert_eq!(
+        resolve_root_git_project_for_trust(&nested),
+        Some(expected_repo_root)
+    );
 }
 
 #[tokio::test]

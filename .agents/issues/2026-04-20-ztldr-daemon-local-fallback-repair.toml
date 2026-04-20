@@ -1,0 +1,64 @@
+plan = ".agents/plan/2026-04-20-ztldr-daemon-local-fallback-repair.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "修正 core 的 warm 成功判定与降级显式信号"
+scope = """
+修正 `codex-rs/core/src/tools/handlers/tldr.rs` 中 `maybe_issue_first_structural_warm(...)` 的成功判定，避免把已降级到 local 的返回误记为 warm 成功。
+同时让 `core` 对外显式暴露本次结果是否来自 `local fallback`，而不是仅写入内部 `auto_tldr_context`。
+本 issue 只处理 `core` 的降级语义与 warm 判定，不扩大普通分析动作的 auto-start 范围。
+"""
+touch_points = ["module:core", "command:ztldr", "codex-rs/core/src/tools/handlers/tldr.rs"]
+depends_on = []
+done_when = "warm 只在真实命中 daemon 且未降级时才会被记为成功，且 `core` 输出能够显式区分 daemon 命中与 local fallback。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core tldr"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成实现：core 现会把 source=local 正规化为 degradedMode=local_fallback，warm 只在 success 且未 degraded 时记成功。验证已通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-core tldr`。为跑通官方验证，本轮同步收敛了与本命令直接冲突的旧 unit-test 接口漂移。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "收敛 core 普通分析动作的 daemon 使用策略"
+scope = """
+针对 `core` 入口下的高频普通分析动作，收敛当前“依赖一次性 warm、正式动作自身不 auto-start”的策略缝隙。
+优先覆盖 `semantic`、`search`、`context`、`structure`、`diagnostics`、`extract` 这一组高频结构分析动作，必要时扩展到其他普通分析动作。
+本 issue 处理 `core` 入口策略，不改 CLI/MCP 既有行为语义，不重写 daemon 生命周期底层。
+"""
+touch_points = ["module:core", "command:ztldr", "codex-rs/core/src/tools/handlers/tldr.rs", "codex-rs/native-tldr/src/tool_api.rs"]
+depends_on = ["a1"]
+done_when = "高频普通分析动作在 `core` 下不再仅依赖一次性 warm 才可能命中 daemon，且与 `a1` 的显式降级语义保持一致。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core tldr"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成实现：core 入口现在对普通 ztldr 分析请求统一走 daemon-first auto-start，不再只依赖单次 warm。验证已通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-core tldr`。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐单 turn warm 时序与 fallback 边界测试"
+scope = """
+补齐 `codex-core` 中与本问题直接相关的缺失测试，重点覆盖：
+1. 同一 turn 内前一个请求成功 warm 后，后一个 `semantic` 请求不会再次 warm 的边界；
+2. 新 turn 会重置 `AutoTldrContext`；
+3. `core` 不会再把 degraded local 结果误记为 warm 成功；
+4. 用户可见输出能明确识别 `local fallback`。
+本 issue 只补与当前修复直接相关的测试与必要断言，不额外扩展无关回归面。
+"""
+touch_points = ["module:core", "command:ztldr", "codex-rs/core/src/tools/handlers/tldr.rs", "codex-rs/core/src/tools/rewrite/context.rs", "codex-rs/core/src/session/turn_context.rs"]
+depends_on = ["a1", "a2"]
+done_when = "上述关键时序与降级边界均有稳定、可执行的定向测试覆盖，且可防止本次问题回归。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core tldr && cargo test -p codex-core auto_tldr"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已补测试：覆盖 degraded warm 不记成功、local fallback 显式输出、warmup 已消耗后 semantic 仍会 auto-start、new turn 重置 AutoTldrContext。验证已通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-core tldr && env -u RUSTC_WRAPPER cargo test -p codex-core auto_tldr`。回归已通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-core shell_search_rewrite`。"

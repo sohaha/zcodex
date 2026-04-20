@@ -130,7 +130,7 @@ impl TurnContext {
             /*developer_instructions*/ None,
         );
         let features = self.features.clone();
-        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager
                 .list_models(RefreshStrategy::OnlineIfUncached)
@@ -155,6 +155,7 @@ impl TurnContext {
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &config.agent_roles,
         ));
+        tools_config.auto_tldr_routing = self.tools_config.auto_tldr_routing;
 
         Self {
             sub_id: self.sub_id.clone(),
@@ -249,7 +250,7 @@ impl TurnContext {
         );
         let features = self.features.clone();
         let provider = create_model_provider(model_provider, self.auth_manager.clone());
-        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        let mut tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager
                 .list_models(RefreshStrategy::OnlineIfUncached)
@@ -274,6 +275,7 @@ impl TurnContext {
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &config.agent_roles,
         ));
+        tools_config.auto_tldr_routing = self.tools_config.auto_tldr_routing;
 
         Self {
             sub_id: self.sub_id.clone(),

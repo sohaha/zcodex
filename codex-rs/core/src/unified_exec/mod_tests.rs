@@ -1,14 +1,13 @@
 use super::head_tail_buffer::HeadTailBuffer;
 use super::*;
-use crate::exec::ExecCapturePolicy;
-use crate::exec::ExecExpiration;
-use crate::sandboxing::ExecRequest;
 use crate::session::session::Session;
 use crate::session::tests::make_session_and_context;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::unified_exec::ExecCommandRequest;
 use crate::unified_exec::WriteStdinRequest;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::SandboxPolicy;
 use core_test_support::skip_if_sandbox;
 use std::sync::Arc;
 use tokio::time::Duration;
@@ -48,6 +47,7 @@ async fn exec_command(
         .exec_command(
             ExecCommandRequest {
                 command: vec!["bash".to_string(), "-lc".to_string(), cmd.to_string()],
+                hook_command: cmd.to_string(),
                 process_id,
                 yield_time_ms,
                 max_output_tokens: None,

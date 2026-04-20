@@ -1,4 +1,5 @@
 use super::*;
+use crate::buddy::BuddyReactionState;
 use crate::config::AutoTldrRoutingMode;
 use crate::config::ConfigBuilder;
 use crate::config::test_config;
@@ -21,6 +22,7 @@ use crate::tools::format_exec_output_str;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_login::CodexAuth;
+use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::model_info;
@@ -136,6 +138,8 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use codex_protocol::mcp::CallToolResult as McpCallToolResult;
 use pretty_assertions::assert_eq;
+use rmcp::model::JsonObject;
+use rmcp::model::Tool;
 use serde::Deserialize;
 use serde_json::json;
 use std::path::PathBuf;
@@ -2661,11 +2665,20 @@ fn text_block(s: &str) -> serde_json::Value {
 }
 
 async fn build_test_config(codex_home: &Path) -> Config {
-    ConfigBuilder::without_managed_config_for_tests()
+    let mut config = ConfigBuilder::without_managed_config_for_tests()
         .codex_home(codex_home.to_path_buf())
         .build()
         .await
-        .expect("load default test config")
+        .expect("load default test config");
+    std::fs::create_dir_all(&config.cwd).expect("create test cwd for session config");
+    config.zmemory =
+        crate::config::types::ZmemoryConfig::from_toml(Some(crate::config::types::ZmemoryToml {
+            path: Some(codex_home.join("zmemory.db")),
+            valid_domains: None,
+            core_memory_uris: None,
+            namespace: Some("session-tests".to_string()),
+        }));
+    config
 }
 
 fn session_telemetry(
@@ -2689,8 +2702,8 @@ fn session_telemetry(
 }
 
 pub(crate) async fn make_session_configuration_for_tests() -> SessionConfiguration {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let codex_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(codex_home.as_path()).await;
     let config = Arc::new(config);
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
     let model_info = ModelsManager::construct_model_info_offline_for_tests(
@@ -3053,8 +3066,8 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
 // todo: use online model info
 pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let (tx_event, _rx_event) = async_channel::unbounded();
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let codex_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(codex_home.as_path()).await;
     let config = Arc::new(config);
     let conversation_id = ThreadId::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
@@ -3238,7 +3251,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         "turn_id".to_string(),
         Arc::clone(&js_repl),
         skills_outcome,
-        session_configuration.user_instructions.clone(),
     );
 
     let (mailbox, mailbox_rx) = crate::agent::Mailbox::new();
@@ -3276,8 +3288,8 @@ async fn make_session_with_config(
 async fn make_session_with_config_and_rx(
     mutator: impl FnOnce(&mut Config),
 ) -> anyhow::Result<(Arc<Session>, async_channel::Receiver<Event>)> {
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let mut config = build_test_config(codex_home.path()).await;
+    let codex_home = tempfile::tempdir().expect("create temp dir").keep();
+    let mut config = build_test_config(codex_home.as_path()).await;
     mutator(&mut config);
     let config = Arc::new(config);
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
@@ -4018,8 +4030,8 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     async_channel::Receiver<Event>,
 ) {
     let (tx_event, rx_event) = async_channel::unbounded();
-    let codex_home = tempfile::tempdir().expect("create temp dir");
-    let config = build_test_config(codex_home.path()).await;
+    let codex_home = tempfile::tempdir().expect("create temp dir").keep();
+    let config = build_test_config(codex_home.as_path()).await;
     let config = Arc::new(config);
     let conversation_id = ThreadId::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
@@ -4203,7 +4215,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         "turn_id".to_string(),
         Arc::clone(&js_repl),
         skills_outcome,
-        session_configuration.user_instructions.clone(),
     ));
 
     let (mailbox, mailbox_rx) = crate::agent::Mailbox::new();
@@ -5954,7 +5965,8 @@ async fn pending_user_input_updates_tldr_directives_and_captures_zmemory_prefere
     assert!(
         recall_texts
             .iter()
-            .any(|text| text.contains("## Zmemory Recall"))
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected pending input recall note, got {recall_texts:?}"
     );
     assert!(
         recall_texts
@@ -6025,7 +6037,8 @@ async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
     assert!(
         recall_texts
             .iter()
-            .any(|text| text.contains("## Zmemory Recall"))
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected pending input continuation recall note, got {recall_texts:?}"
     );
 }
 
