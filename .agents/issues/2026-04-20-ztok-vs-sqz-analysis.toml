@@ -1,0 +1,51 @@
+plan = ".agents/plan/2026-04-20-ztok-vs-sqz-analysis.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "完成 ztok 与 sqz 的证据化差异分析"
+scope = """
+本 issue 负责基于当前仓库中的 `ztok` 实现与外部 `sqz` 仓库公开材料，完成一份可审阅、可追溯的差异分析，并明确哪些结论是直接事实，哪些结论属于基于事实的推论。
+
+包括：
+1. 读取 `codex-rs/ztok`、`codex-rs/cli`、`codex-rs/arg0`、相关测试与仓库内 `upgrade-rtk` 说明，确认当前 `ztok` 的产品边界、命令面、集成形态与状态模型
+2. 读取 `sqz` 的 README、workspace 清单、`sqz_engine` 公开导出能力，确认其产品定位、会话状态、压缩机制与接入面
+3. 输出面向用户的中文差异结论，至少覆盖定位、架构、能力边界、接入方式、状态保持与适用场景，并附直接证据引用
+
+不包括：
+- 对 `sqz` 做本地安装、运行、benchmark 复现或真实性背书
+- 修改 `ztok`、`sqz` 或相关提示词/配置
+- 产出后续同步方案、迁移设计或实现任务
+"""
+touch_points = ["module:codex-ztok", "module:codex-cli", "module:codex-arg0", "command:codex ztok", "command:ztok", "codex-rs/ztok/src/lib.rs", "codex-rs/ztok/src/rewrite.rs", "codex-rs/ztok/src/tracking.rs", "codex-rs/cli/src/main.rs", "codex-rs/arg0/src/lib.rs", "codex-rs/cli/tests/ztok.rs", ".codex/skills/upgrade-rtk/SKILL.md", ".version/rtk.toml", "external"]
+depends_on = []
+done_when = "用户已收到一份中文差异分析，且每个核心结论都能追溯到本仓库源码/测试或 `sqz` 公开仓库文件；分析中明确区分事实与推论，并注明未执行的外部运行验证边界"
+validate_by = "手动核对最终分析中的本地文件引用与外部链接，确认其能支撑关于产品定位、集成方式、状态模型和功能边界的关键结论"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = """
+available capabilities 结论：已使用 `ztldr search` 辅助确认仓库内 `ztok` 落点，并使用定向源码读取与外部公开仓库文件完成取证；当前子任务是一次性分析产出，不需要额外会话能力或子代理协同。
+
+当前已确认的关键事实：
+1. `ztok` 在本仓库中以 `codex ztok` 子命令与 `ztok` alias 形式内嵌于 Codex CLI，而不是独立分发产品
+2. 仓库内 `upgrade-rtk` skill 与 `.version/rtk.toml` 明确表述 `ztok` 是对上游 RTK 的本地改名与 curated integration，并刻意排除 hook、analytics、installer 等能力
+3. `tracking.rs` 明确说明当前内嵌实现不包含上游分析、持久化或遥测功能
+4. `sqz` 的公开 workspace 包含 `sqz_engine`、`sqz`、`sqz-mcp`、`sqz-wasm`，README 明确声明 hook、session dedup、resume、proxy、浏览器/IDE 插件等能力
+
+2026-04-20 Execution：已完成。主代理本地 spec-reviewer=PASS，code-reviewer=PASS。
+
+spec-reviewer 结论：最终分析覆盖了 issue 合同要求的定位、架构、能力边界、接入方式、状态保持与适用场景，并且明确区分了“本仓库事实”“外部仓库公开事实”和“基于事实的推论”，未扩展到同步方案或实现设计。
+
+code-reviewer 结论：引用链条足以支撑关键结论，未发现把 `sqz` 自述 benchmark 数字误写成已独立验证事实，也未发现把 upstream RTK 与当前 `codex-curated ztok` 混为一谈的结论性错误。
+
+验证结果：已手动核对最终分析所引用的本地文件与外部链接，确认以下结论有直接证据支撑：
+1. `ztok` 是 `codex ztok` 子命令与 `ztok` alias 的内嵌集成，而非独立产品
+2. 当前仓库把 `ztok` 定义为上游 RTK 的本地改名与 curated integration，并主动排除 hook、analytics、installer 等能力
+3. 当前 `ztok` 实现不具备会话持久化/分析/遥测能力
+4. `sqz` 公开提供 workspace 级 engine/cli/mcp/wasm 结构，以及 hook、session dedup、resume、proxy、浏览器/IDE 插件等产品面
+
+未执行验证：未对 `sqz` 做本地安装、运行或 benchmark 复现，因此与压缩率相关的数字只作为 `sqz` 项目自述，不作为本轮独立验证结果。
+"""
