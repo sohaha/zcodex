@@ -17,6 +17,7 @@ use crate::ThreadMetadata;
 use crate::ThreadMetadataBuilder;
 use crate::ThreadsPage;
 use crate::apply_rollout_item;
+use crate::migrations::STATE_MIGRATOR;
 use crate::migrations::runtime_logs_migrator;
 use crate::migrations::runtime_state_migrator;
 use crate::model::AgentJobRow;
@@ -46,6 +47,7 @@ use sqlx::sqlite::SqliteJournalMode;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::sqlite::SqliteSynchronous;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -194,32 +196,49 @@ async fn repair_legacy_local_state_migration_history(
     path: &Path,
     pool: &SqlitePool,
 ) -> anyhow::Result<()> {
-    if !sqlite_table_exists(pool, "_sqlx_migrations").await?
-        || !sqlite_table_exists(pool, "agent_jobs").await?
-        || !sqlite_table_exists(pool, "threads").await?
-    {
+    if !sqlite_table_exists(pool, "_sqlx_migrations").await? {
         return Ok(());
     }
 
-    let applied_versions: BTreeSet<i64> =
-        sqlx::query_scalar("SELECT version FROM _sqlx_migrations WHERE success = 1")
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .collect();
-    if !applied_versions.contains(&23)
-        || !applied_versions.contains(&24)
-        || !applied_versions.contains(&25)
-    {
+    let applied_migrations = applied_state_migrations_by_version(pool).await?;
+    let mut planned_moves = Vec::new();
+    for (source_version, target_version, expected_migration) in [
+        (
+            23_i64,
+            LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION,
+            state_migration_by_version(LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION),
+        ),
+        (24_i64, 23_i64, state_migration_by_version(23)),
+        (25_i64, 24_i64, state_migration_by_version(24)),
+    ] {
+        let Some(applied_migration) = applied_migrations.get(&source_version) else {
+            continue;
+        };
+        if applied_migration.description == expected_migration.description
+            && applied_migration.checksum == expected_migration.checksum.as_ref()
+        {
+            planned_moves.push((source_version, target_version));
+        }
+    }
+    if planned_moves.is_empty() {
         return Ok(());
     }
 
-    if !sqlite_column_exists(pool, "agent_jobs", "max_retries").await?
-        || !sqlite_table_exists(pool, "remote_control_enrollments").await?
-        || sqlite_column_exists(pool, "threads", "created_at_ms").await?
-        || sqlite_column_exists(pool, "threads", "updated_at_ms").await?
-    {
-        return Ok(());
+    let planned_sources: BTreeSet<i64> = planned_moves
+        .iter()
+        .map(|(source_version, _)| *source_version)
+        .collect();
+    for (_, target_version) in &planned_moves {
+        if applied_migrations.contains_key(target_version)
+            && !planned_sources.contains(target_version)
+        {
+            warn!(
+                "refusing to repair ambiguous legacy state migration history at {}: target version {} is already occupied",
+                path.display(),
+                target_version,
+            );
+            return Ok(());
+        }
     }
 
     warn!(
@@ -227,25 +246,62 @@ async fn repair_legacy_local_state_migration_history(
         path.display()
     );
     let mut tx = pool.begin().await?;
-    for (from, to) in [
-        (23_i64, -23_i64),
-        (24_i64, -24_i64),
-        (25_i64, -25_i64),
-        (-24_i64, 23_i64),
-        (-25_i64, 24_i64),
-        (
-            -23_i64,
-            LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION,
-        ),
-    ] {
+    for (index, (source_version, _)) in planned_moves.iter().enumerate() {
+        let temp_version = -1 - i64::try_from(index).expect("small staged migration count");
         sqlx::query("UPDATE _sqlx_migrations SET version = ? WHERE version = ?")
-            .bind(to)
-            .bind(from)
+            .bind(temp_version)
+            .bind(*source_version)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for (index, (_, target_version)) in planned_moves.iter().enumerate() {
+        let temp_version = -1 - i64::try_from(index).expect("small staged migration count");
+        sqlx::query("UPDATE _sqlx_migrations SET version = ? WHERE version = ?")
+            .bind(*target_version)
+            .bind(temp_version)
             .execute(&mut *tx)
             .await?;
     }
     tx.commit().await?;
     Ok(())
+}
+
+struct AppliedStateMigration {
+    description: String,
+    checksum: Vec<u8>,
+}
+
+async fn applied_state_migrations_by_version(
+    pool: &SqlitePool,
+) -> anyhow::Result<HashMap<i64, AppliedStateMigration>> {
+    let rows = sqlx::query(
+        "SELECT version, description, checksum FROM _sqlx_migrations WHERE success = 1",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut applied_migrations = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let version: i64 = row.try_get("version")?;
+        let description: String = row.try_get("description")?;
+        let checksum: Vec<u8> = row.try_get("checksum")?;
+        applied_migrations.insert(
+            version,
+            AppliedStateMigration {
+                description,
+                checksum,
+            },
+        );
+    }
+    Ok(applied_migrations)
+}
+
+fn state_migration_by_version(version: i64) -> &'static sqlx::migrate::Migration {
+    STATE_MIGRATOR
+        .migrations
+        .iter()
+        .find(|migration| migration.version == version)
+        .expect("state migration should exist")
 }
 
 async fn sqlite_table_exists(pool: &SqlitePool, table: &str) -> anyhow::Result<bool> {
@@ -385,11 +441,13 @@ fn should_remove_db_file(file_name: &str, current_name: &str, base_name: &str) -
 #[cfg(test)]
 mod tests {
     use super::LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION;
+    use super::applied_state_migrations_by_version;
     use super::open_state_sqlite;
     use super::runtime_state_migrator;
     use super::sqlite_column_exists;
     use super::sqlite_table_exists;
     use super::state_db_path;
+    use super::state_migration_by_version;
     use super::test_support::unique_temp_dir;
     use crate::migrations::STATE_MIGRATOR;
     use sqlx::SqlitePool;
@@ -397,6 +455,7 @@ mod tests {
     use sqlx::migrate::Migrator;
     use sqlx::sqlite::SqliteConnectOptions;
     use std::borrow::Cow;
+    use std::collections::BTreeSet;
     use std::path::Path;
 
     async fn open_db_pool(path: &Path) -> SqlitePool {
@@ -457,13 +516,37 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 
-    fn migration_by_version(version: i64) -> sqlx::migrate::Migration {
-        STATE_MIGRATOR
-            .migrations
-            .iter()
-            .find(|migration| migration.version == version)
-            .cloned()
-            .expect("migration should exist")
+    fn legacy_local_state_migrator(applied_versions: &[i64]) -> Migrator {
+        let mut selected_versions: BTreeSet<i64> = (1_i64..=22_i64).collect();
+        selected_versions.extend(applied_versions.iter().copied());
+        let mut legacy_max_retries =
+            state_migration_by_version(LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION)
+                .clone();
+        legacy_max_retries.version = 23;
+        let mut legacy_drop_logs = state_migration_by_version(23).clone();
+        legacy_drop_logs.version = 24;
+        let mut legacy_remote_control = state_migration_by_version(24).clone();
+        legacy_remote_control.version = 25;
+
+        let legacy_migrations = [legacy_max_retries, legacy_drop_logs, legacy_remote_control];
+        Migrator {
+            migrations: Cow::Owned(
+                STATE_MIGRATOR
+                    .migrations
+                    .iter()
+                    .filter(|migration| migration.version <= 22)
+                    .cloned()
+                    .chain(
+                        legacy_migrations
+                            .into_iter()
+                            .filter(|migration| selected_versions.contains(&migration.version)),
+                    )
+                    .collect(),
+            ),
+            ignore_missing: false,
+            locking: true,
+            no_tx: false,
+        }
     }
 
     #[tokio::test]
@@ -480,29 +563,7 @@ mod tests {
         )
         .await
         .expect("open legacy state db");
-
-        let mut legacy_max_retries =
-            migration_by_version(LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION);
-        legacy_max_retries.version = 23;
-        let mut legacy_drop_logs = migration_by_version(23);
-        legacy_drop_logs.version = 24;
-        let mut legacy_remote_control = migration_by_version(24);
-        legacy_remote_control.version = 25;
-        let legacy_migrator = Migrator {
-            migrations: Cow::Owned(
-                STATE_MIGRATOR
-                    .migrations
-                    .iter()
-                    .filter(|migration| migration.version <= 22)
-                    .cloned()
-                    .chain([legacy_max_retries, legacy_drop_logs, legacy_remote_control])
-                    .collect(),
-            ),
-            ignore_missing: false,
-            locking: true,
-            no_tx: false,
-        };
-        legacy_migrator
+        legacy_local_state_migrator(&[23, 24, 25])
             .run(&pool)
             .await
             .expect("apply legacy local state schema");
@@ -544,6 +605,79 @@ mod tests {
         assert!(applied_versions.contains(&LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION));
 
         repaired_pool.close().await;
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    #[tokio::test]
+    async fn open_state_sqlite_repairs_partial_legacy_local_migration_history() {
+        let codex_home = unique_temp_dir();
+        tokio::fs::create_dir_all(&codex_home)
+            .await
+            .expect("create codex home");
+        let state_path = state_db_path(codex_home.as_path());
+        let pool = SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(&state_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("open legacy state db");
+        legacy_local_state_migrator(&[23])
+            .run(&pool)
+            .await
+            .expect("apply partial legacy local state schema");
+        pool.close().await;
+
+        let repaired_pool = open_state_sqlite(state_path.as_path(), &runtime_state_migrator())
+            .await
+            .expect("runtime should repair partial legacy local migration history");
+
+        let applied_migrations = applied_state_migrations_by_version(&repaired_pool)
+            .await
+            .expect("read applied migration versions");
+        assert!(applied_migrations.contains_key(&23));
+        assert!(applied_migrations.contains_key(&24));
+        assert!(applied_migrations.contains_key(&25));
+        assert!(
+            applied_migrations.contains_key(&LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION)
+        );
+
+        repaired_pool.close().await;
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    #[tokio::test]
+    async fn open_state_sqlite_does_not_repair_unknown_migration_checksums() {
+        let codex_home = unique_temp_dir();
+        tokio::fs::create_dir_all(&codex_home)
+            .await
+            .expect("create codex home");
+        let state_path = state_db_path(codex_home.as_path());
+        let pool = SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(&state_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("open legacy state db");
+        legacy_local_state_migrator(&[23])
+            .run(&pool)
+            .await
+            .expect("apply partial legacy local state schema");
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 23")
+            .bind(vec![0_u8, 1, 2, 3])
+            .execute(&pool)
+            .await
+            .expect("tamper legacy checksum");
+        pool.close().await;
+
+        let err = open_state_sqlite(state_path.as_path(), &runtime_state_migrator())
+            .await
+            .expect_err("runtime should not repair unknown migration checksums");
+        let err_text = format!("{err:#}");
+        assert!(err_text.contains("migration 23"));
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
