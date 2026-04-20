@@ -191,6 +191,14 @@ just bazel-lock-check
 - 联动审查 `is_retryable()`、`to_codex_protocol_error()` 和 `codex-rs/core/src/session/turn.rs` 的调用方
 - 如果只补了协议层枚举测试，没有覆盖 turn 级自动重试或协议映射断言，不要把它当成验证充分
 
+如果本次同步触及 `codex-rs/cli/src/main.rs`、`codex-rs/tui/src/cli.rs`，或任何 interactive CLI 参数桥接（例如 root CLI / `resume` / `fork` / `zoffsec resume` 复用 `TuiCli`）：
+
+- 不要只看 Clap 参数还存在
+- 额外审查子命令到最终 `TuiCli` 的 merge/bridge 函数，例如 `merge_interactive_cli_flags()`
+- 对新增或本地扩展的 interactive 参数，确认 root 路径和 `resume` / `fork` 等子命令路径都会透传
+- 至少保留一条覆盖 bridge 行为的回归测试；不能只靠 help 文案或解析测试宣称功能仍在
+- 特别是 provider / local-provider、sandbox、approval、cwd、search 这类“能解析但可能在 merge 时被静默丢掉”的参数，要把 merge 赋值和回归测试一起纳入审查
+
 ## Responses / reasoning 相关专项检查
 
 如果本次同步触及 Responses 输入序列化、Prompt 格式化、历史 replay 或 reasoning item 相关链路，例如：
@@ -217,6 +225,7 @@ just bazel-lock-check
 - 对 `local_surface` / `localized_behavior` 特性，检查点不能只停留在文案或模块存在性；要覆盖运行时桥接、事件 wiring、配置落盘等真实链路
 - 对 `localized_behavior` 特性，如果用户可见文案实际来自 `FeatureSpec` 元数据、共享 helper、onboarding/history 组件、直接字符串断言或 snapshot，不要只检查视图入口；要把真正的文案源头和锁定这些文案的测试/快照一起纳入审查
 - 对 `codex-rs/cli` 这类本地 CLI 面，检查点必须覆盖顶层 `Subcommand` 注册、dispatch 接线，以及 help/localization 哨兵；不能只看底层 crate 或模块目录还在
+- 对 `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，检查点还必须覆盖参数 bridge：不能只看到字段和 help 仍存在；要确认子命令 merge 后真的写入最终 interactive 配置，并有回归测试锁定
 - 对 `workspace/local-crates` 这类本地 crate 面，检查点不能只保目录；还要覆盖 `codex-rs/Cargo.toml` 的 workspace members 和 workspace dependency 接线
 
 对每个缺失/覆盖项，都必须给出原因：

@@ -7362,7 +7362,7 @@ impl CodexMessageProcessor {
                 let (code, message, data, error_type) = match err {
                     SteerInputError::NoActiveTurn(_) => (
                         INVALID_REQUEST_ERROR_CODE,
-                        "no active turn to steer".to_string(),
+                        "当前没有可追加输入的活跃轮次".to_string(),
                         None,
                         Some(AnalyticsJsonRpcError::TurnSteer(
                             TurnSteerRequestError::NoActiveTurn,
@@ -7370,7 +7370,7 @@ impl CodexMessageProcessor {
                     ),
                     SteerInputError::ExpectedTurnMismatch { expected, actual } => (
                         INVALID_REQUEST_ERROR_CODE,
-                        format!("expected active turn id `{expected}` but found `{actual}`"),
+                        format!("期望的活跃轮次 ID 为 `{expected}`，但实际是 `{actual}`"),
                         None,
                         Some(AnalyticsJsonRpcError::TurnSteer(
                             TurnSteerRequestError::ExpectedTurnMismatch,
@@ -7379,11 +7379,11 @@ impl CodexMessageProcessor {
                     SteerInputError::ActiveTurnNotSteerable { turn_kind } => {
                         let (message, turn_steer_error) = match turn_kind {
                             codex_protocol::protocol::NonSteerableTurnKind::Review => (
-                                "cannot steer a review turn".to_string(),
+                                "无法向审查轮次追加输入".to_string(),
                                 TurnSteerRequestError::NonSteerableReview,
                             ),
                             codex_protocol::protocol::NonSteerableTurnKind::Compact => (
-                                "cannot steer a compact turn".to_string(),
+                                "无法向压缩轮次追加输入".to_string(),
                                 TurnSteerRequestError::NonSteerableCompact,
                             ),
                         };
@@ -7413,7 +7413,7 @@ impl CodexMessageProcessor {
                     }
                     SteerInputError::EmptyInput => (
                         INVALID_REQUEST_ERROR_CODE,
-                        "input must not be empty".to_string(),
+                        "输入不能为空".to_string(),
                         None,
                         Some(AnalyticsJsonRpcError::Input(InputError::Empty)),
                     ),

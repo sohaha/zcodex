@@ -145,8 +145,8 @@ pub(crate) async fn run_turn(
         return None;
     }
 
-    let model_info = turn_context.model_info.clone();
-    let auto_compact_limit = model_info.auto_compact_token_limit().unwrap_or(i64::MAX);
+    let mut current_turn_context = Arc::clone(&turn_context);
+    let mut active_fallback_provider_index: Option<usize> = None;
     let mut prewarmed_client_session = prewarmed_client_session;
     if !input.is_empty() {
         *turn_context.tool_routing_directives.write().await =
@@ -394,6 +394,7 @@ pub(crate) async fn run_turn(
     let mut can_drain_pending_input = input.is_empty();
 
     loop {
+        let turn_context = Arc::clone(&current_turn_context);
         if run_pending_session_start_hooks(&sess, &turn_context).await {
             break;
         }
@@ -470,21 +471,77 @@ pub(crate) async fn run_turn(
             .map(|user_message| user_message.message())
             .collect::<Vec<String>>();
         let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
-        match run_sampling_request(
-            Arc::clone(&sess),
-            Arc::clone(&turn_context),
-            Arc::clone(&turn_diff_tracker),
-            &mut client_session,
-            turn_metadata_header.as_deref(),
-            sampling_request_input,
-            &explicitly_enabled_connectors,
-            skills_outcome,
-            &mut server_model_warning_emitted_for_turn,
-            cancellation_token.child_token(),
-        )
-        .await
-        {
-            Ok(sampling_request_output) => {
+        let primary_requested_model = current_turn_context.model_info.slug.clone();
+        let mut attempt_turn_context = Arc::clone(&turn_context);
+        let mut attempt_fallback_provider_index = active_fallback_provider_index;
+        let mut fallback_start_index =
+            active_fallback_provider_index.map_or(0, |index| index.saturating_add(1));
+        let sampling_request_result: CodexResult<(SamplingRequestResult, Arc<TurnContext>)> = loop {
+            let attempt_sampling_request_input = sess
+                .clone_history()
+                .await
+                .for_prompt(&attempt_turn_context.model_info.input_modalities);
+            match run_sampling_request(
+                Arc::clone(&sess),
+                Arc::clone(&attempt_turn_context),
+                Arc::clone(&turn_diff_tracker),
+                &mut client_session,
+                turn_metadata_header.as_deref(),
+                attempt_sampling_request_input,
+                &explicitly_enabled_connectors,
+                skills_outcome,
+                &mut server_model_warning_emitted_for_turn,
+                cancellation_token.child_token(),
+            )
+            .await
+            {
+                Ok(sampling_request_output) => {
+                    current_turn_context = Arc::clone(&attempt_turn_context);
+                    active_fallback_provider_index = attempt_fallback_provider_index;
+                    break Ok((sampling_request_output, attempt_turn_context));
+                }
+                Err(err)
+                    if should_short_circuit_to_parent_model(
+                        attempt_turn_context.as_ref(),
+                        &err,
+                    ) =>
+                {
+                    let Some(parent_model) = subagent_parent_model(attempt_turn_context.as_ref())
+                    else {
+                        break Err(err);
+                    };
+                    let next_turn_context = Arc::new(
+                        attempt_turn_context
+                            .with_model(parent_model.to_string(), &sess.services.models_manager)
+                            .await,
+                    );
+                    client_session = client_session
+                        .new_session_for_provider(next_turn_context.provider.info().clone());
+                    attempt_turn_context = next_turn_context;
+                }
+                Err(err) if should_retry_with_fallback_provider(&err) => {
+                    let Some((next_turn_context, index)) = next_fallback_turn_context(
+                        sess.as_ref(),
+                        &attempt_turn_context,
+                        fallback_start_index,
+                        &primary_requested_model,
+                    )
+                    .await
+                    else {
+                        break Err(err);
+                    };
+                    fallback_start_index = index.saturating_add(1);
+                    attempt_fallback_provider_index = Some(index);
+                    client_session = client_session
+                        .new_session_for_provider(next_turn_context.provider.info().clone());
+                    attempt_turn_context = next_turn_context;
+                }
+                Err(err) => break Err(err),
+            }
+        };
+
+        match sampling_request_result {
+            Ok((sampling_request_output, turn_context)) => {
                 let SamplingRequestResult {
                     needs_follow_up: model_needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -492,6 +549,10 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
                 let has_pending_input = sess.has_pending_input().await;
                 let needs_follow_up = model_needs_follow_up || has_pending_input;
+                let auto_compact_limit = turn_context
+                    .model_info
+                    .auto_compact_token_limit()
+                    .unwrap_or(i64::MAX);
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 
@@ -1148,6 +1209,10 @@ async fn run_sampling_request(
             }
             Err(err) => err,
         };
+
+        if should_short_circuit_to_parent_model(turn_context.as_ref(), &err) {
+            return Err(err);
+        }
 
         if !err.is_retryable() {
             return Err(err);

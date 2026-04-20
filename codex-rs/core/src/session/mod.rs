@@ -205,27 +205,27 @@ impl SteerInputError {
     fn to_error_event(&self) -> ErrorEvent {
         match self {
             Self::NoActiveTurn(_) => ErrorEvent {
-                message: "no active turn to steer".to_string(),
+                message: "当前没有可追加输入的活跃轮次".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
             Self::ExpectedTurnMismatch { expected, actual } => ErrorEvent {
-                message: format!("expected active turn id `{expected}` but found `{actual}`"),
+                message: format!("期望的活跃轮次 ID 为 `{expected}`，但实际是 `{actual}`"),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
             Self::ActiveTurnNotSteerable { turn_kind } => {
                 let turn_kind_label = match turn_kind {
-                    NonSteerableTurnKind::Review => "review",
-                    NonSteerableTurnKind::Compact => "compact",
+                    NonSteerableTurnKind::Review => "审查",
+                    NonSteerableTurnKind::Compact => "压缩",
                 };
                 ErrorEvent {
-                    message: format!("cannot steer a {turn_kind_label} turn"),
+                    message: format!("无法向{turn_kind_label}轮次追加输入"),
                     codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                         turn_kind: *turn_kind,
                     }),
                 }
             }
             Self::EmptyInput => ErrorEvent {
-                message: "input must not be empty".to_string(),
+                message: "输入不能为空".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
         }
@@ -409,7 +409,7 @@ impl Codex {
                 if codex_otel::context_from_w3c_trace_context(&trace).is_some() {
                     Some(trace)
                 } else {
-                    warn!("ignoring invalid thread spawn trace carrier");
+                    warn!("忽略无效的线程派生追踪载荷");
                     None
                 }
             }
@@ -455,7 +455,7 @@ impl Codex {
         let environment = environment_manager
             .current()
             .await
-            .map_err(|err| CodexErr::Fatal(format!("failed to create environment: {err}")))?;
+            .map_err(|err| CodexErr::Fatal(format!("创建环境失败：{err}")))?;
         let fs = environment
             .as_ref()
             .map(|environment| environment.get_filesystem());
@@ -465,11 +465,7 @@ impl Codex {
         let loaded_skills = skills_manager.skills_for_config(&skills_input, fs).await;
 
         for err in &loaded_skills.errors {
-            error!(
-                "failed to load skill {}: {}",
-                err.path.display(),
-                err.message
-            );
+            error!("加载技能 {} 失败：{}", err.path.display(), err.message);
         }
 
         if let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) = session_source
@@ -486,12 +482,10 @@ impl Codex {
             let _ = config.features.disable(Feature::JsReplToolsOnly);
             let message = if config.features.enabled(Feature::JsRepl) {
                 format!(
-                    "`js_repl` remains enabled because enterprise requirements pin it on, but the configured Node runtime is unavailable or incompatible. {err}"
+                    "`js_repl` 仍保持启用，因为企业级要求将其固定开启，但配置的 Node 运行时不可用或版本不兼容。{err}"
                 )
             } else {
-                format!(
-                    "Disabled `js_repl` for this session because the configured Node runtime is unavailable or incompatible. {err}"
-                )
+                format!("已为此会话禁用 `js_repl`，因为配置的 Node 运行时不可用或版本不兼容。{err}")
             };
             warn!("{message}");
             config.startup_warnings.push(message);
@@ -522,7 +516,7 @@ impl Codex {
             Arc::new(
                 ExecPolicyManager::load(&config.config_layer_stack)
                     .await
-                    .map_err(|err| CodexErr::Fatal(format!("failed to load rules: {err}")))?,
+                    .map_err(|err| CodexErr::Fatal(format!("加载规则失败：{err}")))?,
             )
         };
 
@@ -647,7 +641,7 @@ impl Codex {
         )
         .await
         .map_err(|e| {
-            error!("Failed to create session: {e:#}");
+            error!("创建会话失败：{e:#}");
             map_session_init_error(&e, &config.codex_home)
         })?;
         let thread_id = session.conversation_id;
@@ -868,7 +862,7 @@ impl Session {
             .with_exec_policy_network_rules(exec_policy)
             .map_err(|err| {
                 tracing::warn!(
-                    "failed to apply execpolicy network rules to managed proxy; continuing with configured network policy: {err}"
+                    "将 execpolicy 网络规则应用到托管代理失败；继续使用已配置的网络策略：{err}"
                 );
                 err
             })
@@ -882,7 +876,7 @@ impl Session {
                 audit_metadata,
             )
             .await
-            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?;
+            .map_err(|err| anyhow::anyhow!("启动托管网络代理失败：{err}"))?;
         let session_network_proxy = {
             let proxy = network_proxy.proxy();
             SessionNetworkProxyRuntime {
@@ -911,27 +905,24 @@ impl Session {
             return;
         };
 
-        let spec = match spec
-            .recompute_for_sandbox_policy(session_configuration.sandbox_policy.get())
-        {
-            Ok(spec) => spec,
-            Err(err) => {
-                warn!("failed to rebuild managed network proxy policy for sandbox change: {err}");
-                return;
-            }
-        };
+        let spec =
+            match spec.recompute_for_sandbox_policy(session_configuration.sandbox_policy.get()) {
+                Ok(spec) => spec,
+                Err(err) => {
+                    warn!("因沙箱变更重建托管网络代理策略失败：{err}");
+                    return;
+                }
+            };
         let current_exec_policy = self.services.exec_policy.current();
         let spec = match spec.with_exec_policy_network_rules(current_exec_policy.as_ref()) {
             Ok(spec) => spec,
             Err(err) => {
-                warn!(
-                    "failed to apply execpolicy network rules while refreshing managed network proxy: {err}"
-                );
+                warn!("刷新托管网络代理时应用 execpolicy 网络规则失败：{err}");
                 spec
             }
         };
         if let Err(err) = spec.apply_to_started_proxy(started_proxy).await {
-            warn!("failed to refresh managed network proxy for sandbox change: {err}");
+            warn!("因沙箱变更刷新托管网络代理失败：{err}");
         }
     }
 
@@ -1006,7 +997,7 @@ impl Session {
     }
 
     async fn fail_agent_identity_registration(self: &Arc<Self>, error: anyhow::Error) {
-        warn!(error = %error, "agent identity registration failed");
+        warn!(error = %error, "Agent 身份注册失败");
         let message =
             format!("Agent 身份注册失败（`features.use_agent_identity` 已启用）：{error}");
         self.send_event_raw(Event {
@@ -1137,7 +1128,7 @@ impl Session {
 
     pub(crate) async fn ensure_rollout_materialized(&self) {
         if let Err(e) = self.try_ensure_rollout_materialized().await {
-            warn!("failed to materialize rollout recorder: {e}");
+            warn!("物化 rollout 记录器失败：{e}");
         }
     }
 
@@ -1261,14 +1252,12 @@ impl Session {
                     .map(|settings| settings.model.as_str())
                     .filter(|model| *model != curr)
                 {
-                    warn!("resuming session with different model: previous={prev}, current={curr}");
+                    // warn!("resuming session with different model: previous={prev}, current={curr}");
                     self.send_event(
                         &turn_context,
                         EventMsg::Warning(WarningEvent {
                             message: format!(
-                                "⚠ 此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。\n\
-                                建议切换回 `{prev}`，否则可能影响 Codex 性能`. \
-                         Consider switching back to `{prev}` as it may affect Codex performance."
+                                "⚠ 此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。"
                             ),
                         }),
                     )
@@ -1395,7 +1384,7 @@ impl Session {
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
                 Err(err) => {
-                    warn!("rejected session settings update: {err}");
+                    warn!("会话设置更新被拒绝：{err}");
                     return Err(err);
                 }
             };
@@ -1469,7 +1458,7 @@ impl Session {
             Ok(contents) => match toml::from_str::<toml::Value>(&contents) {
                 Ok(config) => config,
                 Err(err) => {
-                    warn!("failed to parse user config while reloading layer: {err}");
+                    warn!("重新加载配置层时解析用户配置失败：{err}");
                     return;
                 }
             },
@@ -1477,7 +1466,7 @@ impl Session {
                 toml::Value::Table(Default::default())
             }
             Err(err) => {
-                warn!("failed to read user config while reloading layer: {err}");
+                warn!("重新加载配置层时读取用户配置失败：{err}");
                 return;
             }
         };
@@ -1626,7 +1615,7 @@ impl Session {
             .send_inter_agent_communication(parent_thread_id, communication)
             .await
         {
-            debug!("failed to notify parent thread {parent_thread_id}: {err}");
+            debug!("通知父线程 {parent_thread_id} 失败：{err}");
         }
     }
 
@@ -1640,7 +1629,7 @@ impl Session {
             return;
         }
         if let Err(err) = self.conversation.handoff_out(text).await {
-            debug!("failed to mirror event text to realtime conversation: {err}");
+            debug!("将事件文本镜像到实时会话失败：{err}");
         }
     }
 
@@ -1649,7 +1638,7 @@ impl Session {
             return;
         }
         if let Err(err) = self.conversation.handoff_complete().await {
-            debug!("failed to finalize realtime handoff output: {err}");
+            debug!("完成实时切换输出收尾失败：{err}");
         }
         self.conversation.clear_active_handoff().await;
     }
@@ -1667,7 +1656,7 @@ impl Session {
             self.agent_status.send_replace(status);
         }
         if let Err(e) = self.tx_event.send(event).await {
-            debug!("dropping event because channel is closed: {e}");
+            debug!("事件通道已关闭，丢弃事件：{e}");
         }
     }
 
@@ -1747,10 +1736,10 @@ impl Session {
         amendment: &ExecPolicyAmendment,
     ) {
         let Some(prefixes) = format_allow_prefixes(vec![amendment.command.clone()]) else {
-            warn!("execpolicy amendment for {sub_id} had no command prefix");
+            warn!("{sub_id} 的 execpolicy 修订没有命令前缀");
             return;
         };
-        let text = format!("Approved command prefix saved:\n{prefixes}");
+        let text = format!("已保存获批命令前缀：\n{prefixes}");
         let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
 
         if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
@@ -1767,7 +1756,7 @@ impl Session {
             .await
             .is_err()
         {
-            warn!("no active turn found to record execpolicy amendment message for {sub_id}");
+            warn!("找不到活跃轮次，无法为 {sub_id} 记录 execpolicy 修订消息");
         }
     }
 
@@ -1795,11 +1784,11 @@ impl Session {
                 NetworkPolicyRuleAction::Allow => proxy
                     .add_allowed_domain(&host)
                     .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime allowlist: {err}"))?,
+                    .map_err(|err| anyhow::anyhow!("更新运行时允许列表失败：{err}"))?,
                 NetworkPolicyRuleAction::Deny => proxy
                     .add_denied_domain(&host)
                     .await
-                    .map_err(|err| anyhow::anyhow!("failed to update runtime denylist: {err}"))?,
+                    .map_err(|err| anyhow::anyhow!("更新运行时拒绝列表失败：{err}"))?,
             }
         }
 
@@ -1813,9 +1802,7 @@ impl Session {
                 Some(execpolicy_amendment.justification),
             )
             .await
-            .map_err(|err| {
-                anyhow::anyhow!("failed to persist network policy amendment to execpolicy: {err}")
-            })?;
+            .map_err(|err| anyhow::anyhow!("将网络策略修订持久化到 execpolicy 失败：{err}"))?;
 
         Ok(())
     }
@@ -1828,7 +1815,7 @@ impl Session {
         let amendment_host = normalize_host(&amendment.host);
         if amendment_host != approved_host {
             return Err(anyhow::anyhow!(
-                "network policy amendment host '{}' does not match approved host '{}'",
+                "网络策略修订主机 '{}' 与已批准主机 '{}' 不匹配",
                 amendment.host,
                 network_approval_context.host
             ));
@@ -1842,11 +1829,11 @@ impl Session {
         amendment: &NetworkPolicyAmendment,
     ) {
         let (action, list_name) = match amendment.action {
-            NetworkPolicyRuleAction::Allow => ("Allowed", "allowlist"),
-            NetworkPolicyRuleAction::Deny => ("Denied", "denylist"),
+            NetworkPolicyRuleAction::Allow => ("允许", "允许列表"),
+            NetworkPolicyRuleAction::Deny => ("拒绝", "拒绝列表"),
         };
         let text = format!(
-            "{action} network rule saved in execpolicy ({list_name}): {}",
+            "已将{action}网络规则保存到 execpolicy（{list_name}）：{}",
             amendment.host
         );
         let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
@@ -1865,7 +1852,7 @@ impl Session {
             .await
             .is_err()
         {
-            warn!("no active turn found to record network policy amendment message for {sub_id}");
+            warn!("找不到活跃轮次，无法为 {sub_id} 记录网络策略修订消息");
         }
     }
 
@@ -1909,7 +1896,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("Overwriting existing pending approval for call_id: {effective_approval_id}");
+            warn!("正在覆盖 call_id {effective_approval_id} 现有的待审批项");
         }
 
         let parsed_cmd = parse_command(&command);
@@ -1973,7 +1960,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("Overwriting existing pending approval for call_id: {approval_id}");
+            warn!("正在覆盖 call_id {approval_id} 现有的待审批项");
         }
 
         let event = EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
@@ -2026,7 +2013,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("Overwriting existing pending request_permissions for call_id: {call_id}");
+            warn!("正在覆盖 call_id {call_id} 现有的待 `request_permissions` 请求");
         }
 
         // TODO(ccunningham): Support auto-review for request_permissions /
@@ -2062,7 +2049,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("Overwriting existing pending user input for sub_id: {event_id}");
+            warn!("正在覆盖 sub_id {event_id} 现有的待用户输入请求");
         }
 
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
@@ -2094,7 +2081,7 @@ impl Session {
                 tx_response.send(response).ok();
             }
             None => {
-                warn!("No pending user input found for sub_id: {sub_id}");
+                warn!("未找到 sub_id {sub_id} 对应的待用户输入请求");
             }
         }
     }
@@ -2135,7 +2122,7 @@ impl Session {
                 tx_response.send(response).ok();
             }
             None => {
-                warn!("No pending request_permissions found for call_id: {call_id}");
+                warn!("未找到 call_id {call_id} 对应的待 `request_permissions` 请求");
             }
         }
     }
@@ -2168,7 +2155,7 @@ impl Session {
                 tx_response.send(response).ok();
             }
             None => {
-                warn!("No pending dynamic tool call found for call_id: {call_id}");
+                warn!("未找到 call_id {call_id} 对应的待动态工具调用");
             }
         }
     }
@@ -2189,7 +2176,7 @@ impl Session {
                 tx_approve.send(decision).ok();
             }
             None => {
-                warn!("No pending approval found for call_id: {approval_id}");
+                warn!("未找到 call_id {approval_id} 对应的待审批项");
             }
         }
     }
@@ -2224,7 +2211,7 @@ impl Session {
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
-                text: format!("Warning: {}", message.into()),
+                text: format!("警告：{}", message.into()),
             }],
             end_turn: None,
             phase: None,
@@ -2245,8 +2232,6 @@ impl Session {
             info!("server reported model {server_model} (matches requested model)");
             return false;
         }
-
-        warn!("server reported model {server_model} while requested model was {requested_model}");
 
         let warning_message = format!("⚠ 此请求已被路由到 {server_model} 作为后备方案。");
 
@@ -2546,7 +2531,7 @@ impl Session {
         if let Some(rec) = recorder
             && let Err(e) = rec.record_items(items).await
         {
-            error!("failed to record rollout items: {e:#}");
+            error!("记录 rollout 条目失败：{e:#}");
         }
     }
 
@@ -2780,7 +2765,7 @@ impl Session {
         let token = match turn_context.tool_call_gate.subscribe().await {
             Ok(token) => token,
             Err(err) => {
-                warn!("failed to subscribe to ghost snapshot readiness: {err}");
+                warn!("订阅 ghost snapshot 就绪状态失败：{err}");
                 return;
             }
         };
@@ -3015,7 +3000,7 @@ impl Session {
     }
 
     pub async fn interrupt_task(self: &Arc<Self>) {
-        info!("interrupt received: abort current task, if any");
+        info!("收到中断信号：如有当前任务则终止");
         let has_active_turn = { self.active_turn.lock().await.is_some() };
         if has_active_turn {
             self.abort_all_tasks(TurnAbortReason::Interrupted).await;
@@ -3070,7 +3055,7 @@ pub(crate) fn emit_subagent_session_started(
         client_version,
     } = client_metadata;
     let (Some(client_name), Some(client_version)) = (client_name, client_version) else {
-        tracing::warn!("skipping subagent thread analytics: missing inherited client metadata");
+        tracing::warn!("跳过子 agent 线程埋点：缺少继承的客户端元数据");
         return;
     };
     let created_at = SystemTime::now()

@@ -204,7 +204,7 @@ async fn js_repl_is_not_advertised_when_startup_node_is_incompatible() -> Result
     });
     let test = builder.build(&server).await?;
     let warning = wait_for_event_match(&test.codex, |event| match event {
-        EventMsg::Warning(ev) if ev.message.contains("Disabled `js_repl` for this session") => {
+        EventMsg::Warning(ev) if ev.message.contains("已为此会话禁用 `js_repl`") => {
             Some(ev.message.clone())
         }
         _ => None,

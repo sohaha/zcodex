@@ -1654,6 +1654,12 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     if subcommand_cli.oss {
         interactive.oss = true;
     }
+    if let Some(provider) = subcommand_cli.provider {
+        interactive.provider = Some(provider);
+    }
+    if let Some(oss_provider) = subcommand_cli.oss_provider {
+        interactive.oss_provider = Some(oss_provider);
+    }
     if let Some(profile) = subcommand_cli.config_profile {
         interactive.config_profile = Some(profile);
     }
@@ -2204,6 +2210,10 @@ mod tests {
                 "resume",
                 "sid",
                 "--oss",
+                "-P",
+                "oss",
+                "--local-provider",
+                "ollama",
                 "--full-auto",
                 "--search",
                 "--sandbox",
@@ -2224,6 +2234,8 @@ mod tests {
 
         assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
         assert!(interactive.oss);
+        assert_eq!(interactive.provider.as_deref(), Some("oss"));
+        assert_eq!(interactive.oss_provider.as_deref(), Some("ollama"));
         assert_eq!(interactive.config_profile.as_deref(), Some("my-profile"));
         assert_matches!(
             interactive.sandbox_mode,
@@ -2251,6 +2263,28 @@ mod tests {
         assert!(!interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
+    }
+
+    #[test]
+    fn fork_merges_provider_flags() {
+        let interactive = finalize_fork_from_args(
+            [
+                "codex",
+                "fork",
+                "sid",
+                "-P",
+                "openai",
+                "--local-provider",
+                "lmstudio",
+            ]
+            .as_ref(),
+        );
+
+        assert_eq!(interactive.provider.as_deref(), Some("openai"));
+        assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
+        assert!(!interactive.fork_picker);
+        assert!(!interactive.fork_last);
+        assert_eq!(interactive.fork_session_id.as_deref(), Some("sid"));
     }
 
     #[test]

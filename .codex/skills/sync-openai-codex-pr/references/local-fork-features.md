@@ -48,6 +48,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `auto-tldr-routing-default` | `local_behavior` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `local_surface` | codex-rs workspace |
 | `cli-zmemory-ztok-ztldr-surface` | `local_surface` | codex-rs/cli |
+| `resume-fork-provider-bridge` | `local_behavior` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `local_surface` | codex-rs/tui + codex-rs/app-server |
 | `chinese-localization-sentinels` | `localized_behavior` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
 | `community-branding-and-release-links` | `localized_behavior` | README + install/update surfaces |
@@ -138,6 +139,19 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/cli/src/main.rs`: `显示帮助（使用 '-h' 查看摘要）`
   - `regex` `codex-rs/cli/src/main.rs`: `显示版本`
 
+### `resume-fork-provider-bridge`
+- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
+- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点和回归测试锚点更新到这里。
+- checks:
+  - `regex` `codex-rs/tui/src/cli.rs`: `pub provider: Option<String>,`
+  - `regex` `codex-rs/tui/src/cli.rs`: `pub oss_provider: Option<String>,`
+  - `regex` `codex-rs/cli/src/main.rs`: `interactive\.provider = Some\(provider\);`
+  - `regex` `codex-rs/cli/src/main.rs`: `interactive\.oss_provider = Some\(oss_provider\);`
+  - `regex` `codex-rs/cli/src/main.rs`: `fn resume_merges_option_flags_and_full_auto\(`
+  - `regex` `codex-rs/cli/src/main.rs`: `assert_eq!\(interactive\.provider\.as_deref\(\), Some\("oss"\)\);`
+  - `regex` `codex-rs/cli/src/main.rs`: `fn fork_merges_provider_flags\(`
+  - `regex` `codex-rs/cli/src/main.rs`: `assert_eq!\(interactive\.oss_provider\.as_deref\(\), Some\("lmstudio"\)\);`
+
 ### `buddy-surface`
 - summary: Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。
 - better_when: upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。
@@ -181,7 +195,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 
 ## Latest Audit
 
-- overall: `11/12` passed
+- overall: `12/13` passed
 
 | ID | Status | Area |
 | --- | --- | --- |
@@ -194,6 +208,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `auto-tldr-routing-default` | `PASS` | codex-rs/tools |
 | `local-crates-zmemory-ztok` | `PASS` | codex-rs workspace |
 | `cli-zmemory-ztok-ztldr-surface` | `PASS` | codex-rs/cli |
+| `resume-fork-provider-bridge` | `PASS` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `PASS` | codex-rs/tui + codex-rs/app-server |
 | `chinese-localization-sentinels` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
 | `community-branding-and-release-links` | `FAIL` | README + install/update surfaces |
@@ -204,8 +219,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 为 WireApi::Chat 和 WireApi::Anthropic 提供真实 streaming，而不是 runtime panic 占位。
 - better_when: upstream 以同等或更好的方式同时覆盖 Chat/Anthropic streaming，并继续透传 effort、summary、service_tier 与正确 endpoint telemetry。
 - evidence:
-  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:1527 async fn stream_chat_api(
-  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:1611 async fn stream_anthropic_api(
+  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:1561 async fn stream_chat_api(
+  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:1645 async fn stream_anthropic_api(
   - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:140 const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
   - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:141 const ANTHROPIC_MESSAGES_ENDPOINT: &str = "/messages";
   - `ok` `codex-rs/codex-api/src/endpoint/anthropic.rs`: codex-rs/codex-api/src/endpoint/anthropic.rs:21 pub struct AnthropicClient<T: HttpTransport> {
@@ -216,7 +231,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: Responses 请求继续从 provider 元数据读取 max_output_tokens，而不是静态写死。
 - better_when: upstream 提供了更明确的 provider 级输出上限策略，且不会让本地 provider 配置回退成硬编码 None。
 - evidence:
-  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:861 let max_output_tokens = self
+  - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:895 let max_output_tokens = self
 
 ### `zconfig-layer-loading`
 - status: `PASS`
@@ -257,7 +272,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: resume、compact 和 replacement history 之后继续维护 reference_context_item 基线与全量上下文重注入。
 - better_when: upstream 改成新的上下文基线机制，但仍完整覆盖 replacement history、clear baseline 和 full reinjection 语义。
 - evidence:
-  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2576 pub(crate) async fn record_context_updates_and_set_reference_context_item(
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2561 pub(crate) async fn record_context_updates_and_set_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:190 pub(crate) fn replacement_reference_context_item(
   - `ok` `codex-rs/core/src/context_manager/history.rs`: codex-rs/core/src/context_manager/history.rs:450 self.reference_context_item = None;
 
@@ -298,9 +313,24 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:166 #[clap(visible_alias = "r")]
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:875 tldr_cmd::run_tldr_command(tldr_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:883 run_zmemory_command(zmemory_cli).await?;
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1718 let rendered = localize_help_output(err.to_string());
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1782 "显示帮助（使用 '-h' 查看摘要）",
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1789 .replace("Print version", "显示版本")
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1724 let rendered = localize_help_output(err.to_string());
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1788 "显示帮助（使用 '-h' 查看摘要）",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1795 .replace("Print version", "显示版本")
+
+### `resume-fork-provider-bridge`
+- status: `PASS`
+- kind: `local_behavior`
+- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
+- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点和回归测试锚点更新到这里。
+- evidence:
+  - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:90 pub provider: Option<String>,
+  - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:98 pub oss_provider: Option<String>,
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1658 interactive.provider = Some(provider);
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1661 interactive.oss_provider = Some(oss_provider);
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2206 fn resume_merges_option_flags_and_full_auto() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2237 assert_eq!(interactive.provider.as_deref(), Some("oss"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2269 fn fork_merges_provider_flags() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2284 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
 
 ### `buddy-surface`
 - status: `PASS`

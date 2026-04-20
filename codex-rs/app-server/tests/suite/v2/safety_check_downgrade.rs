@@ -189,7 +189,7 @@ fn warning_text_from_item(item: &ThreadItem) -> Option<&str> {
     };
 
     content.iter().find_map(|input| match input {
-        UserInput::Text { text, .. } if text.starts_with("Warning: ") => Some(text.as_str()),
+        UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
         _ => None,
     })
 }

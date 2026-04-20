@@ -4332,7 +4332,7 @@ async fn record_model_warning_appends_user_message() {
             assert_eq!(
                 content,
                 &vec![ContentItem::InputText {
-                    text: "Warning: too many unified exec processes".to_string(),
+                    text: "警告：too many unified exec processes".to_string(),
                 }]
             );
         }

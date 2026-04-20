@@ -152,6 +152,7 @@ struct ModelClientState {
     conversation_id: ThreadId,
     window_generation: AtomicU64,
     installation_id: String,
+    base_auth_manager: Option<Arc<AuthManager>>,
     provider: SharedModelProvider,
     auth_env_telemetry: AuthEnvTelemetry,
     session_source: SessionSource,
@@ -303,7 +304,7 @@ impl ModelClient {
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
     ) -> Self {
-        let model_provider = create_model_provider(provider_info, auth_manager);
+        let model_provider = create_model_provider(provider_info, auth_manager.clone());
         let codex_api_key_env_enabled = model_provider
             .auth_manager()
             .as_ref()
@@ -315,6 +316,7 @@ impl ModelClient {
                 conversation_id,
                 window_generation: AtomicU64::new(0),
                 installation_id,
+                base_auth_manager: auth_manager,
                 provider: model_provider,
                 auth_env_telemetry,
                 session_source,
@@ -338,6 +340,30 @@ impl ModelClient {
             websocket_session: self.take_cached_websocket_session(),
             turn_state: Arc::new(OnceLock::new()),
         }
+    }
+
+    pub(crate) fn new_session_for_provider(
+        &self,
+        provider_info: ModelProviderInfo,
+    ) -> ModelClientSession {
+        if self.state.provider.info() == &provider_info {
+            return self.new_session();
+        }
+
+        let client = Self::new(
+            self.state.base_auth_manager.clone(),
+            self.state.conversation_id,
+            self.state.installation_id.clone(),
+            provider_info,
+            self.state.session_source.clone(),
+            self.state.model_verbosity,
+            self.state.enable_request_compression,
+            self.state.include_timing_metrics,
+            self.state.beta_features_header.clone(),
+        );
+        let window_generation = self.state.window_generation.load(Ordering::Relaxed);
+        client.set_window_generation(window_generation);
+        client.new_session()
     }
 
     pub(crate) fn auth_manager(&self) -> Option<Arc<AuthManager>> {
@@ -804,6 +830,14 @@ impl ModelClientSession {
     pub(crate) fn responses_websocket_enabled(&self) -> bool {
         self.client.responses_websocket_enabled()
     }
+
+    pub(crate) fn new_session_for_provider(
+        &self,
+        provider_info: ModelProviderInfo,
+    ) -> ModelClientSession {
+        self.client.new_session_for_provider(provider_info)
+    }
+
     pub(crate) fn reset_websocket_session(&mut self) {
         self.websocket_session.connection = None;
         self.websocket_session.last_request = None;

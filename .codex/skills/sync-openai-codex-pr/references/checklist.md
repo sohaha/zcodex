@@ -186,6 +186,16 @@ just fmt
 - 不要只检查目录是否还在
 - 额外审查 `codex-rs/Cargo.toml` 里的 members 和 workspace dependency path 接线
 
+如果本次同步碰到 `codex-rs/cli/src/main.rs`、`codex-rs/tui/src/cli.rs`，或任何 interactive CLI 参数桥接：
+
+- 不要只检查参数定义、help 文案或 parse 测试
+- 必查 root CLI 到 `resume` / `fork` / 其他复用 `TuiCli` 子命令的 merge/bridge 函数
+- 对新增或本地扩展的 interactive 参数，确认至少两层都过：
+  - 字段存在且能 parse
+  - merge 后真正写入最终 `TuiCli`
+- 对 provider / local-provider、sandbox、approval、cwd、search 这类容易在 merge 时静默丢失的参数，必须同时看赋值语句和回归测试
+- 若只找到 help/localization 哨兵，没有找到 bridge 赋值或 round-trip 测试，不得把这类 CLI 能力判为已保留
+
 如果改了依赖：
 
 ```bash

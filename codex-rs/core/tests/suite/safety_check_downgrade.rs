@@ -87,7 +87,7 @@ async fn openai_model_header_mismatch_emits_warning_event_and_warning_item() -> 
                     ResponseItem::Message { content, .. }
                         if content.iter().any(|item| matches!(
                             item,
-                            ContentItem::InputText { text } if text.starts_with("Warning: ")
+                            ContentItem::InputText { text } if text.starts_with("警告：")
                         ))
                 )
         )

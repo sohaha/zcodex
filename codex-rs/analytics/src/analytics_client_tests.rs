@@ -349,7 +349,7 @@ fn sample_turn_steer_response(turn_id: &str, request_id: i64) -> ClientResponse 
 fn no_active_turn_steer_error() -> JSONRPCErrorError {
     JSONRPCErrorError {
         code: -32600,
-        message: "no active turn to steer".to_string(),
+        message: "当前没有可追加输入的活跃轮次".to_string(),
         data: None,
     }
 }
@@ -361,10 +361,10 @@ fn no_active_turn_steer_error_type() -> AnalyticsJsonRpcError {
 fn non_steerable_review_error() -> JSONRPCErrorError {
     JSONRPCErrorError {
         code: -32600,
-        message: "cannot steer a review turn".to_string(),
+        message: "无法向审查轮次追加输入".to_string(),
         data: Some(
             serde_json::to_value(AppServerTurnError {
-                message: "cannot steer a review turn".to_string(),
+                message: "无法向审查轮次追加输入".to_string(),
                 codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                     turn_kind: NonSteerableTurnKind::Review,
                 }),

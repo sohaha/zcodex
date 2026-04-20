@@ -1101,14 +1101,14 @@ fn active_turn_steer_race(error: &TypedRequestError) -> Option<ActiveTurnSteerRa
     if method != "turn/steer" {
         return None;
     }
-    if source.message == "no active turn to steer" {
+    if source.message == "当前没有可追加输入的活跃轮次" {
         return Some(ActiveTurnSteerRace::Missing);
     }
 
     // App-server steer mismatches mean our cached active turn id is stale, but the response
     // includes the server's current active turn so we can resynchronize and retry once.
-    let mismatch_prefix = "expected active turn id `";
-    let mismatch_separator = "` but found `";
+    let mismatch_prefix = "期望的活跃轮次 ID 为 `";
+    let mismatch_separator = "`，但实际是 `";
     let actual_turn_id = source
         .message
         .strip_prefix(mismatch_prefix)?
@@ -10654,7 +10654,7 @@ guardian_approval = true
     #[test]
     fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
         let turn_error = AppServerTurnError {
-            message: "cannot steer a review turn".to_string(),
+            message: "无法向审查轮次追加输入".to_string(),
             codex_error_info: Some(AppServerCodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: AppServerNonSteerableTurnKind::Review,
             }),
@@ -10681,7 +10681,7 @@ guardian_approval = true
             method: "turn/steer".to_string(),
             source: JSONRPCErrorError {
                 code: -32602,
-                message: "no active turn to steer".to_string(),
+                message: "当前没有可追加输入的活跃轮次".to_string(),
                 data: None,
             },
         };
@@ -10699,8 +10699,7 @@ guardian_approval = true
             method: "turn/steer".to_string(),
             source: JSONRPCErrorError {
                 code: -32602,
-                message: "expected active turn id `turn-expected` but found `turn-actual`"
-                    .to_string(),
+                message: "期望的活跃轮次 ID 为 `turn-expected`，但实际是 `turn-actual`".to_string(),
                 data: None,
             },
         };

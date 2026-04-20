@@ -285,6 +285,55 @@
       ]
     },
     {
+      "id": "resume-fork-provider-bridge",
+      "kind": "local_behavior",
+      "area": "codex-rs/cli + codex-rs/tui",
+      "summary": "`resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。",
+      "better_when": "upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点和回归测试锚点更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/cli.rs",
+          "pattern": "pub provider: Option<String>,"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/cli.rs",
+          "pattern": "pub oss_provider: Option<String>,"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "interactive\\.provider = Some\\(provider\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "interactive\\.oss_provider = Some\\(oss_provider\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "fn resume_merges_option_flags_and_full_auto\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "assert_eq!\\(interactive\\.provider\\.as_deref\\(\\), Some\\(\"oss\"\\)\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "fn fork_merges_provider_flags\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "assert_eq!\\(interactive\\.oss_provider\\.as_deref\\(\\), Some\\(\"lmstudio\"\\)\\);"
+        }
+      ]
+    },
+    {
       "id": "buddy-surface",
       "kind": "local_surface",
       "area": "codex-rs/tui + codex-rs/app-server",
