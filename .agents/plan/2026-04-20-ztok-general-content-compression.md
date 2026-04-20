@@ -3,11 +3,11 @@
 ## 背景
 - 当前状态：
   - `ztok` 是内嵌在 Codex CLI 中的 curated integration，而不是独立产品。
-  - `codex-rs/ztok/src/read.rs` 当前每次调用都会完整读取文件、过滤并直接输出，没有会话级缓存或重复读取复用能力。
+  - `codex-rs/ztok/src/read.rs` 已改为通过共享压缩入口产出 `CompressionResult`，并在 `read` 路径先接入会话级 exact dedup。
   - `codex-rs/ztok/src/tracking.rs` 当前仅保留 no-op 运行期适配层，明确不包含上游分析、持久化或遥测能力。
-  - `codex-rs/ztok/Cargo.toml` 当前没有现成的数据库或会话缓存依赖。
-  - `codex-rs/ztok/src/filter.rs`、`summary.rs`、`json_cmd.rs`、`log_cmd.rs` 已存在按内容类型或命令类型工作的启发式压缩/摘要逻辑，但当前仍是分散实现，不是统一的通用压缩内核。
-  - 仓库整体存在 `session_id` / `thread_id` 概念，但目前尚未确认 `ztok` 路径已直接消费稳定会话标识；因此第一阶段需要显式补一条仅服务 `ztok` 的会话标识注入链路。
+  - `codex-rs/ztok/Cargo.toml` 已引入 `rusqlite` 与 `sha1`，用于会话级 dedup 缓存与稳定内容指纹。
+  - `codex-rs/ztok/src/compression.rs`、`compression_json.rs`、`compression_log.rs` 已承接 `read` / `json` / `log` / `summary` 的共享内容压缩合同与路由逻辑。
+  - 仓库整体已有 `thread_id` 概念，且 `codex-rs/cli/src/main.rs` 已补上仅服务 `ztok` 的会话标识注入链路：进入 `ztok` 前复用 `CODEX_THREAD_ID`，映射为 `CODEX_ZTOK_SESSION_ID`。
 - 触发原因：
   - 用户要求基于 `sqz` 与 `ztok` 的差异分析，规划“最值得移植”的能力。
   - 用户进一步明确：需要像 `sqz` 一样强调通用内容压缩，并且希望引入完整的 SimHash + LCS 近重复识别/差分能力，而不只是窄范围的 `read + delta-lite`。
@@ -16,6 +16,46 @@
   - 让重复/近重复内容在同一会话中不再被当成全新正文反复发送。
   - 把当前分散在多个命令里的启发式压缩能力收拢到可扩展、可测试的共享路径上。
   - 为后续继续对齐 `RTK + sqz` 双上游参考实现保留可审计的上游基线记录，并把同步口径收敛到现有 `upgrade-rtk` skill。
+
+## 实施现状
+- 已完成：
+  - `a1` 已完成并通过验证：共享内容压缩合同、内容路由与显式回退语义已经落地，`read` / `json` / `log` / `summary` 已收敛为薄适配层。
+  - `a2` 的核心代码已落地：`read` 路径已支持会话级 exact dedup；`cli` 已在 alias、`codex ztok ...` 和 `Subcommand::Ztok` 三个入口统一注入 `CODEX_ZTOK_SESSION_ID`。
+  - 针对 `a2` 的功能验证已经通过：
+    - `cd /workspace/codex-rs && just fmt`
+    - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`
+    - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok`
+- 当前阻塞：
+  - 因 `codex-rs/ztok/Cargo.toml` 已新增依赖，按仓库规则仍需完成 `just bazel-lock-update` 与 `just bazel-lock-check`。
+  - 该链路当前不是代码逻辑阻塞，而是工具链/仓库状态阻塞：先前环境缺少 `bazel`，补齐后又发现 `MODULE.bazel` 引用的 `tools/argument-comment-lint/Cargo.lock` 在仓库中缺失；补生成后，`bazel-lock-update` 还受到已有 Bazel server 任务干扰，尚未完成收尾。
+- 下一步：
+  - 清理或等待已有 Bazel server 任务结束，完成 Bazel lock 更新/校验。
+  - 在 lock 收口后，执行 scoped `just fix`，再把 `a2` 的状态与验证结果回写到 issue。
+
+## 当前实现落点
+- 共享压缩合同与路由：
+  - `codex-rs/ztok/src/compression.rs`
+  - `codex-rs/ztok/src/compression_json.rs`
+  - `codex-rs/ztok/src/compression_log.rs`
+- 薄适配层：
+  - `codex-rs/ztok/src/read.rs`
+  - `codex-rs/ztok/src/json_cmd.rs`
+  - `codex-rs/ztok/src/log_cmd.rs`
+  - `codex-rs/ztok/src/summary.rs`
+  - `codex-rs/ztok/src/lib.rs`
+- 会话 dedup：
+  - `codex-rs/ztok/src/session_dedup.rs`
+  - `codex-rs/ztok/Cargo.toml`
+- CLI 会话标识注入与集成测试：
+  - `codex-rs/cli/src/main.rs`
+  - `codex-rs/cli/tests/ztok.rs`
+
+## 收尾顺序
+1. 让 Bazel server 回到可用状态，完成 `just bazel-lock-update`。
+2. 紧接着执行 `just bazel-lock-check`，确认 `MODULE.bazel.lock` 与依赖图一致。
+3. 执行 `env -u RUSTC_WRAPPER just fix -p codex-ztok`，并按最终 diff 判断是否需要补跑 `codex-cli` 的 scoped fix。
+4. 将 `a2` 在 issue 中回写为 `done/passed`，并记录已通过的 `fmt`、`codex-cli --test ztok`、`codex-ztok` 验证结果。
+5. 在 `a2` 收口后再进入 `a3`，避免近重复压缩实现建立在未完成的依赖收尾之上。
 
 ## 目标
 - 目标结果：
@@ -73,7 +113,7 @@
 - 约束（时间/兼容性/安全/性能/发布窗口等）：
   - 必须保持 `ztok` 作为 Codex 内嵌命令层的边界，不把本轮实现扩张成独立压缩平台。
   - 当前 `ztok` 是单次命令调用进程，进程内缓存无法跨调用复用；若要实现“会话 dedup”，必须有跨调用状态载体。
-  - 当前仓库虽存在 `session_id` / `thread_id` 概念，但尚未确认 `ztok` 已直接拿到稳定会话标识；本计划默认补一条最小传递链路，由 `codex-rs/cli` 通过专用环境变量向 `ztok` 注入会话标识。
+  - 当前仓库虽存在 `session_id` / `thread_id` 概念，但 `ztok` 默认并不会直接拿到稳定会话标识；本轮已补上一条最小传递链路，由 `codex-rs/cli` 通过专用环境变量向 `ztok` 注入会话标识。
   - 当前通用压缩逻辑分散在多个命令模块内；若直接在原地继续叠加，会放大重复实现与后续维护成本。
   - 新能力必须保持显式、可观察、可回退；不允许为了命中去重而隐藏真实内容缺失风险。
 - 外部依赖（系统/人员/数据/权限等）：
@@ -99,6 +139,8 @@
 
 ## 阶段拆分
 ### 共享压缩合同
+- 状态：
+  - 已完成，对应 issue `a1`。
 - 目标：
   - 确认并实现共享内容压缩入口、内容分类与压缩结果合同。
 - 交付物：
@@ -112,6 +154,8 @@
   - 如有必要，`codex-rs/cli` 的窄范围会话标识暴露
 
 ### 会话 dedup
+- 状态：
+  - 核心实现与测试已完成，对应 issue `a2` 当前仅剩 Bazel lock / scoped lint / 状态回写收尾。
 - 目标：
   - 让同一会话内重复内容不再重复输出完整正文。
 - 交付物：
@@ -127,6 +171,8 @@
   - 共享压缩合同
 
 ### SimHash + LCS 近重复压缩
+- 状态：
+  - 尚未开始，对应 issue `a3`。
 - 目标：
   - 让近重复内容在同一会话中优先输出差分，而不是完整正文。
 - 交付物：
@@ -140,6 +186,8 @@
   - 会话 dedup
 
 ### 命令接入与收口
+- 状态：
+  - 仅完成共享压缩合同层面的薄适配，近重复压缩与四命令统一 dedup 判定仍待 `a3`、`a4` 收口。
 - 目标：
   - 把共享底座接入现有高价值命令，并固定行为边界。
 - 交付物：
@@ -154,6 +202,8 @@
   - 前三阶段实现完成
 
 ### 双上游基线与 `upgrade-rtk` 收口
+- 状态：
+  - 尚未开始，对应 issue `a5`。
 - 目标：
   - 为 `ztok` 建立 `RTK + sqz` 双上游的可审计基线记录，并把后续同步入口收敛到 `upgrade-rtk`。
 - 交付物：
@@ -186,7 +236,10 @@
   - 核对 `upgrade-rtk` 中新增的双上游说明、状态记录与校验清单与当前任务边界一致
   - 清除会话环境变量后再次执行 `codex ztok read <file>`，验证 dedup 被禁用且不使用粗粒度缓存
 - 未执行的验证（如有）：
-  - 无
+  - `cd /workspace/codex-rs && just bazel-lock-update`
+  - `cd /workspace/codex-rs && just bazel-lock-check`
+  - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER just fix -p codex-ztok`
+  - 是否需要对 `codex-cli` 额外执行 scoped `just fix`，待 Bazel lock 收口后按最终 diff 判断
 
 ## 风险与缓解
 - 关键风险：

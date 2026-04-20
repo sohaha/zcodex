@@ -45,16 +45,16 @@ scope = """
 - SimHash 候选筛选与 LCS 近重复差分
 - `json` / `log` / `summary` 的全面命令接入收口
 """
-touch_points = ["module:codex-ztok", "module:codex-cli", "command:codex ztok", "command:ztok read", "codex-rs/ztok/src/*.rs", "codex-rs/cli/src/main.rs", "codex-rs/cli/tests/ztok.rs"]
+touch_points = ["module:codex-ztok", "module:codex-cli", "command:codex ztok", "command:ztok read", "codex-rs/ztok/src/*.rs", "codex-rs/cli/src/main.rs", "codex-rs/cli/tests/ztok.rs", "codex-rs/ztok/Cargo.toml", "codex-rs/Cargo.lock", "MODULE.bazel.lock", "tools/argument-comment-lint/Cargo.lock"]
 depends_on = ["a1"]
-done_when = "同一会话内的相同内容在多次独立 `ztok` 调用之间可以稳定命中短引用；缺失会话标识时 dedup 会被显式禁用且仍返回完整压缩输出，不会误用跨会话粗粒度缓存。"
-validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+done_when = "同一会话内的相同内容在多次独立 `ztok` 调用之间可以稳定命中短引用；缺失会话标识时 dedup 会被显式禁用且仍返回完整压缩输出，不会误用跨会话粗粒度缓存；同时本次依赖变更所需的 `Cargo.lock` / `MODULE.bazel.lock` 收口与 touched crate 的 scoped lint 也已完成。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok && cd /workspace && just bazel-lock-update && just bazel-lock-check && cd /workspace/codex-rs && env -u RUSTC_WRAPPER just fix -p codex-ztok"
 regress_by = "none"
 regress_timing = "after_done"
-status = "in_progress"
-validate_status = "not_run"
+status = "done"
+validate_status = "passed"
 regress_status = "not_needed"
-notes = "该 issue 是 Execution 阶段最重要的 contract 风险点：若稳定会话标识来源、sqlite 载体或缺失时禁用 dedup 的语义没有一起落地，后续近重复压缩与命令接入都会失去可验证前提。"
+notes = "available capabilities 结论：Issue Generation 阶段未发现比本地 issue 校对、结构校验和执行链路收口更高收益的额外 session capability。该 issue 是 Execution 阶段最重要的 contract 风险点：若稳定会话标识来源、sqlite 载体、缺失时禁用 dedup 的语义，以及依赖变更对应的 Bazel lock / scoped lint 收尾没有一起落地，后续近重复压缩与命令接入都会失去可验证前提。Execution 结果：`codex-rs/cli` 已在 alias、`codex ztok ...` 与 `Subcommand::Ztok` 路径统一注入 `CODEX_ZTOK_SESSION_ID`；`codex-rs/ztok` 已在 `CODEX_HOME/.ztok-cache/<session-id>.sqlite` 落地会话级 exact dedup，并在缺失会话标识时显式禁用 dedup 而非退化为粗粒度缓存。收尾验证：`cd /workspace/codex-rs && just fmt`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok`、`cd /workspace && just bazel-lock-update`、`cd /workspace && just bazel-lock-check`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER just fix -p codex-ztok` 已通过；`codex-rs/Cargo.lock`、`tools/argument-comment-lint/Cargo.lock` 与 `MODULE.bazel.lock` 已收口。"
 
 [[issue]]
 id = "a3"

@@ -9917,12 +9917,10 @@ fn expanded_rollout_history_for_thread_view(items: &[RolloutItem]) -> Vec<Rollou
             && let RolloutItem::Compacted(compacted) = item
             && let Some(replacement_history) = compacted.replacement_history.as_ref()
         {
-            expanded_items.extend(
-                synthesize_thread_view_rollout_from_replacement_history(
-                    replacement_history,
-                    infer_checkpoint_continued_turn_id(&items[index + 1..]).as_deref(),
-                ),
-            );
+            expanded_items.extend(synthesize_thread_view_rollout_from_replacement_history(
+                replacement_history,
+                infer_checkpoint_continued_turn_id(&items[index + 1..]).as_deref(),
+            ));
             expanded_checkpoint = true;
             continue;
         }
@@ -10091,10 +10089,11 @@ fn synthesize_thread_view_rollout_from_replacement_history(
     continued_turn_id: Option<&str>,
 ) -> Vec<RolloutItem> {
     let turns = grouped_replacement_history_turn_items(replacement_history);
+    let total_turns = turns.len();
     let mut synthesized = Vec::new();
 
     for (index, turn_items) in turns.into_iter().enumerate() {
-        let is_last_turn = index + 1 == turns.len();
+        let is_last_turn = index + 1 == total_turns;
         let turn_id = if is_last_turn {
             continued_turn_id
                 .map(ToOwned::to_owned)
@@ -10103,7 +10102,7 @@ fn synthesize_thread_view_rollout_from_replacement_history(
             format!("replacement-turn-{index}")
         };
         synthesized.push(RolloutItem::EventMsg(EventMsg::TurnStarted(
-            TurnStartedEvent {
+            codex_protocol::protocol::TurnStartedEvent {
                 turn_id: turn_id.clone(),
                 started_at: None,
                 model_context_window: None,
@@ -10117,7 +10116,7 @@ fn synthesize_thread_view_rollout_from_replacement_history(
 
         if !(is_last_turn && continued_turn_id.is_some()) {
             synthesized.push(RolloutItem::EventMsg(EventMsg::TurnComplete(
-                TurnCompleteEvent {
+                codex_protocol::protocol::TurnCompleteEvent {
                     turn_id,
                     last_agent_message: None,
                     completed_at: None,
@@ -10184,11 +10183,16 @@ fn append_synthetic_thread_view_turn_item(
                     codex_protocol::user_input::UserInput::LocalImage { path } => {
                         local_images.push(path);
                     }
+                    codex_protocol::user_input::UserInput::Skill { name, .. }
+                    | codex_protocol::user_input::UserInput::Mention { name, .. } => {
+                        message.push_str(&name);
+                    }
+                    _ => {}
                 }
             }
 
             items.push(RolloutItem::EventMsg(EventMsg::UserMessage(
-                UserMessageEvent {
+                codex_protocol::protocol::UserMessageEvent {
                     message,
                     images: (!images.is_empty()).then_some(images),
                     local_images,
@@ -10212,7 +10216,7 @@ fn append_synthetic_thread_view_turn_item(
                 })
                 .collect::<String>();
             items.push(RolloutItem::EventMsg(EventMsg::AgentMessage(
-                AgentMessageEvent {
+                codex_protocol::protocol::AgentMessageEvent {
                     message,
                     phase: agent.phase,
                     memory_citation: agent.memory_citation,
@@ -10223,20 +10227,18 @@ fn append_synthetic_thread_view_turn_item(
         codex_protocol::items::TurnItem::Reasoning(reasoning) => {
             for summary in reasoning.summary_text {
                 items.push(RolloutItem::EventMsg(EventMsg::AgentReasoning(
-                    AgentReasoningEvent { text: summary },
+                    codex_protocol::protocol::AgentReasoningEvent { text: summary },
                 )));
             }
             for content in reasoning.raw_content {
-                items.push(RolloutItem::EventMsg(
-                    EventMsg::AgentReasoningRawContent(AgentReasoningRawContentEvent {
-                        text: content,
-                    }),
-                ));
+                items.push(RolloutItem::EventMsg(EventMsg::AgentReasoningRawContent(
+                    codex_protocol::protocol::AgentReasoningRawContentEvent { text: content },
+                )));
             }
         }
         codex_protocol::items::TurnItem::WebSearch(search) => {
             items.push(RolloutItem::EventMsg(EventMsg::WebSearchEnd(
-                WebSearchEndEvent {
+                codex_protocol::protocol::WebSearchEndEvent {
                     call_id: search.id,
                     query: search.query,
                     action: search.action,
@@ -10245,7 +10247,7 @@ fn append_synthetic_thread_view_turn_item(
         }
         codex_protocol::items::TurnItem::ImageGeneration(image) => {
             items.push(RolloutItem::EventMsg(EventMsg::ImageGenerationEnd(
-                ImageGenerationEndEvent {
+                codex_protocol::protocol::ImageGenerationEndEvent {
                     call_id: image.id,
                     status: image.status,
                     revised_prompt: image.revised_prompt,
@@ -10256,7 +10258,7 @@ fn append_synthetic_thread_view_turn_item(
         }
         codex_protocol::items::TurnItem::ContextCompaction(_) => {
             items.push(RolloutItem::EventMsg(EventMsg::ContextCompacted(
-                ContextCompactedEvent,
+                codex_protocol::protocol::ContextCompactedEvent,
             )));
         }
     }
@@ -10304,7 +10306,9 @@ fn rollout_item_turn_id_for_thread_view(item: &RolloutItem) -> Option<&str> {
             EventMsg::TurnAborted(turn_aborted) => turn_aborted.turn_id.as_deref(),
             EventMsg::ItemStarted(item_started) => Some(item_started.turn_id.as_str()),
             EventMsg::ItemCompleted(item_completed) => Some(item_completed.turn_id.as_str()),
-            EventMsg::ExecCommandBegin(exec_command_begin) => Some(exec_command_begin.turn_id.as_str()),
+            EventMsg::ExecCommandBegin(exec_command_begin) => {
+                Some(exec_command_begin.turn_id.as_str())
+            }
             EventMsg::ExecCommandEnd(exec_command_end) => Some(exec_command_end.turn_id.as_str()),
             EventMsg::GuardianAssessment(guardian_assessment)
                 if !guardian_assessment.turn_id.is_empty() =>
@@ -10316,7 +10320,9 @@ fn rollout_item_turn_id_for_thread_view(item: &RolloutItem) -> Option<&str> {
             {
                 Some(apply_patch_approval_request.turn_id.as_str())
             }
-            EventMsg::PatchApplyBegin(patch_apply_begin) if !patch_apply_begin.turn_id.is_empty() => {
+            EventMsg::PatchApplyBegin(patch_apply_begin)
+                if !patch_apply_begin.turn_id.is_empty() =>
+            {
                 Some(patch_apply_begin.turn_id.as_str())
             }
             EventMsg::PatchApplyEnd(patch_apply_end) if !patch_apply_end.turn_id.is_empty() => {
@@ -10334,9 +10340,9 @@ fn rollout_item_turn_id_for_thread_view(item: &RolloutItem) -> Option<&str> {
             }
             _ => None,
         },
-        RolloutItem::SessionMeta(_)
-        | RolloutItem::ResponseItem(_)
-        | RolloutItem::Compacted(_) => None,
+        RolloutItem::SessionMeta(_) | RolloutItem::ResponseItem(_) | RolloutItem::Compacted(_) => {
+            None
+        }
     }
 }
 
@@ -10948,6 +10954,123 @@ mod tests {
             collect_resume_override_mismatches(&request, &config_snapshot),
             vec!["model_provider requested=anthropic active=openai".to_string()]
         );
+    }
+
+    #[test]
+    fn expanded_rollout_history_reconnects_turn_spanning_compaction() {
+        let thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000123").expect("valid thread");
+        let continued_turn_id = "continued-turn".to_string();
+        let items = vec![
+            RolloutItem::Compacted(codex_protocol::protocol::CompactedItem {
+                message: "compacted".to_string(),
+                replacement_history: Some(vec![
+                    ResponseItem::Message {
+                        id: Some("user-1".to_string()),
+                        role: "user".to_string(),
+                        content: vec![codex_protocol::models::ContentItem::InputText {
+                            text: "first".to_string(),
+                        }],
+                        end_turn: None,
+                        phase: None,
+                    },
+                    ResponseItem::Message {
+                        id: Some("assistant-1".to_string()),
+                        role: "assistant".to_string(),
+                        content: vec![codex_protocol::models::ContentItem::OutputText {
+                            text: "done".to_string(),
+                        }],
+                        end_turn: None,
+                        phase: None,
+                    },
+                    ResponseItem::Message {
+                        id: Some("user-2".to_string()),
+                        role: "user".to_string(),
+                        content: vec![codex_protocol::models::ContentItem::InputText {
+                            text: "second".to_string(),
+                        }],
+                        end_turn: None,
+                        phase: None,
+                    },
+                    ResponseItem::Message {
+                        id: Some("assistant-2".to_string()),
+                        role: "assistant".to_string(),
+                        content: vec![codex_protocol::models::ContentItem::OutputText {
+                            text: "working".to_string(),
+                        }],
+                        end_turn: None,
+                        phase: None,
+                    },
+                ]),
+            }),
+            RolloutItem::EventMsg(EventMsg::ItemCompleted(
+                codex_protocol::protocol::ItemCompletedEvent {
+                    thread_id,
+                    turn_id: continued_turn_id.clone(),
+                    item: codex_protocol::items::TurnItem::Plan(codex_protocol::items::PlanItem {
+                        id: "plan-1".to_string(),
+                        text: "finish it".to_string(),
+                    }),
+                },
+            )),
+            RolloutItem::EventMsg(EventMsg::TurnComplete(
+                codex_protocol::protocol::TurnCompleteEvent {
+                    turn_id: continued_turn_id.clone(),
+                    last_agent_message: None,
+                    completed_at: None,
+                    duration_ms: None,
+                },
+            )),
+        ];
+
+        let expanded = expanded_rollout_history_for_thread_view(&items);
+        let turns = build_turns_from_rollout_items(&expanded);
+
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].items.len(), 2);
+        assert_eq!(turns[0].status, TurnStatus::Completed);
+        assert_eq!(turns[1].id, continued_turn_id);
+        assert_eq!(turns[1].status, TurnStatus::Completed);
+        assert_eq!(turns[1].items.len(), 3);
+        assert!(matches!(
+            &turns[1].items[0],
+            ThreadItem::UserMessage { content, .. }
+                if content
+                    == &vec![codex_app_server_protocol::UserInput::Text {
+                        text: "second".to_string(),
+                        text_elements: Vec::new(),
+                    }]
+        ));
+        assert!(matches!(
+            &turns[1].items[1],
+            ThreadItem::AgentMessage {
+                text,
+                phase: None,
+                memory_citation: None,
+                ..
+            } if text == "working"
+        ));
+        assert_eq!(
+            turns[1].items[2],
+            ThreadItem::Plan {
+                id: "plan-1".to_string(),
+                text: "finish it".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn preview_from_rollout_items_accepts_synthetic_user_message_events() {
+        let preview = preview_from_rollout_items(&[RolloutItem::EventMsg(EventMsg::UserMessage(
+            codex_protocol::protocol::UserMessageEvent {
+                message: "hello world".to_string(),
+                images: None,
+                local_images: Vec::new(),
+                text_elements: Vec::new(),
+            },
+        ))]);
+
+        assert_eq!(preview, "hello world");
     }
 
     fn test_thread_metadata(

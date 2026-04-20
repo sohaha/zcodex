@@ -310,7 +310,7 @@ mod tests {
         let client = CompactClient::new(
             transport.clone(),
             provider("https://api.anthropic.com/v1", WireApi::Anthropic),
-            DummyAuth,
+            Arc::new(DummyAuth),
         );
         let input = CompactionInput {
             model: "claude-test",

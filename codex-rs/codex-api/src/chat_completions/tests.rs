@@ -37,6 +37,7 @@ fn request_with_tools(tools: Vec<Value>, input: Vec<ResponseItem>) -> ResponsesA
         client_metadata: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
     }
 }
 
@@ -182,6 +183,7 @@ fn build_request_folds_system_and_developer_history() {
         client_metadata: None,
         prompt_cache_key: None,
         text: None,
+        max_output_tokens: None,
     };
 
     let chat = build_request_with_stream(&request, /*stream*/ false).expect("build request");
@@ -265,6 +267,7 @@ fn build_request_rejects_non_user_images() {
                 role: role.to_string(),
                 content: vec![ContentItem::InputImage {
                     image_url: "https://example.com/image.png".to_string(),
+                    detail: None,
                 }],
                 end_turn: None,
                 phase: None,
@@ -785,6 +788,7 @@ fn build_request_maps_reasoning_response_format_and_tool_controls() {
                 name: "answer_format".to_string(),
             }),
         }),
+        max_output_tokens: None,
     };
 
     let chat = build_request(&request).expect("build request");

@@ -1,12 +1,12 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 1862
 expression: popup
 ---
-  Reset all memories?
+  重 置 所 有 记 忆 ？
 
-› Reset all memories  Delete local memory files and rollout summaries.
-  Go back             Return to memory settings.
+› 重 置 所 有 记 忆   删 除 本 地 记 忆 文 件 和  rollout 摘 要 。
+  返 回           返 回 记 忆 设 置 。
 
 
-
-  Press enter to confirm or esc to go back
+  按  enter 确 认 或 按  esc 返 回

@@ -18,6 +18,7 @@ use crate::legacy_core::skills::model::SkillToolDependency;
 use crate::skills_helpers::skill_description;
 use crate::skills_helpers::skill_display_name;
 use codex_app_server_protocol::AppInfo;
+use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::ListSkillsResponseEvent;
 use codex_protocol::protocol::SkillMetadata as ProtocolSkillMetadata;
 use codex_protocol::protocol::SkillsListEntry;

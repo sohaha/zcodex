@@ -1,4 +1,5 @@
 use super::*;
+use crate::legacy_core::DEFAULT_AGENTS_MD_FILENAME;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]

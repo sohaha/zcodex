@@ -9,6 +9,11 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
+#[cfg(test)]
+use crate::legacy_core::AgentsMdManager;
+#[cfg(test)]
+use codex_exec_server::LOCAL_FS;
+
 fn normalize_agents_display_path(path: &Path) -> String {
     dunce::simplified(path).display().to_string()
 }

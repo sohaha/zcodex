@@ -525,10 +525,12 @@ impl HistoryCell for UpdateAvailableHistoryCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         use ratatui_macros::line;
         use ratatui_macros::text;
-        let update_instruction = if let Some(update_command) =
-            self.update_action.as_ref().map(UpdateAction::command_str)
+        let update_instruction = if let Some(update_command) = self
+            .update_action
+            .as_ref()
+            .map(|action| action.command_str())
         {
-            line!["运行 {update_command} 以更新。"]
+            line![format!("运行 {update_command} 以更新。")]
         } else {
             line![
                 "请参阅 ",

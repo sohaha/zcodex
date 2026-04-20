@@ -5,6 +5,7 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
+use codex_api::AnthropicClient;
 use codex_api::AuthProvider;
 use codex_api::ChatCompletionsClient;
 use codex_api::Compression;
@@ -262,6 +263,7 @@ async fn chat_completions_client_uses_chat_completions_path() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
     let _stream = client
         .stream_request(request, ResponsesOptions::default())
@@ -335,6 +337,7 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
 
@@ -378,6 +381,7 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
 
     let mut extra_headers = HeaderMap::new();
@@ -433,7 +437,7 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
 async fn anthropic_stream_request_preserves_session_headers() -> Result<()> {
     let state = RecordingState::default();
     let transport = RecordingTransport::new(state.clone());
-    let client = ResponsesClient::new(transport, anthropic_provider(), NoAuth);
+    let client = AnthropicClient::new(transport, anthropic_provider(), Arc::new(NoAuth));
 
     let request = ResponsesApiRequest {
         model: "claude-test".into(),
@@ -456,6 +460,7 @@ async fn anthropic_stream_request_preserves_session_headers() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
 
     let _stream = client

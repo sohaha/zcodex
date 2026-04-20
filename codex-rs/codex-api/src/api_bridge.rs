@@ -1,4 +1,5 @@
 use crate::TransportError;
+use crate::anthropic::is_context_window_error_message;
 use crate::error::ApiError;
 use crate::rate_limits::parse_promo_message;
 use crate::rate_limits::parse_rate_limit_for_limit;
@@ -59,6 +60,24 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
+                    } else if url.as_deref().is_some_and(|url| url.ends_with("/messages"))
+                        && serde_json::from_str::<Value>(&body_text)
+                            .ok()
+                            .and_then(|body| {
+                                let error = body.get("error")?;
+                                let error_type = error.get("type").and_then(Value::as_str)?;
+                                if error_type != "invalid_request_error" {
+                                    return None;
+                                }
+                                error
+                                    .get("message")
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string)
+                            })
+                            .as_deref()
+                            .is_some_and(is_context_window_error_message)
+                    {
+                        CodexErr::ContextWindowExceeded
                     } else {
                         CodexErr::InvalidRequest(body_text)
                     }
