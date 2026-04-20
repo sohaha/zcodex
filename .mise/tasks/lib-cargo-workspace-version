@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 resolve_codex_release_version() {
-  local version="${CODEX_RELEASE_VERSION:-}"
+  local version="${CODEX_RELEASE_VERSION:-1.0.0}"
   local previous_was_version=0
   local arg
 

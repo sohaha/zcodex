@@ -374,7 +374,7 @@ main() {
   mise run build ubuntu-win-arm64 [args...]
 
 [mise] 默认会启用 speed-first 本地构建缓存：
-  --version <version>                 临时同步 codex-rs workspace version 再构建
+  --version <version>                 临时同步 codex-rs workspace version 再构建，默认 1.0.0
   CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
   CODEX_BUILD_RAM_TARGET=0               强制本地 build 使用磁盘 target
   CODEX_BUILD_RAM_TARGET=1               强制本地 build 使用 /dev/shm target
