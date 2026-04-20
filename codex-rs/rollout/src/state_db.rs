@@ -62,16 +62,7 @@ pub async fn init(config: &impl RolloutConfigView) -> Option<StateDbHandle> {
 
 /// Get the DB if the feature is enabled and the DB exists.
 pub async fn get_state_db(config: &impl RolloutConfigView) -> Option<StateDbHandle> {
-    let state_path = codex_state::state_db_path(config.sqlite_home());
-    if !tokio::fs::try_exists(&state_path).await.unwrap_or(false) {
-        return None;
-    }
-    let runtime = codex_state::StateRuntime::init(
-        config.sqlite_home().to_path_buf(),
-        config.model_provider_id().to_string(),
-    )
-    .await
-    .ok()?;
+    let runtime = open_runtime_if_present(config.sqlite_home(), config.model_provider_id()).await?;
     require_backfill_complete(runtime, config.sqlite_home()).await
 }
 
@@ -79,15 +70,20 @@ pub async fn get_state_db(config: &impl RolloutConfigView) -> Option<StateDbHand
 ///
 /// This is used for parity checks during the SQLite migration phase.
 pub async fn open_if_present(codex_home: &Path, default_provider: &str) -> Option<StateDbHandle> {
+    open_runtime_if_present(codex_home, default_provider).await
+}
+
+async fn open_runtime_if_present(
+    codex_home: &Path,
+    default_provider: &str,
+) -> Option<StateDbHandle> {
     let db_path = codex_state::state_db_path(codex_home);
     if !tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
         return None;
     }
-    let runtime =
-        codex_state::StateRuntime::init(codex_home.to_path_buf(), default_provider.to_string())
-            .await
-            .ok()?;
-    require_backfill_complete(runtime, codex_home).await
+    codex_state::StateRuntime::init(codex_home.to_path_buf(), default_provider.to_string())
+        .await
+        .ok()
 }
 
 async fn require_backfill_complete(
