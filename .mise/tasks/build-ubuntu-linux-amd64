@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-cargo-workspace-version"
 source "$script_dir/lib-remote-ssh-target"
 source "$script_dir/lib-speed-first-build"
 target="x86_64-unknown-linux-gnu"
@@ -46,7 +47,10 @@ fi
 
 configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-disk"
 print_speed_first_build_summary
-mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
+codex_version="$(resolve_codex_release_version "$@")"
+mapfile -d '' -t task_args < <(strip_codex_release_version_args "$@")
+export_codex_release_version_if_present "$codex_version" "build-ubuntu-linux-amd64"
+mapfile -d '' -t build_args < <(ensure_default_release_args "${task_args[@]}")
 profile_dir="release"
 for arg in "${build_args[@]}"; do
   case "$arg" in

@@ -8,6 +8,7 @@ codex_rs_dir="$repo_root/codex-rs"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-cargo-workspace-version"
 source "$script_dir/lib-speed-first-build"
 
 target_requires_linux_build_deps() {
@@ -373,6 +374,7 @@ main() {
   mise run build ubuntu-win-arm64 [args...]
 
 [mise] 默认会启用 speed-first 本地构建缓存：
+  --version <version>                 临时同步 codex-rs workspace version 再构建
   CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
   CODEX_BUILD_RAM_TARGET=0               强制本地 build 使用磁盘 target
   CODEX_BUILD_RAM_TARGET=1               强制本地 build 使用 /dev/shm target
@@ -385,37 +387,11 @@ EOF
     exit 0
   fi
 
-  # 解析 --version 参数
-  local codex_version="1.0.0"
+  local codex_version
   local args=()
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --version=*)
-        codex_version="${1#--version=}"
-        shift
-        ;;
-      --version)
-        if [ $# -lt 2 ]; then
-          echo "[build] 错误: --version 需要参数" >&2
-          exit 1
-        fi
-        codex_version="$2"
-        shift 2
-        ;;
-      *)
-        args+=("$1")
-        shift
-        ;;
-    esac
-  done
-
-  # 导出版本号环境变量
-  if [ -n "$codex_version" ]; then
-    export CARGO_PKG_VERSION="$codex_version"
-    echo "[build] 设置版本号为: $codex_version" >&2
-  fi
-
-  # 使用处理后的参数继续
+  codex_version="$(resolve_codex_release_version "$@")"
+  mapfile -d '' -t args < <(strip_codex_release_version_args "$@")
+  export_codex_release_version_if_present "$codex_version" "build"
   set -- "${args[@]}"
 
   case "${1:-}" in
@@ -444,6 +420,7 @@ EOF
       ;;
   esac
 
+  activate_cargo_workspace_version_override "$codex_rs_dir" "$codex_version" "build"
   ensure_linux_build_deps "$@"
   configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-ram"
   print_speed_first_build_summary

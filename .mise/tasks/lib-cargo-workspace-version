@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+
+resolve_codex_release_version() {
+  local version="${CODEX_RELEASE_VERSION:-}"
+  local previous_was_version=0
+  local arg
+
+  for arg in "$@"; do
+    if [ "$previous_was_version" -eq 1 ]; then
+      version="$arg"
+      previous_was_version=0
+      continue
+    fi
+
+    case "$arg" in
+      --version)
+        previous_was_version=1
+        ;;
+      --version=*)
+        version="${arg#--version=}"
+        ;;
+    esac
+  done
+
+  if [ "$previous_was_version" -eq 1 ]; then
+    echo "[mise] 错误: --version 需要参数" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$version"
+}
+
+strip_codex_release_version_args() {
+  local previous_was_version=0
+  local arg
+
+  for arg in "$@"; do
+    if [ "$previous_was_version" -eq 1 ]; then
+      previous_was_version=0
+      continue
+    fi
+
+    case "$arg" in
+      --version)
+        previous_was_version=1
+        ;;
+      --version=*)
+        ;;
+      *)
+        printf '%s\0' "$arg"
+        ;;
+    esac
+  done
+
+  if [ "$previous_was_version" -eq 1 ]; then
+    echo "[mise] 错误: --version 需要参数" >&2
+    return 1
+  fi
+}
+
+export_codex_release_version_if_present() {
+  local version="$1"
+  local task_name="$2"
+
+  if [ -n "$version" ]; then
+    export CODEX_RELEASE_VERSION="$version"
+    echo "[$task_name] 设置版本号为: $version" >&2
+  fi
+}
+
+restore_cargo_workspace_version_override() {
+  local cargo_toml="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET:-}"
+  local backup="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP:-}"
+
+  if [ -z "$cargo_toml" ] || [ -z "$backup" ] || [ ! -f "$backup" ]; then
+    return 0
+  fi
+
+  cp "$backup" "$cargo_toml"
+  rm -f "$backup"
+  unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET
+  unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP
+}
+
+ensure_cargo_workspace_version_override_safe() {
+  local codex_rs_dir="$1"
+
+  if ! git -C "$codex_rs_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ -n "$(git -C "$codex_rs_dir" status --short --untracked-files=no -- Cargo.toml)" ]; then
+    echo "[mise] codex-rs/Cargo.toml 已有本地改动，无法安全临时覆盖 workspace version" >&2
+    return 1
+  fi
+}
+
+activate_cargo_workspace_version_override() {
+  local codex_rs_dir="$1"
+  local version="$2"
+  local task_name="$3"
+  local cargo_toml backup patched
+
+  if [ -z "$version" ]; then
+    return 0
+  fi
+
+  if [ -n "${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET:-}" ]; then
+    return 0
+  fi
+
+  ensure_cargo_workspace_version_override_safe "$codex_rs_dir"
+
+  cargo_toml="$codex_rs_dir/Cargo.toml"
+  backup="$(mktemp "${TMPDIR:-/tmp}/codex-cargo-toml.XXXXXX")"
+  patched="$(mktemp "${TMPDIR:-/tmp}/codex-cargo-toml.patched.XXXXXX")"
+  cp "$cargo_toml" "$backup"
+
+  export CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET="$cargo_toml"
+  export CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP="$backup"
+  trap restore_cargo_workspace_version_override EXIT
+
+  if ! awk -v version="$version" '
+    BEGIN {
+      in_workspace_package = 0
+      replaced = 0
+    }
+    /^\[.*\]$/ {
+      in_workspace_package = ($0 == "[workspace.package]")
+    }
+    {
+      if (in_workspace_package && !replaced && $0 ~ /^version = "[^"]+"$/) {
+        print "version = \"" version "\""
+        replaced = 1
+        next
+      }
+      print
+    }
+    END {
+      if (!replaced) {
+        exit 1
+      }
+    }
+  ' "$cargo_toml" > "$patched"; then
+    rm -f "$patched"
+    echo "[mise] failed to update [workspace.package].version in Cargo.toml" >&2
+    return 1
+  fi
+
+  mv "$patched" "$cargo_toml"
+
+  echo "[$task_name] 已临时同步 codex-rs/Cargo.toml workspace version -> $version" >&2
+}
