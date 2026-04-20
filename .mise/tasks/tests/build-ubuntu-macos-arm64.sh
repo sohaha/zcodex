@@ -25,11 +25,14 @@ run_tests() {
   local fake_bin_dir
   local sdk_dir
   local ssh_hint_file
+  local readonly_home
   local output_bin
   local rs_ext_args_file
   local cc_search_dirs_file
+  local host_cc_search_dirs_file
   local rs_ext_args
   local cc_search_dirs
+  local host_cc_search_dirs
   local output
   temp_root="$(mktemp -d)"
   trap "rm -rf '$temp_root'" EXIT
@@ -39,11 +42,14 @@ run_tests() {
   fake_bin_dir="$temp_root/bin"
   sdk_dir="$sandbox_repo/.cache/macos-sdk/MacOSX.sdk"
   ssh_hint_file="$temp_root/nm"
+  readonly_home="$temp_root/readonly-home"
   output_bin="$sandbox_repo/test-target/aarch64-apple-darwin/release/codex"
   rs_ext_args_file="$temp_root/rs-ext-args"
   cc_search_dirs_file="$temp_root/cc-search-dirs"
+  host_cc_search_dirs_file="$temp_root/host-cc-search-dirs"
 
-  mkdir -p "$task_dir" "$codex_rs_scripts_dir" "$fake_bin_dir" "$sdk_dir"
+  mkdir -p "$task_dir" "$codex_rs_scripts_dir" "$fake_bin_dir" "$sdk_dir" "$readonly_home"
+  chmod 555 "$readonly_home"
   git -C "$sandbox_repo" init >/dev/null 2>&1
 
   cp "$repo_root/.mise/tasks/build-ubuntu-macos-arm64" "$task_dir/build-ubuntu-macos-arm64"
@@ -93,7 +99,8 @@ EOF
 set -euo pipefail
 
 printf '%s\n' "$*" >"$TEST_RS_EXT_ARGS_FILE"
-cc --print-search-dirs >"$TEST_CC_SEARCH_DIRS_FILE"
+TARGET=aarch64-apple-darwin cc --print-search-dirs >"$TEST_CC_SEARCH_DIRS_FILE"
+TARGET=x86_64-unknown-linux-gnu cc --print-search-dirs >"$TEST_HOST_CC_SEARCH_DIRS_FILE"
 mkdir -p "$(dirname "$TEST_OUTPUT_BIN")"
 perl - "$TEST_OUTPUT_BIN" <<'PL'
 use strict;
@@ -148,6 +155,20 @@ EOF
   cat >"$fake_bin_dir/clang" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${1:-}" = "--print-search-dirs" ]; then
+  printf 'programs: =/host-tools\n'
+  printf 'libraries: =/host-libs\n'
+fi
+exit 0
+EOF
+
+  cat >"$fake_bin_dir/clang++" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "--print-search-dirs" ]; then
+  printf 'programs: =/host-tools-cxx\n'
+  printf 'libraries: =/host-libs-cxx\n'
+fi
 exit 0
 EOF
 
@@ -189,6 +210,7 @@ EOF
     "$fake_bin_dir/cargo" \
     "$fake_bin_dir/rustup" \
     "$fake_bin_dir/clang" \
+    "$fake_bin_dir/clang++" \
     "$fake_bin_dir/zig"
 
   printf '%s\n' 'ssh user@example.com -p 22 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null' >"$ssh_hint_file"
@@ -197,17 +219,19 @@ EOF
     cd "$sandbox_repo"
     unset CNB_VSCODE_REMOTE_SSH_SCHEMA
     PATH="$fake_bin_dir:$PATH" \
+      HOME="$readonly_home" \
       TEST_FAKE_ZIG="$fake_bin_dir/zig" \
       TEST_OUTPUT_BIN="$output_bin" \
       TEST_RS_EXT_ARGS_FILE="$rs_ext_args_file" \
       TEST_CC_SEARCH_DIRS_FILE="$cc_search_dirs_file" \
-      ZIG_GLOBAL_CACHE_DIR="$temp_root/zig-cache" \
+      TEST_HOST_CC_SEARCH_DIRS_FILE="$host_cc_search_dirs_file" \
       CNB_REMOTE_SSH_HINT_FILE="$ssh_hint_file" \
       bash "$task_dir/build-ubuntu-macos-arm64" 2>&1
   )"
 
   rs_ext_args="$(cat "$rs_ext_args_file")"
   cc_search_dirs="$(cat "$cc_search_dirs_file")"
+  host_cc_search_dirs="$(cat "$host_cc_search_dirs_file")"
 
   assert_contains \
     "$output" \
@@ -232,6 +256,17 @@ EOF
   if [[ "$cc_search_dirs" == *"x86_64-linux-gnu"* ]]; then
     echo "assertion failed: build-ubuntu-macos-arm64 should not expose host linux linker paths via cc --print-search-dirs" >&2
     echo "  actual output: $cc_search_dirs" >&2
+    exit 1
+  fi
+
+  assert_contains \
+    "$host_cc_search_dirs" \
+    "libraries: =/host-libs" \
+    "build-ubuntu-macos-arm64 should fall back to the host compiler for host-side cc --print-search-dirs"
+
+  if [[ "$host_cc_search_dirs" == *"$sandbox_repo/.cache/ubuntu-macos-arm64-toolchain/compiler-rt"* ]]; then
+    echo "assertion failed: build-ubuntu-macos-arm64 should not leak target linker search dirs into host builds" >&2
+    echo "  actual output: $host_cc_search_dirs" >&2
     exit 1
   fi
 

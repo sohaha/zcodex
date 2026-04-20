@@ -161,7 +161,7 @@ prepare_cross_wrappers() {
   local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
   local cc_wrapper cxx_wrapper runtime_search_root runtime_search_lib_dir
   local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin
-  local latest_ubsan latest_compiler_rt xcrun_wrapper
+  local latest_ubsan latest_compiler_rt xcrun_wrapper host_cc_bin host_cxx_bin
 
   zig_cache_root="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/zig}"
   wrapper_dir="$repo_root/.cache/ubuntu-macos-arm64-toolchain"
@@ -176,6 +176,12 @@ prepare_cross_wrappers() {
   runtime_search_root="$wrapper_dir/compiler-rt"
   runtime_search_lib_dir="$runtime_search_root/lib/darwin"
   mkdir -p "$wrapper_dir"
+  host_cc_bin="$(command -v clang || command -v cc || true)"
+  host_cxx_bin="$(command -v clang++ || command -v c++ || true)"
+  if [ -z "$host_cc_bin" ] || [ -z "$host_cxx_bin" ]; then
+    echo "[build-ubuntu-macos-arm64] 无法解析宿主机 clang/clang++，无法安全区分 host 与 target C 编译" >&2
+    exit 1
+  fi
 
   cat > "$zig_cc_wrapper" <<'EOF'
 #!/usr/bin/env bash
@@ -369,6 +375,10 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${TARGET:-}" != "aarch64-apple-darwin" ]; then
+  exec "${CODEX_HOST_CC_BIN:?}" "$@"
+fi
+
 if [ "${1:-}" = "--print-search-dirs" ]; then
   printf 'programs: =%s\n' "$(dirname "${ZIG_BIN:?}")"
   printf 'libraries: =%s\n' "${CODEX_MACOS_CC_SEARCH_ROOT:?}"
@@ -381,6 +391,10 @@ EOF
   cat > "$cxx_wrapper" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [ "${TARGET:-}" != "aarch64-apple-darwin" ]; then
+  exec "${CODEX_HOST_CXX_BIN:?}" "$@"
+fi
 
 if [ "${1:-}" = "--print-search-dirs" ]; then
   printf 'programs: =%s\n' "$(dirname "${ZIG_BIN:?}")"
@@ -496,6 +510,8 @@ EOF
   export CODEX_MACOS_UBSAN_RT="$latest_ubsan"
   export CODEX_MACOS_COMPILER_RT="$latest_compiler_rt"
   export CODEX_MACOS_CC_SEARCH_ROOT="$runtime_search_root"
+  export CODEX_HOST_CC_BIN="$host_cc_bin"
+  export CODEX_HOST_CXX_BIN="$host_cxx_bin"
   export CODEX_ZIG_CC_WRAPPER="$zig_cc_wrapper"
   export CODEX_ZIG_CXX_WRAPPER="$zig_cxx_wrapper"
   export CC_aarch64_apple_darwin="$zig_cc_wrapper"
@@ -570,10 +586,17 @@ fi
 export SDKROOT="$sdk_path"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$repo_root/.cache/zig-global}"
+mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 shared_target_dir="$repo_root/.cargo-target"
-default_cross_target_dir="${CARGO_TARGET_DIR:-$shared_target_dir}"
-if [ "$default_cross_target_dir" = "$shared_target_dir" ]; then
-  default_cross_target_dir="$repo_root/.cargo-target-cross-macos-arm64"
+default_cross_target_dir="$repo_root/.cargo-target-cross-macos-arm64"
+if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
+  default_cross_target_dir="$CARGO_TARGET_DIR"
+elif [ -n "${CARGO_TARGET_DIR:-}" ] && [ "$CARGO_TARGET_DIR" != "$shared_target_dir" ]; then
+  default_cross_target_dir="$CARGO_TARGET_DIR"
+fi
+if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" != "1" ] && [ "${CARGO_TARGET_DIR:-}" = "$shared_target_dir" ]; then
+  export CARGO_TARGET_DIR="$default_cross_target_dir"
 fi
 configure_speed_first_build_defaults "$repo_root" "$default_cross_target_dir" "prefer-disk"
 print_speed_first_build_summary
