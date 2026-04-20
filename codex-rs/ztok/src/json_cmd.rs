@@ -1,8 +1,12 @@
+use crate::compression;
+use crate::compression::CompressionHint;
+use crate::compression::CompressionIntent;
+use crate::compression::CompressionRequest;
+use crate::compression::JsonRenderMode;
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
-use serde_json::Value;
 use std::fs;
 use std::io::Read;
 use std::io::{self};
@@ -48,11 +52,21 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
     let content =
         fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
-    let output = if schema_only {
-        filter_json_string(&content, max_depth)?
-    } else {
-        filter_json_compact(&content, max_depth)?
-    };
+    let source_name = file.display().to_string();
+    let output = compression::compress(CompressionRequest {
+        source_name: &source_name,
+        content: &content,
+        hint: CompressionHint::Json,
+        intent: CompressionIntent::Json {
+            max_depth,
+            mode: if schema_only {
+                JsonRenderMode::Schema
+            } else {
+                JsonRenderMode::Compact
+            },
+        },
+    })?
+    .output;
     println!("{output}");
     timer.track(
         &format!("cat {}", file.display()),
@@ -77,11 +91,20 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
         .read_to_string(&mut content)
         .context("从标准输入读取失败")?;
 
-    let output = if schema_only {
-        filter_json_string(&content, max_depth)?
-    } else {
-        filter_json_compact(&content, max_depth)?
-    };
+    let output = compression::compress(CompressionRequest {
+        source_name: "-",
+        content: &content,
+        hint: CompressionHint::Json,
+        intent: CompressionIntent::Json {
+            max_depth,
+            mode: if schema_only {
+                JsonRenderMode::Schema
+            } else {
+                JsonRenderMode::Compact
+            },
+        },
+    })?
+    .output;
     println!("{output}");
     timer.track("cat - (stdin)", "ztok json -", &content, &output);
     Ok(())
@@ -89,196 +112,37 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
 
 /// 解析 JSON 字符串并返回保留值的紧凑表示。
 pub fn filter_json_compact(json_str: &str, max_depth: usize) -> Result<String> {
-    let value: Value = serde_json::from_str(json_str).context("解析 JSON 失败")?;
-    Ok(compact_json(&value, /*depth*/ 0, max_depth))
-}
-
-fn compact_json(value: &Value, depth: usize, max_depth: usize) -> String {
-    let indent = "  ".repeat(depth);
-
-    if depth > max_depth {
-        return format!("{indent}...");
-    }
-
-    match value {
-        Value::Null => format!("{indent}null"),
-        Value::Bool(flag) => format!("{indent}{flag}"),
-        Value::Number(number) => format!("{indent}{number}"),
-        Value::String(text) => {
-            if text.chars().count() > 80 {
-                let truncated = text.chars().take(77).collect::<String>();
-                format!("{indent}\"{truncated}...\"")
-            } else {
-                format!("{}\"{}\"", indent, text)
-            }
-        }
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                format!("{indent}[]")
-            } else if arr.len() > 5 {
-                let first = compact_json(&arr[0], depth + 1, max_depth);
-                format!("{}[{}, ... +{} more]", indent, first.trim(), arr.len() - 1)
-            } else {
-                let items: Vec<String> = arr
-                    .iter()
-                    .map(|item| compact_json(item, depth + 1, max_depth))
-                    .collect();
-                let all_simple = arr.iter().all(|item| {
-                    matches!(
-                        item,
-                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
-                    )
-                });
-                if all_simple {
-                    let inline: Vec<&str> = items.iter().map(|item| item.trim()).collect();
-                    format!("{}[{}]", indent, inline.join(", "))
-                } else {
-                    let mut lines = vec![format!("{}[", indent)];
-                    for item in &items {
-                        lines.push(format!("{item},"));
-                    }
-                    lines.push(format!("{indent}]"));
-                    lines.join("\n")
-                }
-            }
-        }
-        Value::Object(map) => {
-            if map.is_empty() {
-                format!("{indent}{{}}")
-            } else {
-                let mut lines = vec![format!("{}{{", indent)];
-                let mut keys: Vec<_> = map.keys().collect();
-                keys.sort();
-
-                for (index, key) in keys.iter().enumerate() {
-                    let item = &map[*key];
-                    let is_simple = matches!(
-                        item,
-                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
-                    );
-
-                    if is_simple {
-                        let value_str = compact_json(item, /*depth*/ 0, max_depth);
-                        lines.push(format!("{}  {}: {}", indent, key, value_str.trim()));
-                    } else {
-                        lines.push(format!("{}  {}:", indent, key));
-                        lines.push(compact_json(item, depth + 1, max_depth));
-                    }
-
-                    if index >= 20 {
-                        let remaining_keys = keys.len() - index - 1;
-                        if remaining_keys > 0 {
-                            lines.push(format!("{indent}  ... +{remaining_keys} 个键"));
-                        }
-                        break;
-                    }
-                }
-                lines.push(format!("{indent}}}"));
-                lines.join("\n")
-            }
-        }
-    }
+    Ok(compression::compress(CompressionRequest {
+        source_name: "-",
+        content: json_str,
+        hint: CompressionHint::Json,
+        intent: CompressionIntent::Json {
+            max_depth,
+            mode: JsonRenderMode::Compact,
+        },
+    })?
+    .output)
 }
 
 /// 解析 JSON 字符串并返回其结构表示。
 /// 适用于管道输入的 JSON（例如 `gh api`、`curl`）。
 pub fn filter_json_string(json_str: &str, max_depth: usize) -> Result<String> {
-    let value: Value = serde_json::from_str(json_str).context("解析 JSON 失败")?;
-    Ok(extract_schema(&value, /*depth*/ 0, max_depth))
-}
-
-fn extract_schema(value: &Value, depth: usize, max_depth: usize) -> String {
-    let indent = "  ".repeat(depth);
-
-    if depth > max_depth {
-        return format!("{indent}...");
-    }
-
-    match value {
-        Value::Null => format!("{indent}null"),
-        Value::Bool(_) => format!("{indent}bool"),
-        Value::Number(n) => {
-            if n.is_i64() {
-                format!("{indent}int")
-            } else {
-                format!("{indent}float")
-            }
-        }
-        Value::String(s) => {
-            if s.len() > 50 {
-                format!("{}string[{}]", indent, s.len())
-            } else if s.is_empty() {
-                format!("{indent}string")
-            } else {
-                // 检查它是否看起来像 URL、日期等特殊字符串
-                if s.starts_with("http") {
-                    format!("{indent}url")
-                } else if s.contains('-') && s.len() == 10 {
-                    format!("{indent}date?")
-                } else {
-                    format!("{indent}string")
-                }
-            }
-        }
-        Value::Array(arr) => {
-            if arr.is_empty() {
-                format!("{indent}[]")
-            } else {
-                let first_schema = extract_schema(&arr[0], depth + 1, max_depth);
-                let trimmed = first_schema.trim();
-                if arr.len() == 1 {
-                    format!("{indent}[\n{first_schema}\n{indent}]")
-                } else {
-                    format!("{}[{}] ({})", indent, trimmed, arr.len())
-                }
-            }
-        }
-        Value::Object(map) => {
-            if map.is_empty() {
-                format!("{indent}{{}}")
-            } else {
-                let mut lines = vec![format!("{}{{", indent)];
-                let mut keys: Vec<_> = map.keys().collect();
-                keys.sort();
-
-                for (i, key) in keys.iter().enumerate() {
-                    let val = &map[*key];
-                    let val_schema = extract_schema(val, depth + 1, max_depth);
-                    let val_trimmed = val_schema.trim();
-
-                    // 简单类型直接内联显示
-                    let is_simple = matches!(
-                        val,
-                        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
-                    );
-
-                    if is_simple {
-                        if i < keys.len() - 1 {
-                            lines.push(format!("{indent}  {key}: {val_trimmed},"));
-                        } else {
-                            lines.push(format!("{indent}  {key}: {val_trimmed}"));
-                        }
-                    } else {
-                        lines.push(format!("{indent}  {key}:"));
-                        lines.push(val_schema);
-                    }
-
-                    // 限制展示的键数量
-                    if i >= 15 {
-                        lines.push(format!("{}  ... +{} 个键", indent, keys.len() - i - 1));
-                        break;
-                    }
-                }
-                lines.push(format!("{indent}}}"));
-                lines.join("\n")
-            }
-        }
-    }
+    Ok(compression::compress(CompressionRequest {
+        source_name: "-",
+        content: json_str,
+        hint: CompressionHint::Json,
+        intent: CompressionIntent::Json {
+            max_depth,
+            mode: JsonRenderMode::Schema,
+        },
+    })?
+    .output)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     // --- #347: validate_json_extension ---
 
@@ -319,7 +183,7 @@ mod tests {
     #[test]
     fn test_extract_schema_simple() {
         let json: Value = serde_json::from_str(r#"{"name": "test", "count": 42}"#).unwrap();
-        let schema = extract_schema(&json, 0, 5);
+        let schema = filter_json_string(&json.to_string(), 5).unwrap();
         assert!(schema.contains("name"));
         assert!(schema.contains("string"));
         assert!(schema.contains("int"));
@@ -328,7 +192,7 @@ mod tests {
     #[test]
     fn test_extract_schema_array() {
         let json: Value = serde_json::from_str(r#"{"items": [1, 2, 3]}"#).unwrap();
-        let schema = extract_schema(&json, 0, 5);
+        let schema = filter_json_string(&json.to_string(), 5).unwrap();
         assert!(schema.contains("items"));
         assert!(schema.contains("(3)"));
     }
@@ -343,7 +207,7 @@ mod tests {
             "k16": 16
         });
 
-        let schema = extract_schema(&json, 0, 5);
+        let schema = filter_json_string(&json.to_string(), 5).unwrap();
         assert!(schema.contains("... +1 个键"), "实际得到：{schema}");
     }
 
@@ -375,7 +239,7 @@ mod tests {
             "k21": 21
         });
 
-        let compact = compact_json(&json, 0, 5);
+        let compact = filter_json_compact(&json.to_string(), 5).unwrap();
         assert!(!compact.contains("... +0 个键"), "实际得到：{compact}");
     }
 }

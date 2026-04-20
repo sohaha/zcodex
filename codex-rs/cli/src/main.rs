@@ -67,6 +67,7 @@ use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::find_codex_home;
+use codex_core::exec_env::CODEX_THREAD_ID_ENV_VAR;
 use codex_features::FEATURES;
 use codex_features::Stage;
 use codex_features::is_known_feature_key;
@@ -708,7 +709,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     if let Some(argv0) = raw_args.first()
         && codex_ztok::is_alias_invocation(argv0)
     {
-        codex_ztok::run_from_os_args(raw_args.into_iter().skip(1).collect())?;
+        run_ztok_subcommand(raw_args.into_iter().skip(1).collect())?;
         return Ok(());
     }
     if raw_args
@@ -716,7 +717,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         .and_then(|arg| arg.to_str())
         .is_some_and(|arg| arg == "ztok")
     {
-        codex_ztok::run_from_os_args(raw_args.into_iter().skip(2).collect())?;
+        run_ztok_subcommand(raw_args.into_iter().skip(2).collect())?;
         return Ok(());
     }
 
@@ -846,7 +847,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "ztok",
             )?;
-            codex_ztok::run_from_os_args(ztok_cli.args)?;
+            run_ztok_subcommand(ztok_cli.args)?;
         }
         Some(Subcommand::Plugin(plugin_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -1270,6 +1271,22 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn run_ztok_subcommand(args: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
+    if let Ok(thread_id) = std::env::var(CODEX_THREAD_ID_ENV_VAR)
+        && !thread_id.trim().is_empty()
+    {
+        unsafe {
+            std::env::set_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR, thread_id);
+        }
+    } else {
+        unsafe {
+            std::env::remove_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR);
+        }
+    }
+
+    codex_ztok::run_from_os_args(args)
 }
 
 async fn run_exec_server_command(

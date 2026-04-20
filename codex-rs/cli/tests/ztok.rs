@@ -9,7 +9,9 @@ use tempfile::TempDir;
 
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?);
-    cmd.env("CODEX_HOME", codex_home);
+    cmd.env("CODEX_HOME", codex_home)
+        .env_remove("CODEX_THREAD_ID")
+        .env_remove("CODEX_ZTOK_SESSION_ID");
     Ok(cmd)
 }
 
@@ -168,6 +170,54 @@ fn ztok_read_accepts_multiple_files() -> Result<()> {
     .assert()
     .success()
     .stdout(contains("alpha").and(contains("beta")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_read_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_read_disables_session_cache_without_thread_id() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
 
     Ok(())
 }

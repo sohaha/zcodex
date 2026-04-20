@@ -113,30 +113,30 @@ $:
               script: |
                 set -eu
                 mise run build &
-          endStages:
-            - name: backup codex home
-              script: |
-                set -eu
-                codex_home="${HOME:-/root}/.codex"
-                backup_dir="/workspace/backup/codex"
-                backup_archive="$backup_dir/codex.tar.gz"
-                session_max_age_days=7
-                if [ ! -d "$codex_home" ]; then
-                  exit 0
-                fi
-                rm -rf "$backup_dir"
-                mkdir -p "$backup_dir"
-                (
-                  cd "$codex_home"
-                  {
-                    find . \
-                      \( -path './log' -o -path './log/*' \
-                      -o -path './tmp' -o -path './tmp/*' \
-                      -o -path './.tmp' -o -path './.tmp/*' \
-                      -o -path './sessions' -o -path './sessions/*' \) -prune \
-                      -o -print0
-                    if [ -d ./sessions ]; then
-                      find ./sessions \( -type f -o -type l \) -mtime "-$session_max_age_days" -print0
-                    fi
-                  } | tar --null -T - -czf "$backup_archive"
-                )
+          # endStages:
+          #   - name: backup codex home
+          #     script: |
+          #       set -eu
+          #       codex_home="${HOME:-/root}/.codex"
+          #       backup_dir="/workspace/backup/codex"
+          #       backup_archive="$backup_dir/codex.tar.gz"
+          #       session_max_age_days=7
+          #       if [ ! -d "$codex_home" ]; then
+          #         exit 0
+          #       fi
+          #       rm -rf "$backup_dir"
+          #       mkdir -p "$backup_dir"
+          #       (
+          #         cd "$codex_home"
+          #         {
+          #           find . \
+          #             \( -path './log' -o -path './log/*' \
+          #             -o -path './tmp' -o -path './tmp/*' \
+          #             -o -path './.tmp' -o -path './.tmp/*' \
+          #             -o -path './sessions' -o -path './sessions/*' \) -prune \
+          #             -o -print0
+          #           if [ -d ./sessions ]; then
+          #             find ./sessions \( -type f -o -type l \) -mtime "-$session_max_age_days" -print0
+          #           fi
+          #         } | tar --null -T - -czf "$backup_archive"
+          #       )

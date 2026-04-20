@@ -31,6 +31,19 @@ resolve_default_jobs() {
 
 jobs="${CARGO_BUILD_JOBS:-$(resolve_default_jobs)}"
 
+resolve_codex_version() {
+  local version="1.0.0"
+  for arg in "$@"; do
+    case "$arg" in
+      --version=*)
+        version="${arg#--version=}"
+        break
+        ;;
+    esac
+  done
+  printf '%s\n' "$version"
+}
+
 ensure_default_release_args() {
   for arg in "$@"; do
     case "$arg" in
@@ -158,6 +171,13 @@ MSG
 }
 
 prepare_cross_wrappers() {
+  local codex_version
+  codex_version="$(resolve_codex_version "$@")"
+  if [ -n "$codex_version" ]; then
+    export CARGO_PKG_VERSION="$codex_version"
+    echo "[build-ubuntu-macos-arm64] 设置版本号为: $codex_version" >&2
+  fi
+
   local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
   local cc_wrapper cxx_wrapper runtime_search_root runtime_search_lib_dir
   local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin

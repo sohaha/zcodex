@@ -1,0 +1,141 @@
+plan = ".agents/plan/2026-04-20-ztok-general-content-compression.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 ztok 的共享内容压缩合同与路由入口"
+scope = """
+本 issue 负责把当前分散在 `read`、`json`、`log`、`summary` 等命令中的通用压缩前置逻辑收口成一个共享入口，明确内容分类、压缩结果结构和显式回退语义。
+
+包括：
+1. 为代码/文本、JSON、日志等输入建立统一的内容类型判断与路由规则
+2. 定义共享压缩结果合同，覆盖完整输出、短引用、差分输出与显式回退
+3. 让后续 issue 可以在不复制通用逻辑的前提下接入 dedup 与近重复压缩
+
+不包括：
+- 会话级缓存、稳定会话标识注入与跨调用 dedup
+- SimHash 候选筛选与 LCS 差分实现
+- `upgrade-rtk` 或 `.version` 的基线记录修改
+"""
+touch_points = ["module:codex-ztok", "command:ztok read", "command:ztok json", "command:ztok log", "command:ztok summary", "codex-rs/ztok/src/*.rs"]
+depends_on = []
+done_when = "`codex-rs/ztok` 内存在单一共享压缩入口与结果合同，后续命令接入不再需要复制通用路由/回退逻辑；当缓存、差分或特化压缩不可用时，行为会显式回退到完整输出而不是静默降级。"
+validate_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "available capabilities 结论：Issue Generation 阶段未发现比本地计划拆分、结构校验与多会话评审更高收益的额外 session capability；本 issue 的关键是合同清晰与回退边界可执行。Execution 结果：已新增共享压缩入口与结果合同，并将 read/json/log/summary 改为薄适配层；共享模块按 route/json/log 三个文件拆分，避免单文件继续膨胀。验证：cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok 通过（511 passed, 3 ignored）。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "落地会话作用域 dedup 缓存与 CLI 会话标识注入"
+scope = """
+本 issue 负责把“同一会话内重复内容不再重复输出完整正文”变成可执行 contract，并补齐当前 `ztok` 缺失的跨调用状态载体。
+
+包括：
+1. 由 `codex-rs/cli` 在调用 `ztok` 时注入专用环境变量，向 `ztok` 暴露稳定会话标识
+2. 由 `ztok` 在 `CODEX_HOME/.ztok-cache/<session-id>.sqlite` 维护会话级缓存
+3. 为稳定内容指纹、缓存命中后的短引用输出、缓存读写失败时的显式回退补齐实现与测试
+4. 明确并落实：拿不到会话标识时禁用 dedup，而不是退化为按 `CODEX_HOME` 或 cwd 的粗粒度缓存
+
+不包括：
+- SimHash 候选筛选与 LCS 近重复差分
+- `json` / `log` / `summary` 的全面命令接入收口
+"""
+touch_points = ["module:codex-ztok", "module:codex-cli", "command:codex ztok", "command:ztok read", "codex-rs/ztok/src/*.rs", "codex-rs/cli/src/main.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1"]
+done_when = "同一会话内的相同内容在多次独立 `ztok` 调用之间可以稳定命中短引用；缺失会话标识时 dedup 会被显式禁用且仍返回完整压缩输出，不会误用跨会话粗粒度缓存。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "in_progress"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "该 issue 是 Execution 阶段最重要的 contract 风险点：若稳定会话标识来源、sqlite 载体或缺失时禁用 dedup 的语义没有一起落地，后续近重复压缩与命令接入都会失去可验证前提。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐完整的 SimHash + LCS 近重复压缩路径"
+scope = """
+本 issue 负责移植 `sqz` 风格近重复处理的核心能力，让高相似内容在同一会话中优先输出可解释的差分，而不是重复全文。
+
+包括：
+1. 引入 SimHash 候选筛选，用于从会话缓存中挑选高相似内容候选
+2. 引入基于 LCS 的差分生成逻辑，产出受控、可读、可回退的差分输出
+3. 为低置信度、差分不可读、候选冲突或快照缺失等场景定义显式回退到完整输出的规则与测试
+4. 将阈值或相似度判断参数设计为可调，并通过配置项、构造参数或测试 seam 之一暴露给实现与测试，而不是把低置信度边界硬编码成不可审计常量
+
+不包括：
+- `read` / `json` / `log` / `summary` 的最终命令接入收口
+- `sqz` 其他产品面能力，如 hook、resume、stats、dashboard 或外部插件
+"""
+touch_points = ["module:codex-ztok", "command:ztok read", "codex-rs/ztok/src/*.rs"]
+depends_on = ["a1", "a2"]
+done_when = "同路径小改动和高相似近重复内容可以先经 SimHash 命中候选，再由 LCS 生成可解释差分；低置信度、候选冲突、差分不可读或快照缺失时会显式回退到完整输出，且相关阈值/判定参数可以通过配置项、构造参数或测试 seam 被审计和验证。"
+validate_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok，并确认相关测试覆盖高相似命中、低置信度回退、候选冲突回退与差分不可读回退，且阈值不是只能靠改源码调整的私有常量。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "该 issue 的完成标准不是“命中了某种相似度算法”，而是“差分输出对模型可解释且可回退”；若误命中会导致 Execution 阶段出现真实内容缺失风险。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "将共享压缩内核接入 read/json/log/summary 并锁定验证闭环"
+scope = """
+本 issue 负责把前序共享压缩合同、会话 dedup 和近重复压缩真正接入当前高价值命令路径，并锁定测试与必要说明。
+
+包括：
+1. 让 `read` 成为最深接入点，完整消费共享压缩入口、会话 dedup 与近重复差分
+2. 让 `json`、`log`、`summary` 以最小复用方式接入共享压缩底座，不再各自复制通用压缩前置逻辑，并与 `read` 共用同一 dedup 判定路径
+3. 显式锁定共享合同：`NoSessionId => dedup disabled => full output`，四个命令都不得绕过该判定层退化成粗粒度缓存
+4. 补齐 `codex-rs/cli/tests/ztok.rs` 与 `codex-rs/ztok` 内的相关测试，覆盖共享路由命中、缓存命中、近重复命中、低置信度回退、缓存异常回退、缺失会话标识禁用 dedup 等边界
+5. 如命令帮助、用户可见语义或仓库说明发生变化，补齐与实现一致的最小说明
+
+不包括：
+- 扩展到 hook、proxy、resume、gain/stats、浏览器/IDE 插件等独立产品面
+- 重新设计 `ztok` 的产品边界或把它改造成独立压缩平台
+"""
+touch_points = ["module:codex-ztok", "module:codex-cli", "command:codex ztok", "command:ztok read", "command:ztok json", "command:ztok log", "command:ztok summary", "codex-rs/ztok/src/*.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1", "a2", "a3"]
+done_when = "`read` 已深接入共享压缩内核，`json` / `log` / `summary` 已最小复用共享底座，四个命令共用同一 dedup 判定路径并显式满足 `NoSessionId => dedup disabled => full output`；同时 CLI/库测试已锁定共享路由命中、缓存命中、近重复命中、低置信度回退与缓存异常回退。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok，并确认测试中至少包含 `read`、`json`、`log`、`summary` 各一条 CLI 级场景，覆盖共享路由命中、`NoSessionId => dedup disabled => full output`、SimHash/LCS 低置信度回退与缓存异常回退。"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok，并回读相关测试确认四个命令入口没有绕过共享 dedup-disable 合同。"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "这是本轮实现的总接入 issue。若前序 issue 已完成但本 issue 失败，说明压缩内核 contract 与命令面之间仍存在未收口的接口或验证缺口。"
+
+[[issue]]
+id = "a5"
+sequence = 50
+title = "记录 sqz 上游基线并将 upgrade-rtk 扩展为 ztok 的双上游同步入口"
+scope = """
+本 issue 负责把本轮实现所参考的 `sqz` 上游基线和后续同步入口收敛到仓库内可审计资产中，避免 `RTK` 与 `sqz` 两条参考链路分裂。
+
+包括：
+1. 新增 `.version/sqz.toml`，记录 `source`、`ref`、`commit hash`、`integration mode` 等基线信息
+2. 扩展 `.codex/skills/upgrade-rtk/SKILL.md`，明确它同时覆盖 `RTK` 命令面基线与 `sqz` 通用压缩基线
+3. 在 skill 中写清最小状态记录或检查清单，避免未来再新增平行的 `sqz` sync skill
+
+不包括：
+- 创建新的 `sync-sqz-reference` skill
+- 在本轮之外追加新的上游同步实现或额外自动化流程
+"""
+touch_points = [".version/sqz.toml", ".version/rtk.toml", ".codex/skills/upgrade-rtk/SKILL.md"]
+depends_on = ["a4"]
+done_when = "仓库内可以直接查到当前参考的 `sqz` source / ref / commit hash / integration mode，且这些字段与本轮实际参考上游一致；`upgrade-rtk` 对 `RTK + sqz` 双上游的说明与本轮实际落地范围一致，后续同步仍通过它统一执行，不再分裂出新的平行 skill。"
+validate_by = "手动核对 `.version/sqz.toml` 中的 source / ref / commit hash / integration mode 与本轮实际参考的 sqz 上游一致，并确认 `.codex/skills/upgrade-rtk/SKILL.md` 对双上游统一入口的描述没有超出 `a4` 的实际落地范围；随后执行 `cd /workspace && rg -n \"source|ref|commit|integration\" .version/sqz.toml && rg -n \"sqz|RTK|ztok|双上游\" .codex/skills/upgrade-rtk/SKILL.md`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "available capabilities 结论：本 issue 主要依赖仓库内版本记录与 skill 文档收口，不需要额外 MCP 或外部工具；关键是让双上游口径与本轮实际落地范围保持一致。"

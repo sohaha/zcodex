@@ -2,6 +2,9 @@
 
 mod aws_cmd;
 mod cargo_cmd;
+mod compression;
+mod compression_json;
+mod compression_log;
 mod container;
 mod curl_cmd;
 mod deps;
@@ -36,6 +39,7 @@ mod read;
 mod rewrite;
 mod ruff_cmd;
 mod runner;
+mod session_dedup;
 mod summary;
 mod tee;
 mod tracking;
@@ -67,6 +71,7 @@ pub use rewrite::ShellCommandRewriteAnalysis;
 pub use rewrite::ShellCommandRewriteKind;
 pub use rewrite::analyze_shell_command;
 pub use rewrite::rewrite_shell_command;
+pub use session_dedup::ZTOK_SESSION_ID_ENV_VAR;
 
 pub fn is_alias_invocation(argv0: &OsString) -> bool {
     Path::new(argv0)

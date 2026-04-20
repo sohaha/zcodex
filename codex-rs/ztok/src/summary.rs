@@ -1,3 +1,9 @@
+use crate::compression;
+use crate::compression::CompressionHint;
+use crate::compression::CompressionIntent;
+use crate::compression::CompressionRequest;
+use crate::compression::JsonRenderMode;
+use crate::compression::LogRenderMode;
 use crate::tracking;
 use crate::utils::truncate;
 use anyhow::Context;
@@ -47,7 +53,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     let mut result = Vec::new();
 
     // 状态
-    let status_icon = if success { "ok" } else { "fail" };
+    let status_icon = if success { "✅" } else { "❌" };
     result.push(format!(
         "{} 命令：{}",
         status_icon,
@@ -211,26 +217,21 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
 }
 
 fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
-    result.push("日志摘要：".to_string());
-
-    let mut errors = 0;
-    let mut warnings = 0;
-    let mut info = 0;
-
-    for line in output.lines() {
-        let lower = line.to_lowercase();
-        if lower.contains("error") || lower.contains("fatal") {
-            errors += 1;
-        } else if lower.contains("warn") {
-            warnings += 1;
-        } else if lower.contains("info") {
-            info += 1;
-        }
-    }
-
-    result.push(format!("   {errors} 个错误"));
-    result.push(format!("   {warnings} 个警告"));
-    result.push(format!("   {info} 条信息"));
+    let summary = compression::compress(CompressionRequest {
+        source_name: "summary.log",
+        content: output,
+        hint: CompressionHint::Log,
+        intent: CompressionIntent::Log {
+            mode: LogRenderMode::Summary,
+        },
+    })
+    .map(|compressed| compressed.output)
+    .unwrap_or_else(|_| {
+        let mut fallback = vec!["日志摘要：".to_string()];
+        fallback.push("   无法解析日志摘要".to_string());
+        fallback.join("\n")
+    });
+    result.extend(summary.lines().map(str::to_string));
 }
 
 fn summarize_list(output: &str, result: &mut Vec<String>) {
@@ -246,33 +247,18 @@ fn summarize_list(output: &str, result: &mut Vec<String>) {
 }
 
 fn summarize_json(output: &str, result: &mut Vec<String>) {
-    result.push("📋 JSON 输出：".to_string());
-
-    // 尝试解析并展示结构
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(output) {
-        match &value {
-            serde_json::Value::Array(arr) => {
-                result.push(format!("   数组，共 {} 项", arr.len()));
-            }
-            serde_json::Value::Object(obj) => {
-                result.push(format!("   对象，共 {} 个键：", obj.len()));
-                for key in obj.keys().take(10) {
-                    result.push(format!("   • {key}"));
-                }
-                if obj.len() > 10 {
-                    result.push(format!("   ... +{} 个键", obj.len() - 10));
-                }
-            }
-            _ => {
-                result.push(format!(
-                    "   {}",
-                    truncate(&value.to_string(), /*max_len*/ 100)
-                ));
-            }
-        }
-    } else {
-        result.push("   （JSON 无效）".to_string());
-    }
+    let summary = compression::compress(CompressionRequest {
+        source_name: "summary.json",
+        content: output,
+        hint: CompressionHint::Json,
+        intent: CompressionIntent::Json {
+            max_depth: 5,
+            mode: JsonRenderMode::Summary,
+        },
+    })
+    .map(|compressed| compressed.output)
+    .unwrap_or_else(|_| "   JSON 输出：\n   （JSON 无效）".to_string());
+    result.extend(summary.lines().map(str::to_string));
 }
 
 fn summarize_generic(output: &str, result: &mut Vec<String>) {

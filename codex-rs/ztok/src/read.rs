@@ -1,6 +1,12 @@
+use crate::compression;
+use crate::compression::CompressionHint;
+use crate::compression::CompressionIntent;
+use crate::compression::CompressionRequest;
+use crate::compression::ExplicitFallbackReason;
+use crate::compression::ReadOptions;
 use crate::filter::FilterLevel;
 use crate::filter::Language;
-use crate::filter::{self};
+use crate::session_dedup;
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
@@ -36,22 +42,31 @@ pub fn run(
         eprintln!("检测到语言：{lang:?}");
     }
 
-    // 应用过滤器
-    let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&content, lang);
+    let source_name = file.display().to_string();
+    let compressed = compression::compress(CompressionRequest {
+        source_name: &source_name,
+        content: &content,
+        hint: CompressionHint::CodeOrText(lang),
+        intent: CompressionIntent::Read(ReadOptions {
+            level,
+            max_lines,
+            tail_lines,
+            line_numbers,
+            language: lang,
+        }),
+    })?;
 
-    if filtered.trim().is_empty() && !content.trim().is_empty() {
+    if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
         eprintln!(
             "ztok: warning: filter produced empty output for {} ({} bytes), showing raw content",
             file.display(),
             content.len()
         );
-        filtered = content.clone();
     }
 
     if verbose > 0 {
         let original_lines = content.lines().count();
-        let filtered_lines = filtered.lines().count();
+        let filtered_lines = compressed.output.lines().count();
         let reduction = if original_lines > 0 {
             ((original_lines - filtered_lines) as f64 / original_lines as f64) * 100.0
         } else {
@@ -60,13 +75,15 @@ pub fn run(
         eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
-    filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
-
-    let ztok_output = if line_numbers {
-        format_with_line_numbers(&filtered)
-    } else {
-        filtered
-    };
+    let ztok_output = session_dedup::dedup_read_output(
+        &source_name,
+        &content,
+        &format!(
+            "read:{level}:max_lines={max_lines:?}:tail_lines={tail_lines:?}:line_numbers={line_numbers}"
+        ),
+        compressed,
+    )
+    .output;
     println!("{ztok_output}");
     timer.track(
         &format!("cat {}", file.display()),
@@ -107,21 +124,29 @@ pub fn run_stdin(
         eprintln!("语言：{lang:?}（stdin 无扩展名）");
     }
 
-    // 应用过滤器
-    let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&content, lang);
+    let compressed = compression::compress(CompressionRequest {
+        source_name: "-",
+        content: &content,
+        hint: CompressionHint::CodeOrText(lang),
+        intent: CompressionIntent::Read(ReadOptions {
+            level,
+            max_lines,
+            tail_lines,
+            line_numbers,
+            language: lang,
+        }),
+    })?;
 
-    if filtered.trim().is_empty() && !content.trim().is_empty() {
+    if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
         eprintln!(
             "ztok: warning: filter produced empty output for stdin ({} bytes), showing raw content",
             content.len()
         );
-        filtered = content.clone();
     }
 
     if verbose > 0 {
         let original_lines = content.lines().count();
-        let filtered_lines = filtered.lines().count();
+        let filtered_lines = compressed.output.lines().count();
         let reduction = if original_lines > 0 {
             ((original_lines - filtered_lines) as f64 / original_lines as f64) * 100.0
         } else {
@@ -130,58 +155,25 @@ pub fn run_stdin(
         eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
-    filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
-
-    let ztok_output = if line_numbers {
-        format_with_line_numbers(&filtered)
-    } else {
-        filtered
-    };
+    let ztok_output = session_dedup::dedup_read_output(
+        "-",
+        &content,
+        &format!(
+            "read:{level}:max_lines={max_lines:?}:tail_lines={tail_lines:?}:line_numbers={line_numbers}"
+        ),
+        compressed,
+    )
+    .output;
     println!("{ztok_output}");
 
     timer.track("cat - (stdin)", "ztok read -", &content, &ztok_output);
     Ok(())
 }
 
-fn format_with_line_numbers(content: &str) -> String {
-    let lines: Vec<&str> = content.lines().collect();
-    let width = lines.len().to_string().len();
-    let mut out = String::new();
-    for (i, line) in lines.iter().enumerate() {
-        out.push_str(&format!("{:>width$} │ {}\n", i + 1, line, width = width));
-    }
-    out
-}
-
-fn apply_line_window(
-    content: &str,
-    max_lines: Option<usize>,
-    tail_lines: Option<usize>,
-    lang: Language,
-) -> String {
-    if let Some(tail) = tail_lines {
-        if tail == 0 {
-            return String::new();
-        }
-        let lines: Vec<&str> = content.lines().collect();
-        let start = lines.len().saturating_sub(tail);
-        let mut result = lines[start..].join("\n");
-        if content.ends_with('\n') {
-            result.push('\n');
-        }
-        return result;
-    }
-
-    if let Some(max) = max_lines {
-        return filter::smart_truncate(content, max, lang);
-    }
-
-    content.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::filter::FilterLevel;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -210,23 +202,56 @@ fn main() {{
 
     #[test]
     fn test_apply_line_window_tail_lines() {
-        let input = "a\nb\nc\nd\n";
-        let output = apply_line_window(input, None, Some(2), Language::Unknown);
-        assert_eq!(output, "c\nd\n");
+        let output = compression::compress(CompressionRequest {
+            source_name: "sample.txt",
+            content: "a\nb\nc\nd\n",
+            hint: CompressionHint::CodeOrText(Language::Unknown),
+            intent: CompressionIntent::Read(ReadOptions {
+                level: FilterLevel::None,
+                max_lines: None,
+                tail_lines: Some(2),
+                line_numbers: false,
+                language: Language::Unknown,
+            }),
+        })
+        .expect("tail-lines compression should succeed");
+        assert_eq!(output.output, "c\nd\n");
     }
 
     #[test]
     fn test_apply_line_window_tail_lines_no_trailing_newline() {
-        let input = "a\nb\nc\nd";
-        let output = apply_line_window(input, None, Some(2), Language::Unknown);
-        assert_eq!(output, "c\nd");
+        let output = compression::compress(CompressionRequest {
+            source_name: "sample.txt",
+            content: "a\nb\nc\nd",
+            hint: CompressionHint::CodeOrText(Language::Unknown),
+            intent: CompressionIntent::Read(ReadOptions {
+                level: FilterLevel::None,
+                max_lines: None,
+                tail_lines: Some(2),
+                line_numbers: false,
+                language: Language::Unknown,
+            }),
+        })
+        .expect("tail-lines compression should succeed");
+        assert_eq!(output.output, "c\nd");
     }
 
     #[test]
     fn test_apply_line_window_max_lines_still_works() {
-        let input = "a\nb\nc\nd\n";
-        let output = apply_line_window(input, Some(2), None, Language::Unknown);
-        assert!(output.starts_with("a\n"));
-        assert!(output.contains("省略"));
+        let output = compression::compress(CompressionRequest {
+            source_name: "sample.txt",
+            content: "a\nb\nc\nd\n",
+            hint: CompressionHint::CodeOrText(Language::Unknown),
+            intent: CompressionIntent::Read(ReadOptions {
+                level: FilterLevel::None,
+                max_lines: Some(2),
+                tail_lines: None,
+                line_numbers: false,
+                language: Language::Unknown,
+            }),
+        })
+        .expect("max-lines compression should succeed");
+        assert!(output.output.starts_with("a\n"));
+        assert!(output.output.contains("省略"));
     }
 }
