@@ -1,11 +1,9 @@
 use crate::exec_command::relativize_to_home;
-use crate::legacy_core::AgentsMdManager;
 use crate::legacy_core::config::Config;
 use crate::status::StatusAccountDisplay;
 use crate::text_formatting;
 use chrono::DateTime;
 use chrono::Local;
-use codex_exec_server::LOCAL_FS;
 use codex_protocol::account::PlanType;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::path::Path;
@@ -97,6 +95,7 @@ pub(crate) fn compose_agents_summary(config: &Config, paths: &[AbsolutePathBuf])
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<String> {
     let paths: Vec<AbsolutePathBuf> = AgentsMdManager::new(config)
         .instruction_sources(LOCAL_FS.as_ref())

@@ -45,7 +45,6 @@ use codex_login::AuthConfig;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
 use codex_otel::PostHogClient;
-use codex_otel::posthog_events::get_os_info;
 use codex_otel::posthog_events::{self};
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::AltScreenMode;
@@ -751,7 +750,7 @@ pub async fn run_main(
             v
         }
         #[allow(clippy::print_stderr)]
-        Err(e) => {
+        Err(_) => {
             // eprintln!("Error parsing -c overrides: {e}");
             std::process::exit(1);
         }
@@ -761,7 +760,7 @@ pub async fn run_main(
     #[allow(clippy::print_stderr)]
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
-        Err(err) => {
+        Err(_) => {
             // eprintln!("Error finding codex home: {err}");
             std::process::exit(1);
         }
@@ -983,10 +982,10 @@ pub async fn run_main(
         )
     })) {
         Ok(Ok(otel)) => otel,
-        Ok(Err(e)) => {
+        Ok(Err(err)) => {
             #[allow(clippy::print_stderr)]
             {
-                eprintln!("无法创建 otel exporter：{e}");
+                eprintln!("无法创建 otel exporter：{err}");
             }
             None
         }
@@ -1055,6 +1054,7 @@ async fn run_ratatui_app(
     color_eyre::install()?;
 
     tooltips::announcement::prewarm();
+    session_log::maybe_init(&initial_config);
 
     // Forward panic reports through tracing so they appear in the UI status
     // line, but do not swallow the default/color-eyre panic handler.
@@ -1126,7 +1126,7 @@ async fn run_ratatui_app(
                 Ok(Ok(())) => {
                     // tracing::info!("CLI startup event captured successfully via PostHog");
                 }
-                Ok(Err(e)) => {
+                Ok(Err(_)) => {
                     // tracing::warn!("PostHog task failed: {}", e);
                 }
                 Err(_) => {

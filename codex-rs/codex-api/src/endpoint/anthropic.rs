@@ -12,7 +12,6 @@ use crate::requests::headers::subagent_header;
 use crate::telemetry::SseTelemetry;
 use codex_client::HttpTransport;
 use codex_client::RequestTelemetry;
-use http::HeaderMap;
 use http::HeaderValue;
 use http::Method;
 use std::sync::Arc;

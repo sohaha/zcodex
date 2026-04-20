@@ -313,6 +313,7 @@ async fn sqlite_table_exists(pool: &SqlitePool, table: &str) -> anyhow::Result<b
     Ok(count > 0)
 }
 
+#[cfg(test)]
 async fn sqlite_column_exists(
     pool: &SqlitePool,
     table: &str,

@@ -77,8 +77,6 @@ pub fn format_exec_output_for_model_freeform(
 
     let content = build_content_with_timeout(exec_output);
 
-    let total_lines = content.lines().count();
-
     let formatted_output = truncate_text(&content, truncation_policy);
 
     // 成功时省略 Exit code 和 Wall time 以节省 token

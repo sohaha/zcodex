@@ -507,6 +507,7 @@ pub(crate) enum AppEvent {
     },
 
     /// Clear all persisted local memory artifacts via the app-server.
+    #[cfg_attr(not(test), allow(dead_code))]
     ResetMemories,
 
     UpdateFullAccessWarningAcknowledged(bool),

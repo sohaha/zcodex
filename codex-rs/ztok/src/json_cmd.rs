@@ -111,6 +111,7 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
 }
 
 /// 解析 JSON 字符串并返回保留值的紧凑表示。
+#[cfg(test)]
 pub fn filter_json_compact(json_str: &str, max_depth: usize) -> Result<String> {
     Ok(compression::compress(CompressionRequest {
         source_name: "-",

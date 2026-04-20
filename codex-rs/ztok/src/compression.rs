@@ -19,6 +19,7 @@ pub(crate) enum ContentKind {
 pub(crate) enum CompressionOutputKind {
     Full,
     ShortReference,
+    #[cfg_attr(not(test), allow(dead_code))]
     Diff,
 }
 
@@ -35,6 +36,7 @@ pub(crate) enum ExplicitFallbackReason {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompressionHint {
+    #[cfg_attr(not(test), allow(dead_code))]
     Auto,
     CodeOrText(Language),
     Json,
