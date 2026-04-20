@@ -263,7 +263,7 @@ model_provider = "test-provider"
 
     assert_eq!(config.active_profile.as_deref(), Some("test-profile"));
     assert_eq!(config.model_provider_id, "test-provider");
-    assert_eq!(config.model_provider.name, "Test Provider");
+    assert_eq!(config.model_provider.name.as_deref(), Some("Test Provider"));
 }
 
 #[tokio::test]
@@ -383,7 +383,7 @@ model_provider = "role-provider"
 
     assert_eq!(config.active_profile.as_deref(), Some("role-profile"));
     assert_eq!(config.model_provider_id, "role-provider");
-    assert_eq!(config.model_provider.name, "Role Provider");
+    assert_eq!(config.model_provider.name.as_deref(), Some("Role Provider"));
 }
 
 #[tokio::test]
@@ -441,7 +441,7 @@ model_provider = "base-provider"
 
     assert_eq!(config.active_profile, None);
     assert_eq!(config.model_provider_id, "role-provider");
-    assert_eq!(config.model_provider.name, "Role Provider");
+    assert_eq!(config.model_provider.name.as_deref(), Some("Role Provider"));
 }
 
 #[tokio::test]
@@ -505,7 +505,7 @@ model_reasoning_effort = "high"
 
     assert_eq!(config.active_profile.as_deref(), Some("base-profile"));
     assert_eq!(config.model_provider_id, "role-provider");
-    assert_eq!(config.model_provider.name, "Role Provider");
+    assert_eq!(config.model_provider.name.as_deref(), Some("Role Provider"));
     assert_eq!(config.model_reasoning_effort, Some(ReasoningEffort::High));
 }
 
