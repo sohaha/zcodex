@@ -4822,7 +4822,7 @@ impl CodexMessageProcessor {
             }
         };
 
-        match RolloutRecorder::get_rollout_history(&rollout_path).await {
+        match RolloutRecorder::get_resume_history(&rollout_path).await {
             Ok(initial_history) => Some(initial_history),
             Err(err) => {
                 self.send_invalid_request_error(
@@ -9890,7 +9890,7 @@ pub(crate) async fn read_summary_from_rollout(
 pub(crate) async fn read_rollout_items_from_rollout(
     path: &Path,
 ) -> std::io::Result<Vec<RolloutItem>> {
-    let items = match RolloutRecorder::get_rollout_history(path).await? {
+    let items = match RolloutRecorder::get_resume_history(path).await? {
         InitialHistory::New | InitialHistory::Cleared => Vec::new(),
         InitialHistory::Forked(items) => items,
         InitialHistory::Resumed(resumed) => resumed.history,
