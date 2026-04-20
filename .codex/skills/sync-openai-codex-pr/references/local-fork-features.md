@@ -51,6 +51,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `resume-fork-provider-bridge` | `local_behavior` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `local_surface` | codex-rs/tui + codex-rs/app-server |
 | `chinese-localization-sentinels` | `localized_behavior` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `session-warning-steer-localization-bridge` | `localized_behavior` | codex-rs/core + codex-rs/app-server + codex-rs/tui + tests |
 | `community-branding-and-release-links` | `localized_behavior` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
@@ -184,6 +185,26 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `加载 rollout`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `审查器未输出任何回复`
 
+### `session-warning-steer-localization-bridge`
+- summary: `core/src/session/mod.rs` 与 `core/src/session/turn_context.rs` 的中文 steer 错误和 warning 文案必须在 app-server 映射、tui 解析和回归测试里保持一致，避免同步上游英文实现时只改一层导致桥接回归。
+- better_when: upstream 把这条错误/警告链路统一收敛成不依赖脆弱字符串解析的等效或更强实现，并同步覆盖 warning 前缀、active-turn race、fallback 模型 warning 和 steer 错误映射；迁移前必须先把新的桥接点与回归测试锚点更新到这里。
+- checks:
+  - `regex` `codex-rs/core/src/session/mod.rs`: `当前没有可追加输入的活跃轮次`
+  - `regex` `codex-rs/core/src/session/mod.rs`: `期望的活跃轮次 ID 为`
+  - `regex` `codex-rs/core/src/session/mod.rs`: `已为此会话禁用 `js_repl``
+  - `regex` `codex-rs/core/src/session/mod.rs`: `警告：`
+  - `regex` `codex-rs/core/src/session/turn_context.rs`: `未找到模型 `\{\}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。`
+  - `regex` `codex-rs/app-server/src/codex_message_processor.rs`: `无法向审查轮次追加输入`
+  - `regex` `codex-rs/app-server/src/codex_message_processor.rs`: `输入不能为空`
+  - `regex` `codex-rs/tui/src/app.rs`: `期望的活跃轮次 ID 为 ``
+  - `regex` `codex-rs/tui/src/app.rs`: `当前没有可追加输入的活跃轮次`
+  - `regex` `codex-rs/analytics/src/analytics_client_tests.rs`: `无法向审查轮次追加输入`
+  - `regex` `codex-rs/core/tests/suite/js_repl.rs`: `已为此会话禁用 `js_repl``
+  - `regex` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: `警告：`
+  - `regex` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: `警告：`
+  - `regex` `codex-rs/core/src/session/tests.rs`: `警告：too many unified exec processes`
+  - `regex` `codex-rs/core/src/session/tests.rs`: `未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。`
+
 ### `community-branding-and-release-links`
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
 - better_when: 仓库决定统一回官方 branding，或者 branding 入口迁移到新文件并同步更新这里的检查路径。
@@ -195,7 +216,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 
 ## Latest Audit
 
-- overall: `12/13` passed
+- overall: `13/14` passed
 
 | ID | Status | Area |
 | --- | --- | --- |
@@ -211,6 +232,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `resume-fork-provider-bridge` | `PASS` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `PASS` | codex-rs/tui + codex-rs/app-server |
 | `chinese-localization-sentinels` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `session-warning-steer-localization-bridge` | `PASS` | codex-rs/core + codex-rs/app-server + codex-rs/tui + tests |
 | `community-branding-and-release-links` | `FAIL` | README + install/update surfaces |
 
 ### `wire-api-streaming-chat-anthropic`
@@ -367,6 +389,28 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:869 name: "外部配置迁移",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:1902 "加载 rollout `{}` 失败：{err}",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2671 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
+
+### `session-warning-steer-localization-bridge`
+- status: `PASS`
+- kind: `localized_behavior`
+- summary: `core/src/session/mod.rs` 与 `core/src/session/turn_context.rs` 的中文 steer 错误和 warning 文案必须在 app-server 映射、tui 解析和回归测试里保持一致，避免同步上游英文实现时只改一层导致桥接回归。
+- better_when: upstream 把这条错误/警告链路统一收敛成不依赖脆弱字符串解析的等效或更强实现，并同步覆盖 warning 前缀、active-turn race、fallback 模型 warning 和 steer 错误映射；迁移前必须先把新的桥接点与回归测试锚点更新到这里。
+- evidence:
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:208 message: "当前没有可追加输入的活跃轮次".to_string(),
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:212 message: format!("期望的活跃轮次 ID 为 `{expected}`，但实际是 `{actual}`"),
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:488 format!("已为此会话禁用 `js_repl`，因为配置的 Node 运行时不可用或版本不兼容。{err}")
+  - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2214 text: format!("警告：{}", message.into()),
+  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:728 "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。",
+  - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7382 "无法向审查轮次追加输入".to_string(),
+  - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7416 "输入不能为空".to_string(),
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1110 let mismatch_prefix = "期望的活跃轮次 ID 为 `";
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1104 if source.message == "当前没有可追加输入的活跃轮次" {
+  - `ok` `codex-rs/analytics/src/analytics_client_tests.rs`: codex-rs/analytics/src/analytics_client_tests.rs:364 message: "无法向审查轮次追加输入".to_string(),
+  - `ok` `codex-rs/core/tests/suite/js_repl.rs`: codex-rs/core/tests/suite/js_repl.rs:207 EventMsg::Warning(ev) if ev.message.contains("已为此会话禁用 `js_repl`") => {
+  - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:90 ContentItem::InputText { text } if text.starts_with("警告：")
+  - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:192 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4335 text: "警告：too many unified exec processes".to_string(),
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4363 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
 
 ### `community-branding-and-release-links`
 - status: `FAIL`

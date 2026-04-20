@@ -462,6 +462,90 @@
       ]
     },
     {
+      "id": "session-warning-steer-localization-bridge",
+      "kind": "localized_behavior",
+      "area": "codex-rs/core + codex-rs/app-server + codex-rs/tui + tests",
+      "summary": "`core/src/session/mod.rs` 与 `core/src/session/turn_context.rs` 的中文 steer 错误和 warning 文案必须在 app-server 映射、tui 解析和回归测试里保持一致，避免同步上游英文实现时只改一层导致桥接回归。",
+      "better_when": "upstream 把这条错误/警告链路统一收敛成不依赖脆弱字符串解析的等效或更强实现，并同步覆盖 warning 前缀、active-turn race、fallback 模型 warning 和 steer 错误映射；迁移前必须先把新的桥接点与回归测试锚点更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "当前没有可追加输入的活跃轮次"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "期望的活跃轮次 ID 为"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "已为此会话禁用 `js_repl`"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "警告："
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn_context.rs",
+          "pattern": "未找到模型 `\\{\\}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/codex_message_processor.rs",
+          "pattern": "无法向审查轮次追加输入"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/codex_message_processor.rs",
+          "pattern": "输入不能为空"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "期望的活跃轮次 ID 为 `"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "当前没有可追加输入的活跃轮次"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/analytics/src/analytics_client_tests.rs",
+          "pattern": "无法向审查轮次追加输入"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/js_repl.rs",
+          "pattern": "已为此会话禁用 `js_repl`"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/safety_check_downgrade.rs",
+          "pattern": "警告："
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs",
+          "pattern": "警告："
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/tests.rs",
+          "pattern": "警告：too many unified exec processes"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/tests.rs",
+          "pattern": "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
+        }
+      ]
+    },
+    {
       "id": "community-branding-and-release-links",
       "kind": "localized_behavior",
       "area": "README + install/update surfaces",

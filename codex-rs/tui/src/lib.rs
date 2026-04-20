@@ -75,6 +75,7 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use std::fs::OpenOptions;
 use std::future::Future;
+use std::io::Write as _;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1649,9 +1650,16 @@ pub(crate) async fn resolve_cwd_for_resume_or_fork(
     reason = "TUI should no longer be displayed, so we can write to stderr."
 )]
 fn restore() {
-    if let Err(err) = tui::restore() {
+    if let Err(err) = restore_for_exit() {
         eprintln!("恢复终端失败。请运行 `reset` 或重启终端以恢复：{err}");
     }
+}
+
+fn restore_for_exit() -> color_eyre::Result<()> {
+    crate::tui::restore()?;
+    std::io::stdout().write_all(b"\r\n")?;
+    std::io::stdout().flush()?;
+    Ok(())
 }
 
 struct TerminalRestoreGuard {
@@ -1666,7 +1674,7 @@ impl TerminalRestoreGuard {
     #[cfg_attr(debug_assertions, allow(dead_code))]
     fn restore(&mut self) -> color_eyre::Result<()> {
         if self.active {
-            crate::tui::restore()?;
+            restore_for_exit()?;
             self.active = false;
         }
         Ok(())

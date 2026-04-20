@@ -199,6 +199,14 @@ just bazel-lock-check
 - 至少保留一条覆盖 bridge 行为的回归测试；不能只靠 help 文案或解析测试宣称功能仍在
 - 特别是 provider / local-provider、sandbox、approval、cwd、search 这类“能解析但可能在 merge 时被静默丢掉”的参数，要把 merge 赋值和回归测试一起纳入审查
 
+如果本次同步触及 `codex-rs/core/src/session/mod.rs`、`codex-rs/core/src/session/turn_context.rs`、`codex-rs/app-server/src/codex_message_processor.rs`、`codex-rs/tui/src/app.rs`，或任何 `turn/steer` / warning 文案映射：
+
+- 不要只检查某一层源码里的中文字符串还在
+- 额外审查 `core -> app-server -> tui` 的错误/警告桥接是否仍然一致
+- 对依赖字符串解析的路径，确认 `tui` 的 mismatch prefix / missing-active-turn 检测仍能命中
+- 对 `turn_context.rs` 这类直接发出 warning 文案的源头，至少保留一条覆盖具体中文 warning 文案的回归测试；不能只靠静态 grep 判定“没有回归”
+- 至少保留一条覆盖中文 warning 前缀和一条覆盖 steer 错误文案的回归测试；不能只靠静态 grep 判定“没有回归”
+
 ## Responses / reasoning 相关专项检查
 
 如果本次同步触及 Responses 输入序列化、Prompt 格式化、历史 replay 或 reasoning item 相关链路，例如：
@@ -224,6 +232,7 @@ just bazel-lock-check
 - worktree 审查时必须使用 worktree 自己的脚本与 `json` 基线副本
 - 对 `local_surface` / `localized_behavior` 特性，检查点不能只停留在文案或模块存在性；要覆盖运行时桥接、事件 wiring、配置落盘等真实链路
 - 对 `localized_behavior` 特性，如果用户可见文案实际来自 `FeatureSpec` 元数据、共享 helper、onboarding/history 组件、直接字符串断言或 snapshot，不要只检查视图入口；要把真正的文案源头和锁定这些文案的测试/快照一起纳入审查
+- 对 `localized_behavior` 特性，如果文案跨 `core -> app-server -> tui` 传递，检查点还必须覆盖桥接和字符串解析路径；不能只看源头文案还在
 - 对 `codex-rs/cli` 这类本地 CLI 面，检查点必须覆盖顶层 `Subcommand` 注册、dispatch 接线，以及 help/localization 哨兵；不能只看底层 crate 或模块目录还在
 - 对 `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，检查点还必须覆盖参数 bridge：不能只看到字段和 help 仍存在；要确认子命令 merge 后真的写入最终 interactive 配置，并有回归测试锁定
 - 对 `workspace/local-crates` 这类本地 crate 面，检查点不能只保目录；还要覆盖 `codex-rs/Cargo.toml` 的 workspace members 和 workspace dependency 接线

@@ -237,6 +237,11 @@ provider) and optionally set `fallback_model` to the model slug that fallback
 request should use. Codex retries the fallback only for the current request;
 new requests still start with the primary `model_provider`.
 
+**Note**: `fallback_model` is optional. If not specified, Codex will use the
+fallback provider's default model (if configured) or fall back to the primary
+requested model. This allows you to switch providers without changing models,
+or explicitly downgrade models when needed.
+
 For multi-step fallback, use `fallback_providers` in priority order:
 
 ```toml

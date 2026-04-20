@@ -4341,6 +4341,34 @@ async fn record_model_warning_appends_user_message() {
 }
 
 #[tokio::test]
+async fn unknown_model_warning_is_localized_for_fallback_metadata() {
+    let (session, turn_context, rx_event) = make_session_and_context_with_rx().await;
+    let mut turn_context =
+        Arc::try_unwrap(turn_context).expect("test turn context should not be shared");
+    turn_context.model_info.slug = "mystery-model".to_string();
+    turn_context.model_info.used_fallback_model_metadata = true;
+
+    session
+        .maybe_emit_unknown_model_warning_for_turn(&turn_context)
+        .await;
+
+    let warning_event = timeout(Duration::from_secs(1), rx_event.recv())
+        .await
+        .expect("warning event should arrive")
+        .expect("warning event should be readable");
+    match warning_event.msg {
+        EventMsg::Warning(WarningEvent { message }) => {
+            assert_eq!(
+                message,
+                "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
+                    .to_string()
+            );
+        }
+        other => panic!("expected warning event, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn spawn_task_does_not_update_previous_turn_settings_for_non_run_turn_tasks() {
     let (sess, tc, _rx) = make_session_and_context_with_rx().await;
     sess.set_previous_turn_settings(/*previous_turn_settings*/ None)

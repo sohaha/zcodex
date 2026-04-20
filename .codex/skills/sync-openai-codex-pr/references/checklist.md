@@ -180,6 +180,7 @@ just fmt
 
 - 不要只看视图入口文件；先追到真正的文案源头，例如 `FeatureSpec` 元数据、共享 helper、onboarding/history 组件
 - 同时检查直接字符串断言和相关 snapshot，避免“源码已改回英文但测试/快照仍没覆盖”或“只改了视图层，元数据源头仍是英文”
+- 如果文案会跨 `core -> app-server -> tui` 透传或被字符串解析，必须把桥接层和解析层一起纳入检查
 
 如果本次同步碰到本地 workspace crate 面：
 
@@ -195,6 +196,15 @@ just fmt
   - merge 后真正写入最终 `TuiCli`
 - 对 provider / local-provider、sandbox、approval、cwd、search 这类容易在 merge 时静默丢失的参数，必须同时看赋值语句和回归测试
 - 若只找到 help/localization 哨兵，没有找到 bridge 赋值或 round-trip 测试，不得把这类 CLI 能力判为已保留
+
+如果本次同步碰到 `codex-rs/core/src/session/mod.rs`、`codex-rs/core/src/session/turn_context.rs`、`codex-rs/app-server/src/codex_message_processor.rs`、`codex-rs/tui/src/app.rs`，或任何 `turn/steer` / warning 文案映射：
+
+- 不要只检查某一个文件里的中文文案还在
+- 必查 `core -> app-server -> tui` 的错误/警告桥接是否同步更新
+- 对依赖字符串解析的路径，确认 `tui` 的 active-turn race / mismatch prefix 仍能命中当前文案
+- 对 `turn_context.rs` 这类直接发出 warning 文案的源头，至少保留一条覆盖具体中文 warning 文案的回归测试
+- 至少保留一条覆盖中文 warning 前缀和一条覆盖 steer 错误文案的回归测试
+- 若只看到源头文案存在，但下游映射、解析或测试未更新，不得把这类本地中文化行为判为已保留
 
 如果改了依赖：
 

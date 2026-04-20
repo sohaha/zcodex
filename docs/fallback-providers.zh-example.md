@@ -11,6 +11,7 @@
 ## 通用说明
 
 - 回退只作用于“当前请求”，下一次新请求仍优先从主渠道开始。
+- `fallback_model` 是可选的：不指定时会自动选择备用渠道的默认模型或主模型
 - `request_max_retries = 0` / `stream_max_retries = 0` 更适合“尽快切线路”的场景。
 - 如果备用渠道不支持主模型，请在 `fallback_providers` 里单独指定它自己的模型。
 - 多级回退使用 `fallback_providers`；如果你只需要一级回退，也可以继续使用 `fallback_provider` + `fallback_model`。
@@ -222,3 +223,8 @@ model_provider = "cn-relay"
 fallback_provider = "openrouter"
 fallback_model = "openai/gpt-4.1"
 ```
+
+**模型选择优先级**：
+1. 如果配置了 `fallback_model`，使用指定的模型
+2. 否则使用备用渠道的默认模型（如果配置了）
+3. 最后才使用主请求的模型

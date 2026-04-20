@@ -26,7 +26,7 @@ impl TurnSkillsContext {
     }
 }
 
-/// The context needed for a single turn of the thread.
+/// 单次线程轮次所需的上下文。
 #[derive(Debug)]
 pub(crate) struct TurnContext {
     pub(crate) sub_id: String,
@@ -41,9 +41,8 @@ pub(crate) struct TurnContext {
     pub(crate) reasoning_summary: ReasoningSummaryConfig,
     pub(crate) session_source: SessionSource,
     pub(crate) environment: Option<Arc<Environment>>,
-    /// The session's absolute working directory. All relative paths provided
-    /// by the model as well as sandbox policies are resolved against this path
-    /// instead of `std::env::current_dir()`.
+    /// 当前会话的绝对工作目录。模型提供的所有相对路径，以及沙箱策略中
+    /// 的相对路径，都会基于这个路径解析，而不是 `std::env::current_dir()`。
     pub(crate) cwd: AbsolutePathBuf,
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
@@ -350,10 +349,9 @@ impl TurnContext {
     }
 
     fn non_legacy_file_system_sandbox_policy(&self) -> Option<FileSystemSandboxPolicy> {
-        // Omit the derived split filesystem policy when it is equivalent to
-        // the legacy sandbox policy. This keeps turn-context payloads stable
-        // while both fields exist; once callers consume only the split policy,
-        // this comparison and the legacy projection should go away.
+        // 当派生出的拆分文件系统策略与旧版沙箱策略等价时，省略它。
+        // 这样在两个字段并存期间可以保持 turn-context 载荷稳定；
+        // 等调用方只消费拆分策略后，就该删掉这段比较和旧版投影逻辑。
         let legacy_file_system_sandbox_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
             self.sandbox_policy.get(),
             &self.cwd,
@@ -425,9 +423,10 @@ fn local_time_context() -> (String, String) {
 }
 
 impl Session {
-    /// Don't expand the number of mutated arguments on config. We are in the process of getting rid of it.
+    /// 不要继续增加按轮次直接修改 config 的参数数量。这里正处于移除这类
+    /// 写法的过渡期。
     pub(crate) fn build_per_turn_config(session_configuration: &SessionConfiguration) -> Config {
-        // todo(aibrahim): store this state somewhere else so we don't need to mut config
+        // todo(aibrahim): 把这部分状态移到别处，这样就不用再直接修改 config 了。
         let config = session_configuration.original_config_do_not_use.clone();
         let mut per_turn_config = (*config).clone();
         per_turn_config.cwd = session_configuration.cwd.clone();
@@ -450,7 +449,7 @@ impl Session {
                 error = %err,
                 ?resolved_web_search_mode,
                 ?fallback_value,
-                "resolved web_search_mode is disallowed by requirements; keeping constrained value"
+                "requirements 不允许当前解析出的 web_search_mode；保留受约束值"
             );
         }
         per_turn_config.features = config.features.clone();
@@ -726,7 +725,7 @@ impl Session {
                 tc,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                        "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。",
                         tc.model_info.slug
                     ),
                 }),

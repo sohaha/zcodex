@@ -1,0 +1,38 @@
+plan = ".agents/plan/2026-04-20-model-fallback-config-analysis.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "让配置化 provider/model 回退链路与实际运行行为重新一致"
+scope = """
+收敛并修复 `fallback_provider`、`fallback_model`、`fallback_providers` 对应的请求级 provider/model 回退行为，使配置语义、运行时执行链路、测试断言和用户可见说明重新一致。
+
+该 issue 负责：
+1. 确认 `core/src/session/turn.rs` 中现有 provider/model fallback helper 的真实接线状态，并以仓库现有配置入口与测试意图为基准完成收敛
+2. 若当前行为确实缺少接线，则把请求失败后的 provider/model fallback 链路接入主采样请求路径，保留现有候选优先级与“跳过与当前 provider+model 完全相同候选”的规则
+3. 保持“未知模型元数据回退”与“provider/model 请求回退”语义分离，不把 `used_fallback_model_metadata`、`ModelReroute` 告警或 WebSocket->HTTPS 传输回退误实现为同一层逻辑
+4. 更新与该行为直接相关的 targeted 测试，使 `request_fallback_*` 用例能真实验证配置回退链路；如存在失效测试假设，则同步修正
+5. 补充或更新与该配置直接相关的用户可见说明，明确三类概念边界：配置化 provider/model 回退、未知模型元数据回退、服务端模型改路由告警
+
+该 issue 不负责：
+- 处理与模型回退无关的普通 fallback 逻辑
+- 大范围修复当前分支上与本任务无关的编译错误
+- 重构 app-server 线程恢复 fallback、文件系统 fallback 或网络 fallback
+- 引入新的配置字段或扩展新的 fallback 产品能力
+"""
+touch_points = ["module:codex-core", "module:codex-config", "module:codex-models-manager", "codex-rs/core/src/session/turn.rs", "codex-rs/core/src/session/turn_context.rs", "codex-rs/core/src/config/mod.rs", "codex-rs/core/tests/suite/websocket_fallback.rs", "codex-rs/docs"]
+depends_on = []
+done_when = "配置中的 provider/model fallback 链路已接入运行时主请求路径；请求失败时会按既有候选优先级触发正确的 provider/model fallback；`used_fallback_model_metadata` 与 `ModelReroute` 语义保持独立；相关 targeted 测试与用户可见说明完成对齐"
+validate_by = "cd /workspace/codex-rs && env RUSTC_WRAPPER= cargo test -p codex-core request_fallback -- --nocapture"
+regress_by = "cd /workspace/codex-rs && env RUSTC_WRAPPER= cargo test -p codex-core websocket_fallback -- --nocapture"
+regress_timing = "after_done"
+status = "in_progress"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = """
+已确认当前仓库同时存在以下事实：
+1. 配置层已声明并归一化 `fallback_provider` / `fallback_model` / `fallback_providers`
+2. `core/src/session/turn.rs` 中存在 provider/model fallback helper，但静态检索未发现其进入主执行路径的调用点
+3. `core/tests/suite/websocket_fallback.rs` 已存在 4 个 `request_fallback_*` 用例，表明仓库意图是支持该行为
+4. 当前分支运行 `env RUSTC_WRAPPER= cargo test -p codex-core request_fallback -- --nocapture` 会先被大量与本任务无关的既有编译错误阻塞；执行阶段需优先判断这些阻塞是否影响本 issue 的最小验证闭环，并把处理边界收紧到本任务直接相关范围
+"""

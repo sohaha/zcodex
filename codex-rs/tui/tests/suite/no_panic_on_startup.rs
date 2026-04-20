@@ -4,6 +4,46 @@ use std::time::Duration;
 use tokio::select;
 use tokio::time::timeout;
 
+fn normalize_terminal_output(output: &str) -> String {
+    let mut normalized = String::with_capacity(output.len());
+    let mut chars = output.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            match chars.peek().copied() {
+                Some('[') => {
+                    chars.next();
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    chars.next();
+                    let mut prev = None;
+                    for next in chars.by_ref() {
+                        if next == '\u{7}' || (prev == Some('\u{1b}') && next == '\\') {
+                            break;
+                        }
+                        prev = Some(next);
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        normalized.push(ch);
+    }
+
+    normalized
+        .replace("\r\n", "\n")
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Regression test for https://github.com/openai/codex/issues/8803.
 #[tokio::test]
 #[ignore = "TODO(mbolin): flaky"]
@@ -36,6 +76,7 @@ model_provider = "ollama"
     std::fs::write(codex_home.join("config.toml"), config_contents)?;
 
     let CodexCliOutput { exit_code, output } = run_codex_cli(codex_home, cwd).await?;
+    let normalized_output = normalize_terminal_output(&output);
     assert_ne!(0, exit_code, "Codex CLI should exit nonzero.");
     assert!(
         output.contains("ERROR: Failed to initialize codex:"),
@@ -44,6 +85,11 @@ model_provider = "ollama"
     assert!(
         output.contains("failed to read rules files"),
         "expected rules read error in output, got: {output}"
+    );
+    assert!(
+        normalized_output
+            .contains("正在初始化会话与界面，请稍候。\nERROR: Failed to initialize codex:"),
+        "expected terminal restore to advance to a new line before the error, got: {normalized_output}"
     );
     Ok(())
 }
