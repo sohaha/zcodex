@@ -670,20 +670,19 @@ impl RolloutRecorder {
         path: &Path,
     ) -> std::io::Result<(Vec<RolloutItem>, Option<ThreadId>, usize)> {
         trace!("Resuming rollout from {path:?}");
-        let file = tokio::fs::File::open(path).await?;
-        let reader = tokio::io::BufReader::new(file);
-        let mut lines = reader.lines();
+        let bytes = tokio::fs::read(path).await?;
 
         let mut items: Vec<RolloutItem> = Vec::new();
         let mut thread_id: Option<ThreadId> = None;
         let mut parse_errors = 0usize;
         let mut saw_non_empty_line = false;
-        while let Some(line) = lines.next_line().await? {
-            if line.trim().is_empty() {
+        for raw_line in bytes.split(|byte| *byte == b'\n') {
+            let line = raw_line.strip_suffix(b"\r").unwrap_or(raw_line);
+            if line.iter().all(u8::is_ascii_whitespace) {
                 continue;
             }
             saw_non_empty_line = true;
-            match serde_json::from_str::<RolloutLine>(&line) {
+            match serde_json::from_slice::<RolloutLine>(line) {
                 Ok(rollout_line) => match rollout_line.item {
                     RolloutItem::SessionMeta(session_meta_line) => {
                         // Use the FIRST SessionMeta encountered in the file as the canonical
@@ -707,7 +706,8 @@ impl RolloutRecorder {
                     }
                 },
                 Err(rollout_err) => {
-                    if let Err(json_err) = serde_json::from_str::<Value>(&line) {
+                    if let Err(json_err) = serde_json::from_slice::<Value>(line) {
+                        let line = String::from_utf8_lossy(line);
                         warn!("failed to parse line as JSON: {line:?}, error: {json_err}");
                     } else {
                         trace!("failed to parse rollout line: {rollout_err}");
