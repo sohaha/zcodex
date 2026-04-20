@@ -63,6 +63,64 @@ fn write_session_file(root: &Path, ts: &str, uuid: Uuid) -> std::io::Result<Path
 }
 
 #[tokio::test]
+async fn load_rollout_items_rejects_whitespace_only_file() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let path = home.path().join("whitespace-only.jsonl");
+    fs::write(&path, " \n\t\n")?;
+
+    let err = RolloutRecorder::load_rollout_items(path.as_path())
+        .await
+        .expect_err("whitespace-only rollout should be rejected");
+    assert_eq!(err.kind(), std::io::ErrorKind::Other);
+    assert_eq!(err.to_string(), "empty session file");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn load_rollout_items_keeps_first_thread_id_and_counts_parse_errors() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let first_uuid = Uuid::from_u128(9101);
+    let second_uuid = Uuid::from_u128(9102);
+    let path = write_session_file(home.path(), "2025-01-03T12-00-00", first_uuid)?;
+    let mut file = std::fs::OpenOptions::new().append(true).open(&path)?;
+
+    writeln!(file, "not-json")?;
+    writeln!(
+        file,
+        r#"{{"timestamp":"2025-01-03T12:00:01Z","type":"unknown","payload":{{}}}}"#
+    )?;
+    writeln!(
+        file,
+        "{}",
+        serde_json::json!({
+            "timestamp": "2025-01-03T12-00-02",
+            "type": "session_meta",
+            "payload": {
+                "id": second_uuid,
+                "timestamp": "2025-01-03T12-00-02",
+                "cwd": ".",
+                "originator": "test_originator",
+                "cli_version": "test_version",
+                "source": "cli",
+                "model_provider": "test-provider",
+            },
+        })
+    )?;
+
+    let (items, thread_id, parse_errors) =
+        RolloutRecorder::load_rollout_items(path.as_path()).await?;
+    let expected_thread_id =
+        ThreadId::from_string(&first_uuid.to_string()).expect("valid thread id");
+
+    assert_eq!(items.len(), 3);
+    assert_eq!(thread_id, Some(expected_thread_id));
+    assert_eq!(parse_errors, 2);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
