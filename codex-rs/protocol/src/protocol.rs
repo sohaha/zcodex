@@ -2506,6 +2506,16 @@ pub struct ResumedHistory {
     pub conversation_id: ThreadId,
     pub history: Vec<RolloutItem>,
     pub rollout_path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_meta: Option<SessionMetaLine>,
+    #[serde(default = "resumed_history_complete_default")]
+    pub history_complete: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_window_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_has_prior_user_turns: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_latest_token_usage: Option<TokenUsageInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
@@ -2537,6 +2547,9 @@ impl InitialHistory {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
             InitialHistory::Resumed(resumed) => {
+                if let Some(session_meta) = resumed.session_meta.as_ref() {
+                    return session_meta.meta.forked_from_id;
+                }
                 resumed.history.iter().find_map(|item| match item {
                     RolloutItem::SessionMeta(meta_line) => meta_line.meta.forked_from_id,
                     _ => None,
@@ -2552,7 +2565,11 @@ impl InitialHistory {
     pub fn session_cwd(&self) -> Option<PathBuf> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => session_cwd_from_items(&resumed.history),
+            InitialHistory::Resumed(resumed) => resumed
+                .session_meta
+                .as_ref()
+                .map(|meta_line| meta_line.meta.cwd.clone())
+                .or_else(|| session_cwd_from_items(&resumed.history)),
             InitialHistory::Forked(items) => session_cwd_from_items(items),
         }
     }
@@ -2568,7 +2585,7 @@ impl InitialHistory {
     pub fn get_event_msgs(&self) -> Option<Vec<EventMsg>> {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => Some(
+            InitialHistory::Resumed(resumed) => resumed.history_complete.then(|| {
                 resumed
                     .history
                     .iter()
@@ -2576,8 +2593,8 @@ impl InitialHistory {
                         RolloutItem::EventMsg(ev) => Some(ev.clone()),
                         _ => None,
                     })
-                    .collect(),
-            ),
+                    .collect()
+            }),
             InitialHistory::Forked(items) => Some(
                 items
                     .iter()
@@ -2595,6 +2612,9 @@ impl InitialHistory {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
             InitialHistory::Resumed(resumed) => {
+                if let Some(session_meta) = resumed.session_meta.as_ref() {
+                    return session_meta.meta.base_instructions.clone();
+                }
                 resumed.history.iter().find_map(|item| match item {
                     RolloutItem::SessionMeta(meta_line) => meta_line.meta.base_instructions.clone(),
                     _ => None,
@@ -2611,6 +2631,9 @@ impl InitialHistory {
         match self {
             InitialHistory::New | InitialHistory::Cleared => None,
             InitialHistory::Resumed(resumed) => {
+                if let Some(session_meta) = resumed.session_meta.as_ref() {
+                    return session_meta.meta.dynamic_tools.clone();
+                }
                 resumed.history.iter().find_map(|item| match item {
                     RolloutItem::SessionMeta(meta_line) => meta_line.meta.dynamic_tools.clone(),
                     _ => None,
@@ -2622,6 +2645,10 @@ impl InitialHistory {
             }),
         }
     }
+}
+
+fn resumed_history_complete_default() -> bool {
+    true
 }
 
 fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {

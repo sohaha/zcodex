@@ -142,6 +142,7 @@ use codex_app_server_protocol::ThreadDecrementElicitationParams;
 use codex_app_server_protocol::ThreadDecrementElicitationResponse;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadHistoryBuilder;
 use codex_app_server_protocol::ThreadIncrementElicitationParams;
 use codex_app_server_protocol::ThreadIncrementElicitationResponse;
 use codex_app_server_protocol::ThreadInjectItemsParams;
@@ -4329,7 +4330,16 @@ impl CodexMessageProcessor {
             thread_history
         };
 
-        let history_cwd = thread_history.session_cwd();
+        let history_cwd = match &thread_history {
+            InitialHistory::Resumed(resumed_history) => read_history_cwd_from_state_db(
+                &self.config,
+                Some(resumed_history.conversation_id),
+                resumed_history.rollout_path.as_path(),
+            )
+            .await
+            .or_else(|| thread_history.session_cwd()),
+            _ => thread_history.session_cwd(),
+        };
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
             model_provider,
@@ -4375,7 +4385,28 @@ impl CodexMessageProcessor {
 
         let fallback_model_provider = config.model_provider_id.clone();
         let instruction_sources = Self::instruction_sources_from_config(&config).await;
-        let response_history = thread_history.clone();
+        let prepared_resume_response = match &thread_history {
+            InitialHistory::Resumed(resumed_history) => {
+                match self
+                    .prepare_thread_resume_response_from_resumed_history(
+                        resumed_history,
+                        fallback_model_provider.as_str(),
+                        persisted_resume_metadata.as_ref(),
+                    )
+                    .await
+                {
+                    Ok(prepared_response) => Some(prepared_response),
+                    Err(message) => {
+                        self.send_internal_error(request_id, message).await;
+                        return;
+                    }
+                }
+            }
+            _ => None,
+        };
+        let response_history = prepared_resume_response
+            .is_none()
+            .then(|| thread_history.clone());
 
         match self
             .thread_manager
@@ -4417,23 +4448,41 @@ impl CodexMessageProcessor {
                     "thread",
                 );
 
-                let mut thread = match self
-                    .load_thread_from_resume_source_or_send_internal(
-                        thread_id,
-                        codex_thread.as_ref(),
-                        &response_history,
-                        rollout_path.as_path(),
-                        fallback_model_provider.as_str(),
-                        persisted_resume_metadata.as_ref(),
-                    )
-                    .await
-                {
-                    Ok(thread) => thread,
-                    Err(message) => {
-                        self.send_internal_error(request_id, message).await;
-                        return;
-                    }
-                };
+                let (mut thread, prepared_token_usage_turn_id) =
+                    if let Some(prepared_response) = prepared_resume_response {
+                        (
+                            prepared_response.thread,
+                            prepared_response.token_usage_turn_id,
+                        )
+                    } else {
+                        let Some(response_history) = response_history.as_ref() else {
+                            self.send_internal_error(
+                                request_id,
+                                format!("resume history missing for thread {thread_id}"),
+                            )
+                            .await;
+                            return;
+                        };
+                        match self
+                            .load_thread_from_resume_source_or_send_internal(
+                                thread_id,
+                                codex_thread.as_ref(),
+                                response_history,
+                                rollout_path.as_path(),
+                                fallback_model_provider.as_str(),
+                                persisted_resume_metadata.as_ref(),
+                            )
+                            .await
+                        {
+                            Ok(thread) => (thread, None),
+                            Err(message) => {
+                                self.send_internal_error(request_id, message).await;
+                                return;
+                            }
+                        }
+                    };
+                thread.id = thread_id.to_string();
+                thread.path = Some(rollout_path.clone());
 
                 self.thread_watch_manager
                     .upsert_thread(thread.clone())
@@ -4474,10 +4523,14 @@ impl CodexMessageProcessor {
 
                 let connection_id = request_id.connection_id;
                 let token_usage_thread = response.thread.clone();
-                let token_usage_turn_id = latest_token_usage_turn_id_from_rollout_items(
-                    response_history.rollout_items(),
-                    &token_usage_thread,
-                );
+                let token_usage_turn_id = prepared_token_usage_turn_id.or_else(|| {
+                    response_history.as_ref().and_then(|response_history| {
+                        latest_token_usage_turn_id_from_rollout_items(
+                            response_history.rollout_items(),
+                            &token_usage_thread,
+                        )
+                    })
+                });
                 self.outgoing.send_response(request_id, response).await;
                 // The client needs restored usage before it starts another turn.
                 // Sending after the response preserves JSON-RPC request ordering while
@@ -4810,6 +4863,7 @@ impl CodexMessageProcessor {
                     Some(rollout_path.into()),
                 );
                 thread.preview = preview_from_rollout_items(items);
+                self.attach_thread_name(thread_id, &mut thread).await;
                 Ok(thread)
             }
             InitialHistory::New | InitialHistory::Cleared => Err(format!(
@@ -4825,8 +4879,30 @@ impl CodexMessageProcessor {
             /*active_turn*/ None,
         )
         .await?;
-        self.attach_thread_name(thread_id, &mut thread).await;
         Ok(thread)
+    }
+
+    async fn prepare_thread_resume_response_from_resumed_history(
+        &self,
+        resumed_history: &codex_protocol::protocol::ResumedHistory,
+        fallback_provider: &str,
+        persisted_resume_metadata: Option<&ThreadMetadata>,
+    ) -> std::result::Result<PreparedThreadResumeResponse, String> {
+        let mut thread = load_thread_summary_for_rollout(
+            &self.config,
+            resumed_history.conversation_id,
+            resumed_history.rollout_path.as_path(),
+            fallback_provider,
+            persisted_resume_metadata,
+        )
+        .await?;
+        let reconstructed_history =
+            reconstruct_thread_history_with_latest_token_usage(resumed_history.history.as_slice());
+        thread.turns = reconstructed_history.turns;
+        Ok(PreparedThreadResumeResponse {
+            thread,
+            token_usage_turn_id: reconstructed_history.latest_token_usage_turn_id,
+        })
     }
 
     async fn attach_thread_name(&self, thread_id: ThreadId, thread: &mut Thread) {
@@ -10110,6 +10186,21 @@ struct ThreadTurnsPage {
     backwards_cursor: Option<String>,
 }
 
+struct PreparedThreadResumeResponse {
+    thread: Thread,
+    token_usage_turn_id: Option<String>,
+}
+
+struct ReconstructedThreadHistory {
+    turns: Vec<Turn>,
+    latest_token_usage_turn_id: Option<String>,
+}
+
+struct TokenUsageTurnOwner {
+    id: String,
+    position: Option<usize>,
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadTurnsCursor {
@@ -10226,9 +10317,51 @@ fn reconstruct_thread_turns_from_rollout_items(
     loaded_status: ThreadStatus,
     has_live_in_progress_turn: bool,
 ) -> Vec<Turn> {
-    let mut turns = build_turns_from_rollout_items(items);
+    let mut turns = reconstruct_thread_history_with_latest_token_usage(items).turns;
     normalize_thread_turns_status(&mut turns, loaded_status, has_live_in_progress_turn);
     turns
+}
+
+fn reconstruct_thread_history_with_latest_token_usage(
+    items: &[RolloutItem],
+) -> ReconstructedThreadHistory {
+    let mut builder = ThreadHistoryBuilder::new();
+    let mut token_usage_turn_owner = None;
+
+    for item in items {
+        if matches!(item, RolloutItem::EventMsg(EventMsg::TokenCount(_))) {
+            token_usage_turn_owner =
+                builder
+                    .active_turn_snapshot()
+                    .map(|turn| TokenUsageTurnOwner {
+                        id: turn.id,
+                        position: builder.active_turn_position(),
+                    });
+        }
+        builder.handle_rollout_item(item);
+    }
+
+    let turns = builder.finish();
+    let latest_token_usage_turn_id = token_usage_turn_owner
+        .and_then(|owner| latest_token_usage_turn_id_from_owner(&turns, owner));
+
+    ReconstructedThreadHistory {
+        turns,
+        latest_token_usage_turn_id,
+    }
+}
+
+fn latest_token_usage_turn_id_from_owner(
+    turns: &[Turn],
+    owner: TokenUsageTurnOwner,
+) -> Option<String> {
+    if turns.iter().any(|turn| turn.id == owner.id) {
+        return Some(owner.id);
+    }
+    owner
+        .position
+        .and_then(|position| turns.get(position))
+        .map(|turn| turn.id.clone())
 }
 
 fn normalize_thread_turns_status(

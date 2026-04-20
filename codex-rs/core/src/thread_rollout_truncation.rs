@@ -13,7 +13,15 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::RolloutItem;
 
 pub(crate) fn initial_history_has_prior_user_turns(conversation_history: &InitialHistory) -> bool {
-    conversation_history.scan_rollout_items(rollout_item_is_user_turn_boundary)
+    // 优先使用缓存，避免全量扫描 rollout items
+    match conversation_history {
+        InitialHistory::Resumed(resumed) => {
+            resumed.cached_has_prior_user_turns.unwrap_or_else(|| {
+                conversation_history.scan_rollout_items(rollout_item_is_user_turn_boundary)
+            })
+        }
+        _ => conversation_history.scan_rollout_items(rollout_item_is_user_turn_boundary),
+    }
 }
 
 fn rollout_item_is_user_turn_boundary(item: &RolloutItem) -> bool {
