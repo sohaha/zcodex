@@ -4330,16 +4330,7 @@ impl CodexMessageProcessor {
             thread_history
         };
 
-        let history_cwd = match &thread_history {
-            InitialHistory::Resumed(resumed_history) => read_history_cwd_from_state_db(
-                &self.config,
-                Some(resumed_history.conversation_id),
-                resumed_history.rollout_path.as_path(),
-            )
-            .await
-            .or_else(|| thread_history.session_cwd()),
-            _ => thread_history.session_cwd(),
-        };
+        let state_db_ctx = open_state_db_for_direct_thread_lookup(&self.config).await;
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
             model_provider,
@@ -4355,10 +4346,15 @@ impl CodexMessageProcessor {
         let persisted_resume_metadata = self
             .load_and_apply_persisted_resume_metadata(
                 &thread_history,
+                state_db_ctx.as_ref(),
                 &mut request_overrides,
                 &mut typesafe_overrides,
             )
             .await;
+        let history_cwd = persisted_resume_metadata
+            .as_ref()
+            .map(|metadata| metadata.cwd.clone())
+            .or_else(|| thread_history.session_cwd());
 
         // Derive a Config using the same logic as new conversation, honoring overrides if provided.
         let cloud_requirements = self.current_cloud_requirements();
@@ -4391,6 +4387,7 @@ impl CodexMessageProcessor {
                     .prepare_thread_resume_response_from_resumed_history(
                         resumed_history,
                         fallback_model_provider.as_str(),
+                        state_db_ctx.as_ref(),
                         persisted_resume_metadata.as_ref(),
                     )
                     .await
@@ -4559,14 +4556,14 @@ impl CodexMessageProcessor {
     async fn load_and_apply_persisted_resume_metadata(
         &self,
         thread_history: &InitialHistory,
+        state_db_ctx: Option<&StateDbHandle>,
         request_overrides: &mut Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: &mut ConfigOverrides,
     ) -> Option<ThreadMetadata> {
         let InitialHistory::Resumed(resumed_history) = thread_history else {
             return None;
         };
-        let state_db_ctx = get_state_db(&self.config).await?;
-        let persisted_metadata = state_db_ctx
+        let persisted_metadata = state_db_ctx?
             .get_thread(resumed_history.conversation_id)
             .await
             .ok()
@@ -4699,11 +4696,13 @@ impl CodexMessageProcessor {
             config_for_instruction_sources.cwd = config_snapshot.cwd.clone();
             let instruction_sources =
                 Self::instruction_sources_from_config(&config_for_instruction_sources).await;
-            let thread_summary = match load_thread_summary_for_rollout(
+            let state_db_ctx = open_state_db_for_direct_thread_lookup(&self.config).await;
+            let thread_summary = match load_thread_summary_for_rollout_with_state_db(
                 &self.config,
                 existing_thread_id,
                 rollout_path.as_path(),
                 config_snapshot.model_provider_id.as_str(),
+                state_db_ctx.as_ref(),
                 /*persisted_metadata*/ None,
             )
             .await
@@ -4886,18 +4885,21 @@ impl CodexMessageProcessor {
         &self,
         resumed_history: &codex_protocol::protocol::ResumedHistory,
         fallback_provider: &str,
+        state_db_ctx: Option<&StateDbHandle>,
         persisted_resume_metadata: Option<&ThreadMetadata>,
     ) -> std::result::Result<PreparedThreadResumeResponse, String> {
-        let mut thread = load_thread_summary_for_rollout(
+        let mut thread = load_thread_summary_for_rollout_with_state_db(
             &self.config,
             resumed_history.conversation_id,
             resumed_history.rollout_path.as_path(),
             fallback_provider,
+            state_db_ctx,
             persisted_resume_metadata,
         )
         .await?;
-        let reconstructed_history =
-            reconstruct_thread_history_with_latest_token_usage(resumed_history.history.as_slice());
+        let reconstructed_history = reconstruct_thread_history_with_latest_token_usage(
+            expanded_rollout_history_for_thread_view(resumed_history.history.as_slice()).as_slice(),
+        );
         thread.turns = reconstructed_history.turns;
         Ok(PreparedThreadResumeResponse {
             thread,
@@ -9558,16 +9560,22 @@ async fn read_summary_from_state_db_context_by_thread_id(
 }
 
 async fn title_from_state_db(config: &Config, thread_id: ThreadId) -> Option<String> {
-    if let Some(state_db_ctx) = open_state_db_for_direct_thread_lookup(config).await
-        && let Some(metadata) = state_db_ctx.get_thread(thread_id).await.ok().flatten()
-        && let Some(title) = distinct_title(&metadata)
-    {
+    let state_db_ctx = open_state_db_for_direct_thread_lookup(config).await;
+    if let Some(title) = title_from_state_db_context(state_db_ctx.as_ref(), thread_id).await {
         return Some(title);
     }
     find_thread_name_by_id(&config.codex_home, &thread_id)
         .await
         .ok()
         .flatten()
+}
+
+async fn title_from_state_db_context(
+    state_db_ctx: Option<&StateDbHandle>,
+    thread_id: ThreadId,
+) -> Option<String> {
+    let metadata = state_db_ctx?.get_thread(thread_id).await.ok().flatten()?;
+    distinct_title(&metadata)
 }
 
 async fn thread_titles_by_ids(
@@ -9893,10 +9901,34 @@ pub(crate) async fn read_rollout_items_from_rollout(
     let items = match RolloutRecorder::get_resume_history(path).await? {
         InitialHistory::New | InitialHistory::Cleared => Vec::new(),
         InitialHistory::Forked(items) => items,
-        InitialHistory::Resumed(resumed) => resumed.history,
+        InitialHistory::Resumed(resumed) => {
+            expanded_rollout_history_for_thread_view(resumed.history.as_slice())
+        }
     };
 
     Ok(items)
+}
+
+fn expanded_rollout_history_for_thread_view(items: &[RolloutItem]) -> Vec<RolloutItem> {
+    let mut expanded_items = Vec::with_capacity(items.len());
+    let mut expanded_checkpoint = false;
+    for (index, item) in items.iter().enumerate() {
+        if !expanded_checkpoint
+            && let RolloutItem::Compacted(compacted) = item
+            && let Some(replacement_history) = compacted.replacement_history.as_ref()
+        {
+            expanded_items.extend(
+                synthesize_thread_view_rollout_from_replacement_history(
+                    replacement_history,
+                    infer_checkpoint_continued_turn_id(&items[index + 1..]).as_deref(),
+                ),
+            );
+            expanded_checkpoint = true;
+            continue;
+        }
+        expanded_items.push(item.clone());
+    }
+    expanded_items
 }
 
 fn extract_conversation_summary(
@@ -9962,6 +9994,26 @@ async fn load_thread_summary_for_rollout(
     fallback_provider: &str,
     persisted_metadata: Option<&ThreadMetadata>,
 ) -> std::result::Result<Thread, String> {
+    let state_db_ctx = open_state_db_for_direct_thread_lookup(config).await;
+    load_thread_summary_for_rollout_with_state_db(
+        config,
+        thread_id,
+        rollout_path,
+        fallback_provider,
+        state_db_ctx.as_ref(),
+        persisted_metadata,
+    )
+    .await
+}
+
+async fn load_thread_summary_for_rollout_with_state_db(
+    config: &Config,
+    thread_id: ThreadId,
+    rollout_path: &Path,
+    fallback_provider: &str,
+    state_db_ctx: Option<&StateDbHandle>,
+    persisted_metadata: Option<&ThreadMetadata>,
+) -> std::result::Result<Thread, String> {
     let mut thread = read_summary_from_rollout(rollout_path, fallback_provider)
         .await
         .map(|summary| summary_to_thread(summary, &config.cwd))
@@ -9980,13 +10032,23 @@ async fn load_thread_summary_for_rollout(
                 &config.cwd,
             ),
         );
-    } else if let Some(summary) = read_summary_from_state_db_by_thread_id(config, thread_id).await {
+    } else if let Some(summary) =
+        read_summary_from_state_db_context_by_thread_id(state_db_ctx, thread_id).await
+    {
         merge_mutable_thread_metadata(&mut thread, summary_to_thread(summary, &config.cwd));
     }
     let title = if let Some(metadata) = persisted_metadata {
         non_empty_title(metadata)
     } else {
-        title_from_state_db(config, thread_id).await
+        title_from_state_db_context(state_db_ctx, thread_id).await
+    };
+    let title = if title.is_some() {
+        title
+    } else {
+        find_thread_name_by_id(&config.codex_home, &thread_id)
+            .await
+            .ok()
+            .flatten()
     };
     if let Some(title) = title {
         set_thread_name_from_title(&mut thread, title);
@@ -10014,6 +10076,7 @@ fn preview_from_rollout_items(items: &[RolloutItem]) -> String {
                 Some(codex_protocol::items::TurnItem::UserMessage(user)) => Some(user.message()),
                 _ => None,
             },
+            RolloutItem::EventMsg(EventMsg::UserMessage(user)) => Some(user.message.clone()),
             _ => None,
         })
         .map(|preview| match preview.find(USER_MESSAGE_BEGIN) {
@@ -10021,6 +10084,260 @@ fn preview_from_rollout_items(items: &[RolloutItem]) -> String {
             None => preview,
         })
         .unwrap_or_default()
+}
+
+fn synthesize_thread_view_rollout_from_replacement_history(
+    replacement_history: &[ResponseItem],
+    continued_turn_id: Option<&str>,
+) -> Vec<RolloutItem> {
+    let turns = grouped_replacement_history_turn_items(replacement_history);
+    let mut synthesized = Vec::new();
+
+    for (index, turn_items) in turns.into_iter().enumerate() {
+        let is_last_turn = index + 1 == turns.len();
+        let turn_id = if is_last_turn {
+            continued_turn_id
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| format!("replacement-turn-{index}"))
+        } else {
+            format!("replacement-turn-{index}")
+        };
+        synthesized.push(RolloutItem::EventMsg(EventMsg::TurnStarted(
+            TurnStartedEvent {
+                turn_id: turn_id.clone(),
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            },
+        )));
+
+        for turn_item in turn_items {
+            append_synthetic_thread_view_turn_item(&mut synthesized, turn_item);
+        }
+
+        if !(is_last_turn && continued_turn_id.is_some()) {
+            synthesized.push(RolloutItem::EventMsg(EventMsg::TurnComplete(
+                TurnCompleteEvent {
+                    turn_id,
+                    last_agent_message: None,
+                    completed_at: None,
+                    duration_ms: None,
+                },
+            )));
+        }
+    }
+
+    synthesized
+}
+
+fn grouped_replacement_history_turn_items(
+    replacement_history: &[ResponseItem],
+) -> Vec<Vec<codex_protocol::items::TurnItem>> {
+    let mut turns = Vec::new();
+    let mut current_turn = Vec::new();
+
+    for response_item in replacement_history {
+        let Some(turn_item) = codex_core::parse_turn_item(response_item) else {
+            continue;
+        };
+        let starts_new_turn = matches!(
+            turn_item,
+            codex_protocol::items::TurnItem::UserMessage(_)
+                | codex_protocol::items::TurnItem::HookPrompt(_)
+        );
+        if starts_new_turn && !current_turn.is_empty() {
+            turns.push(std::mem::take(&mut current_turn));
+        }
+        current_turn.push(turn_item);
+    }
+
+    if !current_turn.is_empty() {
+        turns.push(current_turn);
+    }
+
+    turns
+}
+
+fn append_synthetic_thread_view_turn_item(
+    items: &mut Vec<RolloutItem>,
+    turn_item: codex_protocol::items::TurnItem,
+) {
+    match turn_item {
+        codex_protocol::items::TurnItem::UserMessage(user) => {
+            let mut message = String::new();
+            let mut images = Vec::new();
+            let mut local_images = Vec::new();
+            let mut text_elements = Vec::new();
+
+            for content in user.content {
+                match content {
+                    codex_protocol::user_input::UserInput::Text {
+                        text,
+                        text_elements: content_text_elements,
+                    } => {
+                        message.push_str(&text);
+                        text_elements.extend(content_text_elements);
+                    }
+                    codex_protocol::user_input::UserInput::Image { image_url } => {
+                        images.push(image_url);
+                    }
+                    codex_protocol::user_input::UserInput::LocalImage { path } => {
+                        local_images.push(path);
+                    }
+                }
+            }
+
+            items.push(RolloutItem::EventMsg(EventMsg::UserMessage(
+                UserMessageEvent {
+                    message,
+                    images: (!images.is_empty()).then_some(images),
+                    local_images,
+                    text_elements,
+                },
+            )));
+        }
+        codex_protocol::items::TurnItem::HookPrompt(hook_prompt) => {
+            if let Some(response_item) =
+                codex_protocol::items::build_hook_prompt_message(&hook_prompt.fragments)
+            {
+                items.push(RolloutItem::ResponseItem(response_item));
+            }
+        }
+        codex_protocol::items::TurnItem::AgentMessage(agent) => {
+            let message = agent
+                .content
+                .into_iter()
+                .map(|content| match content {
+                    codex_protocol::items::AgentMessageContent::Text { text } => text,
+                })
+                .collect::<String>();
+            items.push(RolloutItem::EventMsg(EventMsg::AgentMessage(
+                AgentMessageEvent {
+                    message,
+                    phase: agent.phase,
+                    memory_citation: agent.memory_citation,
+                },
+            )));
+        }
+        codex_protocol::items::TurnItem::Plan(_) => {}
+        codex_protocol::items::TurnItem::Reasoning(reasoning) => {
+            for summary in reasoning.summary_text {
+                items.push(RolloutItem::EventMsg(EventMsg::AgentReasoning(
+                    AgentReasoningEvent { text: summary },
+                )));
+            }
+            for content in reasoning.raw_content {
+                items.push(RolloutItem::EventMsg(
+                    EventMsg::AgentReasoningRawContent(AgentReasoningRawContentEvent {
+                        text: content,
+                    }),
+                ));
+            }
+        }
+        codex_protocol::items::TurnItem::WebSearch(search) => {
+            items.push(RolloutItem::EventMsg(EventMsg::WebSearchEnd(
+                WebSearchEndEvent {
+                    call_id: search.id,
+                    query: search.query,
+                    action: search.action,
+                },
+            )));
+        }
+        codex_protocol::items::TurnItem::ImageGeneration(image) => {
+            items.push(RolloutItem::EventMsg(EventMsg::ImageGenerationEnd(
+                ImageGenerationEndEvent {
+                    call_id: image.id,
+                    status: image.status,
+                    revised_prompt: image.revised_prompt,
+                    result: image.result,
+                    saved_path: image.saved_path,
+                },
+            )));
+        }
+        codex_protocol::items::TurnItem::ContextCompaction(_) => {
+            items.push(RolloutItem::EventMsg(EventMsg::ContextCompacted(
+                ContextCompactedEvent,
+            )));
+        }
+    }
+}
+
+fn infer_checkpoint_continued_turn_id(items: &[RolloutItem]) -> Option<String> {
+    let mut continued_turn_id = None;
+
+    for item in items {
+        match item {
+            RolloutItem::EventMsg(EventMsg::TurnStarted(_))
+            | RolloutItem::EventMsg(EventMsg::UserMessage(_)) => break,
+            RolloutItem::ResponseItem(response_item)
+                if matches!(
+                    codex_core::parse_turn_item(response_item),
+                    Some(
+                        codex_protocol::items::TurnItem::UserMessage(_)
+                            | codex_protocol::items::TurnItem::HookPrompt(_)
+                    )
+                ) =>
+            {
+                break;
+            }
+            _ => {}
+        }
+
+        let Some(item_turn_id) = rollout_item_turn_id_for_thread_view(item) else {
+            continue;
+        };
+        match continued_turn_id.as_deref() {
+            Some(existing_turn_id) if existing_turn_id != item_turn_id => return None,
+            Some(_) => {}
+            None => continued_turn_id = Some(item_turn_id.to_string()),
+        }
+    }
+
+    continued_turn_id
+}
+
+fn rollout_item_turn_id_for_thread_view(item: &RolloutItem) -> Option<&str> {
+    match item {
+        RolloutItem::TurnContext(turn_context) => turn_context.turn_id.as_deref(),
+        RolloutItem::EventMsg(event) => match event {
+            EventMsg::TurnComplete(turn_complete) => Some(turn_complete.turn_id.as_str()),
+            EventMsg::TurnAborted(turn_aborted) => turn_aborted.turn_id.as_deref(),
+            EventMsg::ItemStarted(item_started) => Some(item_started.turn_id.as_str()),
+            EventMsg::ItemCompleted(item_completed) => Some(item_completed.turn_id.as_str()),
+            EventMsg::ExecCommandBegin(exec_command_begin) => Some(exec_command_begin.turn_id.as_str()),
+            EventMsg::ExecCommandEnd(exec_command_end) => Some(exec_command_end.turn_id.as_str()),
+            EventMsg::GuardianAssessment(guardian_assessment)
+                if !guardian_assessment.turn_id.is_empty() =>
+            {
+                Some(guardian_assessment.turn_id.as_str())
+            }
+            EventMsg::ApplyPatchApprovalRequest(apply_patch_approval_request)
+                if !apply_patch_approval_request.turn_id.is_empty() =>
+            {
+                Some(apply_patch_approval_request.turn_id.as_str())
+            }
+            EventMsg::PatchApplyBegin(patch_apply_begin) if !patch_apply_begin.turn_id.is_empty() => {
+                Some(patch_apply_begin.turn_id.as_str())
+            }
+            EventMsg::PatchApplyEnd(patch_apply_end) if !patch_apply_end.turn_id.is_empty() => {
+                Some(patch_apply_end.turn_id.as_str())
+            }
+            EventMsg::DynamicToolCallRequest(dynamic_tool_call_request)
+                if !dynamic_tool_call_request.turn_id.is_empty() =>
+            {
+                Some(dynamic_tool_call_request.turn_id.as_str())
+            }
+            EventMsg::DynamicToolCallResponse(dynamic_tool_call_response)
+                if !dynamic_tool_call_response.turn_id.is_empty() =>
+            {
+                Some(dynamic_tool_call_response.turn_id.as_str())
+            }
+            _ => None,
+        },
+        RolloutItem::SessionMeta(_)
+        | RolloutItem::ResponseItem(_)
+        | RolloutItem::Compacted(_) => None,
+    }
 }
 
 fn with_thread_spawn_agent_metadata(
@@ -10472,6 +10789,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             agent_path: None,
+            parent_model: None,
             git_info: None,
             approval_mode: AskForApproval::OnRequest,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
@@ -10959,6 +11277,7 @@ mod tests {
             source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -11092,6 +11411,7 @@ mod tests {
             serde_json::to_string(&SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: ThreadId::from_string("ad7f0408-99b8-4f6e-a46f-bd0eec433370")?,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,

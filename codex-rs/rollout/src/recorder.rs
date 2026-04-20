@@ -20,8 +20,11 @@ use time::OffsetDateTime;
 use time::format_description::FormatItem;
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
-use tokio::io::AsyncBufReadExt;
+use tokio::fs::File as TokioFile;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 use tokio::io::AsyncWriteExt;
+use tokio::io::SeekFrom;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
@@ -66,6 +69,8 @@ use codex_protocol::protocol::SessionSource;
 use codex_state::StateRuntime;
 use codex_state::ThreadMetadataBuilder;
 use codex_utils_path as path_utils;
+
+const RESUME_SCAN_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 
 /// Records all [`ResponseItem`]s for a session and flushes them to disk after
 /// every update.
@@ -760,96 +765,13 @@ impl RolloutRecorder {
 
     pub async fn get_resume_history(path: &Path) -> std::io::Result<InitialHistory> {
         trace!("Resuming rollout with startup fast-path from {path:?}");
-        let bytes = tokio::fs::read(path).await?;
-        let line_ranges = collect_non_empty_line_ranges(&bytes);
-        if line_ranges.is_empty() {
-            return Err(IoError::other("empty session file"));
-        }
-
         let session_meta = read_session_meta_line(path).await.ok();
         let conversation_id = session_meta.as_ref().map(|meta| meta.meta.id);
-        let cached_window_generation = Some(
-            line_ranges
-                .iter()
-                .filter(|(start, end)| line_contains_compaction_marker(&bytes[*start..*end]))
-                .count() as u64,
-        );
-
-        let mut cached_latest_token_usage = None;
-        let mut suffix_items_rev = Vec::new();
-        let mut suffix_start_index = None;
-        let mut parse_errors = 0usize;
-
-        for (index, (start, end)) in line_ranges.iter().enumerate().rev() {
-            let line = &bytes[*start..*end];
-            match serde_json::from_slice::<RolloutLine>(line) {
-                Ok(rollout_line) => {
-                    if cached_latest_token_usage.is_none()
-                        && let RolloutItem::EventMsg(EventMsg::TokenCount(token_count)) =
-                            &rollout_line.item
-                    {
-                        cached_latest_token_usage = token_count.info.clone();
-                    }
-
-                    let is_resume_checkpoint = matches!(
-                        &rollout_line.item,
-                        RolloutItem::Compacted(compacted)
-                            if compacted.replacement_history.is_some()
-                    );
-                    suffix_items_rev.push(rollout_line.item);
-                    if is_resume_checkpoint {
-                        suffix_start_index = Some(index);
-                        break;
-                    }
-                }
-                Err(rollout_err) => {
-                    if let Err(json_err) = serde_json::from_slice::<Value>(line) {
-                        let line = String::from_utf8_lossy(line);
-                        warn!("failed to parse line as JSON: {line:?}, error: {json_err}");
-                    } else {
-                        trace!("failed to parse rollout line: {rollout_err}");
-                    }
-                    parse_errors = parse_errors.saturating_add(1);
-                }
-            }
+        let resume_scan = read_resume_history_tail(path).await?;
+        let history = resume_scan.items_rev.into_iter().rev().collect::<Vec<_>>();
+        if history.is_empty() {
+            return Ok(InitialHistory::New);
         }
-
-        let Some(suffix_start_index) = suffix_start_index else {
-            let (items, thread_id, _parse_errors) = Self::parse_rollout_items_from_bytes(&bytes)?;
-            let conversation_id = thread_id
-                .ok_or_else(|| IoError::other("failed to parse thread ID from rollout file"))?;
-            if items.is_empty() {
-                return Ok(InitialHistory::New);
-            }
-
-            info!("Resumed rollout successfully from {path:?}");
-            return Ok(InitialHistory::Resumed(ResumedHistory {
-                conversation_id,
-                history: items,
-                rollout_path: path.to_path_buf(),
-                session_meta,
-                history_complete: true,
-                cached_window_generation,
-                cached_has_prior_user_turns: None,
-                cached_latest_token_usage,
-            }));
-        };
-
-        if cached_latest_token_usage.is_none() {
-            for (start, end) in line_ranges[..suffix_start_index].iter().rev() {
-                let line = &bytes[*start..*end];
-                let Ok(rollout_line) = serde_json::from_slice::<RolloutLine>(line) else {
-                    continue;
-                };
-                if let RolloutItem::EventMsg(EventMsg::TokenCount(token_count)) = rollout_line.item
-                {
-                    cached_latest_token_usage = token_count.info;
-                    break;
-                }
-            }
-        }
-
-        let history = suffix_items_rev.into_iter().rev().collect::<Vec<_>>();
         let conversation_id = conversation_id
             .or_else(|| {
                 history.iter().find_map(|item| match item {
@@ -866,17 +788,17 @@ impl RolloutRecorder {
             "Resumed rollout fast-path with {} items, thread ID: {:?}, parse errors: {}",
             history.len(),
             conversation_id,
-            parse_errors,
+            resume_scan.parse_errors,
         );
         Ok(InitialHistory::Resumed(ResumedHistory {
             conversation_id,
             history,
             rollout_path: path.to_path_buf(),
             session_meta,
-            history_complete: false,
-            cached_window_generation,
-            cached_has_prior_user_turns: Some(true),
-            cached_latest_token_usage,
+            history_complete: !resume_scan.found_resume_checkpoint,
+            cached_window_generation: None,
+            cached_has_prior_user_turns: resume_scan.found_resume_checkpoint.then_some(true),
+            cached_latest_token_usage: resume_scan.cached_latest_token_usage,
         }))
     }
 
@@ -922,6 +844,139 @@ fn collect_non_empty_line_ranges(bytes: &[u8]) -> Vec<(usize, usize)> {
     ranges
 }
 
+struct ResumeTailScan {
+    items_rev: Vec<RolloutItem>,
+    parse_errors: usize,
+    cached_latest_token_usage: Option<codex_protocol::protocol::TokenUsageInfo>,
+    found_resume_checkpoint: bool,
+}
+
+async fn read_resume_history_tail(path: &Path) -> std::io::Result<ResumeTailScan> {
+    let mut file = TokioFile::open(path).await?;
+    let file_len = usize::try_from(file.metadata().await?.len())
+        .map_err(|_| IoError::other("rollout file is too large to scan"))?;
+    if file_len == 0 {
+        return Err(IoError::other("empty session file"));
+    }
+
+    let mut position = file_len;
+    let mut carry = Vec::new();
+    let mut items_rev = Vec::new();
+    let mut parse_errors = 0usize;
+    let mut cached_latest_token_usage = None;
+    let mut found_resume_checkpoint = false;
+    let mut saw_non_empty_line = false;
+
+    while position > 0 && !found_resume_checkpoint {
+        let read_len = RESUME_SCAN_CHUNK_BYTES.min(position);
+        position -= read_len;
+        file.seek(SeekFrom::Start(position as u64)).await?;
+        let mut chunk = vec![0; read_len];
+        file.read_exact(&mut chunk).await?;
+        chunk.extend_from_slice(&carry);
+
+        let split_index = if position == 0 {
+            0
+        } else {
+            match chunk.iter().position(|byte| *byte == b'\n') {
+                Some(index) => index + 1,
+                None => {
+                    carry = chunk;
+                    continue;
+                }
+            }
+        };
+
+        carry = chunk[..split_index].to_vec();
+        let parsed = parse_resume_lines_reverse(
+            &chunk[split_index..],
+            &mut items_rev,
+            &mut parse_errors,
+            &mut cached_latest_token_usage,
+            &mut saw_non_empty_line,
+        );
+        if parsed.found_resume_checkpoint {
+            found_resume_checkpoint = true;
+            break;
+        }
+    }
+
+    if !found_resume_checkpoint {
+        let parsed = parse_resume_lines_reverse(
+            &carry,
+            &mut items_rev,
+            &mut parse_errors,
+            &mut cached_latest_token_usage,
+            &mut saw_non_empty_line,
+        );
+        found_resume_checkpoint = parsed.found_resume_checkpoint;
+    }
+
+    if !saw_non_empty_line {
+        return Err(IoError::other("empty session file"));
+    }
+
+    Ok(ResumeTailScan {
+        items_rev,
+        parse_errors,
+        cached_latest_token_usage,
+        found_resume_checkpoint,
+    })
+}
+
+struct ResumeParseOutcome {
+    found_resume_checkpoint: bool,
+}
+
+fn parse_resume_lines_reverse(
+    bytes: &[u8],
+    items_rev: &mut Vec<RolloutItem>,
+    parse_errors: &mut usize,
+    cached_latest_token_usage: &mut Option<codex_protocol::protocol::TokenUsageInfo>,
+    saw_non_empty_line: &mut bool,
+) -> ResumeParseOutcome {
+    let line_ranges = collect_non_empty_line_ranges(bytes);
+    for (start, end) in line_ranges.iter().rev() {
+        *saw_non_empty_line = true;
+        let line = &bytes[*start..*end];
+        match serde_json::from_slice::<RolloutLine>(line) {
+            Ok(rollout_line) => {
+                if cached_latest_token_usage.is_none()
+                    && let RolloutItem::EventMsg(EventMsg::TokenCount(token_count)) =
+                        &rollout_line.item
+                {
+                    *cached_latest_token_usage = token_count.info.clone();
+                }
+
+                let is_resume_checkpoint = matches!(
+                    &rollout_line.item,
+                    RolloutItem::Compacted(compacted)
+                        if compacted.replacement_history.is_some()
+                );
+                items_rev.push(rollout_line.item);
+                if is_resume_checkpoint {
+                    return ResumeParseOutcome {
+                        found_resume_checkpoint: true,
+                    };
+                }
+            }
+            Err(rollout_err) => {
+                if let Err(json_err) = serde_json::from_slice::<Value>(line) {
+                    let line = String::from_utf8_lossy(line);
+                    warn!("failed to parse line as JSON: {line:?}, error: {json_err}");
+                } else {
+                    trace!("failed to parse rollout line: {rollout_err}");
+                }
+                *parse_errors = parse_errors.saturating_add(1);
+            }
+        }
+    }
+
+    ResumeParseOutcome {
+        found_resume_checkpoint: false,
+    }
+}
+
 fn push_non_empty_line_range(
     bytes: &[u8],
     start: usize,
@@ -934,12 +989,6 @@ fn push_non_empty_line_range(
         return;
     }
     ranges.push((start, start + line.len()));
-}
-
-fn line_contains_compaction_marker(line: &[u8]) -> bool {
-    std::str::from_utf8(line).is_ok_and(|line| {
-        line.contains("\"type\":\"compacted\"") || line.contains("\"type\": \"compacted\"")
-    })
 }
 
 fn truncate_fs_page(
