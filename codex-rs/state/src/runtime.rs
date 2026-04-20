@@ -516,9 +516,17 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
 
-    fn legacy_local_state_migrator(applied_versions: &[i64]) -> Migrator {
+    fn legacy_local_state_migrator(
+        applied_legacy_versions: &[i64],
+        applied_current_versions: &[i64],
+    ) -> Migrator {
+        let applied_legacy_versions: BTreeSet<i64> =
+            applied_legacy_versions.iter().copied().collect();
+        let applied_current_versions: BTreeSet<i64> =
+            applied_current_versions.iter().copied().collect();
         let mut selected_versions: BTreeSet<i64> = (1_i64..=22_i64).collect();
-        selected_versions.extend(applied_versions.iter().copied());
+        selected_versions.extend(applied_legacy_versions.iter().copied());
+        selected_versions.extend(applied_current_versions.iter().copied());
         let mut legacy_max_retries =
             state_migration_by_version(LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION)
                 .clone();
@@ -537,9 +545,18 @@ mod tests {
                     .filter(|migration| migration.version <= 22)
                     .cloned()
                     .chain(
-                        legacy_migrations
-                            .into_iter()
-                            .filter(|migration| selected_versions.contains(&migration.version)),
+                        legacy_migrations.into_iter().filter(|migration| {
+                            applied_legacy_versions.contains(&migration.version)
+                        }),
+                    )
+                    .chain(
+                        STATE_MIGRATOR
+                            .migrations
+                            .iter()
+                            .filter(|migration| {
+                                applied_current_versions.contains(&migration.version)
+                            })
+                            .cloned(),
                     )
                     .collect(),
             ),
@@ -563,7 +580,7 @@ mod tests {
         )
         .await
         .expect("open legacy state db");
-        legacy_local_state_migrator(&[23, 24, 25])
+        legacy_local_state_migrator(&[23, 24, 25], &[])
             .run(&pool)
             .await
             .expect("apply legacy local state schema");
@@ -623,7 +640,7 @@ mod tests {
         )
         .await
         .expect("open legacy state db");
-        legacy_local_state_migrator(&[23])
+        legacy_local_state_migrator(&[23], &[])
             .run(&pool)
             .await
             .expect("apply partial legacy local state schema");
@@ -662,7 +679,7 @@ mod tests {
         )
         .await
         .expect("open legacy state db");
-        legacy_local_state_migrator(&[23])
+        legacy_local_state_migrator(&[23], &[])
             .run(&pool)
             .await
             .expect("apply partial legacy local state schema");
@@ -678,6 +695,60 @@ mod tests {
             .expect_err("runtime should not repair unknown migration checksums");
         let err_text = format!("{err:#}");
         assert!(err_text.contains("migration 23"));
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    #[tokio::test]
+    async fn open_state_sqlite_repairs_hybrid_legacy_and_current_migration_history() {
+        let codex_home = unique_temp_dir();
+        tokio::fs::create_dir_all(&codex_home)
+            .await
+            .expect("create codex home");
+        let state_path = state_db_path(codex_home.as_path());
+        let pool = SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(&state_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("open hybrid state db");
+        legacy_local_state_migrator(&[23, 24], &[25])
+            .run(&pool)
+            .await
+            .expect("apply hybrid legacy/current state schema");
+        pool.close().await;
+
+        let repaired_pool = open_state_sqlite(state_path.as_path(), &runtime_state_migrator())
+            .await
+            .expect("runtime should repair hybrid legacy/current migration history");
+
+        let applied_migrations = applied_state_migrations_by_version(&repaired_pool)
+            .await
+            .expect("read applied migration versions");
+        assert!(applied_migrations.contains_key(&23));
+        assert!(applied_migrations.contains_key(&24));
+        assert!(applied_migrations.contains_key(&25));
+        assert!(
+            applied_migrations.contains_key(&LOCAL_STATE_AGENT_JOBS_MAX_RETRIES_MIGRATION_VERSION)
+        );
+        assert!(
+            sqlite_table_exists(&repaired_pool, "remote_control_enrollments")
+                .await
+                .expect("check remote_control_enrollments table")
+        );
+        assert!(
+            sqlite_column_exists(&repaired_pool, "threads", "created_at_ms")
+                .await
+                .expect("check created_at_ms column")
+        );
+        assert!(
+            sqlite_column_exists(&repaired_pool, "threads", "updated_at_ms")
+                .await
+                .expect("check updated_at_ms column")
+        );
+
+        repaired_pool.close().await;
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }
