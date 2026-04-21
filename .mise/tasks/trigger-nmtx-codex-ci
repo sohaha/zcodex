@@ -153,7 +153,7 @@ payload="$(
           release_repo: $release_repo,
         }
         + if $release_tag == "" then {} else {release_tag: $release_tag} end
-        + if $publish_mode == "full" then {} else {publish_mode: $publish_mode} end),
+        + {publish_mode: $publish_mode}),
       }
     '
 )"
