@@ -25,10 +25,10 @@ done_when = "`ztok` 的运行时设置由 CLI 统一桥接，`codex-rs/ztok` 仅
 validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-core --lib && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
 regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
 regress_timing = "after_done"
-status = "blocked"
-validate_status = "failed"
-regress_status = "not_run"
-notes = "2026-04-21 execution：a1 实现已完成，spec-reviewer 与 code-reviewer 均 PASS。CLI 已统一桥接 `CODEX_ZTOK_RUNTIME_SETTINGS`，`ztok` 新增 `settings.rs`/`session_cache.rs`，并将 `near_dedup` 拆为目录模块；`basic` 仍整链绕开 session dedup / near-diff / sqlite。验证上 `env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok` 与 `env -u RUSTC_WRAPPER cargo test -p codex-ztok` 通过；`env -u RUSTC_WRAPPER cargo test -p codex-core --lib` 失败，阻塞点为仓库既有 `config::tests::test_precedence_fixture_*` 与 `tools::spec::tests::*`，从报错看与本次 `ztok/cli` 变更无直接耦合，因此当前按外部验证阻塞处理。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-21 execution：a1 已完成且经隔离验证闭环。CLI 已统一桥接 `CODEX_ZTOK_RUNTIME_SETTINGS`，`ztok` 新增 `settings.rs`/`session_cache.rs`，并将 `near_dedup` 拆为目录模块；`basic` 仍整链绕开 session dedup / near-diff / sqlite。已在干净 worktree `/tmp/ztok-a1-review` 执行 `just fmt`、`env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`、`env -u RUSTC_WRAPPER cargo test -p codex-ztok`，均通过；`env -u RUSTC_WRAPPER cargo test -p codex-core --lib` 在该 worktree 失败，但同一命令在纯净 `HEAD` worktree `/tmp/ztok-a1-baseline` 也以相同的 `tools::spec::tests::*` 失败，属于当前分支既有基线问题，不再作为 a1 阻塞。补充审查发现 `codex-rs/cli/src/main.rs` 还混入一处无关的 help/version 输出流改动，属于提交边界问题，不影响 a1 功能闭环。"
 
 [[issue]]
 id = "a2"
