@@ -41,7 +41,7 @@ impl ToolHandler for Handler {
         let session_source = turn.session_source.clone();
         let child_depth = next_thread_spawn_depth(&session_source);
         let mut config =
-            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
+            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref()).await?;
         let max_depth = config.agent_max_depth;
         if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
@@ -72,6 +72,7 @@ impl ToolHandler for Handler {
                 &session,
                 turn.as_ref(),
                 &mut config,
+                args.provider.as_deref(),
                 args.model.as_deref(),
                 args.reasoning_effort,
             )

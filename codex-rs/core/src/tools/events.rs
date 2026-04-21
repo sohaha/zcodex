@@ -164,7 +164,7 @@ impl ToolEmitter {
                     cwd,
                     source,
                     display_parsed_cmd,
-                    interaction_input: _,
+                    interaction_input,
                     ..
                 },
                 stage,
@@ -176,7 +176,7 @@ impl ToolEmitter {
                         cwd,
                         display_parsed_cmd,
                         *source,
-                        /*interaction_input*/ None,
+                        interaction_input.as_deref(),
                         /*process_id*/ None,
                     ),
                     stage,
@@ -637,8 +637,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(result.contains("[shell_command routed via embedded ZTOK]"));
-        assert!(result.contains("FOO=1 z ztok git status"));
+        assert!(result.contains("ztok: FOO=1 git status → FOO=1 z ztok git status"));
         assert!(result.contains("ok"));
 
         let end = recv_exec_end(&mut rx).await;
@@ -688,7 +687,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(result.contains("rewritten: z ztok git status"));
+        assert!(result.contains("ztok: git status → z ztok git status"));
         assert!(!result.contains("/tmp/z"));
 
         let end = recv_exec_end(&mut rx).await;
@@ -722,6 +721,7 @@ mod tests {
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
         assert!(!result.contains("[shell_command kept raw]"));
-        assert!(result.contains("raw: git status | head"));
+        assert!(!result.contains("raw: git status | head"));
+        assert!(result.contains("stdout"));
     }
 }

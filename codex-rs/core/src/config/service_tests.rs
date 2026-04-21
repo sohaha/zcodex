@@ -4,6 +4,7 @@ use codex_app_server_protocol::AppConfig;
 use codex_app_server_protocol::AppToolApproval;
 use codex_app_server_protocol::AppsConfig;
 use codex_app_server_protocol::AskForApproval;
+use codex_config::ZCONFIG_TOML_FILE;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
@@ -213,6 +214,8 @@ async fn read_includes_origins_and_layers() {
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
+    let zconfig_file =
+        AbsolutePathBuf::try_from(tmp.path().join(ZCONFIG_TOML_FILE)).expect("zconfig file");
 
     let managed_path = tmp.path().join("managed_config.toml");
     std::fs::write(&managed_path, "approval_policy = \"never\"").unwrap();
@@ -256,7 +259,7 @@ async fn read_includes_origins_and_layers() {
     } else {
         layers.as_slice()
     };
-    assert_eq!(layers.len(), 3, "expected three layers");
+    assert_eq!(layers.len(), 4, "expected four layers");
     assert_eq!(
         layers.first().unwrap().name,
         ConfigLayerSource::LegacyManagedConfigTomlFromFile {
@@ -265,12 +268,18 @@ async fn read_includes_origins_and_layers() {
     );
     assert_eq!(
         layers.get(1).unwrap().name,
+        ConfigLayerSource::ZConfig {
+            file: zconfig_file.clone()
+        }
+    );
+    assert_eq!(
+        layers.get(2).unwrap().name,
         ConfigLayerSource::User {
             file: user_file.clone()
         }
     );
     assert!(matches!(
-        layers.get(2).unwrap().name,
+        layers.get(3).unwrap().name,
         ConfigLayerSource::System { .. }
     ));
 }
@@ -587,6 +596,8 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
     let user_path = tmp.path().join(CONFIG_TOML_FILE);
     std::fs::write(&user_path, "model = \"user\"").unwrap();
     let user_file = AbsolutePathBuf::try_from(user_path.clone()).expect("user file");
+    let zconfig_file =
+        AbsolutePathBuf::try_from(tmp.path().join(ZCONFIG_TOML_FILE)).expect("zconfig file");
 
     let managed_path = tmp.path().join("managed_config.toml");
     std::fs::write(&managed_path, "model = \"system\"").unwrap();
@@ -637,6 +648,10 @@ async fn read_reports_managed_overrides_user_and_session_flags() {
     assert_eq!(layers.get(1).unwrap().name, ConfigLayerSource::SessionFlags);
     assert_eq!(
         layers.get(2).unwrap().name,
+        ConfigLayerSource::ZConfig { file: zconfig_file }
+    );
+    assert_eq!(
+        layers.get(3).unwrap().name,
         ConfigLayerSource::User { file: user_file }
     );
 }

@@ -88,7 +88,7 @@ pub fn format_exec_output_for_model_freeform(
             parts.push(format!("Exit code: {}", exec_output.exit_code));
         }
         if duration_seconds >= 0.1 {
-            parts.push(format!("{:.1}s", duration_seconds));
+            parts.push(format!("{duration_seconds:.1}s"));
         }
         if !parts.is_empty() {
             format!("{}: ", parts.join(", "))
@@ -100,7 +100,7 @@ pub fn format_exec_output_for_model_freeform(
     if prefix.is_empty() {
         formatted_output
     } else {
-        format!("{}\n{}", prefix, formatted_output)
+        format!("{prefix}\n{formatted_output}")
     }
 }
 

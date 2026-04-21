@@ -649,7 +649,7 @@ fn validated_network_policy_amendment_host_rejects_mismatch() {
         .expect_err("mismatched hosts should be rejected");
 
     let message = err.to_string();
-    assert!(message.contains("does not match approved host"));
+    assert!(message.contains("与已批准主机"));
 }
 
 #[tokio::test]
@@ -1339,11 +1339,7 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
     let (rollout_items, expected) = sample_rollout(&session, &turn_context).await;
 
     session
-        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
-            history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
-        }))
+        .record_initial_history(InitialHistory::Resumed(resumed_history(rollout_items)))
         .await;
 
     let history = session.state.lock().await.clone_history();
@@ -1368,11 +1364,7 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
     let (rollout_items, mut expected) = sample_rollout(&session, &turn_context).await;
 
     session
-        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
-            history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
-        }))
+        .record_initial_history(InitialHistory::Resumed(resumed_history(rollout_items)))
         .await;
 
     let history_before_seed = session.state.lock().await.clone_history();
@@ -1461,11 +1453,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
     )));
 
     session
-        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
-            conversation_id: ThreadId::default(),
-            history: rollout_items,
-            rollout_path: PathBuf::from("/tmp/resume.jsonl"),
-        }))
+        .record_initial_history(InitialHistory::Resumed(resumed_history(rollout_items)))
         .await;
 
     let actual = session.state.lock().await.token_info();
@@ -1738,12 +1726,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
         })
     );
     assert_eq!(history.raw_items(), &[]);
-    assert_eq!(
-        serde_json::to_value(session.reference_context_item().await)
-            .expect("serialize fork reference context item"),
-        serde_json::to_value(Some(previous_context_item))
-            .expect("serialize expected reference context item")
-    );
+    assert!(session.reference_context_item().await.is_none());
 }
 
 #[tokio::test]
@@ -1957,12 +1940,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
             realtime_active: Some(tc.realtime_active),
         })
     );
-    assert_eq!(
-        serde_json::to_value(sess.reference_context_item().await)
-            .expect("serialize replay reference context item"),
-        serde_json::to_value(Some(first_context_item))
-            .expect("serialize expected reference context item")
-    );
+    assert!(sess.reference_context_item().await.is_none());
 }
 
 #[tokio::test]
@@ -4271,7 +4249,8 @@ async fn fail_agent_identity_registration_emits_error_without_shutdown() {
         }) => {
             assert_eq!(
                 message,
-                "Agent identity registration failed while `features.use_agent_identity` is enabled: registration exploded".to_string()
+                "Agent 身份注册失败（`features.use_agent_identity` 已启用）：registration exploded"
+                    .to_string()
             );
             assert_eq!(codex_error_info, Some(CodexErrorInfo::Other));
         }
@@ -6886,4 +6865,16 @@ async fn session_start_hooks_require_project_trust_without_config_toml() -> std:
     }
 
     Ok(())
+}
+fn resumed_history(history: Vec<RolloutItem>) -> ResumedHistory {
+    ResumedHistory {
+        conversation_id: ThreadId::default(),
+        history,
+        rollout_path: PathBuf::from("/tmp/resume.jsonl"),
+        session_meta: None,
+        history_complete: true,
+        cached_window_generation: None,
+        cached_has_prior_user_turns: None,
+        cached_latest_token_usage: None,
+    }
 }

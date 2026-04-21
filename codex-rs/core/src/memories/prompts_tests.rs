@@ -171,6 +171,10 @@ fn build_ztok_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("`--filter err`"));
     assert!(instructions.contains("`--filter test`"));
     assert!(!instructions.contains("Prefer direct shell commands first"));
-    assert!(instructions.contains("[shell_command routed via embedded ZTOK]"));
-    assert!(instructions.contains("[shell_command kept raw]"));
+    assert!(
+        instructions.contains(
+            "If the user explicitly asks to use `ztok`, commentary and executed commands"
+        )
+    );
+    assert!(instructions.contains("`codex ztok shell bash -lc '<command>'`"));
 }

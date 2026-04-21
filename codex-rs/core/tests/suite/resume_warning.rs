@@ -73,6 +73,11 @@ fn resume_history(
             })),
         ],
         rollout_path: rollout_path.to_path_buf(),
+        session_meta: None,
+        history_complete: true,
+        cached_window_generation: None,
+        cached_has_prior_user_turns: None,
+        cached_latest_token_usage: None,
     })
 }
 

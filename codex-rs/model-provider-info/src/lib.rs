@@ -435,6 +435,11 @@ impl ModelProviderInfo {
 
     pub fn supports_remote_compaction(&self) -> bool {
         self.is_openai()
+            || (self.wire_api == WireApi::Responses
+                && codex_api::is_azure_responses_provider(
+                    self.name.as_deref().unwrap_or_default(),
+                    self.base_url.as_deref(),
+                ))
     }
     pub fn configured_bearer_token(&self) -> Option<&str> {
         self.experimental_bearer_token

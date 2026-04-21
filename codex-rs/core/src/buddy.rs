@@ -461,6 +461,28 @@ fn classify_reaction_context(
     if let Some(msg) = last_agent_message {
         let msg_lower = msg.to_lowercase();
 
+        // Error: request/provider/network failures should outrank domain guesses
+        if msg.contains("错误")
+            || msg.contains("error")
+            || msg.contains("失败")
+            || msg.contains("warning")
+            || msg.contains("警告")
+            || msg.contains("panic")
+            || msg.contains("异常")
+            || msg.contains("请求失败")
+            || msg.contains("接口失败")
+            || msg.contains("连接失败")
+            || msg.contains("connection failed")
+            || msg.contains("request failed")
+            || msg.contains("network error")
+            || msg.contains("超时")
+            || msg.contains("timeout")
+            || msg.contains("无法连接")
+            || msg.contains("unreachable")
+        {
+            return ReactionCategory::Error;
+        }
+
         // Commit/push: git operations
         if msg_lower.contains("commit")
             || msg_lower.contains("git commit")
@@ -547,28 +569,6 @@ fn classify_reaction_context(
     }
 
     if let Some(msg) = last_agent_message {
-        // Error patterns
-        if msg.contains("错误")
-            || msg.contains("error")
-            || msg.contains("失败")
-            || msg.contains("warning")
-            || msg.contains("警告")
-            || msg.contains("panic")
-            || msg.contains("异常")
-            || msg.contains("请求失败")
-            || msg.contains("接口失败")
-            || msg.contains("连接失败")
-            || msg.contains("connection failed")
-            || msg.contains("request failed")
-            || msg.contains("network error")
-            || msg.contains("超时")
-            || msg.contains("timeout")
-            || msg.contains("无法连接")
-            || msg.contains("unreachable")
-        {
-            return ReactionCategory::Error;
-        }
-
         // Waiting patterns
         if msg.contains("正在")
             || msg.contains("加载")
@@ -600,10 +600,10 @@ fn is_critical_interaction(
     }
 
     // Long response often means complex task or important completion
-    if let Some(msg) = last_agent_message {
-        if msg.len() > 1000 {
-            return true;
-        }
+    if let Some(msg) = last_agent_message
+        && msg.len() > 1000
+    {
+        return true;
     }
 
     false

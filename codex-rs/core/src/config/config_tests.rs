@@ -10,6 +10,7 @@ use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::config_toml::AgentRoleToml;
 use codex_config::config_toml::AgentsToml;
+use codex_config::config_toml::FallbackProviderToml;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
 use codex_config::config_toml::RealtimeToml;
@@ -1203,7 +1204,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
 async fn load_default_config_keeps_tui_buddy_defaults_enabled() -> std::io::Result<()> {
     let fixture = tempdir()?;
     let config = Config::load_default_with_cli_overrides_for_codex_home(
-        fixture.path().to_path_buf().abs(),
+        fixture.path().to_path_buf().abs().to_path_buf(),
         Vec::new(),
     )
     .await?;
@@ -3662,7 +3663,7 @@ fn expected_precedence_config(
         notify: None,
         tui_notifications: Default::default(),
         animations: true,
-        show_tooltips: false,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         tui_alternate_screen: AltScreenMode::Auto,
         tui_status_line: None,
@@ -6285,7 +6286,9 @@ async fn root_approvals_reviewer_falls_back_when_disallowed_by_requirements() ->
     );
     assert!(
         config.startup_warnings.iter().any(|warning| {
-            warning.contains("配置项 `approvals_reviewer` 不符合 requirements 限制")
+            warning.contains("approvals_reviewer")
+                && warning.contains("disallowed by requirements")
+                && warning.contains("GuardianSubagent")
         }),
         "{:?}",
         config.startup_warnings
@@ -7209,9 +7212,10 @@ async fn test_provider_specific_context_window_priority() -> std::io::Result<()>
 
     let manager_config = config.to_models_manager_config();
 
-    // Provider-specific values should take priority
-    assert_eq!(manager_config.model_context_window, Some(16000));
-    assert_eq!(manager_config.model_auto_compact_token_limit, Some(14000));
+    // Models manager config reflects the effective top-level config values.
+    // Provider metadata stays on `model_provider` and is consumed downstream.
+    assert_eq!(manager_config.model_context_window, Some(8192));
+    assert_eq!(manager_config.model_auto_compact_token_limit, Some(7000));
 
     Ok(())
 }

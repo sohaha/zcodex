@@ -2566,7 +2566,15 @@ impl Session {
             let state = self.state.lock().await;
             state.reference_context_item()
         };
-        let should_inject_full_context = reference_context_item.is_none();
+        // Some model-visible inputs exist only in full startup context and have no steady-state
+        // diff item. If they change, we must reinject the full context bundle instead of emitting
+        // partial updates against a stale baseline.
+        let should_inject_full_context = reference_context_item.is_none()
+            || reference_context_item.as_ref().is_some_and(|previous| {
+                previous.user_instructions != turn_context.user_instructions
+                    || previous.developer_instructions != turn_context.developer_instructions
+                    || previous.final_output_json_schema != turn_context.final_output_json_schema
+            });
         let context_items = if should_inject_full_context {
             self.build_initial_context(turn_context).await
         } else {
@@ -3006,6 +3014,12 @@ impl Session {
             self.abort_all_tasks(TurnAbortReason::Interrupted).await;
         } else {
             self.cancel_mcp_startup().await;
+            if matches!(
+                self.agent_status.borrow().clone(),
+                AgentStatus::PendingInit | AgentStatus::Running
+            ) {
+                self.agent_status.send_replace(AgentStatus::Interrupted);
+            }
         }
     }
 

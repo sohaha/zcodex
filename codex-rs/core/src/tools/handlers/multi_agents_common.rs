@@ -1,11 +1,19 @@
 use crate::agent::AgentStatus;
 use crate::config::Config;
+use crate::config::ConfigOverrides;
+use crate::config::deserialize_config_toml_with_base;
+use crate::config_loader::CloudRequirementsLoader;
+use crate::config_loader::ConfigLayerStackOrdering;
+use crate::config_loader::LoaderOverrides;
+use crate::config_loader::load_config_layers_state;
 use crate::function_tool::FunctionCallError;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use codex_app_server_protocol::ConfigLayerSource;
+use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_protocol::AgentPath;
@@ -24,6 +32,7 @@ use codex_protocol::user_input::UserInput;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use toml::Value as TomlValue;
 
 /// Minimum wait timeout to prevent tight polling loops from burning CPU.
 pub(crate) const MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
@@ -202,31 +211,122 @@ pub(crate) fn parse_collab_input(
 /// approval policy, sandbox, and cwd. Role-specific overrides are layered after this step;
 /// skipping this helper and cloning stale config state directly can send the child agent out with
 /// the wrong provider or runtime policy.
-pub(crate) fn build_agent_spawn_config(
+pub(crate) async fn build_agent_spawn_config(
     base_instructions: &BaseInstructions,
     turn: &TurnContext,
 ) -> Result<Config, FunctionCallError> {
-    let mut config = build_agent_shared_config(turn)?;
+    let mut config = build_agent_shared_config(turn).await?;
     config.base_instructions = Some(base_instructions.text.clone());
     Ok(config)
 }
 
-pub(crate) fn build_agent_resume_config(
+pub(crate) async fn build_agent_resume_config(
     turn: &TurnContext,
     child_depth: i32,
 ) -> Result<Config, FunctionCallError> {
-    let mut config = build_agent_shared_config(turn)?;
+    let mut config = build_agent_shared_config(turn).await?;
     apply_spawn_agent_overrides(&mut config, child_depth);
     // For resume, keep base instructions sourced from rollout/session metadata.
     config.base_instructions = None;
     Ok(config)
 }
 
-pub(crate) fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
-    let base_config = turn.config.clone();
-    let mut config = (*base_config).clone();
+pub(crate) async fn build_agent_shared_config(
+    turn: &TurnContext,
+) -> Result<Config, FunctionCallError> {
+    let live_config = turn.config.as_ref();
+    let mut config = live_config.clone();
+    if live_config.cwd != turn.cwd {
+        let codex_home = turn.config.codex_home.clone();
+        let turn_cwd = turn.cwd.as_path().display().to_string();
+        let empty_cli_overrides: &[(String, TomlValue)] = &[];
+        let config_layer_stack = load_config_layers_state(
+            LOCAL_FS.as_ref(),
+            &codex_home,
+            Some(turn.cwd.clone()),
+            empty_cli_overrides,
+            LoaderOverrides::default(),
+            CloudRequirementsLoader::default(),
+        )
+        .await
+        .map_err(|err| {
+            FunctionCallError::RespondToModel(format!(
+                "failed to reload config for turn cwd {turn_cwd}: {err}",
+            ))
+        })?;
+        let config_toml = deserialize_config_toml_with_base(
+            config_layer_stack.effective_config(),
+            codex_home.as_path(),
+        )
+        .map_err(|err| {
+            FunctionCallError::RespondToModel(format!(
+                "failed to deserialize config for turn cwd {turn_cwd}: {err}",
+            ))
+        })?;
+        let config_overrides = ConfigOverrides {
+            cwd: Some(turn.cwd.to_path_buf()),
+            ..Default::default()
+        };
+        let reloaded_config = Config::load_config_with_layer_stack(
+            LOCAL_FS.as_ref(),
+            config_toml,
+            config_overrides,
+            codex_home,
+            config_layer_stack,
+        )
+        .await
+        .map_err(|err| {
+            FunctionCallError::RespondToModel(format!(
+                "failed to rebuild config for turn cwd {turn_cwd}: {err}",
+            ))
+        })?;
+        let mut reloaded_for_comparison = reloaded_config.clone();
+        reloaded_for_comparison.config_layer_stack = live_config.config_layer_stack.clone();
+        reloaded_for_comparison.startup_warnings = live_config.startup_warnings.clone();
+        reloaded_for_comparison.active_project = live_config.active_project.clone();
+        reloaded_for_comparison.cwd = live_config.cwd.clone();
+        reloaded_for_comparison.model = live_config.model.clone();
+        reloaded_for_comparison.model_provider_id = live_config.model_provider_id.clone();
+        reloaded_for_comparison.model_provider = live_config.model_provider.clone();
+        reloaded_for_comparison.model_providers = live_config.model_providers.clone();
+        reloaded_for_comparison.model_reasoning_effort = live_config.model_reasoning_effort;
+        reloaded_for_comparison.model_reasoning_summary = live_config.model_reasoning_summary;
+        reloaded_for_comparison.developer_instructions = live_config.developer_instructions.clone();
+        reloaded_for_comparison.compact_prompt = live_config.compact_prompt.clone();
+        reloaded_for_comparison.permissions.approval_policy =
+            live_config.permissions.approval_policy.clone();
+        reloaded_for_comparison.permissions.sandbox_policy =
+            live_config.permissions.sandbox_policy.clone();
+        reloaded_for_comparison
+            .permissions
+            .file_system_sandbox_policy =
+            live_config.permissions.file_system_sandbox_policy.clone();
+        reloaded_for_comparison.permissions.network_sandbox_policy =
+            live_config.permissions.network_sandbox_policy;
+        reloaded_for_comparison.permissions.shell_environment_policy =
+            live_config.permissions.shell_environment_policy.clone();
+        reloaded_for_comparison.codex_linux_sandbox_exe =
+            live_config.codex_linux_sandbox_exe.clone();
+
+        let has_enabled_project_layer = reloaded_config
+            .config_layer_stack
+            .get_layers(
+                ConfigLayerStackOrdering::LowestPrecedenceFirst,
+                /*include_disabled*/ false,
+            )
+            .into_iter()
+            .any(|layer| matches!(layer.name, ConfigLayerSource::Project { .. }));
+
+        if has_enabled_project_layer && reloaded_for_comparison != *live_config {
+            config = reloaded_config;
+        }
+    }
     config.model = Some(turn.model_info.slug.clone());
     config.model_provider = turn.provider.info().clone();
+    config.model_providers.insert(
+        config.model_provider_id.clone(),
+        config.model_provider.clone(),
+    );
     config.model_reasoning_effort = turn
         .reasoning_effort
         .or(turn.model_info.default_reasoning_level);
@@ -292,11 +392,35 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     session: &Session,
     turn: &TurnContext,
     config: &mut Config,
+    requested_provider: Option<&str>,
     requested_model: Option<&str>,
     requested_reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<(), FunctionCallError> {
-    if requested_model.is_none() && requested_reasoning_effort.is_none() {
+    if requested_provider.is_none()
+        && requested_model.is_none()
+        && requested_reasoning_effort.is_none()
+    {
         return Ok(());
+    }
+
+    if let Some(requested_provider) = requested_provider {
+        let provider = config
+            .model_providers
+            .get(requested_provider)
+            .cloned()
+            .ok_or_else(|| {
+                let available = config
+                    .model_providers
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FunctionCallError::RespondToModel(format!(
+                    "Unknown provider `{requested_provider}` for spawn_agent. Available providers: {available}"
+                ))
+            })?;
+        config.model_provider_id = requested_provider.to_string();
+        config.model_provider = provider;
     }
 
     if let Some(requested_model) = requested_model {
@@ -328,9 +452,18 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     }
 
     if let Some(reasoning_effort) = requested_reasoning_effort {
+        let resolved_model = config
+            .model
+            .clone()
+            .unwrap_or_else(|| turn.model_info.slug.clone());
+        let resolved_model_info = session
+            .services
+            .models_manager
+            .get_model_info(&resolved_model, &config.to_models_manager_config())
+            .await;
         validate_spawn_agent_reasoning_effort(
-            &turn.model_info.slug,
-            &turn.model_info.supported_reasoning_levels,
+            &resolved_model,
+            &resolved_model_info.supported_reasoning_levels,
             reasoning_effort,
         )?;
         config.model_reasoning_effort = Some(reasoning_effort);

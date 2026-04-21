@@ -683,7 +683,7 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
         sess.send_event_raw(Event {
             id: sub_id,
             msg: EventMsg::Error(ErrorEvent {
-                message: "num_turns must be >= 1".to_string(),
+                message: "num_turns 必须大于等于 1".to_string(),
                 codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
             }),
         })
@@ -714,7 +714,7 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
             sess.send_event_raw(Event {
                 id: turn_context.sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "thread rollback requires a persisted rollout path".to_string(),
+                    message: "线程回滚需要已持久化的 rollout 路径".to_string(),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                 }),
             })

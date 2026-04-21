@@ -1,12 +1,12 @@
 use super::*;
 use crate::CodexThread;
 use crate::ThreadManager;
-use crate::config::AgentRoleConfig;
 use crate::config::Config;
 use crate::config::ConfigBuilder;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::function_tool::FunctionCallError;
 use crate::session::tests::make_session_and_context;
+use crate::session::turn_context::TurnContext;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::state::TaskKind;
 use crate::tasks::SessionTask;
@@ -3462,7 +3462,9 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
@@ -3505,7 +3507,9 @@ async fn build_agent_spawn_config_preserves_runtime_provider_details() {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
 
     assert_eq!(config.model_provider, runtime_provider);
     assert_eq!(
@@ -3525,7 +3529,9 @@ async fn build_agent_spawn_config_preserves_base_user_instructions() {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
 
     assert_eq!(config.user_instructions, base_config.user_instructions);
 }
@@ -3540,7 +3546,9 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
+        .await
+        .expect("resume config");
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;
@@ -3577,14 +3585,11 @@ async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_tur
     turn.config = Arc::new(fixture.base_config.clone());
     turn.cwd = fixture.nested.clone();
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
 
-    let mut expected = fixture.base_config.clone();
-    expected.zmemory = fixture.project_config.zmemory.clone();
-    expected.agent_max_threads = fixture.project_config.agent_max_threads;
-    expected.agent_max_depth = fixture.project_config.agent_max_depth;
-    expected.agent_job_max_runtime_seconds = fixture.project_config.agent_job_max_runtime_seconds;
-    expected.agent_roles = fixture.project_config.agent_roles.clone();
+    let mut expected = fixture.project_config.clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
     expected.model_provider = turn.provider.info().clone();
@@ -3621,14 +3626,11 @@ async fn build_agent_resume_config_reloads_project_scoped_zmemory_profile_for_tu
     turn.config = Arc::new(fixture.base_config.clone());
     turn.cwd = fixture.nested.clone();
 
-    let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
+        .await
+        .expect("resume config");
 
-    let mut expected = fixture.base_config.clone();
-    expected.zmemory = fixture.project_config.zmemory.clone();
-    expected.agent_max_threads = fixture.project_config.agent_max_threads;
-    expected.agent_max_depth = fixture.project_config.agent_max_depth;
-    expected.agent_job_max_runtime_seconds = fixture.project_config.agent_job_max_runtime_seconds;
-    expected.agent_roles = fixture.project_config.agent_roles.clone();
+    let mut expected = fixture.project_config.clone();
     expected.base_instructions = None;
     expected.model = Some(turn.model_info.slug.clone());
     expected.model_provider = turn.provider.info().clone();

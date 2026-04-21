@@ -31,9 +31,12 @@ pub(crate) const SUBAGENT_NOTIFICATION_FRAGMENT: ContextualUserFragmentDefinitio
         SUBAGENT_NOTIFICATION_OPEN_TAG,
         SUBAGENT_NOTIFICATION_CLOSE_TAG,
     );
+const LEGACY_AGENTS_MD_FRAGMENT: ContextualUserFragmentDefinition =
+    ContextualUserFragmentDefinition::new("# AGENTS.md instructions for", "</INSTRUCTIONS>");
 
 const CONTEXTUAL_USER_FRAGMENTS: &[ContextualUserFragmentDefinition] = &[
     AGENTS_MD_FRAGMENT,
+    LEGACY_AGENTS_MD_FRAGMENT,
     ENVIRONMENT_CONTEXT_FRAGMENT,
     SKILL_FRAGMENT,
     USER_SHELL_COMMAND_FRAGMENT,
@@ -59,7 +62,9 @@ pub(crate) fn is_memory_excluded_contextual_user_fragment(content_item: &Content
     let ContentItem::InputText { text } = content_item else {
         return false;
     };
-    AGENTS_MD_FRAGMENT.matches_text(text) || SKILL_FRAGMENT.matches_text(text)
+    AGENTS_MD_FRAGMENT.matches_text(text)
+        || LEGACY_AGENTS_MD_FRAGMENT.matches_text(text)
+        || SKILL_FRAGMENT.matches_text(text)
 }
 
 pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {

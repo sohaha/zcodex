@@ -1328,7 +1328,7 @@ async fn guardian_review_surfaces_responses_api_errors_in_rejection_reason() -> 
     let rejection_message =
         guardian_rejection_message(session.as_ref(), "review-shell-guardian-error").await;
     assert!(
-        rejection_message.contains("Reason: Automatic approval review failed:")
+        rejection_message.contains("Reason: 自动批准审查失败：")
             && rejection_message.contains(error_message),
         "rejection message should include guardian rationale: {rejection_message}"
     );
