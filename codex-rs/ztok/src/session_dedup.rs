@@ -25,6 +25,15 @@ pub(crate) fn dedup_read_output(
     output_signature: &str,
     result: CompressionResult,
 ) -> CompressionResult {
+    dedup_output(source_name, raw_content, output_signature, result)
+}
+
+pub(crate) fn dedup_output(
+    source_name: &str,
+    raw_content: &str,
+    output_signature: &str,
+    result: CompressionResult,
+) -> CompressionResult {
     dedup_read_output_with_cache_path_and_config(
         session_cache_path(),
         source_name,

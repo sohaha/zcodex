@@ -3,6 +3,7 @@ use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
 use crate::compression::CompressionRequest;
 use crate::compression::JsonRenderMode;
+use crate::session_dedup;
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
@@ -53,19 +54,24 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
         fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
     let source_name = file.display().to_string();
-    let output = compression::compress(CompressionRequest {
-        source_name: &source_name,
-        content: &content,
-        hint: CompressionHint::Json,
-        intent: CompressionIntent::Json {
-            max_depth,
-            mode: if schema_only {
-                JsonRenderMode::Schema
-            } else {
-                JsonRenderMode::Compact
+    let output = session_dedup::dedup_output(
+        &source_name,
+        &content,
+        &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
+        compression::compress(CompressionRequest {
+            source_name: &source_name,
+            content: &content,
+            hint: CompressionHint::Json,
+            intent: CompressionIntent::Json {
+                max_depth,
+                mode: if schema_only {
+                    JsonRenderMode::Schema
+                } else {
+                    JsonRenderMode::Compact
+                },
             },
-        },
-    })?
+        })?,
+    )
     .output;
     println!("{output}");
     timer.track(
@@ -91,19 +97,24 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
         .read_to_string(&mut content)
         .context("从标准输入读取失败")?;
 
-    let output = compression::compress(CompressionRequest {
-        source_name: "-",
-        content: &content,
-        hint: CompressionHint::Json,
-        intent: CompressionIntent::Json {
-            max_depth,
-            mode: if schema_only {
-                JsonRenderMode::Schema
-            } else {
-                JsonRenderMode::Compact
+    let output = session_dedup::dedup_output(
+        "-",
+        &content,
+        &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
+        compression::compress(CompressionRequest {
+            source_name: "-",
+            content: &content,
+            hint: CompressionHint::Json,
+            intent: CompressionIntent::Json {
+                max_depth,
+                mode: if schema_only {
+                    JsonRenderMode::Schema
+                } else {
+                    JsonRenderMode::Compact
+                },
             },
-        },
-    })?
+        })?,
+    )
     .output;
     println!("{output}");
     timer.track("cat - (stdin)", "ztok json -", &content, &output);

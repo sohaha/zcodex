@@ -222,6 +222,111 @@ fn ztok_read_disables_session_cache_without_thread_id() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn ztok_json_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-json-1")
+        .args(["ztok", "json", "-"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-json-1")
+        .args(["ztok", "json", "-"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_json_disables_session_cache_without_thread_id() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .args(["ztok", "json", "-"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .args(["ztok", "json", "-"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_log_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-log-1")
+        .args(["ztok", "log"])
+        .write_stdin("warning: heads up\nerror: boom\n")
+        .assert()
+        .success()
+        .stdout(contains("1 个错误（1 个唯一）").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-log-1")
+        .args(["ztok", "log"])
+        .write_stdin("warning: heads up\nerror: boom\n")
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_summary_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let summary_args: Vec<&str> = if cfg!(windows) {
+        vec![
+            "ztok", "summary", "echo", "alpha", "&", "echo", "warning:", "boom",
+        ]
+    } else {
+        vec![
+            "ztok", "summary", "echo", "alpha", ";", "echo", "warning:", "boom",
+        ]
+    };
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-1")
+        .args(&summary_args)
+        .assert()
+        .success()
+        .stdout(contains("✅ 命令：").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-1")
+        .args(&summary_args)
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
 #[cfg(unix)]
 fn make_ztok_alias(codex_home: &Path) -> Result<PathBuf> {
     let alias = codex_home.join("ztok");

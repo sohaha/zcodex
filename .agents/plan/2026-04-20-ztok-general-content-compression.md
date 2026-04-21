@@ -3,7 +3,7 @@
 ## 背景
 - 当前状态：
   - `ztok` 是内嵌在 Codex CLI 中的 curated integration，而不是独立产品。
-  - `codex-rs/ztok/src/read.rs` 已改为通过共享压缩入口产出 `CompressionResult`，并在 `read` 路径先接入会话级 exact dedup。
+  - `read` / `json` / `log` / `summary` 现已共用共享压缩入口，并统一通过会话作用域 dedup / near-diff 判定层处理重复与近重复输出。
   - `codex-rs/ztok/src/tracking.rs` 当前仅保留 no-op 运行期适配层，明确不包含上游分析、持久化或遥测能力。
   - `codex-rs/ztok/Cargo.toml` 已引入 `rusqlite` 与 `sha1`，用于会话级 dedup 缓存与稳定内容指纹。
   - `codex-rs/ztok/src/compression.rs`、`compression_json.rs`、`compression_log.rs` 已承接 `read` / `json` / `log` / `summary` 的共享内容压缩合同与路由逻辑。
@@ -21,16 +21,17 @@
 - 已完成：
   - `a1` 已完成并通过验证：共享内容压缩合同、内容路由与显式回退语义已经落地，`read` / `json` / `log` / `summary` 已收敛为薄适配层。
   - `a2` 的核心代码已落地：`read` 路径已支持会话级 exact dedup；`cli` 已在 alias、`codex ztok ...` 和 `Subcommand::Ztok` 三个入口统一注入 `CODEX_ZTOK_SESSION_ID`。
-  - 针对 `a2` 的功能验证已经通过：
+  - `a3` 已完成并通过验证：`near_dedup` 模块已落地可调阈值的 SimHash 候选筛选与 LCS 差分，`session_dedup` 已统一 exact / near / fallback 合同。
+  - `a4` 已完成并通过验证：`session_dedup::dedup_output(...)` 现已成为 `read` / `json` / `log` / `summary` 共用入口，`summary` 会对最终摘要文本做 dedup，CLI 测试已锁定共享命中与无会话标识时禁用 dedup。
+  - 当前已通过的实现验证包括：
     - `cd /workspace/codex-rs && just fmt`
     - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`
     - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok`
 - 当前阻塞：
-  - 因 `codex-rs/ztok/Cargo.toml` 已新增依赖，按仓库规则仍需完成 `just bazel-lock-update` 与 `just bazel-lock-check`。
-  - 该链路当前不是代码逻辑阻塞，而是工具链/仓库状态阻塞：先前环境缺少 `bazel`，补齐后又发现 `MODULE.bazel` 引用的 `tools/argument-comment-lint/Cargo.lock` 在仓库中缺失；补生成后，`bazel-lock-update` 还受到已有 Bazel server 任务干扰，尚未完成收尾。
+  - 代码实现面已无阻塞；剩余待收口的是 `a5` 的上游基线记录与双上游 skill 文案，避免 `RTK` 与 `sqz` 的参考口径继续散落在 issue/plan 文本里。
 - 下一步：
-  - 清理或等待已有 Bazel server 任务结束，完成 Bazel lock 更新/校验。
-  - 在 lock 收口后，执行 scoped `just fix`，再把 `a2` 的状态与验证结果回写到 issue。
+  - 新增 `.version/sqz.toml`，把本轮实际参考的 `sqz` source / ref / commit / integration mode 固定下来。
+  - 扩展 `.codex/skills/upgrade-rtk/SKILL.md` 与 checklist，明确它是 `ztok` 的 `RTK + sqz` 双上游统一入口，而不是只服务 RTK。
 
 ## 当前实现落点
 - 共享压缩合同与路由：
@@ -187,7 +188,7 @@
 
 ### 命令接入与收口
 - 状态：
-  - 仅完成共享压缩合同层面的薄适配，近重复压缩与四命令统一 dedup 判定仍待 `a3`、`a4` 收口。
+  - 已完成，对应 issue `a4`。
 - 目标：
   - 把共享底座接入现有高价值命令，并固定行为边界。
 - 交付物：
@@ -203,7 +204,7 @@
 
 ### 双上游基线与 `upgrade-rtk` 收口
 - 状态：
-  - 尚未开始，对应 issue `a5`。
+  - 进行中，对应 issue `a5`。
 - 目标：
   - 为 `ztok` 建立 `RTK + sqz` 双上游的可审计基线记录，并把后续同步入口收敛到 `upgrade-rtk`。
 - 交付物：

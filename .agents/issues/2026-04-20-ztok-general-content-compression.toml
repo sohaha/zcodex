@@ -108,10 +108,10 @@ done_when = "`read` 已深接入共享压缩内核，`json` / `log` / `summary` 
 validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok，并确认测试中至少包含 `read`、`json`、`log`、`summary` 各一条 CLI 级场景，覆盖共享路由命中、`NoSessionId => dedup disabled => full output`、SimHash/LCS 低置信度回退与缓存异常回退。"
 regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok，并回读相关测试确认四个命令入口没有绕过共享 dedup-disable 合同。"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "这是本轮实现的总接入 issue。若前序 issue 已完成但本 issue 失败，说明压缩内核 contract 与命令面之间仍存在未收口的接口或验证缺口。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "Execution 结果：已把会话 dedup 从 `read` 专用路径提成 `session_dedup::dedup_output(...)` 共享入口，`json`、`log`、`summary` 与既有 `read` 现已共用同一 dedup / near-diff 判定层，并继续显式满足 `NoSessionId => dedup disabled => full output`。其中 `summary` 改为对最终用户可见摘要文本做 dedup，而不是只压缩内部中间结果；`codex-rs/cli/tests/ztok.rs` 已补 `read` / `json` / `log` / `summary` CLI 级场景，锁定共享命中与缺失会话标识时禁用 dedup 的边界。验证：`cd /workspace/codex-rs && just fmt`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`、`cd /workspace/codex-rs && env -u RUSTC_WRAPPER just fix -p codex-ztok -p codex-cli` 已通过。"
 
 [[issue]]
 id = "a5"

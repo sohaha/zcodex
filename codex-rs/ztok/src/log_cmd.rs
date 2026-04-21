@@ -3,6 +3,7 @@ use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
 use crate::compression::CompressionRequest;
 use crate::compression::LogRenderMode;
+use crate::session_dedup;
 use crate::tracking;
 use anyhow::Result;
 use std::fs;
@@ -20,14 +21,19 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
 
     let content = fs::read_to_string(file)?;
     let source_name = file.display().to_string();
-    let result = compression::compress(CompressionRequest {
-        source_name: &source_name,
-        content: &content,
-        hint: CompressionHint::Log,
-        intent: CompressionIntent::Log {
-            mode: LogRenderMode::Detailed,
-        },
-    })?
+    let result = session_dedup::dedup_output(
+        &source_name,
+        &content,
+        "log:mode=detailed",
+        compression::compress(CompressionRequest {
+            source_name: &source_name,
+            content: &content,
+            hint: CompressionHint::Log,
+            intent: CompressionIntent::Log {
+                mode: LogRenderMode::Detailed,
+            },
+        })?,
+    )
     .output;
     println!("{result}");
     timer.track(
@@ -50,14 +56,19 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
         content.push('\n');
     }
 
-    let result = compression::compress(CompressionRequest {
-        source_name: "-",
-        content: &content,
-        hint: CompressionHint::Log,
-        intent: CompressionIntent::Log {
-            mode: LogRenderMode::Detailed,
-        },
-    })?
+    let result = session_dedup::dedup_output(
+        "-",
+        &content,
+        "log:mode=detailed",
+        compression::compress(CompressionRequest {
+            source_name: "-",
+            content: &content,
+            hint: CompressionHint::Log,
+            intent: CompressionIntent::Log {
+                mode: LogRenderMode::Detailed,
+            },
+        })?,
+    )
     .output;
     println!("{result}");
 
