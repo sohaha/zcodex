@@ -573,6 +573,188 @@
           "pattern": "https://github\\.com/sohaha/zcodex\\.git"
         }
       ]
+    },
+    {
+      "id": "zoffsec-native-command-workflow",
+      "kind": "local_surface",
+      "area": "codex-rs/cli + codex-rs/tui + codex-rs/rollout",
+      "summary": "`codex zoffsec` 顶层子命令、base-instructions 注入、rollout clean，以及 resume 前 clean 的原生 CLI/TUI 工作流必须继续存在。",
+      "better_when": "只有在 upstream 或本地新架构提供等效的原生命令工作流，并继续覆盖模板注入、clean、resume-clean bridge 与 rollout 清理语义时，才允许迁移；迁移前必须先把新的入口和回归锚点更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "Some\\(Subcommand::Zoffsec\\(zoffsec_cli\\)\\) =>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "fn finalize_zoffsec_resume_interactive\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "fn zoffsec_subcommand_registers_at_top_level\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "fn finalize_zoffsec_resume_enables_clean_before_resume\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/zoffsec_cmd.rs",
+          "pattern": "pub struct ZoffsecCommand"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/zoffsec_cmd.rs",
+          "pattern": "pub async fn run_zoffsec_clean_command\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/zoffsec_config.rs",
+          "pattern": "pub const ZOFFSEC_SESSION_MARKER: &str = \"codex-zoffsec\";"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/cli.rs",
+          "pattern": "pub resume_zoffsec_clean: bool,"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/lib.rs",
+          "pattern": "if cli\\.resume_zoffsec_clean \\{"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/zoffsec_resume.rs",
+          "pattern": "pub\\(crate\\) async fn clean_resume_selection_if_needed\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/rollout/src/patch.rs",
+          "pattern": "pub async fn clean_zoffsec_rollout\\("
+        }
+      ]
+    },
+    {
+      "id": "local-analysis-tools-runtime-wiring",
+      "kind": "local_behavior",
+      "area": "codex-rs/tools + codex-rs/core + codex-rs/mcp-server",
+      "summary": "`ztldr` 与 `zmemory` 不能只保留 crate 和 CLI；它们必须继续接入共享 tool registry plan、handler 映射和 tests/all 聚合面。",
+      "better_when": "只有在 upstream 或本地新架构提供等效的运行时工具接线，并继续保证 `ztldr`/`zmemory` 真正暴露给模型、handler 可分发且 e2e 聚合测试仍覆盖时，才允许迁移；迁移前必须先把新的 plan、handler 与测试锚点更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/tool_registry_plan.rs",
+          "pattern": "let spec = create_tldr_tool\\(\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/tool_registry_plan.rs",
+          "pattern": "plan\\.register_handler\\(name, ToolHandlerKind::Tldr\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/tool_registry_plan.rs",
+          "pattern": "create_zmemory_tool\\(\\)\\)\\.chain\\(create_zmemory_mcp_tools\\(\\)\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/tool_registry_plan.rs",
+          "pattern": "plan\\.register_handler\\(name, ToolHandlerKind::Zmemory\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/spec.rs",
+          "pattern": "ToolHandlerKind::Tldr => \\{"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/spec.rs",
+          "pattern": "ToolHandlerKind::Zmemory => \\{"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/mod.rs",
+          "pattern": "mod tldr_e2e;"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/mod.rs",
+          "pattern": "mod zmemory_e2e;"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/tldr_e2e.rs",
+          "pattern": "assert!\\(tool_names\\(&body\\)\\.contains\\(&\"ztldr\"\\.to_string\\(\\)\\)\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
+          "pattern": "async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests\\("
+        }
+      ]
+    },
+    {
+      "id": "pending-input-routing-and-zmemory-recall",
+      "kind": "local_behavior",
+      "area": "codex-rs/core session/tasks/tools",
+      "summary": "turn 起始和 mid-turn 的 `pending_input` 必须保留现有 tool routing 基线、按最新 steer 合并指令，并把 zmemory recall note 注入到后续 developer 上下文。",
+      "better_when": "只有在 upstream 用新的 turn-local 状态机制等效覆盖 pending_input 路由合并、regular turn recall 生产、follow-up developer 注入和相关回归测试时，才允许迁移；迁移前必须先把新的状态流锚点更新到这里。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tasks/mod.rs",
+          "pattern": "merge_tool_routing_directives\\(current_directives, &pending_turn_inputs\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tasks/mod.rs",
+          "pattern": "self\\.set_pending_zmemory_recall_note\\(turn_context\\.sub_id\\.as_str\\(\\), recall_note\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "pending_zmemory_recall_note_for\\(current_context\\.sub_id\\.as_str\\(\\)\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "build_developer_update_item\\(vec!\\[recall_note\\]\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "pub\\(crate\\) async fn apply_pending_user_input_side_effects\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "merge_tool_routing_directives\\(current_directives, &routing_inputs\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "build_stable_preference_recall_note\\(sess, turn_context, &user_inputs\\)\\.await"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/tests.rs",
+          "pattern": "async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/tests.rs",
+          "pattern": "async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
+          "pattern": "async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests\\("
+        }
+      ]
     }
   ]
 }

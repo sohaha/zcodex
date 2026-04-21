@@ -2,6 +2,10 @@ use super::*;
 use codex_app_server_protocol::AppInfo;
 use pretty_assertions::assert_eq;
 
+fn normalize_rendered_text(text: &str) -> String {
+    text.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
 #[tokio::test]
 async fn realtime_error_closes_without_followup_closed_info() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -20,7 +24,7 @@ async fn realtime_error_closes_without_followup_closed_info() {
         .into_iter()
         .map(|lines| lines_to_single_string(&lines))
         .collect::<Vec<_>>();
-    insta::assert_snapshot!(rendered.join("\n\n"), @"■ Realtime voice error: boom");
+    insta::assert_snapshot!(rendered.join("\n\n"), @"■ 实时语音错误： boom");
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -776,12 +780,13 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
     type_plugins_search_query(&mut chat, "zzz");
 
     let no_matches = render_bottom_popup(&chat, /*width*/ 100);
+    let normalized_no_matches = normalize_rendered_text(&no_matches);
     assert!(
         no_matches.contains("zzz"),
         "expected popup to show the typed search query, got:\n{no_matches}"
     );
     assert!(
-        no_matches.contains("no matches"),
+        normalized_no_matches.contains("没有匹配项"),
         "expected popup to render the no-matches UX, got:\n{no_matches}"
     );
 
@@ -790,12 +795,13 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
     }
 
     let restored = render_bottom_popup(&chat, /*width*/ 100);
+    let normalized_restored = normalize_rendered_text(&restored);
     assert!(
         restored.contains("Calendar") && restored.contains("Slack"),
         "expected clearing the query to restore the plugin rows, got:\n{restored}"
     );
     assert!(
-        !restored.contains("no matches"),
+        !normalized_restored.contains("没有匹配项"),
         "did not expect the no-matches state after clearing the query, got:\n{restored}"
     );
 }
@@ -839,8 +845,9 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
     );
 
     let before = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_before = normalize_rendered_text(&before);
     assert!(
-        before.contains("Loading installed and available apps..."),
+        normalized_before.contains("正在加载已安装和可用的应用..."),
         "expected /apps to stay in the loading state until the full list arrives, got:\n{before}"
     );
     assert_chatwidget_snapshot!("apps_popup_loading_state", before);
@@ -884,8 +891,9 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
     );
 
     let after = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_after = normalize_rendered_text(&after);
     assert!(
-        after.contains("Installed 2 of 2 available apps."),
+        normalized_after.contains("共2个可用应用，已安装2个。"),
         "expected refreshed apps popup snapshot, got:\n{after}"
     );
     assert!(
@@ -977,8 +985,9 @@ async fn apps_refresh_failure_keeps_existing_full_snapshot() {
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed 1 of 2 available apps."),
+        normalized_popup.contains("共2个可用应用，已安装1个。"),
         "expected previous full snapshot to be preserved, got:\n{popup}"
     );
 }
@@ -1241,8 +1250,9 @@ async fn apps_popup_keeps_existing_full_snapshot_while_partial_refresh_loads() {
     );
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed 1 of 2 available apps."),
+        normalized_popup.contains("共2个可用应用，已安装1个。"),
         "expected popup to keep the last full snapshot while partial refresh loads, got:\n{popup}"
     );
     assert!(
@@ -1284,8 +1294,9 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
 
     chat.add_connectors_output();
     let loading_popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_loading_popup = normalize_rendered_text(&loading_popup);
     assert!(
-        loading_popup.contains("Loading installed and available apps..."),
+        normalized_loading_popup.contains("正在加载已安装和可用的应用..."),
         "expected /apps to keep showing loading before the final result, got:\n{loading_popup}"
     );
 
@@ -1300,12 +1311,13 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
     );
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed 1 of 1 available apps."),
+        normalized_popup.contains("共1个可用应用，已安装1个。"),
         "expected /apps to fall back to the installed apps snapshot, got:\n{popup}"
     );
     assert!(
-        popup.contains("Installed. Press Enter to open the app page"),
+        normalized_popup.contains("已安装。按Enter打开应用页面"),
         "expected the fallback popup to behave like the installed apps view, got:\n{popup}"
     );
 }
@@ -1343,13 +1355,11 @@ async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        normalized_popup
+            .contains("已安装·已停用。按Enter打开应用页面，可安装、管理或启用/停用这个应用。"),
         "expected selected app description to include disabled status, got:\n{popup}"
-    );
-    assert!(
-        popup.contains("enable/disable this app."),
-        "expected selected app description to mention enable/disable action, got:\n{popup}"
     );
 }
 
@@ -1473,8 +1483,9 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_with_user_ove
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        normalized_popup.contains("已安装·已停用"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1537,8 +1548,9 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_without_user_
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        normalized_popup.contains("已安装·已停用"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1608,8 +1620,9 @@ async fn apps_refresh_preserves_toggled_enabled_state() {
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        normalized_popup.contains("已安装·已停用"),
         "expected disabled status to persist after reload, got:\n{popup}"
     );
 }
@@ -1647,12 +1660,13 @@ async fn apps_popup_for_not_installed_app_uses_install_only_selected_description
 
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Can be installed. Press Enter to open the app page to install"),
+        normalized_popup.contains("可安装。按Enter打开应用页面安装这个应用。"),
         "expected selected app description to be install-only for not-installed apps, got:\n{popup}"
     );
     assert!(
-        !popup.contains("enable/disable this app."),
+        !normalized_popup.contains("启用/停用这个应用"),
         "did not expect enable/disable text for not-installed apps, got:\n{popup}"
     );
 }
@@ -1731,17 +1745,14 @@ async fn experimental_popup_shows_js_repl_node_requirement() {
         .find(|spec| spec.id == Feature::JsRepl)
         .and_then(|spec| spec.stage.experimental_menu_description())
         .expect("expected js_repl experimental description");
-    let node_requirement = js_repl_description
-        .split(". ")
-        .find(|sentence| sentence.starts_with("Requires Node >= v"))
-        .map(|sentence| sentence.trim_end_matches(" installed."))
-        .expect("expected js_repl description to mention the Node requirement");
 
     chat.open_experimental_popup();
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let normalized_popup = normalize_rendered_text(&popup);
+    let normalized_description = normalize_rendered_text(js_repl_description);
     assert!(
-        popup.contains(node_requirement),
+        normalized_popup.contains(&normalized_description),
         "expected js_repl feature description to mention the required Node version, got:\n{popup}"
     );
 }
@@ -1764,13 +1775,15 @@ async fn experimental_popup_includes_guardian_approval() {
     chat.open_experimental_popup();
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
-    let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized_popup = normalize_rendered_text(&popup);
+    let normalized_guardian_name = normalize_rendered_text(guardian_name);
+    let normalized_guardian_description = normalize_rendered_text(guardian_description);
     assert!(
-        popup.contains(guardian_name),
+        normalized_popup.contains(&normalized_guardian_name),
         "expected auto-review entry in experimental popup, got:\n{popup}"
     );
     assert!(
-        normalized_popup.contains(guardian_description),
+        normalized_popup.contains(&normalized_guardian_description),
         "expected auto-review description in experimental popup, got:\n{popup}"
     );
 }
@@ -1801,7 +1814,7 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
         other => panic!("expected InsertHistoryCell event, got {other:?}"),
     };
     let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 120));
-    assert!(rendered.contains("Subagents will be enabled in the next session."));
+    assert!(rendered.contains("子代理将在下一个会话中启用。"));
 }
 
 #[tokio::test]
@@ -2088,12 +2101,13 @@ async fn reasoning_popup_shows_extra_high_with_space() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Extra high"),
-        "expected popup to include 'Extra high'; popup: {popup}"
+        normalized_popup.contains("极高"),
+        "expected popup to include '极高'; popup: {popup}"
     );
     assert!(
-        !popup.contains("Extrahigh"),
+        !normalized_popup.contains("Extrahigh"),
         "expected popup not to include 'Extrahigh'; popup: {popup}"
     );
 }
@@ -2203,11 +2217,13 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.open_reasoning_popup(preset);
 
     let before_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(before_escape.contains("Select Reasoning Level"));
+    let normalized_before_escape = normalize_rendered_text(&before_escape);
+    assert!(normalized_before_escape.contains("选择gpt-5.1-codex-max的推理级别"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(after_escape.contains("Select Model"));
-    assert!(!after_escape.contains("Select Reasoning Level"));
+    let normalized_after_escape = normalize_rendered_text(&after_escape);
+    assert!(normalized_after_escape.contains("选择模型与推理级别"));
+    assert!(!normalized_after_escape.contains("选择gpt-5.1-codex-max的推理级别"));
 }

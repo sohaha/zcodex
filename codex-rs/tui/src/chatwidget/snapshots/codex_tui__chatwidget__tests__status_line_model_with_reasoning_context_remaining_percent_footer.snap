@@ -1,10 +1,8 @@
 ---
-source: tui/src/chatwidget/tests/mcp_startup.rs
-assertion_line: 23
+source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"• 正在启动 MCP 服务器：alpha (0s • esc 中断)                                    " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (16, " "), (18, " "), (20, " "), (22, " "), (40, " "), (42, " ")]
 "  .------------.                                                                "
 "  | 轻轻漂来。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
 "  '------------.                                                                "
@@ -14,7 +12,6 @@ expression: normalized_backend_snapshot(terminal.backend())
 "   \__/                                                                         "
 "  Ripple ★ 常见 美西螈 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
 "                                                                                "
-"                                                                                "
 "› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "                                                                                "
-"  gpt-5.3-codex 默认 · 已用 0% · /tmp/project                                   " Hidden by multi-width symbols: [(17, " "), (19, " "), (24, " "), (26, " ")]
+"  gpt-5.4 极高 快速 · 剩余 100% · /tmp/project                                  " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " ")]

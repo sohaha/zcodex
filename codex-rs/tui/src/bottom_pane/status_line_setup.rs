@@ -64,6 +64,10 @@ pub(crate) enum StatusLineItem {
     GitBranch,
 
     /// Percentage of context window remaining.
+    #[strum(
+        to_string = "context-remaining",
+        serialize = "context-remaining-percent"
+    )]
     ContextRemaining,
 
     /// Percentage of context window used.

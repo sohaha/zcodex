@@ -1,10 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 135
 expression: popup
 ---
-▌ Rename thread
+▌ 重 命 名 线 程
 ▌
 ▌ Current project title
 
-Press enter to confirm or esc to go back
+按  enter 确 认 或 按  esc 返 回

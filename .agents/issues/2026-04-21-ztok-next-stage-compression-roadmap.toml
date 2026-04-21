@@ -1,0 +1,314 @@
+plan = ".agents/plan/2026-04-21-ztok-next-stage-compression-roadmap.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 ztok 统一运行时设置边界并拆出核心策略模块"
+scope = """
+本 issue 负责把当前 `behavior + session_dedup + near_dedup` 的粗边界收敛成可演进的运行时设置与模块结构，为后续 cache 治理、调试视图、类型感知 near-diff 与共享压缩扩面提供稳定基础。
+
+包括：
+1. 在配置层与 CLI 桥接层为 `ztok` 预留统一运行时设置边界，而不是继续追加散落的单个环境变量
+2. 在 `codex-rs/ztok` 内新增 `settings.rs`，并把 cache / near-diff / trace 的运行时设置读取集中到单一点
+3. 把当前 `session_dedup.rs` 中混合的职责拆分为更稳定的模块边界，至少为 `session_cache.rs` 与 `near_dedup/*` 留出明确职责
+4. 保持 `basic` 模式继续完整绕开 session dedup / near-diff / sqlite，且不改变现有 `codex ztok` / `ztok` 的输出合同
+
+不包括：
+- 落地 cache TTL、清理、inspect/clear 运维能力
+- 落地结构化决策调试视图
+- 落地 JSON / 日志类型感知 near-diff
+- 扩展共享压缩到新的高价值入口
+"""
+touch_points = ["module:codex-config", "module:codex-core", "module:codex-cli", "module:codex-ztok", "command:codex ztok", "command:ztok", "codex-rs/config/src/*.rs", "codex-rs/core/src/config/*.rs", "codex-rs/cli/src/main.rs", "codex-rs/ztok/src/*.rs", "codex-rs/core/config.schema.json", "docs/config.md"]
+depends_on = []
+done_when = "`ztok` 的运行时设置由 CLI 统一桥接，`codex-rs/ztok` 仅消费集中设置入口；`session_dedup` 不再继续承载 cache/schema/settings 的混合职责，且 `basic` / `enhanced` 的现有行为合同保持不变。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-core --lib && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：Issue Generation 阶段已使用多个子代理并行收敛功能分层、架构边界与验证策略；本 issue 对应路线图阶段 1，是后续全部功能的结构性前置。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "补齐 session cache 生命周期治理与最小运维面"
+scope = """
+本 issue 负责让当前 `.ztok-cache/<session-id>.sqlite` 从“可用的跨调用载体”升级为“可治理、可恢复、可受控的会话缓存”。
+
+包括：
+1. 为 session cache 增加 metadata、schema version、过期清理或容量上限等治理语义
+2. 为缓存损坏、权限失败、schema 演进失败等场景补齐显式回退路径
+3. 提供最小运维面，例如 inspect / clear 指定 session cache，避免只能手工删目录或猜测状态
+4. 保持当前 per-session SQLite 文件隔离模型，不引入跨线程共享库
+
+不包括：
+- 引入 analytics / telemetry / stats / dashboard
+- 把 cache 改造成全局共享 SQLite
+- 调整 near-diff 算法本身
+"""
+touch_points = ["module:codex-ztok", "command:codex ztok", "command:ztok", "codex-rs/ztok/src/session_dedup.rs", "codex-rs/ztok/src/session_cache.rs", "codex-rs/ztok/src/lib.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1"]
+done_when = "session cache 具备明确的保留、清理、损坏恢复与 schema 演进语义；出现损坏或不可写时会显式回退到完整输出路径；用户或测试可以通过最小运维入口检查或清空指定 session cache。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：多子代理评审一致认为 cache 治理必须独立成 issue；本 issue 对应路线图阶段 2 的 cache 治理部分，避免它与扩面或类型特化耦合。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "提供压缩决策调试视图而不污染 stdout"
+scope = """
+本 issue 负责把当前内部已有的 `output_kind`、fallback reason、dedup / near-diff 决策结果变成可见、可测试、可关闭的调试能力。
+
+包括：
+1. 为 full / short reference / diff / fallback 等决策建立结构化调试视图
+2. 通过 `stderr`、trace 文件或等效 side channel 暴露调试数据，不污染正常 stdout
+3. 补齐 redaction 或内容边界，避免调试视图泄露完整原始快照
+4. 让 `read/json/log/summary` 及后续共享压缩入口能统一复用该调试视图
+
+不包括：
+- 把调试信息默认拼进正常输出
+- 把 `tracking.rs` 扩成遥测或持久化系统
+- 引入外部统计面板或历史分析功能
+"""
+touch_points = ["module:codex-ztok", "command:ztok read", "command:ztok json", "command:ztok log", "command:ztok summary", "codex-rs/ztok/src/*.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1"]
+done_when = "在显式开启调试视图时，用户或测试可以看见统一的结构化压缩决策信息；默认关闭时，现有 stdout 合同不变；调试视图不会泄露完整原始快照。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "available capabilities 结论：验证面与架构面都确认该能力适合单独落地；本 issue 对应路线图阶段 2 的决策可观察性部分。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "把共享压缩扩展到 structured fetchers 输出面"
+scope = """
+本 issue 负责把共享压缩底座接到当前仍停留在局部 JSON / 文本压缩逻辑的 fetcher 型入口上，优先收敛 `curl`、`wget`，并按实现收益评估 `aws` 是否一并接入。
+
+包括：
+1. 让 `curl`、`wget` 的 JSON / 文本输出进入统一的共享压缩与 dedup 判定层
+2. 在不破坏内部 URL、错误输出与现有 basic/enhanced 合同的前提下，统一这些入口的输出行为
+3. 如 `aws` 的现有输出路径能在同一合同下低风险接入，则一并纳入；否则仅明确保留入口边界与后续依赖
+
+不包括：
+- 改写 `gh api` 等显式 passthrough 契约
+- 为所有 wrapper 一次性接入共享压缩
+- 在本 issue 内引入 domain-specific 垂直摘要模板
+"""
+touch_points = ["module:codex-ztok", "command:ztok curl", "command:ztok wget", "command:ztok aws", "codex-rs/ztok/src/curl_cmd.rs", "codex-rs/ztok/src/wget_cmd.rs", "codex-rs/ztok/src/aws_cmd.rs", "codex-rs/ztok/src/compression*.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1", "a2", "a3"]
+done_when = "`curl`、`wget` 已进入共享压缩与 dedup 判定层，且 basic/enhanced 合同与内部 URL 例外仍成立；如 `aws` 一并接入，也需满足相同合同，否则应明确保持边界而不半接入。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：功能面与验证面都建议将 fetcher 家族单独成组；本 issue 对应路线图阶段 3 的 `structured fetchers`。"
+
+[[issue]]
+id = "a5"
+sequence = 50
+title = "把共享压缩扩展到 container 与日志输出面"
+scope = """
+本 issue 负责把当前仍通过 `log_cmd::run_stdin_str` 或局部格式化旁路的容器 / 日志型入口接到统一共享压缩、dedup 与调试视图路径。
+
+包括：
+1. 让 `docker logs`、`kubectl logs`、`docker compose logs` 走统一的共享压缩与 dedup 判定层
+2. 保持这些入口当前的用户可见语义不退化，并让 basic/enhanced 合同继续成立
+3. 对容器相关列表或状态输出中适合进入共享压缩的路径补齐统一入口边界
+
+不包括：
+- 一次性重写所有容器 / Kubernetes wrapper 的输出模板
+- 引入专用 dashboard、持续监控或遥测能力
+- 在本 issue 内实现日志类型感知 near-diff
+"""
+touch_points = ["module:codex-ztok", "command:ztok docker logs", "command:ztok kubectl logs", "command:ztok docker compose logs", "codex-rs/ztok/src/container.rs", "codex-rs/ztok/src/log_cmd.rs", "codex-rs/ztok/src/compression*.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1", "a2", "a3"]
+done_when = "容器与日志型高价值入口已进入统一共享压缩与 dedup 判定层，输出行为在不同入口之间更一致，且 basic 模式下仍完整绕开 session cache 与 near-diff。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：验证面建议将 `container/log surfaces` 与 fetchers 分离；本 issue 对应路线图阶段 3 的容器 / 日志入口扩面。"
+
+[[issue]]
+id = "a6"
+sequence = 60
+title = "为 JSON 内容落地类型感知 near-diff"
+scope = """
+本 issue 负责在共享 near-diff 框架内为 JSON 内容补齐结构语义，而不是继续把 JSON 仅当作普通文本做 simhash + 行 diff。
+
+包括：
+1. 为 JSON 引入规范化表示、字段路径级差分或等效的结构化 near-diff 输出
+2. 在不丢失关键字段变化的前提下，降低字段重排、小范围数值变化带来的噪声
+3. 让 `ztok json` 以及后续进入 JSON 共享压缩路径的入口复用同一 JSON near-diff 策略
+
+不包括：
+- 日志类型感知 near-diff
+- 暴露全部 near-diff 数学阈值到配置层
+- 对非 JSON 结构化文本做同一套策略
+"""
+touch_points = ["module:codex-ztok", "command:ztok json", "codex-rs/ztok/src/near_dedup*.rs", "codex-rs/ztok/src/compression_json.rs", "codex-rs/ztok/src/json_cmd.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1"]
+done_when = "JSON 内容在 near-diff 命中时能够输出结构化、可解释、可回退的差分；字段新增/删除/重排与关键值变化的行为都有明确测试锁定，且不会退化为纯文本噪声 diff。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：验证面明确要求 JSON 与日志特化 near-diff 分拆；本 issue 对应路线图阶段 4 的 JSON 部分。"
+
+[[issue]]
+id = "a7"
+sequence = 70
+title = "为日志内容落地类型感知 near-diff"
+scope = """
+本 issue 负责让日志内容的 near-diff 从“普通文本行差分”升级为基于归一化事件桶或等效日志语义的差分输出。
+
+包括：
+1. 复用日志归一化逻辑，为 near-diff 建立更稳定的候选比较与差分渲染
+2. 区分“时间戳 / UUID / 计数变化”与“真实错误语义变化”，降低无意义 diff 噪声
+3. 让 `ztok log` 及后续走日志共享压缩路径的入口复用同一日志 near-diff 策略
+
+不包括：
+- JSON 类型感知 near-diff
+- 单独为某个日志来源引入专用 dashboard 或长期分析面
+- 把日志归一化扩张成跨产品的公共库
+"""
+touch_points = ["module:codex-ztok", "command:ztok log", "codex-rs/ztok/src/near_dedup*.rs", "codex-rs/ztok/src/compression_log.rs", "codex-rs/ztok/src/log_cmd.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a1"]
+done_when = "日志内容在 near-diff 命中时能输出基于日志语义的可解释差分；只变时间戳或 UUID 的样本不会产生无意义大 diff，真实错误变化不会被误归为近重复。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：多子代理一致认为日志类型感知 near-diff 应单独落地；本 issue 对应路线图阶段 4 的日志部分。"
+
+[[issue]]
+id = "a8"
+sequence = 80
+title = "新增 diff、表格与配置文本压缩器"
+scope = """
+本 issue 负责在现有 `Code/Json/Log/Text` 之外，为高频但结构特殊的输出类型补足更合适的共享压缩路径。
+
+包括：
+1. 为 `diff/patch` 输出建立更适合只看变更块的压缩器
+2. 为表格 / 列表输出建立更适合裁剪列与汇总的压缩器
+3. 为 `toml/yaml/env/ini` 等配置文本建立比普通 text 更合适的压缩器
+4. 让这些新内容类型继续复用现有 dedup / near-diff / fallback 合同
+
+不包括：
+- 为具体 wrapper 定制垂直摘要模板
+- 处理 binary / 非 UTF-8 / 超大输入
+- 暴露新的外部产品面或命令面
+"""
+touch_points = ["module:codex-ztok", "codex-rs/ztok/src/compression.rs", "codex-rs/ztok/src/compression_*.rs", "codex-rs/ztok/src/read.rs", "codex-rs/ztok/src/summary.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a4", "a5"]
+done_when = "diff/patch、表格/列表与配置文本不再被统一退回普通文本压缩；新内容类型具备明确的路由、输出形态与显式回退合同，并且可继续参与现有 dedup / near-diff 路径。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "available capabilities 结论：功能面把该项列为 P1，自然属于共享压缩底座的内容类型扩展；本 issue 对应路线图阶段 5 的前半部分。"
+
+[[issue]]
+id = "a9"
+sequence = 90
+title = "为 binary、非 UTF-8 与超大输入提供元数据摘要路径"
+scope = """
+本 issue 负责补齐共享压缩底座对边界输入的处理能力，避免 binary、非 UTF-8、超大输入只能失败或被整体灌入上下文。
+
+包括：
+1. 为 binary / 非 UTF-8 输入建立元数据摘要路径
+2. 为超大文件或超大单行建立采样窗口、尺寸摘要或等效的边界输出
+3. 保持这些边界输入在 `basic` 与 `enhanced` 模式下都具备显式、可解释的行为
+
+不包括：
+- 为结构化文本新增专用压缩器
+- 为具体 wrapper 单独写专用摘要模板
+- 引入外部文件类型检测服务或复杂依赖
+"""
+touch_points = ["module:codex-ztok", "command:ztok read", "codex-rs/ztok/src/read.rs", "codex-rs/ztok/src/compression.rs", "codex-rs/ztok/src/utils.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a4", "a5"]
+done_when = "binary、非 UTF-8 与超大输入都有稳定的元数据摘要或采样输出，不再只能失败或全文灌入上下文；其 fallback 与模式边界有明确测试锁定。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "available capabilities 结论：功能面与验证面都将边界输入视为独立结果单元；本 issue 对应路线图阶段 5 的边界输入路径。"
+
+[[issue]]
+id = "a10"
+sequence = 100
+title = "引入策略级配置化与 source-aware lineage"
+scope = """
+本 issue 负责在前序运行时边界、cache 治理与类型感知 near-diff 稳定后，把 dedup / near-diff 从硬编码默认值升级为策略级可配置行为，并降低跨来源误命中。
+
+包括：
+1. 为 session cache、dedup、near-diff 暴露策略级配置，而不是直接暴露全部算法常量
+2. 在候选筛选或 `output_signature` 语义中引入 source-aware lineage，降低跨来源误命中
+3. 让新策略继续由 CLI 统一桥接，不让 `ztok` 自己解析全局配置
+
+不包括：
+- 立即开放全部数学阈值给最终用户
+- 引入跨线程共享 cache
+- 为具体 wrapper 落地垂直模板
+"""
+touch_points = ["module:codex-config", "module:codex-core", "module:codex-cli", "module:codex-ztok", "codex-rs/config/src/*.rs", "codex-rs/core/src/config/*.rs", "codex-rs/cli/src/main.rs", "codex-rs/ztok/src/settings.rs", "codex-rs/ztok/src/session_dedup.rs", "codex-rs/ztok/src/near_dedup*.rs", "codex-rs/core/config.schema.json", "docs/config.md", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a2", "a6", "a7", "a8", "a9"]
+done_when = "session cache、dedup 与 near-diff 至少具备稳定的策略级配置入口；source-aware lineage 能显著降低跨来源误命中；CLI 与库侧行为仍保持单一桥接和单一合同。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-core --lib && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：架构面建议先暴露策略级配置、暂缓全部数学阈值；本 issue 对应路线图阶段 6 的前半部分。"
+
+[[issue]]
+id = "a11"
+sequence = 110
+title = "为高价值 wrapper 落地垂直摘要模板"
+scope = """
+本 issue 负责在共享压缩底座、类型感知 near-diff 与策略级配置稳定后，为少量高价值 wrapper 提供更贴近任务语义的垂直摘要模板。
+
+包括：
+1. 为 `git`、`cargo`、`pytest`、`kubectl`、`docker` 等高价值 wrapper 选择性落地垂直模板
+2. 保证垂直模板建立在统一共享底座之上，而不是形成另一套平行实现
+3. 让这些模板继续遵守 basic/enhanced、dedup / near-diff 与调试视图合同
+
+不包括：
+- 一次性为全部 wrapper 写模板
+- 用垂直模板取代已经稳定的共享压缩底座
+- 为外部产品面提供独立 UI、仪表盘或历史分析
+"""
+touch_points = ["module:codex-ztok", "command:ztok git", "command:ztok cargo", "command:ztok pytest", "command:ztok kubectl", "command:ztok docker", "codex-rs/ztok/src/*_cmd.rs", "codex-rs/ztok/src/container.rs", "codex-rs/cli/tests/ztok.rs"]
+depends_on = ["a4", "a5", "a8", "a9", "a10"]
+done_when = "选定的高价值 wrapper 拥有建立在共享底座之上的垂直摘要模板，输出更贴近任务语义，且不会绕开 `basic` / `enhanced`、dedup / near-diff 与调试视图的统一合同。"
+validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
+regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "available capabilities 结论：功能面将 wrapper 垂直模板列为最后一层精调；本 issue 对应路线图阶段 6 的后半部分。"

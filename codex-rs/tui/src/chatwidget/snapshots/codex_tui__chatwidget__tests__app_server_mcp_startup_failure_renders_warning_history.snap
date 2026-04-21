@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/mcp_startup.rs
-assertion_line: 142
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 ⚠ `alpha` 的 MCP 客户端启动失败: handshake failed
@@ -15,6 +14,6 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
    \__/
   Ripple ★ 常见 美西螈 · 坐立不安
 
-› Ask Codex to do anything
+› 让 Codex 帮你做任何事
 
   gpt-5.3-codex 默认 · 已用 0% · /tmp/project

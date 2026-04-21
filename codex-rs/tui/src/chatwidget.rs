@@ -5347,6 +5347,7 @@ impl ChatWidget {
     }
     fn show_rename_prompt(&mut self) {
         let tx = self.app_event_tx.clone();
+        let initial_name = self.thread_name.clone().unwrap_or_default();
         let has_name = self
             .thread_name
             .as_ref()
@@ -5359,7 +5360,7 @@ impl ChatWidget {
         let view = CustomPromptView::new(
             title.to_string(),
             "输入名称后按 Enter".to_string(),
-            String::new(),
+            initial_name,
             /*context_label*/ None,
             Box::new(move |name: String| {
                 let Some(name) = crate::legacy_core::util::normalize_thread_name(&name) else {

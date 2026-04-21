@@ -8129,10 +8129,7 @@ mod tests {
             Some(950_000),
         )));
 
-        assert_eq!(
-            app.chat_widget.status_line_text(),
-            Some("950K window".into())
-        );
+        assert_eq!(app.chat_widget.status_line_text(), Some("950K 窗口".into()));
     }
 
     #[tokio::test]
@@ -8453,21 +8450,34 @@ mod tests {
         app.chat_widget
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
+        let feature_flag_event = recv_app_event_matching(
+            &mut app_event_rx,
+            "collab feature flag update",
+            |event| {
+                matches!(event, AppEvent::UpdateFeatureFlags { updates } if updates == &vec![(Feature::Collab, true)])
+            },
+        )
+        .await;
         assert_matches!(
-            app_event_rx.try_recv(),
-            Ok(AppEvent::UpdateFeatureFlags { updates }) if updates == vec![(Feature::Collab, true)]
+            feature_flag_event,
+            AppEvent::UpdateFeatureFlags { updates } if updates == vec![(Feature::Collab, true)]
         );
-        let cell = match app_event_rx.try_recv() {
-            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
-            other => panic!("expected InsertHistoryCell event, got {other:?}"),
-        };
+        let cell =
+            match recv_app_event_matching(&mut app_event_rx, "multi-agent enable notice", |event| {
+                matches!(event, AppEvent::InsertHistoryCell(_))
+            })
+            .await
+            {
+                AppEvent::InsertHistoryCell(cell) => cell,
+                other => panic!("expected InsertHistoryCell event, got {other:?}"),
+            };
         let rendered = cell
             .display_lines(/*width*/ 120)
             .into_iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Subagents will be enabled in the next session."));
+        assert!(rendered.contains("子代理将在下一个会话中启用。"));
         Ok(())
     }
 
@@ -8519,6 +8529,7 @@ mod tests {
         let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
         let codex_home = tempdir()?;
         app.config.codex_home = codex_home.path().to_path_buf().abs();
+        app.config.sqlite_home = codex_home.path().to_path_buf();
         // Seed the previous setting so this test exercises the thread-mode update path.
         app.config.memories.generate_memories = true;
 
@@ -8535,15 +8546,23 @@ mod tests {
         .await;
 
         let state_db = codex_state::StateRuntime::init(
-            codex_home.path().to_path_buf(),
+            app.config.sqlite_home.clone(),
             app.config.model_provider_id.clone(),
         )
         .await
         .expect("state db should initialize");
-        let memory_mode = state_db
-            .get_thread_memory_mode(thread_id)
-            .await
-            .expect("thread memory mode should be readable");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let memory_mode = loop {
+            let memory_mode = state_db
+                .get_thread_memory_mode(thread_id)
+                .await
+                .expect("thread memory mode should be readable");
+            if memory_mode.as_deref() == Some("disabled") || tokio::time::Instant::now() >= deadline
+            {
+                break memory_mode;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
         assert_eq!(memory_mode.as_deref(), Some("disabled"));
 
         app_server.shutdown().await?;
@@ -8642,8 +8661,14 @@ mod tests {
                 personality: None,
             })
         );
-        let cell = match app_event_rx.try_recv() {
-            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        let cell = match recv_app_event_matching(
+            &mut app_event_rx,
+            "guardian enable permissions update notice",
+            |event| matches!(event, AppEvent::InsertHistoryCell(_)),
+        )
+        .await
+        {
+            AppEvent::InsertHistoryCell(cell) => cell,
             other => panic!("expected InsertHistoryCell event, got {other:?}"),
         };
         let rendered = cell
@@ -8733,8 +8758,14 @@ mod tests {
                 personality: None,
             })
         );
-        let cell = match app_event_rx.try_recv() {
-            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        let cell = match recv_app_event_matching(
+            &mut app_event_rx,
+            "guardian disable permissions update notice",
+            |event| matches!(event, AppEvent::InsertHistoryCell(_)),
+        )
+        .await
+        {
+            AppEvent::InsertHistoryCell(cell) => cell,
             other => panic!("expected InsertHistoryCell event, got {other:?}"),
         };
         let rendered = cell
@@ -8869,8 +8900,11 @@ mod tests {
                 personality: None,
             })
         );
+        let app_events = queued_app_events(&mut app_event_rx);
         assert!(
-            app_event_rx.try_recv().is_err(),
+            !app_events
+                .iter()
+                .any(|event| matches!(event, AppEvent::InsertHistoryCell(_))),
             "manual review should not emit a permissions history update when the effective state stays default"
         );
 
@@ -9015,8 +9049,14 @@ guardian_approval = true
                 personality: None,
             })
         );
-        let cell = match app_event_rx.try_recv() {
-            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+        let cell = match recv_app_event_matching(
+            &mut app_event_rx,
+            "guardian disable inherited user permissions notice",
+            |event| matches!(event, AppEvent::InsertHistoryCell(_)),
+        )
+        .await
+        {
+            AppEvent::InsertHistoryCell(cell) => cell,
             other => panic!("expected InsertHistoryCell event, got {other:?}"),
         };
         let rendered = cell
@@ -9124,9 +9164,17 @@ guardian_approval = true
         app.chat_widget
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
+        let selected_thread = recv_app_event_matching(
+            &mut app_event_rx,
+            "existing agent thread selection",
+            |event| {
+                matches!(event, AppEvent::SelectAgentThread(selected_thread_id) if *selected_thread_id == thread_id)
+            },
+        )
+        .await;
         assert_matches!(
-            app_event_rx.try_recv(),
-            Ok(AppEvent::SelectAgentThread(selected_thread_id)) if selected_thread_id == thread_id
+            selected_thread,
+            AppEvent::SelectAgentThread(selected_thread_id) if selected_thread_id == thread_id
         );
         Ok(())
     }
@@ -10037,6 +10085,46 @@ guardian_approval = true
             rx,
             op_rx,
         )
+    }
+
+    #[track_caller]
+    async fn recv_app_event_matching<F>(
+        app_event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+        description: &str,
+        mut predicate: F,
+    ) -> AppEvent
+    where
+        F: FnMut(&AppEvent) -> bool,
+    {
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut skipped = Vec::new();
+
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let received = time::timeout(remaining, app_event_rx.recv()).await;
+            let Some(event) = received.unwrap_or_else(|_| {
+                panic!("timed out waiting for {description}; skipped events: {skipped:?}")
+            }) else {
+                panic!(
+                    "app event channel closed while waiting for {description}; skipped events: {skipped:?}"
+                );
+            };
+
+            if matches!(&event, AppEvent::StatusLineBranchUpdated { .. }) {
+                skipped.push(event);
+                continue;
+            }
+            if predicate(&event) {
+                return event;
+            }
+            skipped.push(event);
+        }
+    }
+
+    fn queued_app_events(
+        app_event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    ) -> Vec<AppEvent> {
+        std::iter::from_fn(|| app_event_rx.try_recv().ok()).collect()
     }
 
     fn test_thread_session(thread_id: ThreadId, cwd: PathBuf) -> ThreadSessionState {

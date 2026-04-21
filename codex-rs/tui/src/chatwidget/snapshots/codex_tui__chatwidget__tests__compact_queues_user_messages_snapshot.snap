@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 936
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -18,6 +17,6 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 • 回合结束后提交的消息
   ↳ Steer submitted while /compact was running.
 
-› Ask Codex to do anything
+› 让 Codex 帮你做任何事
 
   gpt-5.3-codex 默认 · 已用 0% · /tmp/project

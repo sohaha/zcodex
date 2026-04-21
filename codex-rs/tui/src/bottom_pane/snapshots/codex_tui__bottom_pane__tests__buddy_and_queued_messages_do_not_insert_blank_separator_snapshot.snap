@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 1717
 expression: "render_snapshot(&pane, area)"
 ---
   .----------------.                                        
@@ -15,6 +14,6 @@ expression: "render_snapshot(&pane, area)"
   ↳ Queued follow-up question                               
     ⌥ + ↑ 编 辑 上 一 条 排 队 消 息                                 
                                                             
-› Ask Codex to do anything                                  
+› 让  Codex 帮 你 做 任 何 事                                      
                                                             
   ? 查 看 快 捷 键                              剩 余 上 下 文  100%

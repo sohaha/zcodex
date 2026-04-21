@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
-assertion_line: 118
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -21,6 +20,6 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
    \__/
   Ripple ★ 常见 美西螈 · 坐立不安
 
-› Ask Codex to do anything
+› 让 Codex 帮你做任何事
 
   gpt-5.3-codex 默认 · 已用 0% · /tmp/project

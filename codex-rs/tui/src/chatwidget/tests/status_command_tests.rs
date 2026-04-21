@@ -2,6 +2,16 @@ use super::*;
 use crate::app_event::RateLimitRefreshOrigin;
 use assert_matches::assert_matches;
 
+fn recv_non_branch_update(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> AppEvent {
+    loop {
+        match rx.try_recv() {
+            Ok(AppEvent::StatusLineBranchUpdated { .. }) => continue,
+            Ok(event) => return event,
+            Err(err) => panic!("expected app event, got {err:?}"),
+        }
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgpt_auth() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -9,8 +19,8 @@ async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgp
 
     chat.dispatch_command(SlashCommand::Status);
 
-    let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+    let rendered = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected status output before refresh request, got {other:?}"),
@@ -19,10 +29,10 @@ async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgp
         rendered.contains("正在刷新限额"),
         "expected /status to explain the background refresh, got: {rendered}"
     );
-    let request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
+    let request_id = match recv_non_branch_update(&mut rx) {
+        AppEvent::RefreshRateLimits {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
+        } => request_id,
         other => panic!("expected rate-limit refresh request, got {other:?}"),
     };
     pretty_assertions::assert_eq!(request_id, 0);
@@ -35,14 +45,14 @@ async fn status_command_updates_rendered_cell_after_rate_limit_refresh() {
 
     chat.dispatch_command(SlashCommand::Status);
 
-    let cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+    let cell = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => cell,
         other => panic!("expected status output before refresh request, got {other:?}"),
     };
-    let first_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
+    let first_request_id = match recv_non_branch_update(&mut rx) {
+        AppEvent::RefreshRateLimits {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
+        } => request_id,
         other => panic!("expected rate-limit refresh request, got {other:?}"),
     };
 
@@ -72,10 +82,16 @@ async fn status_command_renders_immediately_without_rate_limit_refresh() {
 
     chat.dispatch_command(SlashCommand::Status);
 
-    assert_matches!(rx.try_recv(), Ok(AppEvent::InsertHistoryCell(_)));
+    assert_matches!(
+        recv_non_branch_update(&mut rx),
+        AppEvent::InsertHistoryCell(_)
+    );
     assert!(
-        !std::iter::from_fn(|| rx.try_recv().ok())
-            .any(|event| matches!(event, AppEvent::RefreshRateLimits { .. })),
+        !std::iter::from_fn(|| match rx.try_recv() {
+            Ok(AppEvent::StatusLineBranchUpdated { .. }) => None,
+            other => other.ok(),
+        })
+        .any(|event| matches!(event, AppEvent::RefreshRateLimits { .. })),
         "non-ChatGPT sessions should not request a rate-limit refresh for /status"
     );
 }
@@ -87,14 +103,14 @@ async fn status_command_uses_catalog_default_reasoning_when_config_empty() {
 
     chat.dispatch_command(SlashCommand::Status);
 
-    let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+    let rendered = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected status output, got {other:?}"),
     };
     assert!(
-        rendered.contains("gpt-5.1-codex-max (reasoning medium, summaries auto)"),
+        rendered.contains("gpt-5.1-codex-max (推理 中, 总结 自动)"),
         "expected /status to render the catalog default reasoning effort, got: {rendered}"
     );
 }
@@ -106,8 +122,8 @@ async fn status_command_renders_instruction_sources_from_thread_session() {
 
     chat.dispatch_command(SlashCommand::Status);
 
-    let rendered = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => {
+    let rendered = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => {
             lines_to_single_string(&cell.display_lines(/*width*/ 80))
         }
         other => panic!("expected status output, got {other:?}"),
@@ -128,26 +144,26 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
     set_chatgpt_auth(&mut chat);
 
     chat.dispatch_command(SlashCommand::Status);
-    let first_cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+    let first_cell = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => cell,
         other => panic!("expected first status output, got {other:?}"),
     };
-    let first_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
+    let first_request_id = match recv_non_branch_update(&mut rx) {
+        AppEvent::RefreshRateLimits {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
+        } => request_id,
         other => panic!("expected first refresh request, got {other:?}"),
     };
 
     chat.dispatch_command(SlashCommand::Status);
-    let second_cell = match rx.try_recv() {
-        Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+    let second_cell = match recv_non_branch_update(&mut rx) {
+        AppEvent::InsertHistoryCell(cell) => cell,
         other => panic!("expected second status output, got {other:?}"),
     };
-    let second_request_id = match rx.try_recv() {
-        Ok(AppEvent::RefreshRateLimits {
+    let second_request_id = match recv_non_branch_update(&mut rx) {
+        AppEvent::RefreshRateLimits {
             origin: RateLimitRefreshOrigin::StatusCommand { request_id },
-        }) => request_id,
+        } => request_id,
         other => panic!("expected second refresh request, got {other:?}"),
     };
 

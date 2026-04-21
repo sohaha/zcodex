@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# curl -fsSL https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install.sh | bash
 set -eu
 
 RELEASE="latest"

@@ -2,10 +2,10 @@
 source: tui/src/history_cell.rs
 expression: rendered
 ---
-╭───────────────────────────────────────╮
-│ >_ OpenAI Codex (vtest)               │
-│                                       │
-│ model:       gpt-5   /model to change │
-│ directory:   /tmp/project             │
-│ permissions: YOLO 模式                │
-╰───────────────────────────────────────╯
+╭───────────────────────────────╮
+│ >_ Codex (vtest)              │
+│                               │
+│ 模型： gpt-5  /model 切换模型 │
+│ 目录： /tmp/project           │
+│ 权限： YOLO 模式              │
+╰───────────────────────────────╯

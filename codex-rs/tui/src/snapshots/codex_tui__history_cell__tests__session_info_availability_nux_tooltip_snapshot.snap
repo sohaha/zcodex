@@ -1,13 +1,12 @@
 ---
 source: tui/src/history_cell.rs
-assertion_line: 3092
 expression: rendered
 ---
-╭───────────────────────────╮
-│ >_ OpenAI Codex (v0.0.0)  │
-│                           │
-│ 模型: gpt-5   /model 修改 │
-│ 目录: /tmp/project        │
-╰───────────────────────────╯
+╭───────────────────────────────╮
+│ >_ Codex (v0.0.0)             │
+│                               │
+│ 模型： gpt-5  /model 切换模型 │
+│ 目录： /tmp/project           │
+╰───────────────────────────────╯
 
-  提示： 模型刚刚可用
+  提示： Model just became available

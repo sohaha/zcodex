@@ -1307,12 +1307,20 @@ mod tests {
     }
 
     fn description_col(rendered: &str, item_marker: &str, description: &str) -> usize {
+        let normalized_marker = normalize_rendered_text(item_marker);
         let line = rendered
             .lines()
-            .find(|line| line.contains(item_marker) && line.contains(description))
+            .find(|line| {
+                normalize_rendered_text(line).contains(&normalized_marker)
+                    && line.contains(description)
+            })
             .expect("expected rendered line to contain row marker and description");
         line.find(description)
             .expect("expected rendered line to contain description")
+    }
+
+    fn normalize_rendered_text(text: &str) -> String {
+        text.chars().filter(|ch| !ch.is_whitespace()).collect()
     }
 
     fn make_scrolling_width_items() -> Vec<SelectionItem> {
@@ -2073,12 +2081,13 @@ mod tests {
         let after_scroll = render_lines_with_width(&view, /*width*/ 96);
 
         assert!(
-            after_scroll.contains("9. 项目 9 具有故意设置的更长名称"),
+            normalize_rendered_text(&after_scroll)
+                .contains(&normalize_rendered_text("9. 项目 9 具有故意设置的更长名称")),
             "expected the scrolled view to include the longer row:\n{after_scroll}"
         );
 
-        let before_col = description_col(&before_scroll, "8. Item 8", "desc 8");
-        let after_col = description_col(&after_scroll, "8. Item 8", "desc 8");
+        let before_col = description_col(&before_scroll, "8. 项目 8", "desc 8");
+        let after_col = description_col(&after_scroll, "8. 项目 8", "desc 8");
         assert_eq!(
             before_col, after_col,
             "description column changed across scroll:\nbefore:\n{before_scroll}\nafter:\n{after_scroll}"
@@ -2101,8 +2110,10 @@ mod tests {
         );
 
         let before_scroll = render_lines_with_width(&view, width);
-        let before_col = description_col(&before_scroll, "8. Item 8", "desc 8");
-        let expected_desc_col = ((width.saturating_sub(2) as usize) * 3) / 10;
+        let before_col = description_col(&before_scroll, "8. 项目 8", "desc 8");
+        let expected_desc_col = MENU_SURFACE_HORIZONTAL_INSET as usize
+            + ((popup_content_width(width) as usize * 3) / 10)
+            + 1;
         assert_eq!(
             before_col, expected_desc_col,
             "fixed mode should place description column at a 30/70 split:\n{before_scroll}"
@@ -2112,7 +2123,7 @@ mod tests {
             view.handle_key_event(KeyEvent::from(KeyCode::Down));
         }
         let after_scroll = render_lines_with_width(&view, width);
-        let after_col = description_col(&after_scroll, "8. Item 8", "desc 8");
+        let after_col = description_col(&after_scroll, "8. 项目 8", "desc 8");
         assert_eq!(
             before_col, after_col,
             "fixed description column changed across scroll:\nbefore:\n{before_scroll}\nafter:\n{after_scroll}"

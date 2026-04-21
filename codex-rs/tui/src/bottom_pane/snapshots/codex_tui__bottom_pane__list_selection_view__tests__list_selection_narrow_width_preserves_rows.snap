@@ -3,14 +3,14 @@ source: tui/src/bottom_pane/list_selection_view.rs
 expression: "render_lines_with_width(&view, 24)"
 ---
                         
-  Debug                 
+  调 试                   
                         
-› 1. Item 1             
+› 1. 项 目  1             
              xxxxxxxxx  
              x          
-  2. Item 2             
+  2. 项 目  2             
              xxxxxxxxx  
              x          
-  3. Item 3             
+  3. 项 目  3             
              xxxxxxxxx  
              x

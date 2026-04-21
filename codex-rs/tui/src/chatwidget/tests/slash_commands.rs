@@ -2,6 +2,10 @@ use super::*;
 use crate::legacy_core::DEFAULT_AGENTS_MD_FILENAME;
 use pretty_assertions::assert_eq;
 
+fn normalize_rendered_text(text: &str) -> String {
+    text.chars().filter(|ch| !ch.is_whitespace()).collect()
+}
+
 #[tokio::test]
 async fn buddy_is_visible_by_default() {
     let (chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -160,8 +164,9 @@ async fn slash_rename_without_existing_thread_name_starts_empty() {
     chat.dispatch_command(SlashCommand::Rename);
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(popup.contains("Name thread"));
-    assert!(popup.contains("Type a name and press Enter"));
+    let normalized_popup = normalize_rendered_text(&popup);
+    assert!(normalized_popup.contains("命名线程"));
+    assert!(normalized_popup.contains("输入名称后按Enter"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -700,7 +705,8 @@ async fn slash_memories_opens_memory_menu() {
 
     chat.dispatch_command(SlashCommand::Memories);
 
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Use memories"));
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(normalize_rendered_text(&popup).contains("使用记忆"));
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
     assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
 }

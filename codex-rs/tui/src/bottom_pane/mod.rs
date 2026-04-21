@@ -1752,7 +1752,8 @@ mod tests {
             for x in 0..area.width {
                 row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
             }
-            if row.contains("Ask Codex") {
+            let normalized_row: String = row.chars().filter(|ch| !ch.is_whitespace()).collect();
+            if normalized_row.contains("Codex") {
                 found_composer = true;
                 break;
             }

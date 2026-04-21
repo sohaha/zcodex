@@ -27,7 +27,7 @@ fn format_warning(additional_dirs: &[PathBuf]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "忽略 --add-dir ({joined_paths})，因为有效的沙盒模式为只读。切换到 workspace-write 或 danger-full-access 以允许额外的可写根目录。."
+        "忽略 --add-dir ({joined_paths})，因为有效的沙盒模式为只读。切换到 workspace-write 或 danger-full-access 以允许额外的可写根目录。"
     )
 }
 
@@ -70,7 +70,7 @@ mod tests {
             .expect("expected warning for read-only sandbox");
         assert_eq!(
             message,
-            "Ignoring --add-dir (relative, /abs) because the effective sandbox mode is read-only. Switch to workspace-write or danger-full-access to allow additional writable roots."
+            "忽略 --add-dir (relative, /abs)，因为有效的沙盒模式为只读。切换到 workspace-write 或 danger-full-access 以允许额外的可写根目录。"
         );
     }
 

@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
-assertion_line: 183
 expression: lines_to_single_string(&aborted_multi)
 ---
 ✗ 你取消了 Codex 执行请求 echo line1 ...

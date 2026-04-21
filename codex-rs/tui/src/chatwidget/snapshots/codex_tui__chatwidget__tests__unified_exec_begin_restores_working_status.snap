@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/exec_flow.rs
-assertion_line: 289
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
@@ -15,6 +14,6 @@ expression: normalized_backend_snapshot(terminal.backend())
 "  Ripple ★ 常见 美西螈 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
 "                                                                                "
 "                                                                                "
-"› Ask Codex to do anything                                                      "
+"› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "                                                                                "
-"  gpt-5.3-codex 默认 · 已用 0% · /tmp/project                            " Hidden by multi-width symbols: [(17, " "), (19, " "), (24, " "), (26, " "), (28, " ")]
+"  gpt-5.3-codex 默认 · 已用 0% · /tmp/project                                   " Hidden by multi-width symbols: [(17, " "), (19, " "), (24, " "), (26, " ")]

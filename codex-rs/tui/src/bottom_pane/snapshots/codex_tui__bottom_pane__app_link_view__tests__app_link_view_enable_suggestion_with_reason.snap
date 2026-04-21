@@ -10,7 +10,7 @@ expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72))
 
   使 用  $ 将 此 应 用 插 入 到 提 示 中 。
 
-  Enable this app to use it for the current request.
+  启 用 此 应 用 以 在 当 前 请 求 中 使 用 它 。
   新 安 装 的 应 用 可 能 需 要 几 分 钟 才 能 出 现 在  /apps 中 。
 
 

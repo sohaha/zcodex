@@ -1468,7 +1468,7 @@ async fn plan_update_renders_history_cell() {
     let cells = drain_insert_history(&mut rx);
     assert!(!cells.is_empty(), "expected plan update cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
-    assert!(blob.contains("计划已更新"), "missing plan header: {blob:?}");
+    assert!(blob.contains("更新计划"), "missing plan header: {blob:?}");
     assert!(blob.contains("Explore codebase"));
     assert!(blob.contains("Implement feature"));
     assert!(blob.contains("Write tests"));

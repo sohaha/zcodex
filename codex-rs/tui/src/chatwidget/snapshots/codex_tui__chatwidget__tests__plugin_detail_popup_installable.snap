@@ -1,17 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
-assertion_line: 200
 expression: strip_osc8_for_snapshot(&popup)
 ---
-  插 件
-  Figma · 可 安 装  · ChatGPT Marketplace
-  与 此  App 共 享 的 数 据 将 受 其 服 务 条 款 和 隐 私 政 策 约 束 。 了 解 更 多 .
+  Plugins
+  Figma · Can be installed · ChatGPT Marketplace
+  Data shared with this app is subject to the app's terms of service and privacy policy. Learn
+  more.
   Turn Figma files into implementation context.
 
-› 1. 返 回 插 件 列 表   回 到 插 件 列 表 。
-  2. 安 装 插 件       立 即 安 装 此 插 件 。
-     技 能           design-review, extract-copy
-     应 用           Figma, Slack
-     MCP 服 务 器     figma-mcp, docs-mcp
+› 1. Back to plugins  Return to the plugin list.
+  2. Install plugin   Install this plugin now.
+     Skills           design-review, extract-copy
+     Apps             Figma, Slack
+     MCP Servers      figma-mcp, docs-mcp
 
-  按  Esc 关 闭 。
+  Press esc to close.

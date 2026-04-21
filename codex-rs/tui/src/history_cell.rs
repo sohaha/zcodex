@@ -826,11 +826,11 @@ pub fn new_approval_decision_cell(
             (
                 "✔ ".green(),
                 vec![
-                    actor.subject().into(),
-                    "已批准".bold(),
-                    " 运行 ".into(),
+                    actor.subject().trim_end().into(),
+                    "批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
-                    " 此次".bold(),
+                    "（仅这次）".bold(),
                 ],
             )
         }
@@ -919,9 +919,9 @@ pub fn new_approval_decision_cell(
             (
                 "✗ ".red(),
                 vec![
-                    actor.subject().into(),
-                    "已取消".bold(),
-                    " 运行请求 ".into(),
+                    actor.subject().trim_end().into(),
+                    "取消了".bold(),
+                    " Codex 执行请求 ".into(),
                     snippet,
                 ],
             )
@@ -1420,7 +1420,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             spans
         };
 
-        let dir_prefix = format!("{} ", DIR_LABEL);
+        let dir_prefix = format!("{DIR_LABEL} ");
         let dir_prefix_width = UnicodeWidthStr::width(dir_prefix.as_str());
         let dir_max_width = inner_width.saturating_sub(dir_prefix_width);
         let dir = self.format_directory(Some(dir_max_width));
@@ -1435,7 +1435,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
 
         if self.yolo_mode {
             lines.push(make_row(vec![
-                Span::from(format!("{} ", PERMISSIONS_LABEL)).dim(),
+                Span::from(format!("{PERMISSIONS_LABEL} ")).dim(),
                 "YOLO 模式".magenta().bold(),
             ]));
         }
@@ -3565,8 +3565,9 @@ mod tests {
                 }
             })
             .collect::<String>();
+        let normalized_first_row = first_row.replace(' ', "");
         assert!(
-            first_row.contains("与后台终端交互"),
+            normalized_first_row.contains("与后台终端交互"),
             "expected first rendered row to keep the header visible, got: {first_row:?}"
         );
     }
@@ -3605,7 +3606,7 @@ mod tests {
         assert_eq!(
             rendered,
             vec![
-                "• 已搜索示例查询".to_string(),
+                "• 已搜索 example search query with several generic words to".to_string(),
                 "  exercise wrapping".to_string(),
             ]
         );
