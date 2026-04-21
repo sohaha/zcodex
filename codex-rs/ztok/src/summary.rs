@@ -45,19 +45,25 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     let raw = format!("{stdout}\n{stderr}");
     let behavior = settings::runtime_settings().behavior;
     let rendered_summary = summarize_output(&raw, command, output.status.success(), behavior);
+    let output_signature = summary_output_signature(command, output.status.success());
 
     let summary = session_dedup::dedup_output(
         command,
         &rendered_summary,
-        &summary_output_signature(command, output.status.success()),
+        &output_signature,
         crate::compression::CompressionResult::full(
             crate::compression::ContentKind::Text,
             rendered_summary.clone(),
         ),
-    )
-    .output;
-    println!("{summary}");
-    timer.track(command, "ztok summary", &raw, &summary);
+    );
+    timer.track_compression_decision(
+        "ztok summary",
+        &output_signature,
+        behavior,
+        rendered_summary.len(),
+        &summary,
+    );
+    println!("{}", summary.output);
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }

@@ -210,6 +210,45 @@ fn ztok_read_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
 }
 
 #[test]
+fn ztok_read_trace_decisions_reports_short_reference_on_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    let raw_content = "same\ncontent\n";
+    std::fs::write(&file, raw_content)?;
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("CODEX_THREAD_ID", "thread-ztok-trace-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-trace-1")
+        .args([
+            "ztok",
+            "--trace-decisions",
+            "read",
+            file.to_string_lossy().as_ref(),
+        ])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"kind\":\"compression_decision\""));
+    assert!(stderr.contains("\"command\":\"ztok read\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains(raw_content));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_read_disables_session_cache_without_thread_id() -> Result<()> {
     let codex_home = TempDir::new()?;
     let file = codex_home.path().join("sample.txt");
@@ -228,6 +267,36 @@ fn ztok_read_disables_session_cache_without_thread_id() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_read_trace_decisions_reports_full_fallback_without_session_id() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    let raw_content = "same\ncontent\n";
+    std::fs::write(&file, raw_content)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let assert = cmd
+        .args([
+            "ztok",
+            "--trace-decisions",
+            "read",
+            file.to_string_lossy().as_ref(),
+        ])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(stderr.contains("\"kind\":\"compression_decision\""));
+    assert!(stderr.contains("\"command\":\"ztok read\""));
+    assert!(stderr.contains("\"outputKind\":\"full\""));
+    assert!(stderr.contains("\"decision\":\"full_fallback\""));
+    assert!(stderr.contains("\"fallback\":\"dedup_disabled_no_session_id\""));
+    assert!(!stderr.contains(raw_content));
 
     Ok(())
 }
@@ -307,6 +376,39 @@ fn ztok_json_disables_session_cache_without_thread_id() -> Result<()> {
 }
 
 #[test]
+fn ztok_json_trace_decisions_reports_short_reference_on_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let raw_content = "{\"name\":\"alpha\",\"count\":2}\n";
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("CODEX_THREAD_ID", "thread-ztok-json-trace-1")
+        .args(["ztok", "json", "-"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-json-trace-1")
+        .args(["ztok", "--trace-decisions", "json", "-"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"command\":\"ztok json\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains(raw_content));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_json_basic_mode_returns_raw_text() -> Result<()> {
     let codex_home = TempDir::new()?;
     write_ztok_config(codex_home.path(), "basic")?;
@@ -381,6 +483,39 @@ fn ztok_log_basic_mode_returns_raw_output() -> Result<()> {
 }
 
 #[test]
+fn ztok_log_trace_decisions_reports_short_reference_on_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let raw_content = "warning: heads up\nerror: boom\n";
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("CODEX_THREAD_ID", "thread-ztok-log-trace-1")
+        .args(["ztok", "log"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("1 个错误（1 个唯一）").and(contains("[ztok dedup").not()));
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-log-trace-1")
+        .args(["ztok", "--trace-decisions", "log"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"command\":\"ztok log\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains(raw_content));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_summary_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
     let codex_home = TempDir::new()?;
     let summary_args: Vec<&str> = if cfg!(windows) {
@@ -408,6 +543,71 @@ fn ztok_summary_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_summary_trace_decisions_reports_short_reference_on_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let summary_args: Vec<&str> = if cfg!(windows) {
+        vec![
+            "ztok", "summary", "echo", "alpha", "&", "echo", "warning:", "boom",
+        ]
+    } else {
+        vec![
+            "ztok", "summary", "echo", "alpha", ";", "echo", "warning:", "boom",
+        ]
+    };
+    let trace_args: Vec<&str> = if cfg!(windows) {
+        vec![
+            "ztok",
+            "--trace-decisions",
+            "summary",
+            "echo",
+            "alpha",
+            "&",
+            "echo",
+            "warning:",
+            "boom",
+        ]
+    } else {
+        vec![
+            "ztok",
+            "--trace-decisions",
+            "summary",
+            "echo",
+            "alpha",
+            ";",
+            "echo",
+            "warning:",
+            "boom",
+        ]
+    };
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-trace-1")
+        .args(&summary_args)
+        .assert()
+        .success()
+        .stdout(contains("✅ 命令：").and(contains("[ztok dedup").not()));
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-trace-1")
+        .args(&trace_args)
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"command\":\"ztok summary\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains("echo alpha"));
+    assert!(!stderr.contains("warning: boom"));
 
     Ok(())
 }

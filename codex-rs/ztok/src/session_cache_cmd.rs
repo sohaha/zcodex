@@ -63,11 +63,8 @@ fn session_cache_path(session_id: &str) -> Result<std::path::PathBuf> {
     if session_id.is_empty() {
         bail!("无法解析 session cache 路径，session id 不能为空");
     }
-    settings::session_cache_path_for_session_id(session_id).with_context(|| {
-        format!(
-            "无法解析 session cache 路径，session id 不能为空：{session_id}"
-        )
-    })
+    settings::session_cache_path_for_session_id(session_id)
+        .with_context(|| format!("无法解析 session cache 路径，session id 不能为空：{session_id}"))
 }
 
 #[cfg(test)]

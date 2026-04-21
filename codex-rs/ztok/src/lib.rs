@@ -125,6 +125,10 @@ struct Cli {
     #[arg(long = "skip-env", global = true)]
     skip_env: bool,
 
+    /// 通过 stderr 输出结构化压缩决策 trace
+    #[arg(long = "trace-decisions", global = true)]
+    trace_decisions: bool,
+
     /// 显示帮助信息
     #[arg(short = 'h', long = "help", action = clap::ArgAction::Help, global = true)]
     help: Option<bool>,
@@ -1159,6 +1163,10 @@ pub fn run_from_os_args(args: Vec<OsString>) -> Result<()> {
 }
 
 fn run_cli(cli: Cli) -> Result<()> {
+    if cli.trace_decisions {
+        settings::apply_decision_trace_override(true)?;
+    }
+
     match cli.command {
         Commands::Ls { args } => {
             ls::run(&args, cli.verbose)?;

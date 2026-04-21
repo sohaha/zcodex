@@ -80,22 +80,16 @@ pub fn run(
         eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
-    let ztok_output = session_dedup::dedup_read_output(
+    let result = session_dedup::dedup_read_output(
         &source_name,
         &content,
         &format!(
             "read:{level}:max_lines={max_lines:?}:tail_lines={tail_lines:?}:line_numbers={line_numbers}"
         ),
         compressed,
-    )
-    .output;
-    println!("{ztok_output}");
-    timer.track(
-        &format!("cat {}", file.display()),
-        "ztok read",
-        &content,
-        &ztok_output,
     );
+    timer.track_compression_decision("ztok read", &source_name, behavior, content.len(), &result);
+    println!("{}", result.output);
     Ok(())
 }
 
@@ -165,18 +159,16 @@ pub fn run_stdin(
         eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
-    let ztok_output = session_dedup::dedup_read_output(
+    let result = session_dedup::dedup_read_output(
         &source_name,
         &content,
         &format!(
             "read:{level}:max_lines={max_lines:?}:tail_lines={tail_lines:?}:line_numbers={line_numbers}"
         ),
         compressed,
-    )
-    .output;
-    println!("{ztok_output}");
-
-    timer.track("cat - (stdin)", "ztok read -", &content, &ztok_output);
+    );
+    timer.track_compression_decision("ztok read", &source_name, behavior, content.len(), &result);
+    println!("{}", result.output);
     Ok(())
 }
 

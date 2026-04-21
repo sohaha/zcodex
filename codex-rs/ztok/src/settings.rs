@@ -37,12 +37,20 @@ struct ZtokRuntimeSettingsPayload {
     behavior: Option<String>,
     #[serde(default)]
     session_cache: SessionCachePayload,
+    #[serde(default)]
+    decision_trace: DecisionTracePayload,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct SessionCachePayload {
     #[serde(default)]
     session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct DecisionTracePayload {
+    #[serde(default)]
+    enabled: Option<bool>,
 }
 
 pub(crate) fn runtime_settings() -> ZtokRuntimeSettings {
@@ -53,12 +61,24 @@ pub fn encode_runtime_settings_env(
     session_id: Option<&str>,
     behavior: &str,
 ) -> Result<String, serde_json::Error> {
-    serde_json::to_string(&ZtokRuntimeSettingsPayload {
-        behavior: Some(behavior.to_string()),
-        session_cache: SessionCachePayload {
-            session_id: sanitize_optional_string(session_id),
-        },
-    })
+    serde_json::to_string(&runtime_settings_payload(
+        session_id, behavior, /*decision_trace_enabled*/ false,
+    ))
+}
+
+pub(crate) fn apply_decision_trace_override(enabled: bool) -> Result<(), serde_json::Error> {
+    let mut payload = std::env::var(ZTOK_RUNTIME_SETTINGS_ENV_VAR)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<ZtokRuntimeSettingsPayload>(&raw).ok())
+        .unwrap_or_else(ZtokRuntimeSettings::legacy_payload);
+    payload.decision_trace.enabled = Some(enabled);
+    unsafe {
+        std::env::set_var(
+            ZTOK_RUNTIME_SETTINGS_ENV_VAR,
+            serde_json::to_string(&payload)?,
+        );
+    }
+    Ok(())
 }
 
 impl ZtokRuntimeSettings {
@@ -76,6 +96,7 @@ impl ZtokRuntimeSettings {
             session_cache: SessionCachePayload {
                 session_id: std::env::var(ZTOK_SESSION_ID_ENV_VAR).ok(),
             },
+            decision_trace: DecisionTracePayload::default(),
         }
     }
 
@@ -90,7 +111,9 @@ impl ZtokRuntimeSettings {
             near_dedup: NearDedupSettings {
                 text: NearDuplicateConfig::default(),
             },
-            decision_trace: DecisionTraceSettings::default(),
+            decision_trace: DecisionTraceSettings {
+                enabled: payload.decision_trace.enabled.unwrap_or(false),
+            },
         }
     }
 
@@ -110,6 +133,22 @@ impl ZtokRuntimeSettings {
             },
             decision_trace: DecisionTraceSettings::default(),
         }
+    }
+}
+
+fn runtime_settings_payload(
+    session_id: Option<&str>,
+    behavior: &str,
+    decision_trace_enabled: bool,
+) -> ZtokRuntimeSettingsPayload {
+    ZtokRuntimeSettingsPayload {
+        behavior: Some(behavior.to_string()),
+        session_cache: SessionCachePayload {
+            session_id: sanitize_optional_string(session_id),
+        },
+        decision_trace: DecisionTracePayload {
+            enabled: Some(decision_trace_enabled),
+        },
     }
 }
 
@@ -152,6 +191,7 @@ mod tests {
         let settings = ZtokRuntimeSettings::from_payload(payload);
 
         assert!(settings.behavior.is_basic());
+        assert!(!settings.decision_trace.enabled);
         assert!(
             settings
                 .session_cache
@@ -159,6 +199,17 @@ mod tests {
                 .as_ref()
                 .is_some_and(|path| path.ends_with("thread-1.sqlite"))
         );
+    }
+
+    #[test]
+    fn decision_trace_payload_enables_runtime_trace() {
+        let settings = ZtokRuntimeSettings::from_payload(runtime_settings_payload(
+            Some("thread-3"),
+            "enhanced",
+            /*decision_trace_enabled*/ true,
+        ));
+
+        assert!(settings.decision_trace.enabled);
     }
 
     #[test]

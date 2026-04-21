@@ -38,15 +38,9 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
             },
             behavior,
         )?,
-    )
-    .output;
-    println!("{result}");
-    timer.track(
-        &format!("cat {}", file.display()),
-        "ztok log",
-        &content,
-        &result,
     );
+    timer.track_compression_decision("ztok log", &source_name, behavior, content.len(), &result);
+    println!("{}", result.output);
     Ok(())
 }
 
@@ -77,11 +71,9 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
             },
             behavior,
         )?,
-    )
-    .output;
-    println!("{result}");
-
-    timer.track("log (stdin)", "ztok log (stdin)", &content, &result);
+    );
+    timer.track_compression_decision("ztok log", "-", behavior, content.len(), &result);
+    println!("{}", result.output);
 
     Ok(())
 }

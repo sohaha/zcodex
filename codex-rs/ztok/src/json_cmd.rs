@@ -60,7 +60,7 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
         bail!("ztok json --keys-only 在 basic 模式下不受支持");
     }
 
-    let output = session_dedup::dedup_output(
+    let result = session_dedup::dedup_output(
         &source_name,
         &content,
         &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
@@ -80,15 +80,9 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
             },
             behavior,
         )?,
-    )
-    .output;
-    println!("{output}");
-    timer.track(
-        &format!("cat {}", file.display()),
-        "ztok json",
-        &content,
-        &output,
     );
+    timer.track_compression_decision("ztok json", &source_name, behavior, content.len(), &result);
+    println!("{}", result.output);
     Ok(())
 }
 
@@ -111,7 +105,7 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
         bail!("ztok json --keys-only 在 basic 模式下不受支持");
     }
 
-    let output = session_dedup::dedup_output(
+    let result = session_dedup::dedup_output(
         "-",
         &content,
         &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
@@ -131,10 +125,9 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
             },
             behavior,
         )?,
-    )
-    .output;
-    println!("{output}");
-    timer.track("cat - (stdin)", "ztok json -", &content, &output);
+    );
+    timer.track_compression_decision("ztok json", "-", behavior, content.len(), &result);
+    println!("{}", result.output);
     Ok(())
 }
 
