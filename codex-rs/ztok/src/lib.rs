@@ -25,6 +25,7 @@ mod local_llm;
 mod log_cmd;
 mod ls;
 mod mypy_cmd;
+mod near_dedup;
 mod next_cmd;
 mod npm_cmd;
 pub mod parser;
