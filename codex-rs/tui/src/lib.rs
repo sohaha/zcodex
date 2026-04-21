@@ -325,9 +325,11 @@ fn websocket_url_supports_auth_token(parsed: &Url) -> bool {
 
 fn draw_startup_placeholder(tui: &mut Tui) -> std::io::Result<()> {
     let lines = vec![
+        "".into(),
         Line::from(shimmer::shimmer_spans("Codex 正在启动")),
         "".into(),
         Line::from("正在初始化会话与界面，请稍候。".dim()),
+        "".into(),
     ];
 
     tui.draw(u16::MAX, |frame| {
