@@ -1180,6 +1180,21 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
 }
 
 #[tokio::test]
+async fn load_default_config_keeps_tui_buddy_defaults_enabled() -> std::io::Result<()> {
+    let fixture = tempdir()?;
+    let config = Config::load_default_with_cli_overrides_for_codex_home(
+        fixture.path().to_path_buf().abs(),
+        Vec::new(),
+    )
+    .await?;
+
+    assert!(config.tui_show_buddy);
+    assert!(config.tui_buddy_reactions_enabled);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_sandbox_config_parsing() {
     let sandbox_full_access = r#"
 sandbox_mode = "danger-full-access"

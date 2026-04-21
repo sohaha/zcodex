@@ -7427,17 +7427,17 @@ mod tests {
 
         assert!(handled);
 
-        let app_event = tokio::time::timeout(Duration::from_secs(1), app_event_rx.recv())
-            .await
-            .expect("history lookup should emit an app event")
-            .expect("app event channel should stay open");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        let (routed_thread_id, event) = loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let app_event = tokio::time::timeout(remaining, app_event_rx.recv())
+                .await
+                .expect("history lookup should emit a thread-routed response")
+                .expect("app event channel should stay open");
 
-        let AppEvent::ThreadHistoryEntryResponse {
-            thread_id: routed_thread_id,
-            event,
-        } = app_event
-        else {
-            panic!("expected thread-routed history response");
+            if let AppEvent::ThreadHistoryEntryResponse { thread_id, event } = app_event {
+                break (thread_id, event);
+            }
         };
         assert_eq!(routed_thread_id, thread_id);
         assert_eq!(event.offset, 0);
@@ -9980,11 +9980,14 @@ guardian_approval = true
         tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
         tokio::sync::mpsc::UnboundedReceiver<Op>,
     ) {
-        let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender().await;
+        let (chat_widget, app_event_tx, mut rx, mut op_rx) =
+            make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
         let file_search = FileSearchManager::new(config.cwd.to_path_buf(), app_event_tx.clone());
         let model = crate::legacy_core::test_support::get_model_offline(config.model.as_deref());
         let session_telemetry = test_session_telemetry(&config, model.as_str());
+        while rx.try_recv().is_ok() {}
+        while op_rx.try_recv().is_ok() {}
 
         (
             App {
@@ -10463,7 +10466,7 @@ guardian_approval = true
             }
         }
         assert!(rendered_cells.iter().any(|cell| {
-            cell.contains("• Feedback uploaded. Please open an issue using the following URL:")
+            cell.contains("• 反馈已上传。请使用以下链接提交 Issue：")
                 && cell.contains("uploaded-thread")
         }));
     }

@@ -25,8 +25,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-19` 计算，覆盖 `2026-04-17` 至 `2026-04-19`。
+- 时间窗按当前日期 `2026-04-21` 计算，覆盖 `2026-04-19` 至 `2026-04-21`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-21-tui-defaults-and-app-event-tests-need-end-to-end-coverage.md`：TUI 回归里若 `config_toml` 默认值和最终 `core::Config` 组装值脱节，单看反序列化测试会漏掉真实默认路径回归；同时 app 异步事件测试不能假设首个 `recv()` 就是目标事件，应该在时限内筛目标事件并先核对文案源头与断言是否同层。
 - `.agents/llmdoc/memory/reflections/2026-04-19-ubuntu-macos-arm64-cross-cc-search-dirs-wrapper.md`：Linux 交叉构建 macOS arm64 时，不能只配 target-specific `CC/CXX`；还要兜住 PATH 里的裸 `cc` / `c++`，避免第三方 `build.rs` 把宿主 Linux linker path 注入 Apple 链接。
 - `.agents/llmdoc/memory/reflections/2026-04-19-core-compact-localization-boundary.md`：`core` 压缩链路汉化时，应区分用户可见事件流与内部模板；模板 `md` 不应按 UI 文案翻译，验证上优先拿 `cargo check -p codex-core --lib` 证据并显式隔离仓库现有测试阻塞。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zoffsec-sync-skill-should-pin-reference-and-local-surface.md`：为参考型上游仓库补同步 skill 时，不能只写 upstream 地址；要同时固定首选参考文件、默认 selective sync 范围，以及本地必须保留的架构边界。
