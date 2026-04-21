@@ -1,0 +1,17 @@
+---
+source: tui/src/bottom_pane/list_selection_view.rs
+assertion_line: 2024
+expression: "render_lines_with_width(&view, 24)"
+---
+                        
+  调 试                   
+                        
+› 1. 项 目  1             
+             xxxxxxxxx  
+             x          
+  2. 项 目  2             
+             xxxxxxxxx  
+             x          
+  3. 项 目  3             
+             xxxxxxxxx  
+             x

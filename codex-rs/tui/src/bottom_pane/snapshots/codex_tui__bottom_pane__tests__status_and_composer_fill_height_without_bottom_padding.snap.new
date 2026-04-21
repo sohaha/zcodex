@@ -1,0 +1,11 @@
+---
+source: tui/src/bottom_pane/mod.rs
+assertion_line: 1821
+expression: "render_snapshot(&pane, area)"
+---
+• 处 理 中  (0s • esc 中 断 )      
+                              
+                              
+› 让  Codex 帮 你 做 任 何 事        
+                              
+             剩 余 上 下 文  100%

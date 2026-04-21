@@ -1,0 +1,18 @@
+---
+source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1188
+expression: normalized_backend_snapshot(terminal.backend())
+---
+"                                                                                "
+"  .------------.                                                                "
+"  | 轻轻漂来。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
+"  '------------.                                                                "
+"    \                                                                           "
+"  }~   ~{                                                                       "
+"  ( ^..^ )                                                                      "
+"   \__/                                                                         "
+"  Ripple ★ 常见 美西螈 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
+"                                                                                "
+"› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
+"                                                                                "
+"  gpt-5.4 极高 快速 · 剩余 100% · /tmp/project                                  " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " ")]

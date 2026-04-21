@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/approval_requests.rs
+assertion_line: 278
+expression: lines_to_single_string(&aborted_multi)
+---
+✗ 你 已取消 运行请求 echo line1 ...

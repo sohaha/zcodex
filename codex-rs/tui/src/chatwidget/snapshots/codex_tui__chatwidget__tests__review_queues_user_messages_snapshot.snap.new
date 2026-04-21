@@ -1,0 +1,23 @@
+---
+source: tui/src/chatwidget/tests/review_mode.rs
+assertion_line: 1464
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
+---
+
+
+• 处理中 (0s • esc 中断)
+  .------------.
+  | 轻轻漂来。 |
+  '------------.
+    \
+  }~   ~{
+  ( ^..^ )
+   \__/
+  Ripple ★ 常见 美西螈 · 坐立不安
+
+• 回合结束后提交的消息
+  ↳ Steer submitted while /review was running.
+
+› 让 Codex 帮你做任何事
+
+  gpt-5.3-codex 默认 · 已用 0% · /tmp/project

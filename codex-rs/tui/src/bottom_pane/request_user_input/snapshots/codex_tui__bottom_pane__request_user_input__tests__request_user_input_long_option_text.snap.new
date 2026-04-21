@@ -1,0 +1,18 @@
+---
+source: tui/src/bottom_pane/request_user_input/mod.rs
+assertion_line: 2774
+expression: "render_snapshot(&overlay, area)"
+---
+                                                                                                                        
+  问 题  1/1（ 1 个 未 回 答 ）                                                                                                 
+  Choose one option.                                                                                                    
+                                                                                                                        
+  › 1. Job: running/completed/failed/expired; Run/Experiment: succeeded/failed/    Keep async job statuses for          
+       unknown (在 排 查 长 时 间 运 行 的 后 台 工 作 和 状 态 转 换 时 推 荐 使 用 )                    progress tracking and include        
+                                                                                   enough context for debugging         
+                                                                                   retries, stale workers, and          
+                                                                                   unexpected expiration paths.         
+    2. Add a short status model                                                    Simpler labels with less detail for  
+                                                                                   quick rollouts.                      
+                                                                                                                        
+  Tab 添 加 备 注  | 回 车 提 交 回 答  | Esc 中 断

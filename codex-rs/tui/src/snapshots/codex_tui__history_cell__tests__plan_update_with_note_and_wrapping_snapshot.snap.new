@@ -1,0 +1,18 @@
+---
+source: tui/src/history_cell.rs
+assertion_line: 4583
+expression: rendered
+---
+• 更新计划
+  └ I’ll update Grafana call
+    error handling by adding
+    retries and clearer messages
+    when the backend is
+    unreachable.
+    ✔ 调查现有的 HTTP 超时错误路
+      径和日志记录
+    □ 通过重试/退避和用户友好消
+      息加强 Grafana 客户端错误
+      处理
+    □ 为瞬态故障场景添加测试并在
+      UI 中显示

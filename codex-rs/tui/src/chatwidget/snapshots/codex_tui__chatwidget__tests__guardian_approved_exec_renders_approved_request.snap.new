@@ -1,0 +1,26 @@
+---
+source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 118
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
+---
+
+
+
+
+
+
+
+✔ 自动审查器 已批准 运行 rm -f /tmp/guardian-approved.sqlite 此次
+
+  .------------.
+  | 轻轻漂来。 |
+  '------------.
+    \
+  }~   ~{
+  ( ^..^ )
+   \__/
+  Ripple ★ 常见 美西螈 · 坐立不安
+
+› 让 Codex 帮你做任何事
+
+  gpt-5.3-codex 默认 · 已用 0% · /tmp/project

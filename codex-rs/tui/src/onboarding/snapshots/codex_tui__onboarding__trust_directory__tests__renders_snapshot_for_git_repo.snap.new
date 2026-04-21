@@ -1,0 +1,14 @@
+---
+source: tui/src/onboarding/trust_directory.rs
+assertion_line: 228
+expression: terminal.backend()
+---
+> 你当前位于 /workspace/project
+
+  你信任此目录的内容吗？处理不受信任的内容存在更高的提示注入风险。信任
+  该目录后，将允许加载项目本地配置、hooks 和执行策略。
+
+› 1. 是，继续                                                         
+  2. 否，退出
+
+  按 enter 继续

@@ -1,0 +1,8 @@
+---
+source: tui/src/history_cell.rs
+assertion_line: 4605
+expression: rendered
+---
+• 更新计划
+  └ □ 定义错误分类
+    □ 实现到用户消息的映射

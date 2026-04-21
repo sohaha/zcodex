@@ -2233,7 +2233,7 @@ impl Session {
             return false;
         }
 
-        let warning_message = format!("⚠ 此请求已被路由到 {server_model} 作为后备方案。");
+        let warning_message = format!("此请求已被路由到 {server_model} 作为后备方案。");
 
         self.send_event(
             turn_context,
