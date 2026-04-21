@@ -111,10 +111,10 @@ done_when = "`curl`、`wget` 已进入共享压缩与 dedup 判定层，且 basi
 validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
 regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "available capabilities 结论：功能面与验证面都建议将 fetcher 家族单独成组；本 issue 对应路线图阶段 3 的 `structured fetchers`。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-21 execution：a4 已完成。新增 `fetcher_output.rs` 作为 fetcher 内容输出的共享压缩入口，统一负责 JSON/text 压缩选择、URL source label 脱敏与截断、session dedup 判定以及 decision trace 侧信道。`curl` 现已接入共享压缩与 dedup/trace，内部 URL 仍保留 raw JSON 例外；`wget -O -` 的 stdout 内容面也已接入同一共享路径，且经审查后补齐 internal URL raw JSON 对齐，而普通 `wget` 下载摘要保持原合同不变。`fetcher_output` 的 source label 现已同时剥离 userinfo/query/fragment，避免 dedup 文案与 trace side channel 回显 URL 凭证或 token。`aws` 本轮未纳入：其现有输出仍混有多条专用 parser 路径，如果只接 generic path 会形成同一命令族半接线，因此明确保持边界、留待后续专项 issue。验证上已执行 `just fmt`、`env -u RUSTC_WRAPPER cargo test -p codex-ztok`、`env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`，并在补齐 `curl`/`wget` trace + URL redaction 集成覆盖后再次执行同一闭环；随后按仓库规则执行 `env -u RUSTC_WRAPPER just fix -p codex-ztok` 与 `env -u RUSTC_WRAPPER just fix -p codex-cli` 收尾，fix 后未重跑测试。"
 
 [[issue]]
 id = "a5"

@@ -37,6 +37,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-21-ztok-clean-worktree-validation-should-separate-baseline-failures-from-issue-state.md`：`ztok` 收口若遇到共享测试失败，先在干净 worktree 与纯净 `HEAD` 做对照，区分“当前 issue 未完成”和“当前分支基线失败”；同时把提交边界污染与功能完成状态分开审查。
 - `.agents/llmdoc/memory/reflections/2026-04-21-ztok-session-cache-governance-should-pair-metadata-prune-and-operator-commands.md`：`ztok` 的 session cache 治理不应只补 schema version；要成组补 metadata、容量裁剪、inspect/clear 命令，以及损坏或 schema 演进失败时的显式回退合同。
 - `.agents/llmdoc/memory/reflections/2026-04-21-ztok-decision-trace-coverage-must-match-wired-surfaces.md`：`ztok` 决策 trace 一旦接进多条压缩路径，验证覆盖也必须按接线面同步扩齐；`summary` 的 side channel 要复用稳定签名而不是回喷原始 shell 命令。
+- `.agents/llmdoc/memory/reflections/2026-04-21-ztok-fetcher-trace-coverage-should-redact-url-source-labels.md`：`ztok` fetcher 输出复用共享 trace 后，要同时锁 URL source label 的 userinfo/query redaction、内部 URL raw JSON 合同，以及 `curl`/`wget -O -` 新入口自己的 trace 集成覆盖。
 - `.agents/llmdoc/memory/reflections/2026-04-19-ubuntu-macos-arm64-cross-cc-search-dirs-wrapper.md`：Linux 交叉构建 macOS arm64 时，不能只配 target-specific `CC/CXX`；还要兜住 PATH 里的裸 `cc` / `c++`，避免第三方 `build.rs` 把宿主 Linux linker path 注入 Apple 链接。
 - `.agents/llmdoc/memory/reflections/2026-04-19-core-compact-localization-boundary.md`：`core` 压缩链路汉化时，应区分用户可见事件流与内部模板；模板 `md` 不应按 UI 文案翻译，验证上优先拿 `cargo check -p codex-core --lib` 证据并显式隔离仓库现有测试阻塞。
 - `.agents/llmdoc/memory/reflections/2026-04-19-zoffsec-sync-skill-should-pin-reference-and-local-surface.md`：为参考型上游仓库补同步 skill 时，不能只写 upstream 地址；要同时固定首选参考文件、默认 selective sync 范围，以及本地必须保留的架构边界。
