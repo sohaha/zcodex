@@ -81,7 +81,9 @@ impl ZtokRuntimeSettings {
 
     fn from_payload(payload: ZtokRuntimeSettingsPayload) -> Self {
         let session_id = sanitize_owned_string(payload.session_cache.session_id);
-        let db_path = session_id.as_deref().and_then(default_session_cache_path);
+        let db_path = session_id
+            .as_deref()
+            .and_then(session_cache_path_for_session_id);
         Self {
             behavior: ZtokBehavior::from_value(payload.behavior.as_deref()),
             session_cache: SessionCacheSettings { db_path },
@@ -111,7 +113,7 @@ impl ZtokRuntimeSettings {
     }
 }
 
-fn default_session_cache_path(session_id: &str) -> Option<PathBuf> {
+pub(crate) fn session_cache_path_for_session_id(session_id: &str) -> Option<PathBuf> {
     let codex_home = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| dirs::home_dir().map(|home| home.join(".codex")))?;
@@ -157,5 +159,20 @@ mod tests {
                 .as_ref()
                 .is_some_and(|path| path.ends_with("thread-1.sqlite"))
         );
+    }
+
+    #[test]
+    fn session_cache_path_uses_codex_home() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        unsafe {
+            std::env::set_var("CODEX_HOME", temp.path());
+        }
+        let path =
+            session_cache_path_for_session_id("thread-2").expect("session cache path available");
+        assert!(path.starts_with(temp.path()));
+        assert!(path.ends_with(".ztok-cache/thread-2.sqlite"));
+        unsafe {
+            std::env::remove_var("CODEX_HOME");
+        }
     }
 }

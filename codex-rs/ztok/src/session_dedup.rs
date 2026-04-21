@@ -485,6 +485,30 @@ mod tests {
             Some(ExplicitFallbackReason::DedupCacheUnavailable)
         );
     }
+
+    #[test]
+    fn corrupted_database_falls_back_to_full_output() {
+        let codex_home = TempDir::new().expect("temp dir");
+        let cache_file = codex_home
+            .path()
+            .join(".ztok-cache")
+            .join("session-2.sqlite");
+        fs::create_dir_all(cache_file.parent().expect("cache dir")).expect("create cache dir");
+        fs::write(&cache_file, "not-a-sqlite-database").expect("write corrupted cache file");
+
+        let deduped = dedup_read_output_with_cache_path(
+            Some(cache_file),
+            "alpha.txt",
+            "same",
+            "read:none",
+            full_result("same"),
+        );
+        assert_eq!(deduped.output_kind, CompressionOutputKind::Full);
+        assert_eq!(
+            deduped.fallback,
+            Some(ExplicitFallbackReason::DedupCacheUnavailable)
+        );
+    }
 }
 
 #[derive(Debug)]

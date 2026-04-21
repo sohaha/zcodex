@@ -42,6 +42,7 @@ mod rewrite;
 mod ruff_cmd;
 mod runner;
 mod session_cache;
+mod session_cache_cmd;
 mod session_dedup;
 mod settings;
 mod summary;
@@ -327,6 +328,12 @@ enum Commands {
         file: Option<PathBuf>,
     },
 
+    /// 管理指定 session 的 ztok cache
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommands,
+    },
+
     /// Docker 命令紧凑输出
     Docker {
         #[command(subcommand)]
@@ -602,6 +609,20 @@ enum GitCommands {
     /// 透传：直接运行不支持的 git 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
+}
+
+#[derive(Subcommand)]
+enum CacheCommands {
+    /// 查看指定 session cache 的状态与统计
+    Inspect {
+        /// session id（通常等于 CODEX_THREAD_ID）
+        session_id: String,
+    },
+    /// 清空指定 session cache
+    Clear {
+        /// session id（通常等于 CODEX_THREAD_ID）
+        session_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1441,6 +1462,15 @@ fn run_cli(cli: Cli) -> Result<()> {
                 log_cmd::run_stdin(cli.verbose)?;
             }
         }
+
+        Commands::Cache { command } => match command {
+            CacheCommands::Inspect { session_id } => {
+                session_cache_cmd::inspect(&session_id)?;
+            }
+            CacheCommands::Clear { session_id } => {
+                session_cache_cmd::clear(&session_id)?;
+            }
+        },
 
         Commands::Docker { command } => match command {
             DockerCommands::Ps => {

@@ -54,10 +54,10 @@ done_when = "session cache 具备明确的保留、清理、损坏恢复与 sche
 validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
 regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "available capabilities 结论：多子代理评审一致认为 cache 治理必须独立成 issue；本 issue 对应路线图阶段 2 的 cache 治理部分，避免它与扩面或类型特化耦合。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-21 execution：a2 已完成。`ztok` session cache 新增 metadata（`schema_version` / `max_entries`）、固定容量裁剪（64 entries）、`inspect/clear` 最小运维命令，以及损坏/目录占位/不支持 schema version 时的显式恢复或失败路径。`session_dedup` 在 cache 不可用或损坏时继续显式回退到完整输出并保留 `DedupCacheUnavailable` fallback。验证上已执行 `just fmt`、`env -u RUSTC_WRAPPER cargo test -p codex-ztok`、`env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`，均通过；随后按仓库规则执行 `env -u RUSTC_WRAPPER just fix -p codex-ztok` 与 `env -u RUSTC_WRAPPER just fix -p codex-cli` 收尾，fix 后未再重跑测试。"
 
 [[issue]]
 id = "a3"

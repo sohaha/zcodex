@@ -445,6 +445,52 @@ fn ztok_summary_basic_mode_ignores_session_cache_when_thread_id_is_present() -> 
     Ok(())
 }
 
+#[test]
+fn ztok_cache_inspect_and_clear_specific_session() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    let mut prime = codex_command(codex_home.path())?;
+    prime
+        .env("CODEX_THREAD_ID", "thread-ztok-cache-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success();
+
+    let mut inspect = codex_command(codex_home.path())?;
+    inspect
+        .args(["ztok", "cache", "inspect", "thread-ztok-cache-1"])
+        .assert()
+        .success()
+        .stdout(
+            contains("session: thread-ztok-cache-1")
+                .and(contains("status: present"))
+                .and(contains("entries: 1 / 64"))
+                .and(contains("schemaVersion: 1")),
+        );
+
+    let mut clear = codex_command(codex_home.path())?;
+    clear
+        .args(["ztok", "cache", "clear", "thread-ztok-cache-1"])
+        .assert()
+        .success()
+        .stdout(contains("已清空 session cache: thread-ztok-cache-1"));
+
+    let mut inspect_missing = codex_command(codex_home.path())?;
+    inspect_missing
+        .args(["ztok", "cache", "inspect", "thread-ztok-cache-1"])
+        .assert()
+        .success()
+        .stdout(
+            contains("session: thread-ztok-cache-1")
+                .and(contains("status: absent"))
+                .and(contains("entries: 0 / 64")),
+        );
+
+    Ok(())
+}
+
 #[cfg(unix)]
 fn make_ztok_alias(codex_home: &Path) -> Result<PathBuf> {
     let alias = codex_home.join("ztok");
@@ -662,6 +708,11 @@ fn ztok_help_exposes_codex_curated_command_surface() -> Result<()> {
         (
             vec!["ztok", "json", "--help"],
             vec!["仅显示键和类型，不显示值", "--keys-only"],
+            vec!["rewrite"],
+        ),
+        (
+            vec!["ztok", "cache", "--help"],
+            vec!["inspect", "clear", "管理指定 session 的 ztok cache"],
             vec!["rewrite"],
         ),
         (
