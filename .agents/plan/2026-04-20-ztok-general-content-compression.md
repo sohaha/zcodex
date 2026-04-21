@@ -4,6 +4,7 @@
 - 当前状态：
   - `ztok` 是内嵌在 Codex CLI 中的 curated integration，而不是独立产品。
   - `read` / `json` / `log` / `summary` 现已共用共享压缩入口，并统一通过会话作用域 dedup / near-diff 判定层处理重复与近重复输出。
+  - `.version/sqz.toml` 现已固定 `sqz` 参考基线，`upgrade-rtk` 现已成为 `RTK + sqz` 双上游统一入口。
   - `codex-rs/ztok/src/tracking.rs` 当前仅保留 no-op 运行期适配层，明确不包含上游分析、持久化或遥测能力。
   - `codex-rs/ztok/Cargo.toml` 已引入 `rusqlite` 与 `sha1`，用于会话级 dedup 缓存与稳定内容指纹。
   - `codex-rs/ztok/src/compression.rs`、`compression_json.rs`、`compression_log.rs` 已承接 `read` / `json` / `log` / `summary` 的共享内容压缩合同与路由逻辑。
@@ -23,15 +24,17 @@
   - `a2` 的核心代码已落地：`read` 路径已支持会话级 exact dedup；`cli` 已在 alias、`codex ztok ...` 和 `Subcommand::Ztok` 三个入口统一注入 `CODEX_ZTOK_SESSION_ID`。
   - `a3` 已完成并通过验证：`near_dedup` 模块已落地可调阈值的 SimHash 候选筛选与 LCS 差分，`session_dedup` 已统一 exact / near / fallback 合同。
   - `a4` 已完成并通过验证：`session_dedup::dedup_output(...)` 现已成为 `read` / `json` / `log` / `summary` 共用入口，`summary` 会对最终摘要文本做 dedup，CLI 测试已锁定共享命中与无会话标识时禁用 dedup。
+  - `a5` 已完成并通过验证：`.version/sqz.toml` 已记录 `sqz` `main` 基线与精确 commit，`upgrade-rtk` 与 checklist 已扩展为双上游统一入口，并显式把 `sqz` 限定为 selective reference。
   - 当前已通过的实现验证包括：
     - `cd /workspace/codex-rs && just fmt`
     - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok`
     - `cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-ztok`
+    - `cd /workspace && rg -n "source|ref|commit|integration" .version/sqz.toml`
+    - `cd /workspace && rg -n "sqz|RTK|ztok|双上游" .codex/skills/upgrade-rtk/SKILL.md .codex/skills/upgrade-rtk/references/checklist.md`
 - 当前阻塞：
-  - 代码实现面已无阻塞；剩余待收口的是 `a5` 的上游基线记录与双上游 skill 文案，避免 `RTK` 与 `sqz` 的参考口径继续散落在 issue/plan 文本里。
+  - 无。
 - 下一步：
-  - 新增 `.version/sqz.toml`，把本轮实际参考的 `sqz` source / ref / commit / integration mode 固定下来。
-  - 扩展 `.codex/skills/upgrade-rtk/SKILL.md` 与 checklist，明确它是 `ztok` 的 `RTK + sqz` 双上游统一入口，而不是只服务 RTK。
+  - 后续若继续同步 `RTK` 或更新 `sqz` 参考面，统一通过 `upgrade-rtk` 执行，并保持 `.version/rtk.toml` / `.version/sqz.toml` 与实际落地范围同步更新。
 
 ## 当前实现落点
 - 共享压缩合同与路由：
@@ -204,7 +207,7 @@
 
 ### 双上游基线与 `upgrade-rtk` 收口
 - 状态：
-  - 进行中，对应 issue `a5`。
+  - 已完成，对应 issue `a5`。
 - 目标：
   - 为 `ztok` 建立 `RTK + sqz` 双上游的可审计基线记录，并把后续同步入口收敛到 `upgrade-rtk`。
 - 交付物：
