@@ -11,6 +11,7 @@ mod curl_cmd;
 mod deps;
 mod diff_cmd;
 mod env_cmd;
+mod fetcher_output;
 mod filter;
 mod find_cmd;
 mod format_cmd;

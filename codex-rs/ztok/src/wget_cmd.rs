@@ -1,3 +1,5 @@
+use crate::fetcher_output;
+use crate::settings;
 use crate::tracking;
 use crate::utils::resolved_command;
 use anyhow::Context;
@@ -54,6 +56,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
 /// 运行 `wget` 并输出到标准输出（便于管道传递）
 pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let behavior = settings::runtime_settings().behavior;
 
     if verbose > 0 {
         eprintln!("wget: {url} -> stdout");
@@ -72,35 +75,24 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
 
     if output.status.success() {
         let content = crate::utils::decode_output(&output.stdout);
-        let lines: Vec<&str> = content.lines().collect();
-        let total = lines.len();
         let raw_output = content.to_string();
-
-        let mut ztok_output = String::new();
-        if total > 20 {
-            ztok_output.push_str(&format!(
-                "⬇️ {} 成功 | {} 行 | {}\n",
-                compact_url(url),
-                total,
-                format_size(output.stdout.len() as u64)
-            ));
-            ztok_output.push_str("--- 前 10 行 ---\n");
-            for line in lines.iter().take(10) {
-                ztok_output.push_str(&format!("{}\n", truncate_line(line, /*max*/ 100)));
-            }
-            ztok_output.push_str(&format!("... +{} 行", total - 10));
-        } else {
-            ztok_output.push_str(&format!("⬇️ {} 成功 | {} 行\n", compact_url(url), total));
-            for line in &lines {
-                ztok_output.push_str(&format!("{line}\n"));
-            }
-        }
-        print!("{ztok_output}");
-        timer.track(
-            &format!("wget -O - {url}"),
-            "ztok wget -o",
+        let source_name = fetcher_output::url_source_label(url);
+        let preserve_json_output = is_internal_url(url);
+        let compressed = fetcher_output::compress_fetcher_output(
+            &source_name,
             &raw_output,
-            &ztok_output,
+            behavior,
+            Some(20),
+            preserve_json_output,
+        )?;
+        fetcher_output::print_fetcher_output(
+            &timer,
+            "ztok wget",
+            &source_name,
+            &raw_output,
+            "wget:stdout",
+            behavior,
+            compressed,
         );
     } else {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -111,6 +103,15 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_internal_url(url: &str) -> bool {
+    let lower = url.to_lowercase();
+    lower.starts_with("http://localhost")
+        || lower.starts_with("http://127.0.0.1")
+        || lower.starts_with("http://[::1]")
+        || lower.starts_with("https://localhost")
+        || lower.starts_with("https://127.0.0.1")
 }
 
 fn extract_filename_from_output(stderr: &str, url: &str, args: &[String]) -> String {
@@ -251,11 +252,64 @@ fn parse_error(stderr: &str, stdout: &str) -> String {
     "未知错误".to_string()
 }
 
-fn truncate_line(line: &str, max: usize) -> String {
-    if line.len() <= max {
-        line.to_string()
-    } else {
-        let t: String = line.chars().take(max.saturating_sub(3)).collect();
-        format!("{t}...")
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::behavior::ZtokBehavior;
+
+    #[test]
+    fn extract_filename_from_output_prefers_output_flag() {
+        let stderr = "";
+        let args = vec!["-O".to_string(), "custom.txt".to_string()];
+        assert_eq!(
+            extract_filename_from_output(stderr, "https://example.com/file.txt", &args),
+            "custom.txt"
+        );
+    }
+
+    #[test]
+    fn compact_url_truncates_long_urls() {
+        let url = "https://example.com/very/long/path/that/keeps/going/and/going/file.txt";
+        let compact = compact_url(url);
+        assert_eq!(compact, "example.com/very/long/pat...g/and/going/file.txt");
+    }
+
+    #[test]
+    fn run_stdout_uses_shared_text_compression() {
+        let output = (0..25)
+            .map(|index| format!("line-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = fetcher_output::compress_fetcher_output(
+            "example.com/archive.txt",
+            &output,
+            ZtokBehavior::Enhanced,
+            Some(20),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert!(result.output.contains("line-0"));
+        assert!(result.output.contains("省略"));
+    }
+
+    #[test]
+    fn run_stdout_small_json_returns_raw_in_basic_mode() {
+        let output = r#"{"status":"ok","ready":true}"#;
+        let result = fetcher_output::compress_fetcher_output(
+            "example.com/status",
+            output,
+            ZtokBehavior::Basic,
+            Some(20),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert_eq!(result.output, output);
+    }
+
+    #[test]
+    fn internal_url_detection_matches_local_hosts() {
+        assert!(is_internal_url("http://localhost:3000/api/status"));
+        assert!(is_internal_url("http://127.0.0.1:8080/api"));
+        assert!(!is_internal_url("https://example.com/archive.json"));
     }
 }

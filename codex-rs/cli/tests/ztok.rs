@@ -91,6 +91,22 @@ fn echo_args_script() -> &'static str {
     }
 }
 
+fn stdout_script(output: &str) -> String {
+    if cfg!(windows) {
+        let mut script = String::from("@echo off\r\n");
+        for line in output.lines() {
+            if line.is_empty() {
+                script.push_str("echo.\r\n");
+            } else {
+                script.push_str(&format!("@echo {line}\r\n"));
+            }
+        }
+        script
+    } else {
+        format!("#!/bin/sh\ncat <<'EOF'\n{output}\nEOF\n")
+    }
+}
+
 #[cfg(unix)]
 fn shell_args(script: &str) -> [&str; 3] {
     ["sh", "-c", script]
@@ -641,6 +657,242 @@ fn ztok_summary_basic_mode_ignores_session_cache_when_thread_id_is_present() -> 
         .assert()
         .success()
         .stdout(contains("✅ 命令：").and(contains("[ztok dedup").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_curl_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let curl_output = r#"{"name":"a very long user name here","count":42,"items":[1,2,3],"description":"a very long description that takes up many characters in the original JSON payload","status":"active","url":"https://example.com/api/v1/users/123"}"#;
+    let _fake_curl = write_fake_command(&bin_dir, "curl", &stdout_script(curl_output))?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-curl-1")
+        .args(["ztok", "curl", "https://api.example.com/users"])
+        .assert()
+        .success()
+        .stdout(
+            contains("name")
+                .and(contains("string"))
+                .and(contains("[ztok dedup").not()),
+        );
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-curl-1")
+        .args(["ztok", "curl", "https://api.example.com/users"])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_curl_trace_decisions_redacts_source_and_reports_short_reference_on_stderr() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let raw_output = r#"{"name":"a very long user name here","count":42,"items":[1,2,3],"description":"a very long description that takes up many characters in the original JSON payload","status":"active","url":"https://example.com/api/v1/users/123"}"#;
+    let _fake_curl = write_fake_command(&bin_dir, "curl", &stdout_script(raw_output))?;
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-curl-trace-1")
+        .args(["ztok", "curl", "https://api.example.com/users?token=secret"])
+        .assert()
+        .success()
+        .stdout(
+            contains("name")
+                .and(contains("string"))
+                .and(contains("[ztok dedup").not()),
+        );
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-curl-trace-1")
+        .args([
+            "ztok",
+            "--trace-decisions",
+            "curl",
+            "https://user:pass@api.example.com/users?token=secret",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"command\":\"ztok curl\""));
+    assert!(stderr.contains("\"source\":\"api.example.com/users\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains("user:pass"));
+    assert!(!stderr.contains("token=secret"));
+    assert!(!stderr.contains(raw_output));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_curl_keeps_internal_url_json_raw() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let curl_output = r#"{"r2Ready":true,"status":"ok"}"#;
+    let _fake_curl = write_fake_command(&bin_dir, "curl", &stdout_script(curl_output))?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["ztok", "curl", "http://localhost:3000/api/status"])
+        .assert()
+        .success()
+        .stdout(contains(curl_output).and(contains("r2Ready:").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_wget_stdout_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let wget_output = (0..25)
+        .map(|index| format!("line-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _fake_wget = write_fake_command(&bin_dir, "wget", &stdout_script(&wget_output))?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-1")
+        .args(["ztok", "wget", "-O", "https://example.com/archive.txt"])
+        .assert()
+        .success()
+        .stdout(
+            contains("line-0")
+                .and(contains("省略"))
+                .and(contains("[ztok dedup").not()),
+        );
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-1")
+        .args(["ztok", "wget", "-O", "https://example.com/archive.txt"])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_wget_stdout_keeps_internal_url_json_raw() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let raw_output = r#"{"r2Ready":true,"status":"ok"}"#;
+    let _fake_wget = write_fake_command(&bin_dir, "wget", &stdout_script(raw_output))?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["ztok", "wget", "-O", "http://localhost:3000/api/status"])
+        .assert()
+        .success()
+        .stdout(contains(raw_output).and(contains("r2Ready:").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_wget_stdout_trace_decisions_redacts_source_and_reports_short_reference_on_stderr()
+-> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let raw_output = (0..25)
+        .map(|index| format!("line-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _fake_wget = write_fake_command(&bin_dir, "wget", &stdout_script(&raw_output))?;
+
+    let mut first = codex_command(codex_home.path())?;
+    let first_assert = first
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-trace-1")
+        .args([
+            "ztok",
+            "wget",
+            "-O",
+            "https://example.com/archive.txt?sig=secret",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            contains("line-0")
+                .and(contains("省略"))
+                .and(contains("[ztok dedup").not()),
+        );
+    assert!(first_assert.get_output().stderr.is_empty());
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-trace-1")
+        .args([
+            "ztok",
+            "--trace-decisions",
+            "wget",
+            "-O",
+            "https://example.com/archive.txt?sig=secret",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"command\":\"ztok wget\""));
+    assert!(stderr.contains("\"source\":\"example.com/archive.txt\""));
+    assert!(stderr.contains("\"outputKind\":\"short_reference\""));
+    assert!(stderr.contains("\"decision\":\"short_reference\""));
+    assert!(!stderr.contains("sig=secret"));
+    assert!(!stderr.contains("line-24"));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_wget_stdout_basic_mode_ignores_session_cache_even_with_thread_id() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+    let bin_dir = create_fake_bin_dir(&codex_home)?;
+    let wget_output = (0..25)
+        .map(|index| format!("line-{index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _fake_wget = write_fake_command(&bin_dir, "wget", &stdout_script(&wget_output))?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-basic-1")
+        .args(["ztok", "wget", "-O", "https://example.com/archive.txt"])
+        .assert()
+        .success()
+        .stdout(contains("line-0").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("PATH", prepend_path(&bin_dir))
+        .env("CODEX_THREAD_ID", "thread-ztok-wget-basic-1")
+        .args(["ztok", "wget", "-O", "https://example.com/archive.txt"])
+        .assert()
+        .success()
+        .stdout(contains("line-0").and(contains("[ztok dedup").not()));
 
     Ok(())
 }

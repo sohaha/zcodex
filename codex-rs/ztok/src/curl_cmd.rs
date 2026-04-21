@@ -1,7 +1,7 @@
-use crate::json_cmd;
+use crate::fetcher_output;
+use crate::settings;
 use crate::tracking;
 use crate::utils::resolved_command;
-use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 
@@ -33,53 +33,31 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     let raw = stdout.to_string();
-
-    // 自动识别 JSON 并交给过滤器处理
-    let filtered = filter_curl_output(&stdout, args);
-    println!("{filtered}");
-
-    timer.track(
-        &format!("curl {}", args.join(" ")),
-        &format!("ztok curl {}", args.join(" ")),
+    let source_name = args
+        .iter()
+        .find(|arg| arg.starts_with("http://") || arg.starts_with("https://"))
+        .map(|arg| fetcher_output::url_source_label(arg))
+        .unwrap_or_else(|| "curl".to_string());
+    let behavior = settings::runtime_settings().behavior;
+    let preserve_json_output = is_internal_url(args);
+    let compressed = fetcher_output::compress_fetcher_output(
+        &source_name,
         &raw,
-        &filtered,
+        behavior,
+        Some(30),
+        preserve_json_output,
+    )?;
+    fetcher_output::print_fetcher_output(
+        &timer,
+        "ztok curl",
+        &source_name,
+        &raw,
+        &format!("curl:internal={preserve_json_output}"),
+        behavior,
+        compressed,
     );
 
     Ok(())
-}
-
-fn filter_curl_output(output: &str, args: &[String]) -> String {
-    let trimmed = output.trim();
-
-    // 尝试识别 JSON：以 { 或 [ 开头
-    if (trimmed.starts_with('{') || trimmed.starts_with('['))
-        && (trimmed.ends_with('}') || trimmed.ends_with(']'))
-        && !is_internal_url(args)
-        && let Ok(schema) = json_cmd::filter_json_string(trimmed, /*max_depth*/ 5)
-        && schema.len() <= trimmed.len()
-    {
-        return schema;
-    }
-
-    // 非 JSON：截断过长输出
-    let lines: Vec<&str> = trimmed.lines().collect();
-    if lines.len() > 30 {
-        let mut result: Vec<&str> = lines[..30].to_vec();
-        result.push("");
-        let msg = format!(
-            "...（剩余 {} 行，共 {} 字节）",
-            lines.len() - 30,
-            trimmed.len()
-        );
-        return format!("{}\n{}", result.join("\n"), msg);
-    }
-
-    // 输出较短：保留原样，但截断过长行
-    lines
-        .iter()
-        .map(|l| truncate(l, /*max_len*/ 200))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn is_internal_url(args: &[String]) -> bool {
@@ -96,54 +74,82 @@ fn is_internal_url(args: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::behavior::ZtokBehavior;
 
     #[test]
-    fn test_filter_curl_json() {
-        // 大型 JSON：若 schema 比原文更短，应返回 schema
+    fn filter_curl_json_uses_shared_schema_compression() {
         let output = r#"{"name": "a very long user name here", "count": 42, "items": [1, 2, 3], "description": "a very long description that takes up many characters in the original JSON payload", "status": "active", "url": "https://example.com/api/v1/users/123"}"#;
-        let result = filter_curl_output(output, &[]);
-        assert!(result.contains("name"));
-        assert!(result.contains("string"));
-        assert!(result.contains("int"));
+        let result = fetcher_output::compress_fetcher_output(
+            "api.example.com/data",
+            output,
+            ZtokBehavior::Enhanced,
+            Some(30),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert!(result.output.contains("name"));
+        assert!(result.output.contains("string"));
+        assert!(result.output.contains("int"));
     }
 
     #[test]
-    fn test_filter_curl_json_array() {
+    fn filter_curl_json_array_uses_shared_schema_compression() {
         let output = r#"[{"id": 1}, {"id": 2}]"#;
-        let result = filter_curl_output(output, &[]);
-        assert!(result.contains("id"));
+        let result = fetcher_output::compress_fetcher_output(
+            "api.example.com/items",
+            output,
+            ZtokBehavior::Enhanced,
+            Some(30),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert!(result.output.contains("id"));
     }
 
     #[test]
-    fn test_filter_curl_non_json() {
+    fn filter_curl_non_json_uses_shared_text_compression() {
         let output = "Hello, World!\nThis is plain text.";
-        let result = filter_curl_output(output, &[]);
-        assert!(result.contains("Hello, World!"));
-        assert!(result.contains("plain text"));
+        let result = fetcher_output::compress_fetcher_output(
+            "example.com/plain",
+            output,
+            ZtokBehavior::Enhanced,
+            Some(30),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert_eq!(result.output, output);
     }
 
     #[test]
-    fn test_filter_curl_json_small_returns_original() {
-        // 小型 JSON：若结构摘要反而更长（issue #297）
+    fn filter_curl_json_small_returns_original() {
         let output = r#"{"r2Ready":true,"status":"ok"}"#;
-        let result = filter_curl_output(output, &[]);
-        // 结构摘要会是 "{\n  r2Ready: bool,\n  status: string\n}"，长度更长
-        // 应保持返回原始 JSON
-        assert_eq!(result.trim(), output.trim());
+        let result = fetcher_output::compress_fetcher_output(
+            "api.example.com/health",
+            output,
+            ZtokBehavior::Enhanced,
+            Some(30),
+            /*preserve_json_output*/ false,
+        )
+        .expect("compress fetcher output");
+        assert_eq!(result.output, output);
     }
 
     #[test]
-    fn test_filter_curl_long_output() {
-        let lines: Vec<String> = (0..50).map(|i| format!("Line {i}")).collect();
-        let output = lines.join("\n");
-        let result = filter_curl_output(&output, &[]);
-        assert!(result.contains("Line 0"));
-        assert!(result.contains("Line 29"));
-        assert!(result.contains("剩余"));
+    fn internal_url_keeps_raw_json_output() {
+        let output = r#"{"r2Ready":true,"status":"ok"}"#;
+        let result = fetcher_output::compress_fetcher_output(
+            "localhost:3000/api",
+            output,
+            ZtokBehavior::Enhanced,
+            Some(30),
+            /*preserve_json_output*/ true,
+        )
+        .expect("compress fetcher output");
+        assert_eq!(result.output, output);
     }
 
     #[test]
-    fn test_is_internal_url_localhost() {
+    fn is_internal_url_localhost() {
         assert!(is_internal_url(&[
             "http://localhost:9222/json/version".to_string()
         ]));
