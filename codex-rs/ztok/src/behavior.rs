@@ -6,8 +6,8 @@ pub(crate) enum ZtokBehavior {
 }
 
 impl ZtokBehavior {
-    pub(crate) fn from_env() -> Self {
-        match std::env::var(ZTOK_BEHAVIOR_ENV_VAR).ok().as_deref() {
+    pub(crate) fn from_value(value: Option<&str>) -> Self {
+        match value {
             Some("basic") => Self::Basic,
             _ => Self::Enhanced,
         }

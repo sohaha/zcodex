@@ -25,10 +25,10 @@ done_when = "`ztok` 的运行时设置由 CLI 统一桥接，`codex-rs/ztok` 仅
 validate_by = "cd /workspace/codex-rs && just fmt && env -u RUSTC_WRAPPER cargo test -p codex-core --lib && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
 regress_by = "cd /workspace/codex-rs && env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok && env -u RUSTC_WRAPPER cargo test -p codex-ztok"
 regress_timing = "after_done"
-status = "todo"
-validate_status = "not_run"
+status = "blocked"
+validate_status = "failed"
 regress_status = "not_run"
-notes = "available capabilities 结论：Issue Generation 阶段已使用多个子代理并行收敛功能分层、架构边界与验证策略；本 issue 对应路线图阶段 1，是后续全部功能的结构性前置。"
+notes = "2026-04-21 execution：a1 实现已完成，spec-reviewer 与 code-reviewer 均 PASS。CLI 已统一桥接 `CODEX_ZTOK_RUNTIME_SETTINGS`，`ztok` 新增 `settings.rs`/`session_cache.rs`，并将 `near_dedup` 拆为目录模块；`basic` 仍整链绕开 session dedup / near-diff / sqlite。验证上 `env -u RUSTC_WRAPPER cargo test -p codex-cli --test ztok` 与 `env -u RUSTC_WRAPPER cargo test -p codex-ztok` 通过；`env -u RUSTC_WRAPPER cargo test -p codex-core --lib` 失败，阻塞点为仓库既有 `config::tests::test_precedence_fixture_*` 与 `tools::spec::tests::*`，从报错看与本次 `ztok/cli` 变更无直接耦合，因此当前按外部验证阻塞处理。"
 
 [[issue]]
 id = "a2"

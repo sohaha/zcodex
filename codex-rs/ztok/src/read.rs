@@ -1,4 +1,3 @@
-use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
@@ -8,6 +7,7 @@ use crate::compression::ReadOptions;
 use crate::filter::FilterLevel;
 use crate::filter::Language;
 use crate::session_dedup;
+use crate::settings;
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
@@ -44,6 +44,7 @@ pub fn run(
     }
 
     let source_name = file.display().to_string();
+    let behavior = settings::runtime_settings().behavior;
     let compressed = compression::compress_for_behavior(
         CompressionRequest {
             source_name: &source_name,
@@ -57,7 +58,7 @@ pub fn run(
                 language: lang,
             }),
         },
-        ZtokBehavior::from_env(),
+        behavior,
     )?;
 
     if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
@@ -128,9 +129,11 @@ pub fn run_stdin(
         eprintln!("语言：{lang:?}（stdin 无扩展名）");
     }
 
+    let source_name = "-".to_string();
+    let behavior = settings::runtime_settings().behavior;
     let compressed = compression::compress_for_behavior(
         CompressionRequest {
-            source_name: "-",
+            source_name: &source_name,
             content: &content,
             hint: CompressionHint::CodeOrText(lang),
             intent: CompressionIntent::Read(ReadOptions {
@@ -141,7 +144,7 @@ pub fn run_stdin(
                 language: lang,
             }),
         },
-        ZtokBehavior::from_env(),
+        behavior,
     )?;
 
     if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
@@ -163,7 +166,7 @@ pub fn run_stdin(
     }
 
     let ztok_output = session_dedup::dedup_read_output(
-        "-",
+        &source_name,
         &content,
         &format!(
             "read:{level}:max_lines={max_lines:?}:tail_lines={tail_lines:?}:line_numbers={line_numbers}"

@@ -6,6 +6,7 @@ use crate::compression::CompressionRequest;
 use crate::compression::JsonRenderMode;
 use crate::compression::LogRenderMode;
 use crate::session_dedup;
+use crate::settings;
 use crate::tracking;
 use crate::utils::truncate;
 use anyhow::Context;
@@ -42,7 +43,7 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
-    let behavior = ZtokBehavior::from_env();
+    let behavior = settings::runtime_settings().behavior;
     let rendered_summary = summarize_output(&raw, command, output.status.success(), behavior);
 
     let summary = session_dedup::dedup_output(

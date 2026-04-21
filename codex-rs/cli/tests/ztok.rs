@@ -12,7 +12,8 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     cmd.env("CODEX_HOME", codex_home)
         .env_remove("CODEX_THREAD_ID")
         .env_remove("CODEX_ZTOK_SESSION_ID")
-        .env_remove("CODEX_ZTOK_BEHAVIOR");
+        .env_remove("CODEX_ZTOK_BEHAVIOR")
+        .env_remove("CODEX_ZTOK_RUNTIME_SETTINGS");
     Ok(cmd)
 }
 

@@ -1293,16 +1293,13 @@ async fn run_ztok_subcommand(
     config_overrides: CliConfigOverrides,
     config_profile: Option<String>,
 ) -> anyhow::Result<()> {
-    if let Ok(thread_id) = std::env::var(CODEX_THREAD_ID_ENV_VAR)
-        && !thread_id.trim().is_empty()
-    {
-        unsafe {
-            std::env::set_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR, thread_id);
-        }
-    } else {
-        unsafe {
-            std::env::remove_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR);
-        }
+    let session_id = std::env::var(CODEX_THREAD_ID_ENV_VAR)
+        .ok()
+        .filter(|thread_id| !thread_id.trim().is_empty());
+    unsafe {
+        std::env::remove_var(codex_ztok::ZTOK_RUNTIME_SETTINGS_ENV_VAR);
+        std::env::remove_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR);
+        std::env::remove_var(codex_ztok::ZTOK_BEHAVIOR_ENV_VAR);
     }
 
     if !args.iter().any(|arg| {
@@ -1322,8 +1319,11 @@ async fn run_ztok_subcommand(
         .await?;
         unsafe {
             std::env::set_var(
-                codex_ztok::ZTOK_BEHAVIOR_ENV_VAR,
-                config.ztok.behavior.as_str(),
+                codex_ztok::ZTOK_RUNTIME_SETTINGS_ENV_VAR,
+                codex_ztok::encode_runtime_settings_env(
+                    session_id.as_deref(),
+                    config.ztok.behavior.as_str(),
+                )?,
             );
         }
     }
@@ -1781,7 +1781,11 @@ where
         Ok(matches) => MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit()),
         Err(err) => {
             let rendered = localize_help_output(err.to_string());
-            let _ = std::io::stderr().write_all(rendered.as_bytes());
+            if err.use_stderr() {
+                let _ = std::io::stderr().write_all(rendered.as_bytes());
+            } else {
+                let _ = std::io::stdout().write_all(rendered.as_bytes());
+            }
             std::process::exit(err.exit_code());
         }
     }

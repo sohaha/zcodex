@@ -1,3 +1,4 @@
+use crate::settings;
 use std::ffi::OsString;
 use std::time::Instant;
 
@@ -7,6 +8,7 @@ use std::time::Instant;
 /// 持久化或遥测功能。
 pub struct TimedExecution {
     started_at: Instant,
+    trace_enabled: bool,
 }
 
 impl TimedExecution {
@@ -14,14 +16,17 @@ impl TimedExecution {
     pub fn start() -> Self {
         Self {
             started_at: Instant::now(),
+            trace_enabled: settings::runtime_settings().decision_trace.enabled,
         }
     }
 
     pub fn track(&self, _original_cmd: &str, _ztok_cmd: &str, _input: &str, _output: &str) {
+        let _ = self.trace_enabled;
         let _ = self.started_at.elapsed();
     }
 
     pub fn track_passthrough(&self, _original_cmd: &str, _ztok_cmd: &str) {
+        let _ = self.trace_enabled;
         let _ = self.started_at.elapsed();
     }
 }

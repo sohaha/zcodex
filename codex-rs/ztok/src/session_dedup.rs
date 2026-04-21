@@ -1,4 +1,3 @@
-use crate::behavior::ZtokBehavior;
 use crate::compression::CompressionOutputKind;
 use crate::compression::CompressionResult;
 use crate::compression::ExplicitFallbackReason;
@@ -6,19 +5,12 @@ use crate::near_dedup;
 use crate::near_dedup::NearDuplicateCandidate;
 use crate::near_dedup::NearDuplicateConfig;
 use crate::near_dedup::NearDuplicateOutcome;
-use anyhow::Context;
+use crate::session_cache::SessionCacheStore;
+use crate::settings;
 use anyhow::Result;
-use rusqlite::Connection;
-use rusqlite::OptionalExtension;
-use rusqlite::params;
 use sha1::Digest;
 use sha1::Sha1;
-use std::fs;
 use std::path::PathBuf;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
-
-pub const ZTOK_SESSION_ID_ENV_VAR: &str = "CODEX_ZTOK_SESSION_ID";
 
 pub(crate) fn dedup_read_output(
     source_name: &str,
@@ -35,13 +27,12 @@ pub(crate) fn dedup_output(
     output_signature: &str,
     result: CompressionResult,
 ) -> CompressionResult {
-    dedup_read_output_with_cache_path_and_config(
-        session_cache_path(),
+    dedup_output_with_runtime_settings(
         source_name,
         raw_content,
         output_signature,
         result,
-        NearDuplicateConfig::default(),
+        &settings::runtime_settings(),
     )
 }
 
@@ -63,6 +54,7 @@ fn dedup_read_output_with_cache_path(
     )
 }
 
+#[cfg(test)]
 fn dedup_read_output_with_cache_path_and_config(
     cache_path: Option<PathBuf>,
     source_name: &str,
@@ -71,7 +63,27 @@ fn dedup_read_output_with_cache_path_and_config(
     result: CompressionResult,
     near_duplicate_config: NearDuplicateConfig,
 ) -> CompressionResult {
-    if ZtokBehavior::from_env().is_basic() {
+    dedup_output_with_runtime_settings(
+        source_name,
+        raw_content,
+        output_signature,
+        result,
+        &settings::ZtokRuntimeSettings::for_test(
+            crate::behavior::ZtokBehavior::Enhanced,
+            cache_path,
+            near_duplicate_config,
+        ),
+    )
+}
+
+fn dedup_output_with_runtime_settings(
+    source_name: &str,
+    raw_content: &str,
+    output_signature: &str,
+    result: CompressionResult,
+    runtime_settings: &settings::ZtokRuntimeSettings,
+) -> CompressionResult {
+    if runtime_settings.behavior.is_basic() {
         return result;
     }
 
@@ -79,7 +91,7 @@ fn dedup_read_output_with_cache_path_and_config(
         return result;
     }
 
-    let Some(cache_path) = cache_path else {
+    let Some(cache_path) = runtime_settings.session_cache.db_path.clone() else {
         return with_additional_fallback(result, ExplicitFallbackReason::DedupDisabledNoSessionId);
     };
 
@@ -89,7 +101,7 @@ fn dedup_read_output_with_cache_path_and_config(
         raw_content,
         output_signature,
         &result.output,
-        near_duplicate_config,
+        runtime_settings.near_dedup.text,
     ) {
         Ok(DedupDecision::ExactReference(reference)) => CompressionResult {
             output_kind: CompressionOutputKind::ShortReference,
@@ -117,22 +129,6 @@ fn with_additional_fallback(
     result
 }
 
-fn session_cache_path() -> Option<PathBuf> {
-    let session_id = std::env::var(ZTOK_SESSION_ID_ENV_VAR).ok()?;
-    if session_id.trim().is_empty() {
-        return None;
-    }
-
-    let codex_home = std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|home| home.join(".codex")))?;
-    Some(
-        codex_home
-            .join(".ztok-cache")
-            .join(format!("{session_id}.sqlite")),
-    )
-}
-
 fn apply_dedup(
     db_path: PathBuf,
     source_name: &str,
@@ -141,26 +137,11 @@ fn apply_dedup(
     output: &str,
     near_duplicate_config: NearDuplicateConfig,
 ) -> Result<DedupDecision> {
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("创建 ztok 缓存目录失败：{}", parent.display()))?;
-    }
-
-    let connection = Connection::open(&db_path)
-        .with_context(|| format!("打开 ztok 缓存失败：{}", db_path.display()))?;
-    ensure_session_cache_schema(&connection)?;
-
+    let session_cache = SessionCacheStore::open(&db_path)?;
     let fingerprint = fingerprint(output_signature, output);
     let current_simhash = near_dedup::simhash(raw_content);
-    let existing = connection
-        .query_row(
-            "SELECT source_name FROM session_cache WHERE fingerprint = ?1",
-            params![&fingerprint],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
 
-    if let Some(previous_source) = existing {
+    if let Some(previous_source) = session_cache.exact_source_for_fingerprint(&fingerprint)? {
         return Ok(DedupDecision::ExactReference(short_reference(
             &fingerprint,
             &previous_source,
@@ -168,8 +149,7 @@ fn apply_dedup(
         )));
     }
 
-    let candidates = load_near_duplicate_candidates(
-        &connection,
+    let candidates = session_cache.load_near_duplicate_candidates(
         output_signature,
         &fingerprint,
         near_duplicate_config.max_candidate_count,
@@ -181,7 +161,8 @@ fn apply_dedup(
             source_name: &candidate.source_name,
             snapshot: &candidate.snapshot,
             output: &candidate.output,
-            simhash: parse_simhash(&candidate.simhash_hex)
+            simhash: candidate
+                .parsed_simhash()
                 .unwrap_or_else(|| near_dedup::simhash(&candidate.snapshot)),
             created_at: candidate.created_at,
         })
@@ -195,8 +176,7 @@ fn apply_dedup(
         near_duplicate_config,
     );
 
-    store_snapshot(
-        &connection,
+    session_cache.store_snapshot(
         &fingerprint,
         source_name,
         output_signature,
@@ -210,119 +190,6 @@ fn apply_dedup(
         NearDuplicateOutcome::Diff(diff) => DedupDecision::NearDiff(diff),
         NearDuplicateOutcome::Fallback(reason) => DedupDecision::FullFallback(reason),
     })
-}
-
-fn ensure_session_cache_schema(connection: &Connection) -> Result<()> {
-    connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS session_cache (
-            fingerprint TEXT PRIMARY KEY,
-            source_name TEXT NOT NULL,
-            snapshot TEXT NOT NULL,
-            output TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        );",
-    )?;
-    ensure_column(connection, "output_signature", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(connection, "simhash", "TEXT NOT NULL DEFAULT ''")?;
-    connection.execute(
-        "CREATE INDEX IF NOT EXISTS session_cache_output_signature_idx
-         ON session_cache(output_signature, created_at DESC)",
-        [],
-    )?;
-    Ok(())
-}
-
-fn ensure_column(connection: &Connection, column_name: &str, definition: &str) -> Result<()> {
-    let mut statement = connection.prepare("PRAGMA table_info(session_cache)")?;
-    let mut rows = statement.query([])?;
-    while let Some(row) = rows.next()? {
-        if row.get::<_, String>(1)? == column_name {
-            return Ok(());
-        }
-    }
-
-    connection.execute(
-        &format!("ALTER TABLE session_cache ADD COLUMN {column_name} {definition}"),
-        [],
-    )?;
-    Ok(())
-}
-
-fn load_near_duplicate_candidates(
-    connection: &Connection,
-    output_signature: &str,
-    current_fingerprint: &str,
-    max_candidate_count: usize,
-) -> Result<Vec<OwnedCandidateRow>> {
-    let mut statement = connection.prepare(
-        "SELECT fingerprint, source_name, snapshot, output, simhash, created_at
-         FROM session_cache
-         WHERE output_signature = ?1 AND fingerprint != ?2
-         ORDER BY created_at DESC
-         LIMIT ?3",
-    )?;
-    let rows = statement.query_map(
-        params![
-            output_signature,
-            current_fingerprint,
-            max_candidate_count as i64 * 4
-        ],
-        |row| {
-            let fingerprint: String = row.get(0)?;
-            let source_name: String = row.get(1)?;
-            let snapshot: String = row.get(2)?;
-            let output: String = row.get(3)?;
-            let simhash_hex: String = row.get(4)?;
-            let created_at: i64 = row.get(5)?;
-            Ok(OwnedCandidateRow {
-                fingerprint,
-                source_name,
-                snapshot,
-                output,
-                simhash_hex,
-                created_at,
-            })
-        },
-    )?;
-
-    let mut owned_candidates = Vec::new();
-    for row in rows {
-        owned_candidates.push(row?);
-    }
-
-    Ok(owned_candidates)
-}
-
-fn store_snapshot(
-    connection: &Connection,
-    fingerprint: &str,
-    source_name: &str,
-    output_signature: &str,
-    raw_content: &str,
-    output: &str,
-    simhash: u64,
-) -> Result<()> {
-    connection.execute(
-        "INSERT INTO session_cache (
-            fingerprint,
-            source_name,
-            output_signature,
-            snapshot,
-            output,
-            simhash,
-            created_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            fingerprint,
-            source_name,
-            output_signature,
-            raw_content,
-            output,
-            serialize_simhash(simhash),
-            unix_timestamp_now()?,
-        ],
-    )?;
-    Ok(())
 }
 
 fn fingerprint(output_signature: &str, output: &str) -> String {
@@ -344,29 +211,14 @@ fn short_reference(fingerprint: &str, previous_source: &str, current_source: &st
     }
 }
 
-fn serialize_simhash(simhash: u64) -> String {
-    format!("{simhash:016x}")
-}
-
-fn parse_simhash(value: &str) -> Option<u64> {
-    if value.trim().is_empty() {
-        return None;
-    }
-    u64::from_str_radix(value, 16).ok()
-}
-
-fn unix_timestamp_now() -> Result<i64> {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("系统时钟早于 Unix epoch")?;
-    Ok(duration.as_secs() as i64)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::compression::CompressionOutputKind;
     use crate::compression::ContentKind;
+    use crate::session_cache::TestSessionCacheRow;
+    use std::fs;
+    use std::path::Path;
     use tempfile::TempDir;
 
     struct CandidateRow<'a> {
@@ -379,33 +231,18 @@ mod tests {
         created_at: i64,
     }
 
-    fn insert_candidate_row(cache_path: &PathBuf, candidate: CandidateRow<'_>) {
-        if let Some(parent) = cache_path.parent() {
-            fs::create_dir_all(parent).expect("create cache directory");
-        }
-        let connection = Connection::open(cache_path).expect("open cache database");
-        ensure_session_cache_schema(&connection).expect("ensure cache schema");
-        connection
-            .execute(
-                "INSERT INTO session_cache (
-                    fingerprint,
-                    source_name,
-                    output_signature,
-                    snapshot,
-                    output,
-                    simhash,
-                    created_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    candidate.fingerprint,
-                    candidate.source_name,
-                    candidate.output_signature,
-                    candidate.snapshot,
-                    candidate.output,
-                    candidate.simhash,
-                    candidate.created_at,
-                ],
-            )
+    fn insert_candidate_row(cache_path: &Path, candidate: CandidateRow<'_>) {
+        let cache = SessionCacheStore::open(cache_path).expect("open cache database");
+        cache
+            .insert_row_for_test(TestSessionCacheRow {
+                fingerprint: candidate.fingerprint,
+                source_name: candidate.source_name,
+                output_signature: candidate.output_signature,
+                snapshot: candidate.snapshot,
+                output: candidate.output,
+                simhash: candidate.simhash,
+                created_at: candidate.created_at,
+            })
             .expect("insert candidate row");
     }
 
@@ -416,6 +253,10 @@ mod tests {
             output: output.to_string(),
             fallback: None,
         }
+    }
+
+    fn serialize_simhash(simhash: u64) -> String {
+        format!("{simhash:016x}")
     }
 
     #[test]
@@ -652,14 +493,4 @@ enum DedupDecision {
     NearDiff(String),
     Full,
     FullFallback(ExplicitFallbackReason),
-}
-
-#[derive(Debug)]
-struct OwnedCandidateRow {
-    fingerprint: String,
-    source_name: String,
-    snapshot: String,
-    output: String,
-    simhash_hex: String,
-    created_at: i64,
 }

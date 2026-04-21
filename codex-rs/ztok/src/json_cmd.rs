@@ -1,10 +1,10 @@
-use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
 use crate::compression::CompressionRequest;
 use crate::compression::JsonRenderMode;
 use crate::session_dedup;
+use crate::settings;
 use crate::tracking;
 use anyhow::Context;
 use anyhow::Result;
@@ -46,7 +46,7 @@ fn validate_json_extension(file: &Path) -> Result<()> {
 pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     validate_json_extension(file)?;
     let timer = tracking::TimedExecution::start();
-    let behavior = ZtokBehavior::from_env();
+    let behavior = settings::runtime_settings().behavior;
 
     if verbose > 0 {
         eprintln!("分析 JSON: {}", file.display());
@@ -95,7 +95,7 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
 /// 展示来自标准输入的 JSON。
 pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
-    let behavior = ZtokBehavior::from_env();
+    let behavior = settings::runtime_settings().behavior;
 
     if verbose > 0 {
         eprintln!("分析标准输入中的 JSON");

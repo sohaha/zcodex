@@ -41,7 +41,9 @@ mod read;
 mod rewrite;
 mod ruff_cmd;
 mod runner;
+mod session_cache;
 mod session_dedup;
+mod settings;
 mod summary;
 mod tee;
 mod tracking;
@@ -74,7 +76,9 @@ pub use rewrite::ShellCommandRewriteAnalysis;
 pub use rewrite::ShellCommandRewriteKind;
 pub use rewrite::analyze_shell_command;
 pub use rewrite::rewrite_shell_command;
-pub use session_dedup::ZTOK_SESSION_ID_ENV_VAR;
+pub use settings::ZTOK_RUNTIME_SETTINGS_ENV_VAR;
+pub use settings::ZTOK_SESSION_ID_ENV_VAR;
+pub use settings::encode_runtime_settings_env;
 
 pub fn is_alias_invocation(argv0: &OsString) -> bool {
     Path::new(argv0)
