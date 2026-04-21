@@ -271,12 +271,13 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
-                models_manager: Arc::new(ModelsManager::new_with_provider(
+                models_manager: Arc::new(ModelsManager::new_with_provider_and_fallback(
                     codex_home.to_path_buf(),
                     auth_manager.clone(),
                     config.model_catalog.clone(),
                     collaboration_modes_config,
                     models_provider,
+                    config.model_providers.get("openai").cloned(),
                 )),
                 environment_manager,
                 skills_manager,

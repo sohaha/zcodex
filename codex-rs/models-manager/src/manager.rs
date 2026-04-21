@@ -1,4 +1,5 @@
 use super::cache::ModelsCacheManager;
+use super::refresh_state::ModelsRefreshStateManager;
 use crate::collaboration_mode_presets::CollaborationModesConfig;
 use crate::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::config::ModelsManagerConfig;
@@ -46,6 +47,7 @@ use tracing::instrument;
 use tracing::warn;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
+const MODELS_REFRESH_STATE_FILE: &str = "models_refresh_state.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
@@ -185,8 +187,10 @@ pub struct ModelsManager {
     collaboration_modes_config: CollaborationModesConfig,
     etag: RwLock<Option<String>>,
     cache_manager: ModelsCacheManager,
+    refresh_state_manager: ModelsRefreshStateManager,
     remote_refresh_disabled: AtomicBool,
     provider: SharedModelProvider,
+    fallback_provider: Option<SharedModelProvider>,
 }
 
 impl ModelsManager {
@@ -201,12 +205,13 @@ impl ModelsManager {
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
-        Self::new_with_provider(
+        Self::new_with_provider_and_fallback(
             codex_home,
             auth_manager,
             model_catalog,
             collaboration_modes_config,
             ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+            /*fallback_provider_info*/ None,
         )
     }
 
@@ -221,8 +226,30 @@ impl ModelsManager {
         collaboration_modes_config: CollaborationModesConfig,
         provider_info: ModelProviderInfo,
     ) -> Self {
+        Self::new_with_provider_and_fallback(
+            codex_home,
+            auth_manager,
+            model_catalog,
+            collaboration_modes_config,
+            provider_info,
+            /*fallback_provider_info*/ None,
+        )
+    }
+
+    /// Construct a manager with an explicit provider used for remote model refreshes and an
+    /// optional fallback provider used when the primary provider does not support `/models`.
+    pub fn new_with_provider_and_fallback(
+        codex_home: PathBuf,
+        auth_manager: Arc<AuthManager>,
+        model_catalog: Option<ModelsResponse>,
+        collaboration_modes_config: CollaborationModesConfig,
+        provider_info: ModelProviderInfo,
+        fallback_provider_info: Option<ModelProviderInfo>,
+    ) -> Self {
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
+        let refresh_state_path = codex_home.join(MODELS_REFRESH_STATE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
+        let refresh_state_manager = ModelsRefreshStateManager::new(refresh_state_path);
         let catalog_mode = if model_catalog.is_some() {
             CatalogMode::Custom
         } else {
@@ -241,15 +268,20 @@ impl ModelsManager {
         } else {
             base_models
         };
-        let model_provider = create_model_provider(provider_info, Some(auth_manager));
+        let provider_auth_manager = Some(auth_manager);
+        let model_provider = create_model_provider(provider_info, provider_auth_manager.clone());
+        let fallback_provider = fallback_provider_info
+            .map(|info| create_model_provider(info, provider_auth_manager.clone()));
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
             collaboration_modes_config,
             etag: RwLock::new(None),
             cache_manager,
+            refresh_state_manager,
             remote_refresh_disabled: AtomicBool::new(false),
             provider: model_provider,
+            fallback_provider,
         }
     }
 
@@ -412,15 +444,16 @@ impl ModelsManager {
         if matches!(self.catalog_mode, CatalogMode::Custom) {
             return Ok(());
         }
-        if self.remote_refresh_disabled.load(Ordering::Relaxed) {
-            return Ok(());
-        }
+        let remote_refresh_disabled = self.is_remote_refresh_disabled().await;
 
         let auth_mode = self
             .provider
             .auth_manager()
             .and_then(|auth_manager| auth_manager.auth_mode());
-        if auth_mode != Some(AuthMode::Chatgpt) && !self.provider.info().has_command_auth() {
+        if !remote_refresh_disabled
+            && auth_mode != Some(AuthMode::Chatgpt)
+            && !self.provider.info().has_command_auth()
+        {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
@@ -442,12 +475,23 @@ impl ModelsManager {
                     info!("models cache: using cached models for OnlineIfUncached");
                     return Ok(());
                 }
-                info!("models cache: cache miss, fetching remote models");
-                self.fetch_and_update_models_with_fallback().await
+                if remote_refresh_disabled {
+                    info!(
+                        "models cache: cache miss and primary provider /models is disabled; fetching fallback models"
+                    );
+                    self.fetch_and_update_models_from_fallback().await
+                } else {
+                    info!("models cache: cache miss, fetching remote models");
+                    self.fetch_and_update_models_with_fallback().await
+                }
             }
             RefreshStrategy::Online => {
                 // Always fetch from network
-                self.fetch_and_update_models_with_fallback().await
+                if remote_refresh_disabled {
+                    self.fetch_and_update_models_from_fallback().await
+                } else {
+                    self.fetch_and_update_models_with_fallback().await
+                }
             }
         }
     }
@@ -455,23 +499,57 @@ impl ModelsManager {
     async fn fetch_and_update_models_with_fallback(&self) -> CoreResult<()> {
         match self.fetch_and_update_models().await {
             Ok(()) => Ok(()),
-            Err(err) if self.disable_remote_refresh_on_unsupported_models_endpoint(&err) => Ok(()),
+            Err(err)
+                if self
+                    .disable_remote_refresh_on_unsupported_models_endpoint(&err)
+                    .await =>
+            {
+                self.fetch_and_update_models_from_fallback().await
+            }
             Err(err) => Err(err),
         }
     }
 
     async fn fetch_and_update_models(&self) -> CoreResult<()> {
+        let (models, etag) = self.fetch_models_for_provider(&self.provider).await?;
+        self.apply_remote_models(models.clone()).await;
+        *self.etag.write().await = etag.clone();
+        self.cache_manager
+            .persist_cache(&models, etag, crate::client_version_to_whole())
+            .await;
+        Ok(())
+    }
+
+    async fn fetch_and_update_models_from_fallback(&self) -> CoreResult<()> {
+        let Some(fallback_provider) = self.fallback_provider.as_ref() else {
+            info!("models refresh fallback: no fallback provider configured");
+            return Ok(());
+        };
+
+        let (models, etag) = self.fetch_models_for_provider(fallback_provider).await?;
+        self.apply_remote_models(models.clone()).await;
+        *self.etag.write().await = etag.clone();
+        self.cache_manager
+            .persist_cache(&models, etag, crate::client_version_to_whole())
+            .await;
+        Ok(())
+    }
+
+    async fn fetch_models_for_provider(
+        &self,
+        provider: &SharedModelProvider,
+    ) -> CoreResult<(Vec<ModelInfo>, Option<String>)> {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
-        let auth_manager = self.provider.auth_manager();
+        let auth_manager = provider.auth_manager();
         let codex_api_key_env_enabled = auth_manager
             .as_ref()
             .is_some_and(|auth_manager| auth_manager.codex_api_key_env_enabled());
-        let auth = self.provider.auth().await;
+        let auth = provider.auth().await;
         let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
-        let api_provider = self.provider.api_provider().await?;
-        let api_auth = self.provider.api_auth().await?;
-        let auth_env = collect_auth_env_telemetry(self.provider.info(), codex_api_key_env_enabled);
+        let api_provider = provider.api_provider().await?;
+        let api_auth = provider.api_auth().await?;
+        let auth_env = collect_auth_env_telemetry(provider.info(), codex_api_key_env_enabled);
         let transport = ReqwestTransport::new(build_reqwest_client());
         let auth_telemetry = auth_header_telemetry(api_auth.as_ref());
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
@@ -491,16 +569,10 @@ impl ModelsManager {
         .await
         .map_err(|_| CodexErr::Timeout)?
         .map_err(map_api_error)?;
-
-        self.apply_remote_models(models.clone()).await;
-        *self.etag.write().await = etag.clone();
-        self.cache_manager
-            .persist_cache(&models, etag, client_version)
-            .await;
-        Ok(())
+        Ok((models, etag))
     }
 
-    fn disable_remote_refresh_on_unsupported_models_endpoint(&self, err: &CodexErr) -> bool {
+    async fn disable_remote_refresh_on_unsupported_models_endpoint(&self, err: &CodexErr) -> bool {
         let CodexErr::UnexpectedStatus(unexpected) = err else {
             return false;
         };
@@ -514,16 +586,43 @@ impl ModelsManager {
         }
 
         let provider = self.provider.info();
+        let persisted_disable = match self
+            .refresh_state_manager
+            .mark_models_endpoint_unsupported(provider)
+            .await
+        {
+            Ok(disabled) => disabled,
+            Err(err) => {
+                error!("failed to persist models refresh state: {err}");
+                false
+            }
+        };
         let first_disable = !self.remote_refresh_disabled.swap(true, Ordering::Relaxed);
         if first_disable {
             warn!(
                 provider_name = provider.name.as_deref().unwrap_or("unnamed"),
                 provider_base_url = provider.base_url.as_deref().unwrap_or("<none>"),
                 http_status = unexpected.status.as_u16(),
-                "provider does not support /models; disabling remote model refresh and continuing with the bundled model catalog"
+                persisted_disable,
+                "provider does not support /models; disabling primary remote model refresh and switching to fallback catalog refresh"
             );
         }
         true
+    }
+
+    async fn is_remote_refresh_disabled(&self) -> bool {
+        if self.remote_refresh_disabled.load(Ordering::Relaxed) {
+            return true;
+        }
+
+        let disabled = self
+            .refresh_state_manager
+            .is_models_endpoint_unsupported(self.provider.info())
+            .await;
+        if disabled {
+            self.remote_refresh_disabled.store(true, Ordering::Relaxed);
+        }
+        disabled
     }
 
     async fn get_etag(&self) -> Option<String> {
@@ -693,12 +792,28 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
     ) -> Self {
-        Self::new_with_provider(
+        Self::with_provider_and_fallback_for_tests(
+            codex_home,
+            auth_manager,
+            provider,
+            /*fallback_provider*/ None,
+        )
+    }
+
+    /// Construct a manager with a specific provider and fallback provider for testing.
+    pub fn with_provider_and_fallback_for_tests(
+        codex_home: PathBuf,
+        auth_manager: Arc<AuthManager>,
+        provider: ModelProviderInfo,
+        fallback_provider: Option<ModelProviderInfo>,
+    ) -> Self {
+        Self::new_with_provider_and_fallback(
             codex_home,
             auth_manager,
             /*model_catalog*/ None,
             CollaborationModesConfig::default(),
             provider,
+            fallback_provider,
         )
     }
 

@@ -510,12 +510,13 @@ async fn resolve_spawn_agent_provider_default_model(
     }
 
     let auth_manager = turn.auth_manager.clone()?;
-    let models_manager = ModelsManager::new_with_provider(
+    let models_manager = ModelsManager::new_with_provider_and_fallback(
         config.codex_home.to_path_buf(),
         auth_manager,
         config.model_catalog.clone(),
         CollaborationModesConfig::default(),
         config.model_provider.clone(),
+        config.model_providers.get("openai").cloned(),
     );
     let model = models_manager
         .get_default_model(&None, RefreshStrategy::Offline)
