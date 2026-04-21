@@ -15,6 +15,8 @@ use crate::tools::context::ToolPayload;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
+use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -265,6 +267,7 @@ pub(crate) async fn build_agent_shared_config(
         })?;
         let config_overrides = ConfigOverrides {
             cwd: Some(turn.cwd.to_path_buf()),
+            config_profile: live_config.active_profile.clone(),
             ..Default::default()
         };
         let reloaded_config = Config::load_config_with_layer_stack(
@@ -283,6 +286,7 @@ pub(crate) async fn build_agent_shared_config(
         let mut reloaded_for_comparison = reloaded_config.clone();
         reloaded_for_comparison.config_layer_stack = live_config.config_layer_stack.clone();
         reloaded_for_comparison.startup_warnings = live_config.startup_warnings.clone();
+        reloaded_for_comparison.active_profile = live_config.active_profile.clone();
         reloaded_for_comparison.active_project = live_config.active_project.clone();
         reloaded_for_comparison.cwd = live_config.cwd.clone();
         reloaded_for_comparison.model = live_config.model.clone();
@@ -396,6 +400,7 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     requested_model: Option<&str>,
     requested_reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<(), FunctionCallError> {
+    let mut provider_changed_without_explicit_model = false;
     if requested_provider.is_none()
         && requested_model.is_none()
         && requested_reasoning_effort.is_none()
@@ -421,6 +426,22 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
             })?;
         config.model_provider_id = requested_provider.to_string();
         config.model_provider = provider;
+        if requested_model.is_none() {
+            provider_changed_without_explicit_model = true;
+            config.model = resolve_spawn_agent_provider_default_model(turn, config).await;
+            if let Some(model) = config.model.as_deref() {
+                let model_info = session
+                    .services
+                    .models_manager
+                    .get_model_info(model, &config.to_models_manager_config())
+                    .await;
+                if requested_reasoning_effort.is_none() {
+                    config.model_reasoning_effort = model_info.default_reasoning_level;
+                }
+            } else if requested_reasoning_effort.is_none() {
+                config.model_reasoning_effort = None;
+            }
+        }
     }
 
     if let Some(requested_model) = requested_model {
@@ -452,10 +473,18 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     }
 
     if let Some(reasoning_effort) = requested_reasoning_effort {
-        let resolved_model = config
-            .model
-            .clone()
-            .unwrap_or_else(|| turn.model_info.slug.clone());
+        let resolved_model = if provider_changed_without_explicit_model {
+            config.model.clone().ok_or_else(|| {
+                FunctionCallError::RespondToModel(
+                    "Cannot set reasoning_effort when provider override did not resolve a default model; pass `model` explicitly.".to_string(),
+                )
+            })?
+        } else {
+            config
+                .model
+                .clone()
+                .unwrap_or_else(|| turn.model_info.slug.clone())
+        };
         let resolved_model_info = session
             .services
             .models_manager
@@ -470,6 +499,28 @@ pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     }
 
     Ok(())
+}
+
+async fn resolve_spawn_agent_provider_default_model(
+    turn: &TurnContext,
+    config: &Config,
+) -> Option<String> {
+    if let Some(model) = config.model_provider.model.clone() {
+        return Some(model);
+    }
+
+    let auth_manager = turn.auth_manager.clone()?;
+    let models_manager = ModelsManager::new_with_provider(
+        config.codex_home.to_path_buf(),
+        auth_manager,
+        config.model_catalog.clone(),
+        CollaborationModesConfig::default(),
+        config.model_provider.clone(),
+    );
+    let model = models_manager
+        .get_default_model(&None, RefreshStrategy::Offline)
+        .await;
+    (!model.is_empty()).then_some(model)
 }
 
 fn find_spawn_agent_model_name(

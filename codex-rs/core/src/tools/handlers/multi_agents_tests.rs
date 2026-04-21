@@ -104,6 +104,14 @@ struct ProjectScopedZmemoryFixture {
     project_config: Config,
 }
 
+struct ProjectScopedProfileFixture {
+    _home: TempDir,
+    _workspace: TempDir,
+    nested: AbsolutePathBuf,
+    base_config: Config,
+    project_config: Config,
+}
+
 async fn prepare_project_scoped_zmemory_fixture() -> ProjectScopedZmemoryFixture {
     let home = tempfile::tempdir().expect("create codex home");
     let workspace = tempfile::tempdir().expect("create workspace");
@@ -166,6 +174,58 @@ core_memory_uris = [
         .expect("load project config");
 
     ProjectScopedZmemoryFixture {
+        _home: home,
+        _workspace: workspace,
+        nested,
+        base_config,
+        project_config,
+    }
+}
+
+async fn prepare_project_scoped_profile_fixture() -> ProjectScopedProfileFixture {
+    let home = tempfile::tempdir().expect("create codex home");
+    let workspace = tempfile::tempdir().expect("create workspace");
+    let nested = AbsolutePathBuf::from_absolute_path(workspace.path().join("nested"))
+        .expect("nested path should be absolute");
+    let dot_codex = workspace.path().join(".codex");
+    let profile = "test-profile".to_string();
+    let profile_overrides = crate::config::ConfigOverrides {
+        config_profile: Some(profile.clone()),
+        ..Default::default()
+    };
+
+    fs::create_dir_all(workspace.path().join(".git")).expect("create project marker");
+    fs::create_dir_all(&nested).expect("create nested workspace");
+    fs::create_dir_all(&dot_codex).expect("create project config dir");
+
+    fs::write(
+        home.path().join("config.toml"),
+        format!(
+            r#"[profiles.{profile}]
+service_tier = "flex"
+"#
+        ),
+    )
+    .expect("write home config");
+    fs::write(dot_codex.join("config.toml"), "agent_max_threads = 7\n")
+        .expect("write project config");
+
+    let base_config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .harness_overrides(profile_overrides.clone())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .build()
+        .await
+        .expect("load base config");
+    let project_config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .harness_overrides(profile_overrides)
+        .fallback_cwd(Some(nested.clone().to_path_buf()))
+        .build()
+        .await
+        .expect("load project config");
+
+    ProjectScopedProfileFixture {
         _home: home,
         _workspace: workspace,
         nested,
@@ -472,9 +532,14 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
 
 #[tokio::test]
 async fn spawn_agent_uses_requested_provider_override() {
-    let (mut session, turn) = make_session_and_context().await;
+    let (mut session, mut turn) = make_session_and_context().await;
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
+    turn.model_info = session
+        .services
+        .models_manager
+        .get_model_info("parent-only-model", &turn.config.to_models_manager_config())
+        .await;
 
     let invocation = invocation(
         Arc::new(session),
@@ -505,6 +570,7 @@ async fn spawn_agent_uses_requested_provider_override() {
         .await;
 
     assert_eq!(snapshot.model_provider_id, "ollama");
+    assert_ne!(snapshot.model, "parent-only-model");
 }
 
 #[tokio::test]
@@ -3657,4 +3723,27 @@ async fn build_agent_resume_config_reloads_project_scoped_zmemory_profile_for_tu
     assert_eq!(config, expected);
     assert_eq!(config.zmemory, fixture.project_config.zmemory);
     assert_eq!(config.agent_roles, fixture.project_config.agent_roles);
+}
+
+#[tokio::test]
+async fn build_agent_spawn_config_preserves_active_profile_when_reloading_turn_cwd_override() {
+    let fixture = prepare_project_scoped_profile_fixture().await;
+    let (_session, mut turn) = make_session_and_context().await;
+    let base_instructions = BaseInstructions {
+        text: "base".to_string(),
+    };
+
+    turn.config = Arc::new(fixture.base_config.clone());
+    turn.cwd = fixture.nested.clone();
+
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
+
+    assert_eq!(config.active_profile.as_deref(), Some("test-profile"));
+    assert_eq!(config.service_tier, fixture.project_config.service_tier);
+    assert_eq!(
+        config.agent_max_threads,
+        fixture.project_config.agent_max_threads
+    );
 }
