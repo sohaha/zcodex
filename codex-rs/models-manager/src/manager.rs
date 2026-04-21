@@ -34,6 +34,8 @@ use http::HeaderMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::sync::TryLockError;
@@ -41,6 +43,7 @@ use tokio::time::timeout;
 use tracing::error;
 use tracing::info;
 use tracing::instrument;
+use tracing::warn;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
@@ -182,6 +185,7 @@ pub struct ModelsManager {
     collaboration_modes_config: CollaborationModesConfig,
     etag: RwLock<Option<String>>,
     cache_manager: ModelsCacheManager,
+    remote_refresh_disabled: AtomicBool,
     provider: SharedModelProvider,
 }
 
@@ -244,6 +248,7 @@ impl ModelsManager {
             collaboration_modes_config,
             etag: RwLock::new(None),
             cache_manager,
+            remote_refresh_disabled: AtomicBool::new(false),
             provider: model_provider,
         }
     }
@@ -407,6 +412,9 @@ impl ModelsManager {
         if matches!(self.catalog_mode, CatalogMode::Custom) {
             return Ok(());
         }
+        if self.remote_refresh_disabled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
 
         let auth_mode = self
             .provider
@@ -435,12 +443,20 @@ impl ModelsManager {
                     return Ok(());
                 }
                 info!("models cache: cache miss, fetching remote models");
-                self.fetch_and_update_models().await
+                self.fetch_and_update_models_with_fallback().await
             }
             RefreshStrategy::Online => {
                 // Always fetch from network
-                self.fetch_and_update_models().await
+                self.fetch_and_update_models_with_fallback().await
             }
+        }
+    }
+
+    async fn fetch_and_update_models_with_fallback(&self) -> CoreResult<()> {
+        match self.fetch_and_update_models().await {
+            Ok(()) => Ok(()),
+            Err(err) if self.disable_remote_refresh_on_unsupported_models_endpoint(&err) => Ok(()),
+            Err(err) => Err(err),
         }
     }
 
@@ -482,6 +498,32 @@ impl ModelsManager {
             .persist_cache(&models, etag, client_version)
             .await;
         Ok(())
+    }
+
+    fn disable_remote_refresh_on_unsupported_models_endpoint(&self, err: &CodexErr) -> bool {
+        let CodexErr::UnexpectedStatus(unexpected) = err else {
+            return false;
+        };
+        if !matches!(
+            unexpected.status,
+            http::StatusCode::NOT_FOUND
+                | http::StatusCode::METHOD_NOT_ALLOWED
+                | http::StatusCode::NOT_IMPLEMENTED
+        ) {
+            return false;
+        }
+
+        let provider = self.provider.info();
+        let first_disable = !self.remote_refresh_disabled.swap(true, Ordering::Relaxed);
+        if first_disable {
+            warn!(
+                provider_name = provider.name.as_deref().unwrap_or("unnamed"),
+                provider_base_url = provider.base_url.as_deref().unwrap_or("<none>"),
+                http_status = unexpected.status.as_u16(),
+                "provider does not support /models; disabling remote model refresh and continuing with the bundled model catalog"
+            );
+        }
+        true
     }
 
     async fn get_etag(&self) -> Option<String> {

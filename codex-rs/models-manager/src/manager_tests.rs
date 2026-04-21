@@ -758,6 +758,89 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
     );
 }
 
+#[tokio::test]
+async fn refresh_available_models_disables_remote_refresh_after_404() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(StatusCode::NOT_FOUND)
+                .insert_header("content-type", "text/plain")
+                .set_body_string("404 page not found"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let provider = provider_for(server.uri());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    let initial_model_count = manager.get_remote_models().await.len();
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("404 should fall back to bundled catalog");
+    manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect("disabled refresh should no-op after unsupported /models");
+
+    let bundled_remote = manager.get_remote_models().await;
+    assert_eq!(bundled_remote.len(), initial_model_count);
+    assert!(
+        !manager
+            .get_default_model(&None, RefreshStrategy::OnlineIfUncached)
+            .await
+            .is_empty(),
+        "bundled catalog should still provide a default model"
+    );
+}
+
+#[tokio::test]
+async fn refresh_available_models_keeps_retrying_after_server_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(StatusCode::INTERNAL_SERVER_ERROR)
+                .insert_header("content-type", "text/plain")
+                .set_body_string("internal error"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let provider = provider_for(server.uri());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    let first = manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect_err("500 should still surface as an error");
+    let second = manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect_err("500 should not disable future refresh attempts");
+
+    assert!(matches!(first, CodexErr::InternalServerError));
+    assert!(matches!(second, CodexErr::InternalServerError));
+}
+
 #[test]
 fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
     let tags = Arc::new(Mutex::new(BTreeMap::new()));
