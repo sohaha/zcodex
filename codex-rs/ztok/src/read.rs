@@ -1,3 +1,4 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
@@ -43,18 +44,21 @@ pub fn run(
     }
 
     let source_name = file.display().to_string();
-    let compressed = compression::compress(CompressionRequest {
-        source_name: &source_name,
-        content: &content,
-        hint: CompressionHint::CodeOrText(lang),
-        intent: CompressionIntent::Read(ReadOptions {
-            level,
-            max_lines,
-            tail_lines,
-            line_numbers,
-            language: lang,
-        }),
-    })?;
+    let compressed = compression::compress_for_behavior(
+        CompressionRequest {
+            source_name: &source_name,
+            content: &content,
+            hint: CompressionHint::CodeOrText(lang),
+            intent: CompressionIntent::Read(ReadOptions {
+                level,
+                max_lines,
+                tail_lines,
+                line_numbers,
+                language: lang,
+            }),
+        },
+        ZtokBehavior::from_env(),
+    )?;
 
     if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
         eprintln!(
@@ -124,18 +128,21 @@ pub fn run_stdin(
         eprintln!("语言：{lang:?}（stdin 无扩展名）");
     }
 
-    let compressed = compression::compress(CompressionRequest {
-        source_name: "-",
-        content: &content,
-        hint: CompressionHint::CodeOrText(lang),
-        intent: CompressionIntent::Read(ReadOptions {
-            level,
-            max_lines,
-            tail_lines,
-            line_numbers,
-            language: lang,
-        }),
-    })?;
+    let compressed = compression::compress_for_behavior(
+        CompressionRequest {
+            source_name: "-",
+            content: &content,
+            hint: CompressionHint::CodeOrText(lang),
+            intent: CompressionIntent::Read(ReadOptions {
+                level,
+                max_lines,
+                tail_lines,
+                line_numbers,
+                language: lang,
+            }),
+        },
+        ZtokBehavior::from_env(),
+    )?;
 
     if compressed.fallback == Some(ExplicitFallbackReason::EmptySpecializedOutput) {
         eprintln!(

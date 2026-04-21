@@ -1,9 +1,11 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression_json;
 use crate::compression_log;
 use crate::filter;
 use crate::filter::FilterLevel;
 use crate::filter::Language;
 use anyhow::Result;
+use anyhow::bail;
 use serde_json::Value;
 use std::path::Path;
 
@@ -159,6 +161,16 @@ pub(crate) fn compress(request: CompressionRequest<'_>) -> Result<CompressionRes
     }
 }
 
+pub(crate) fn compress_for_behavior(
+    request: CompressionRequest<'_>,
+    behavior: ZtokBehavior,
+) -> Result<CompressionResult> {
+    if behavior.is_basic() {
+        return compress_basic(request);
+    }
+    compress(request)
+}
+
 fn detect_content_kind(source_name: &str, content: &str, hint: CompressionHint) -> ContentKind {
     match hint {
         CompressionHint::Json => ContentKind::Json,
@@ -261,6 +273,30 @@ fn compress_read(
     match fallback {
         Some(reason) => CompressionResult::fallback_full(content_kind, output, reason),
         None => CompressionResult::full(content_kind, output),
+    }
+}
+
+fn compress_basic(request: CompressionRequest<'_>) -> Result<CompressionResult> {
+    let content_kind = detect_content_kind(request.source_name, request.content, request.hint);
+
+    match request.intent {
+        CompressionIntent::Read(options) => {
+            Ok(compress_read(request.content, content_kind, options))
+        }
+        CompressionIntent::Json { mode, .. } => {
+            if mode == JsonRenderMode::Schema {
+                bail!("ztok json --keys-only 在 basic 模式下不受支持");
+            }
+            serde_json::from_str::<Value>(request.content).map_err(anyhow::Error::from)?;
+            Ok(CompressionResult::full(
+                content_kind,
+                request.content.to_string(),
+            ))
+        }
+        CompressionIntent::Log { .. } => Ok(CompressionResult::full(
+            content_kind,
+            request.content.to_string(),
+        )),
     }
 }
 

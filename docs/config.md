@@ -69,6 +69,34 @@ Behavior:
 
 For implementation details and composer behavior, see `docs/tui-chat-composer.md`.
 
+## ZTOK
+
+`codex ztok` 和 `ztok` alias 都会读取同一份 `config.toml` 里的 `[ztok]` 配置：
+
+```toml
+[ztok]
+behavior = "enhanced"
+```
+
+`behavior` 支持两个值：
+
+- `enhanced`：默认值。保留当前增强压缩栈，包括共享压缩、session dedup、near-diff 和 `.ztok-cache` 会话缓存。
+- `basic`：关闭增强压缩路径。`read`、`json`、`log`、`summary` 都不会再走 session dedup、near-diff 或 SQLite 会话写入。
+
+`basic` 模式下的命令行为：
+
+- `ztok read`：仍保留本地读取、过滤、窗口截断和行号能力，但不做会话去重或近重复压缩。
+- `ztok json`：输出原始 JSON 文本；无效 JSON 仍会报解析错误；`--keys-only` 不受支持。
+- `ztok log`：输出原始日志文本。
+- `ztok summary`：仍保留本地测试/构建/列表/通用文本摘要；当输入更像 JSON 或日志时，会退回通用文本摘要，而不是专用压缩摘要。
+
+如果你希望完全关闭增强行为，可以显式写成：
+
+```toml
+[ztok]
+behavior = "basic"
+```
+
 ## Notify
 
 Codex can run a notification hook when the agent finishes a turn. See the configuration reference for the latest notification settings:

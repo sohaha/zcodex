@@ -1,3 +1,4 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression::CompressionOutputKind;
 use crate::compression::CompressionResult;
 use crate::compression::ExplicitFallbackReason;
@@ -70,6 +71,10 @@ fn dedup_read_output_with_cache_path_and_config(
     result: CompressionResult,
     near_duplicate_config: NearDuplicateConfig,
 ) -> CompressionResult {
+    if ZtokBehavior::from_env().is_basic() {
+        return result;
+    }
+
     if result.output_kind != CompressionOutputKind::Full {
         return result;
     }

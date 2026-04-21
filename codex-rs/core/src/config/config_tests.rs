@@ -45,6 +45,8 @@ use codex_config::types::SkillsConfig;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_config::types::Tui;
 use codex_config::types::TuiNotificationSettings;
+use codex_config::types::ZtokBehavior;
+use codex_config::types::ZtokToml;
 use codex_features::Feature;
 use codex_features::FeaturesToml;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
@@ -336,6 +338,24 @@ consolidation_model = "gpt-5"
         )
         .disable_on_external_context
     );
+
+    let ztok_cfg = toml::from_str::<ConfigToml>("[ztok]\nbehavior = \"basic\"\n")
+        .expect("ztok TOML should deserialize");
+    assert_eq!(
+        ztok_cfg.ztok,
+        Some(ZtokToml {
+            behavior: Some(ZtokBehavior::Basic),
+        })
+    );
+
+    let config = Config::load_from_base_config_with_overrides(
+        ztok_cfg,
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").abs(),
+    )
+    .await
+    .expect("load config from ztok settings");
+    assert_eq!(config.ztok.behavior, ZtokBehavior::Basic);
 }
 
 #[test]
@@ -3670,6 +3690,7 @@ fn expected_precedence_config(
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        ztok: types::ZtokConfig::default(),
         zmemory: types::ZmemoryConfig::default(),
         tui_show_buddy: true,
         tui_buddy_soul: None,

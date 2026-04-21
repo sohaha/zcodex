@@ -709,7 +709,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     if let Some(argv0) = raw_args.first()
         && codex_ztok::is_alias_invocation(argv0)
     {
-        run_ztok_subcommand(raw_args.into_iter().skip(1).collect())?;
+        run_ztok_subcommand(
+            raw_args.into_iter().skip(1).collect(),
+            CliConfigOverrides::default(),
+            None,
+        )
+        .await?;
         return Ok(());
     }
     if raw_args
@@ -717,7 +722,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         .and_then(|arg| arg.to_str())
         .is_some_and(|arg| arg == "ztok")
     {
-        run_ztok_subcommand(raw_args.into_iter().skip(2).collect())?;
+        run_ztok_subcommand(
+            raw_args.into_iter().skip(2).collect(),
+            CliConfigOverrides::default(),
+            None,
+        )
+        .await?;
         return Ok(());
     }
 
@@ -847,7 +857,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "ztok",
             )?;
-            run_ztok_subcommand(ztok_cli.args)?;
+            run_ztok_subcommand(
+                ztok_cli.args,
+                root_config_overrides.clone(),
+                interactive.config_profile.clone(),
+            )
+            .await?;
         }
         Some(Subcommand::Plugin(plugin_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -1273,7 +1288,11 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_ztok_subcommand(args: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
+async fn run_ztok_subcommand(
+    args: Vec<std::ffi::OsString>,
+    config_overrides: CliConfigOverrides,
+    config_profile: Option<String>,
+) -> anyhow::Result<()> {
     if let Ok(thread_id) = std::env::var(CODEX_THREAD_ID_ENV_VAR)
         && !thread_id.trim().is_empty()
     {
@@ -1283,6 +1302,29 @@ fn run_ztok_subcommand(args: Vec<std::ffi::OsString>) -> anyhow::Result<()> {
     } else {
         unsafe {
             std::env::remove_var(codex_ztok::ZTOK_SESSION_ID_ENV_VAR);
+        }
+    }
+
+    if !args.iter().any(|arg| {
+        arg.to_str()
+            .is_some_and(|value| matches!(value, "-h" | "--help" | "-V" | "--version"))
+    }) {
+        let cli_kv_overrides = config_overrides
+            .parse_overrides()
+            .map_err(anyhow::Error::msg)?;
+        let config = Config::load_with_cli_overrides_and_harness_overrides(
+            cli_kv_overrides,
+            ConfigOverrides {
+                config_profile,
+                ..Default::default()
+            },
+        )
+        .await?;
+        unsafe {
+            std::env::set_var(
+                codex_ztok::ZTOK_BEHAVIOR_ENV_VAR,
+                config.ztok.behavior.as_str(),
+            );
         }
     }
 

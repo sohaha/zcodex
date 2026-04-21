@@ -1,3 +1,4 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
@@ -45,6 +46,7 @@ fn validate_json_extension(file: &Path) -> Result<()> {
 pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     validate_json_extension(file)?;
     let timer = tracking::TimedExecution::start();
+    let behavior = ZtokBehavior::from_env();
 
     if verbose > 0 {
         eprintln!("分析 JSON: {}", file.display());
@@ -54,23 +56,30 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
         fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
     let source_name = file.display().to_string();
+    if behavior.is_basic() && schema_only {
+        bail!("ztok json --keys-only 在 basic 模式下不受支持");
+    }
+
     let output = session_dedup::dedup_output(
         &source_name,
         &content,
         &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
-        compression::compress(CompressionRequest {
-            source_name: &source_name,
-            content: &content,
-            hint: CompressionHint::Json,
-            intent: CompressionIntent::Json {
-                max_depth,
-                mode: if schema_only {
-                    JsonRenderMode::Schema
-                } else {
-                    JsonRenderMode::Compact
+        compression::compress_for_behavior(
+            CompressionRequest {
+                source_name: &source_name,
+                content: &content,
+                hint: CompressionHint::Json,
+                intent: CompressionIntent::Json {
+                    max_depth,
+                    mode: if schema_only {
+                        JsonRenderMode::Schema
+                    } else {
+                        JsonRenderMode::Compact
+                    },
                 },
             },
-        })?,
+            behavior,
+        )?,
     )
     .output;
     println!("{output}");
@@ -86,6 +95,7 @@ pub fn run(file: &Path, max_depth: usize, schema_only: bool, verbose: u8) -> Res
 /// 展示来自标准输入的 JSON。
 pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let behavior = ZtokBehavior::from_env();
 
     if verbose > 0 {
         eprintln!("分析标准输入中的 JSON");
@@ -97,23 +107,30 @@ pub fn run_stdin(max_depth: usize, schema_only: bool, verbose: u8) -> Result<()>
         .read_to_string(&mut content)
         .context("从标准输入读取失败")?;
 
+    if behavior.is_basic() && schema_only {
+        bail!("ztok json --keys-only 在 basic 模式下不受支持");
+    }
+
     let output = session_dedup::dedup_output(
         "-",
         &content,
         &format!("json:max_depth={max_depth}:schema_only={schema_only}"),
-        compression::compress(CompressionRequest {
-            source_name: "-",
-            content: &content,
-            hint: CompressionHint::Json,
-            intent: CompressionIntent::Json {
-                max_depth,
-                mode: if schema_only {
-                    JsonRenderMode::Schema
-                } else {
-                    JsonRenderMode::Compact
+        compression::compress_for_behavior(
+            CompressionRequest {
+                source_name: "-",
+                content: &content,
+                hint: CompressionHint::Json,
+                intent: CompressionIntent::Json {
+                    max_depth,
+                    mode: if schema_only {
+                        JsonRenderMode::Schema
+                    } else {
+                        JsonRenderMode::Compact
+                    },
                 },
             },
-        })?,
+            behavior,
+        )?,
     )
     .output;
     println!("{output}");

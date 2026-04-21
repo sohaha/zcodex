@@ -30,6 +30,15 @@ TUI 粘贴图片默认会自动压缩，也支持通过 `[tui]` 配置 `auto_com
 
 Buddy（伙伴）会偶尔在气泡中评论对话。你可以通过 `[tui.buddy]` 配置其行为，通过 `[tui.buddy.reaction_strategy]` 配置反应生成策略（支持混合模式、本地预设和纯 AI 模式）。
 
+`ztok` 也有独立配置块：
+
+```toml
+[ztok]
+behavior = "enhanced"
+```
+
+默认 `enhanced` 会保留共享压缩、session dedup 和 near-diff。切到 `basic` 后，`read` 仍保留本地过滤/窗口能力，但 `json` / `log` 会退回原始文本，`summary` 对 JSON/日志输入会退回通用文本摘要，且整条链路不再写 `.ztok-cache` 会话缓存。`json --keys-only` 在 `basic` 下不受支持。完整说明见 [`docs/config.md`](../docs/config.md#ztok)。
+
 ### zmemory 默认行为
 
 Rust CLI 现在默认同时启用两套独立记忆系统：

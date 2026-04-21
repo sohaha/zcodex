@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 mod aws_cmd;
+mod behavior;
 mod cargo_cmd;
 mod compression;
 mod compression_json;
@@ -67,6 +68,7 @@ pub fn alias_name() -> &'static str {
     ZTOK_ALIAS_NAME
 }
 
+pub use behavior::ZTOK_BEHAVIOR_ENV_VAR;
 pub use rewrite::ShellCommandPassthroughReason;
 pub use rewrite::ShellCommandRewriteAnalysis;
 pub use rewrite::ShellCommandRewriteKind;

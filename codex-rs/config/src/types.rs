@@ -85,6 +85,25 @@ pub enum ResumeModelSource {
     Current,
 }
 
+/// Controls whether `ztok` uses the default enhanced compression stack or a
+/// reduced compatibility behavior.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ZtokBehavior {
+    #[default]
+    Enhanced,
+    Basic,
+}
+
+impl ZtokBehavior {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Enhanced => "enhanced",
+            Self::Basic => "basic",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WindowsSandboxModeToml {
@@ -977,4 +996,13 @@ pub struct ZmemoryToml {
     pub core_memory_uris: Option<Vec<String>>,
     /// Optional namespace override for the current runtime profile.
     pub namespace: Option<String>,
+}
+
+/// Ztok subsystem settings in TOML format.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ZtokToml {
+    /// Selects whether ztok uses the default enhanced behavior or the reduced
+    /// basic mode.
+    pub behavior: Option<ZtokBehavior>,
 }

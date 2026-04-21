@@ -3,6 +3,7 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::ZmemoryConfig;
 use crate::config::types::ZmemoryToml;
+use crate::config::types::ZtokConfig;
 use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -457,6 +458,9 @@ pub struct Config {
 
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
+
+    /// Ztok runtime settings.
+    pub ztok: ZtokConfig,
 
     /// Zmemory persistent-memory settings.
     pub zmemory: ZmemoryConfig,
@@ -2341,6 +2345,7 @@ impl Config {
             agent_max_depth,
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
+            ztok: ZtokConfig::from_toml(cfg.ztok.clone()),
             zmemory: ZmemoryConfig::from_toml(
                 cfg.zmemory.clone().map(|z| ZmemoryToml {
                     path: z.path,

@@ -1,3 +1,4 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
@@ -10,6 +11,8 @@ use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 use regex::Regex;
+use sha1::Digest;
+use sha1::Sha1;
 use std::process::Command;
 use std::process::Stdio;
 
@@ -39,14 +42,16 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
+    let behavior = ZtokBehavior::from_env();
+    let rendered_summary = summarize_output(&raw, command, output.status.success(), behavior);
 
     let summary = session_dedup::dedup_output(
         command,
-        &raw,
-        &format!("summary:success={}", output.status.success()),
+        &rendered_summary,
+        &summary_output_signature(command, output.status.success()),
         crate::compression::CompressionResult::full(
             crate::compression::ContentKind::Text,
-            summarize_output(&raw, command, output.status.success()),
+            rendered_summary.clone(),
         ),
     )
     .output;
@@ -58,7 +63,7 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-fn summarize_output(output: &str, command: &str, success: bool) -> String {
+fn summarize_output(output: &str, command: &str, success: bool, behavior: ZtokBehavior) -> String {
     let line_count = output.lines().count();
     let mut result = Vec::new();
 
@@ -78,13 +83,22 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     match output_type {
         OutputType::TestResults => summarize_tests(output, &mut result),
         OutputType::BuildOutput => summarize_build(output, &mut result),
+        OutputType::LogOutput if behavior.is_basic() => summarize_generic(output, &mut result),
         OutputType::LogOutput => summarize_logs_quick(output, &mut result),
         OutputType::ListOutput => summarize_list(output, &mut result),
+        OutputType::JsonOutput if behavior.is_basic() => summarize_generic(output, &mut result),
         OutputType::JsonOutput => summarize_json(output, &mut result),
         OutputType::Generic => summarize_generic(output, &mut result),
     }
 
     result.join("\n")
+}
+
+fn summary_output_signature(command: &str, success: bool) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(command.as_bytes());
+    let command_hash = format!("{:x}", hasher.finalize());
+    format!("summary:success={success}:command_sha1={command_hash}")
 }
 
 #[derive(Debug)]
@@ -299,4 +313,30 @@ fn extract_number(text: &str, after: &str) -> Option<usize> {
     re.captures(text)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_summary_treats_json_as_generic_text() {
+        let summary = summarize_output(
+            r#"{"name":"alpha","count":2}"#,
+            "cat payload.json",
+            true,
+            ZtokBehavior::Basic,
+        );
+
+        assert!(summary.contains("📋 输出："));
+        assert!(!summary.contains("JSON 输出"));
+    }
+
+    #[test]
+    fn summary_signature_distinguishes_commands() {
+        let left = summary_output_signature("echo alpha", true);
+        let right = summary_output_signature("printf 'alpha\\n'", true);
+
+        assert_ne!(left, right);
+    }
 }

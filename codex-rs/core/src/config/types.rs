@@ -1,3 +1,5 @@
+use codex_config::types::ZtokBehavior;
+use codex_config::types::ZtokToml;
 use codex_zmemory::config::ZmemorySettings;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -59,6 +61,25 @@ impl ZmemoryConfig {
 }
 
 impl Default for ZmemoryConfig {
+    fn default() -> Self {
+        Self::from_toml(None)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ZtokConfig {
+    pub behavior: ZtokBehavior,
+}
+
+impl ZtokConfig {
+    pub fn from_toml(toml: Option<ZtokToml>) -> Self {
+        Self {
+            behavior: toml.and_then(|config| config.behavior).unwrap_or_default(),
+        }
+    }
+}
+
+impl Default for ZtokConfig {
     fn default() -> Self {
         Self::from_toml(None)
     }

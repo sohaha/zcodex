@@ -1,3 +1,4 @@
+use crate::behavior::ZtokBehavior;
 use crate::compression;
 use crate::compression::CompressionHint;
 use crate::compression::CompressionIntent;
@@ -21,18 +22,22 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
 
     let content = fs::read_to_string(file)?;
     let source_name = file.display().to_string();
+    let behavior = ZtokBehavior::from_env();
     let result = session_dedup::dedup_output(
         &source_name,
         &content,
         "log:mode=detailed",
-        compression::compress(CompressionRequest {
-            source_name: &source_name,
-            content: &content,
-            hint: CompressionHint::Log,
-            intent: CompressionIntent::Log {
-                mode: LogRenderMode::Detailed,
+        compression::compress_for_behavior(
+            CompressionRequest {
+                source_name: &source_name,
+                content: &content,
+                hint: CompressionHint::Log,
+                intent: CompressionIntent::Log {
+                    mode: LogRenderMode::Detailed,
+                },
             },
-        })?,
+            behavior,
+        )?,
     )
     .output;
     println!("{result}");
@@ -48,6 +53,7 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
 /// 过滤来自 stdin 的日志
 pub fn run_stdin(_verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let behavior = ZtokBehavior::from_env();
 
     let mut content = String::new();
     let stdin = io::stdin();
@@ -60,14 +66,17 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
         "-",
         &content,
         "log:mode=detailed",
-        compression::compress(CompressionRequest {
-            source_name: "-",
-            content: &content,
-            hint: CompressionHint::Log,
-            intent: CompressionIntent::Log {
-                mode: LogRenderMode::Detailed,
+        compression::compress_for_behavior(
+            CompressionRequest {
+                source_name: "-",
+                content: &content,
+                hint: CompressionHint::Log,
+                intent: CompressionIntent::Log {
+                    mode: LogRenderMode::Detailed,
+                },
             },
-        })?,
+            behavior,
+        )?,
     )
     .output;
     println!("{result}");

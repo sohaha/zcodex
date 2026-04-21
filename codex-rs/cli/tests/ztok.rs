@@ -11,8 +11,17 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?);
     cmd.env("CODEX_HOME", codex_home)
         .env_remove("CODEX_THREAD_ID")
-        .env_remove("CODEX_ZTOK_SESSION_ID");
+        .env_remove("CODEX_ZTOK_SESSION_ID")
+        .env_remove("CODEX_ZTOK_BEHAVIOR");
     Ok(cmd)
+}
+
+fn write_ztok_config(codex_home: &Path, behavior: &str) -> Result<()> {
+    std::fs::write(
+        codex_home.join("config.toml"),
+        format!("[ztok]\nbehavior = \"{behavior}\"\n"),
+    )?;
+    Ok(())
 }
 
 fn run_command(command: &mut Command) -> Result<()> {
@@ -223,6 +232,32 @@ fn ztok_read_disables_session_cache_without_thread_id() -> Result<()> {
 }
 
 #[test]
+fn ztok_read_basic_mode_ignores_session_cache_even_with_thread_id() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-read-basic-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-read-basic-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("same").and(contains("[ztok dedup").not()));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_json_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -271,6 +306,36 @@ fn ztok_json_disables_session_cache_without_thread_id() -> Result<()> {
 }
 
 #[test]
+fn ztok_json_basic_mode_returns_raw_text() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["ztok", "json", "-"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .success()
+        .stdout(contains("{\"name\":\"alpha\",\"count\":2}").and(contains("name:").not()));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_json_basic_mode_rejects_keys_only() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["ztok", "json", "-", "--keys-only"])
+        .write_stdin("{\"name\":\"alpha\",\"count\":2}\n")
+        .assert()
+        .failure()
+        .stderr(contains("basic 模式下不受支持"));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_log_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -291,6 +356,25 @@ fn ztok_log_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_log_basic_mode_returns_raw_output() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["ztok", "log"])
+        .write_stdin("warning: heads up\nerror: boom\n")
+        .assert()
+        .success()
+        .stdout(
+            contains("warning: heads up")
+                .and(contains("error: boom"))
+                .and(contains("日志摘要").not()),
+        );
 
     Ok(())
 }
@@ -323,6 +407,39 @@ fn ztok_summary_reuses_session_cache_when_thread_id_is_present() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("[ztok dedup").and(contains("同一会话内已输出相同内容")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_summary_basic_mode_ignores_session_cache_when_thread_id_is_present() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_ztok_config(codex_home.path(), "basic")?;
+    let summary_args: Vec<&str> = if cfg!(windows) {
+        vec![
+            "ztok", "summary", "echo", "alpha", "&", "echo", "warning:", "boom",
+        ]
+    } else {
+        vec![
+            "ztok", "summary", "echo", "alpha", ";", "echo", "warning:", "boom",
+        ]
+    };
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-basic-1")
+        .args(&summary_args)
+        .assert()
+        .success()
+        .stdout(contains("✅ 命令：").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    second
+        .env("CODEX_THREAD_ID", "thread-ztok-summary-basic-1")
+        .args(&summary_args)
+        .assert()
+        .success()
+        .stdout(contains("✅ 命令：").and(contains("[ztok dedup").not()));
 
     Ok(())
 }
