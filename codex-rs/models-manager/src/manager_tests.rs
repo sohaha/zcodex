@@ -869,6 +869,79 @@ async fn refresh_available_models_uses_fallback_without_retrying_primary_across_
 }
 
 #[tokio::test]
+async fn refresh_available_models_uses_fallback_for_schema_mismatch_without_retrying_primary_across_processes()
+ {
+    let primary_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(StatusCode::OK)
+                .insert_header("content-type", "application/json")
+                .set_body_json(serde_json::json!({
+                    "data": [{
+                        "id": "schema-mismatch-model",
+                        "type": "model",
+                        "display_name": "Schema Mismatch",
+                        "created_at": "2024-01-01T00:00:00Z"
+                    }],
+                    "has_more": false
+                })),
+        )
+        .expect(1)
+        .mount(&primary_server)
+        .await;
+
+    let fallback_server = MockServer::start().await;
+    let fallback_models = vec![remote_model(
+        "fallback-schema-model",
+        "Fallback Schema",
+        /*priority*/ 0,
+    )];
+    Mock::given(method("GET"))
+        .and(path("/models"))
+        .respond_with(
+            ResponseTemplate::new(StatusCode::OK)
+                .insert_header("content-type", "application/json")
+                .set_body_json(ModelsResponse {
+                    models: fallback_models.clone(),
+                }),
+        )
+        .expect(2)
+        .mount(&fallback_server)
+        .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let provider = provider_for(primary_server.uri());
+    let fallback_provider = provider_for(fallback_server.uri());
+
+    let first_manager = ModelsManager::with_provider_and_fallback_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager.clone(),
+        provider.clone(),
+        Some(fallback_provider.clone()),
+    );
+    first_manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("schema mismatch should fall back to OpenAI/Codex catalog refresh");
+    assert_models_contain(&first_manager.get_remote_models().await, &fallback_models);
+
+    let second_manager = ModelsManager::with_provider_and_fallback_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+        Some(fallback_provider),
+    );
+    second_manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect("persisted schema mismatch should skip primary and fetch fallback");
+    assert_models_contain(&second_manager.get_remote_models().await, &fallback_models);
+}
+
+#[tokio::test]
 async fn refresh_available_models_keeps_retrying_after_server_error() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

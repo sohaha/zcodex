@@ -501,7 +501,7 @@ impl ModelsManager {
             Ok(()) => Ok(()),
             Err(err)
                 if self
-                    .disable_remote_refresh_on_unsupported_models_endpoint(&err)
+                    .disable_remote_refresh_on_incompatible_models_endpoint(&err)
                     .await =>
             {
                 self.fetch_and_update_models_from_fallback().await
@@ -572,18 +572,26 @@ impl ModelsManager {
         Ok((models, etag))
     }
 
-    async fn disable_remote_refresh_on_unsupported_models_endpoint(&self, err: &CodexErr) -> bool {
-        let CodexErr::UnexpectedStatus(unexpected) = err else {
-            return false;
+    async fn disable_remote_refresh_on_incompatible_models_endpoint(&self, err: &CodexErr) -> bool {
+        let incompatibility_reason = match err {
+            CodexErr::UnexpectedStatus(unexpected)
+                if matches!(
+                    unexpected.status,
+                    http::StatusCode::NOT_FOUND
+                        | http::StatusCode::METHOD_NOT_ALLOWED
+                        | http::StatusCode::NOT_IMPLEMENTED
+                ) =>
+            {
+                format!("http {}", unexpected.status.as_u16())
+            }
+            CodexErr::Stream(message, None)
+                if message.contains("failed to decode models response:")
+                    && message.contains("missing field `models`") =>
+            {
+                "response schema mismatch".to_string()
+            }
+            _ => return false,
         };
-        if !matches!(
-            unexpected.status,
-            http::StatusCode::NOT_FOUND
-                | http::StatusCode::METHOD_NOT_ALLOWED
-                | http::StatusCode::NOT_IMPLEMENTED
-        ) {
-            return false;
-        }
 
         let provider = self.provider.info();
         let persisted_disable = match self
@@ -602,9 +610,9 @@ impl ModelsManager {
             warn!(
                 provider_name = provider.name.as_deref().unwrap_or("unnamed"),
                 provider_base_url = provider.base_url.as_deref().unwrap_or("<none>"),
-                http_status = unexpected.status.as_u16(),
+                incompatibility_reason,
                 persisted_disable,
-                "provider does not support /models; disabling primary remote model refresh and switching to fallback catalog refresh"
+                "provider /models endpoint is incompatible with Codex expectations; disabling primary remote model refresh and switching to fallback catalog refresh"
             );
         }
         true
