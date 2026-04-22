@@ -1,6 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
 use crate::service::contracts::ReadNodeContract;
+use crate::service::governance;
 use crate::service::snapshot;
 use crate::tool_api::ReadActionParams;
 use anyhow::Result;
@@ -21,6 +22,7 @@ pub(crate) fn read_action(
     common::ensure_readable_domain(config, conn, &uri.domain)?;
 
     let snapshot = snapshot::load_node_snapshot_for_uri(config, conn, uri)?;
+    let governance = governance::evaluate_content(uri, &snapshot.content);
 
     serde_json::to_value(ReadNodeContract {
         uri: snapshot.primary_uri,
@@ -32,6 +34,7 @@ pub(crate) fn read_action(
         keywords: snapshot.keywords,
         children: snapshot.children,
         alias_count: snapshot.alias_count,
+        governance: governance.scope.is_some().then_some(governance),
     })
     .map_err(Into::into)
 }

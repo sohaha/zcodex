@@ -1462,7 +1462,7 @@ fn stats_and_doctor_surface_review_pressure() {
     .expect("stats should succeed");
     assert_eq!(stats["result"]["deprecatedMemoryCount"], 1);
     assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
-    assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
+    assert_eq!(stats["result"]["pathsMissingDisclosure"], 2);
     assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
     assert_eq!(stats["result"]["contentGovernanceIssueCount"], 1);
     assert_eq!(stats["result"]["contentGovernanceConflictCount"], 1);
@@ -2601,6 +2601,8 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         sorted_object_keys(&entries[0]),
         vec![
             "aliasCount",
+            "contentGovernanceIssueCount",
+            "contentGovernanceStatus",
             "domain",
             "missingTriggers",
             "nodeUri",
@@ -3088,6 +3090,7 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
         json!(["agent", "profile"])
     );
     assert_eq!(read_primary["result"]["aliasCount"], 2);
+    assert!(read_primary["result"]["governance"].is_null());
     assert_eq!(
         sorted_object_keys(&read_primary["result"]),
         vec![
@@ -3095,6 +3098,7 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
             "children",
             "content",
             "disclosure",
+            "governance",
             "keywords",
             "memoryId",
             "nodeUuid",
@@ -3121,6 +3125,7 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
         json!(["agent", "profile"])
     );
     assert_eq!(read_alias["result"]["aliasCount"], 2);
+    assert!(read_alias["result"]["governance"].is_null());
     assert_eq!(
         sorted_object_keys(&read_alias["result"]),
         vec![
@@ -3128,6 +3133,7 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
             "children",
             "content",
             "disclosure",
+            "governance",
             "keywords",
             "memoryId",
             "nodeUuid",
@@ -3300,6 +3306,8 @@ fn alias_view_uses_real_existing_path_for_cross_domain_alias_nodes() {
         sorted_object_keys(entry),
         vec![
             "aliasCount",
+            "contentGovernanceIssueCount",
+            "contentGovernanceStatus",
             "domain",
             "missingTriggers",
             "nodeUri",
@@ -4488,6 +4496,75 @@ fn create_normalizes_governed_content_and_exposes_result() {
 }
 
 #[test]
+fn read_exposes_governance_for_existing_dirty_governed_content() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    conn.execute(
+        "UPDATE memories
+         SET content = ?1
+         WHERE namespace = ?2 AND id = (
+             SELECT m.id
+             FROM memories m
+             JOIN edges e ON e.child_uuid = m.node_uuid AND e.namespace = m.namespace
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE p.namespace = ?2 AND p.domain = ?3 AND p.path = ?4 AND m.deprecated = FALSE
+             ORDER BY m.id DESC
+             LIMIT 1
+         )",
+        params![
+            "你的名字是“星尘”。以后都用这个名字。",
+            config.namespace(),
+            "core",
+            "agent"
+        ],
+    )
+    .expect("dirty content should update");
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+
+    assert_eq!(read["result"]["content"], "你的名字是“星尘”。以后都用这个名字。");
+    assert_eq!(read["result"]["governance"]["status"], "normalized");
+    assert_eq!(
+        read["result"]["governance"]["governedContent"],
+        "The assistant should refer to itself as \"星尘\"."
+    );
+    assert_eq!(
+        sorted_object_keys(&read["result"]),
+        vec![
+            "aliasCount",
+            "children",
+            "content",
+            "disclosure",
+            "governance",
+            "keywords",
+            "memoryId",
+            "nodeUuid",
+            "priority",
+            "uri",
+        ]
+    );
+}
+
+#[test]
 fn create_rejects_governed_content_conflicts() {
     let (_dir, config) = config();
     let error = crate::service::execute_action(
@@ -4619,6 +4696,18 @@ fn batch_update_rolls_back_when_governed_content_conflicts() {
 #[test]
 fn import_normalizes_governed_content_and_exposes_result() {
     let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
     let import = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {

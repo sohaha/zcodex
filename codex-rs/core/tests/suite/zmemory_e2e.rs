@@ -25,9 +25,12 @@ use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
+use rusqlite::Connection;
+use rusqlite::params;
 use serde_json::Value;
 use serde_json::json;
 use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -55,6 +58,28 @@ fn sorted_object_keys(value: &Value) -> Vec<&str> {
         .collect::<Vec<_>>();
     keys.sort_unstable();
     keys
+}
+
+fn overwrite_active_memory_content(db_path: &Path, namespace: &str, uri: &str, content: &str) {
+    let (domain, path) = uri
+        .split_once("://")
+        .unwrap_or_else(|| panic!("expected zmemory uri, got {uri}"));
+    let conn = Connection::open(db_path).expect("db should open");
+    conn.execute(
+        "UPDATE memories
+         SET content = ?1
+         WHERE namespace = ?2 AND id = (
+             SELECT m.id
+             FROM memories m
+             JOIN edges e ON e.child_uuid = m.node_uuid AND e.namespace = m.namespace
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE p.namespace = ?2 AND p.domain = ?3 AND p.path = ?4 AND m.deprecated = FALSE
+             ORDER BY m.id DESC
+             LIMIT 1
+         )",
+        params![content, namespace, domain, path],
+    )
+    .expect("active memory content should update");
 }
 
 fn tool_parameter_description(
@@ -2412,6 +2437,80 @@ async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Resul
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_recall_note_skips_conflicting_canonical_contract_content() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let explicit_db_path = home.path().join("custom-zmemory").join("memory.db");
+    fs::create_dir_all(
+        explicit_db_path
+            .parent()
+            .expect("explicit zmemory path should have a parent"),
+    )?;
+    let mut builder = test_codex().with_home(Arc::clone(&home)).with_config({
+        let explicit_db_path = explicit_db_path.clone();
+        move |config| {
+            config
+                .features
+                .enable(Feature::Zmemory)
+                .expect("test config should allow feature update");
+            config.zmemory.path = Some(explicit_db_path.clone());
+        }
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        Some(explicit_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    overwrite_active_memory_content(
+        &explicit_db_path,
+        "",
+        "core://agent/my_user",
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default.",
+    );
+
+    let response_mock = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "继续。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("继续按上次方式。").await?;
+
+    let developer_texts = response_mock.single_request().message_input_texts("developer");
+    assert!(
+        !developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected conflicting canonical memory to be excluded from recall, got {developer_texts:?}"
+    );
+    assert!(
+        !developer_texts
+            .iter()
+            .any(|text| text.contains("Respond in English by default.")),
+        "expected conflicting dirty content to stay out of recall, got {developer_texts:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_proactively_captures_explicit_preferences_even_in_high_load_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -2456,6 +2555,123 @@ async fn zmemory_proactively_captures_explicit_preferences_even_in_high_load_tur
         read_result.structured_content["result"]["content"],
         "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_proactive_capture_updates_existing_conflicting_contract_memory() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let explicit_db_path = home.path().join("custom-zmemory").join("memory.db");
+    fs::create_dir_all(
+        explicit_db_path
+            .parent()
+            .expect("explicit zmemory path should have a parent"),
+    )?;
+    let mut builder = test_codex().with_home(Arc::clone(&home)).with_config({
+        let explicit_db_path = explicit_db_path.clone();
+        move |config| {
+            config
+                .features
+                .enable(Feature::Zmemory)
+                .expect("test config should allow feature update");
+            config.zmemory.path = Some(explicit_db_path.clone());
+        }
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        Some(explicit_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    overwrite_active_memory_content(
+        &explicit_db_path,
+        "",
+        "core://agent/my_user",
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default.",
+    );
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("以后默认用中文回答，尽量简洁一点。")
+        .await?;
+
+    let contract_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        Some(explicit_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        contract_memory.structured_content["result"]["content"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+    assert_eq!(
+        contract_memory.structured_content["result"]["governance"]["status"],
+        "accepted"
+    );
+
+    let agent_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        Some(explicit_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        agent_memory.structured_content["result"]["content"],
+        "Canonical assistant identity anchor for collaboration preferences."
+    );
+
+    let conn = Connection::open(&explicit_db_path)?;
+    let (memory_count, deprecated_count, path_count): (i64, i64, i64) = conn.query_row(
+        "WITH target AS (
+             SELECT e.child_uuid AS node_uuid
+             FROM paths p
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             WHERE p.namespace = '' AND p.domain = 'core' AND p.path = 'agent/my_user'
+         )
+         SELECT
+             (SELECT COUNT(*) FROM memories WHERE namespace = '' AND node_uuid = target.node_uuid),
+             (SELECT COUNT(*) FROM memories WHERE namespace = '' AND node_uuid = target.node_uuid AND deprecated = TRUE),
+             (SELECT COUNT(*) FROM paths WHERE namespace = '' AND domain = 'core' AND path = 'agent/my_user')
+         FROM target",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    assert_eq!(memory_count, 2);
+    assert_eq!(deprecated_count, 1);
+    assert_eq!(path_count, 1);
 
     Ok(())
 }

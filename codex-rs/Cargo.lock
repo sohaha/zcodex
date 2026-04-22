@@ -2370,6 +2370,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-federation-daemon"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-federation-protocol",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "codex-federation-protocol"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "codex-feedback"
 version = "0.0.0"
 dependencies = [

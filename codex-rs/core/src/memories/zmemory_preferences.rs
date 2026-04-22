@@ -67,9 +67,9 @@ pub(crate) async fn capture_stable_preference_memories(
         return;
     }
 
-    let existing_agent_content =
+    let existing_agent_memory =
         if capture.agent_name.is_none() || !capture.collaboration_style_clauses.is_empty() {
-            read_canonical_content(
+            read_canonical_memory(
                 &zmemory_context,
                 turn_context,
                 StablePreferenceMemory::AgentSelfReference,
@@ -80,20 +80,23 @@ pub(crate) async fn capture_stable_preference_memories(
             None
         };
     if capture.agent_name.is_none()
-        && let Some(content) = existing_agent_content.as_deref()
+        && let Some(content) = existing_agent_memory
+            .as_ref()
+            .and_then(CanonicalMemoryRead::usable_content)
     {
         capture.agent_name = parse_name_from_memory_content(content);
     }
     if capture.user_address.is_none()
-        && let Ok(Some(content)) = read_canonical_content(
+        && let Ok(Some(content)) = read_canonical_memory(
             &zmemory_context,
             turn_context,
             StablePreferenceMemory::UserAddressPreference,
         )
+        && let Some(content) = content.usable_content()
     {
-        capture.user_address = parse_name_from_memory_content(&content);
+        capture.user_address = parse_name_from_memory_content(content);
     }
-    let existing_contract = read_canonical_content(
+    let existing_contract = read_canonical_memory(
         &zmemory_context,
         turn_context,
         StablePreferenceMemory::CollaborationAddressContract,
@@ -102,8 +105,10 @@ pub(crate) async fn capture_stable_preference_memories(
     .flatten();
 
     let writes = capture.into_writes(
-        existing_contract.as_deref(),
-        existing_agent_content.is_some(),
+        existing_contract
+            .as_ref()
+            .and_then(CanonicalMemoryRead::usable_content),
+        existing_agent_memory.is_some(),
     );
     for (memory, content) in writes {
         if let Err(err) =
@@ -245,8 +250,8 @@ fn write_and_verify_canonical_memory(
     memory: StablePreferenceMemory,
     content: &str,
 ) -> anyhow::Result<()> {
-    let existing_content = read_canonical_content(zmemory_context, turn_context, memory)?;
-    if existing_content.as_deref() == Some(content) {
+    let existing_content = read_canonical_memory(zmemory_context, turn_context, memory)?;
+    if existing_content.as_ref().map(|memory| memory.raw_content.as_str()) == Some(content) {
         return Ok(());
     }
 
@@ -269,9 +274,12 @@ fn write_and_verify_canonical_memory(
         },
     )?;
 
-    let verified_content = read_canonical_content(zmemory_context, turn_context, memory)?;
+    let verified_content = read_canonical_memory(zmemory_context, turn_context, memory)?;
     anyhow::ensure!(
-        verified_content.as_deref() == Some(content),
+        verified_content
+            .as_ref()
+            .and_then(CanonicalMemoryRead::usable_content)
+            == Some(content),
         "zmemory proactive capture verification failed for {}",
         memory.uri()
     );
@@ -283,6 +291,15 @@ fn read_canonical_content(
     turn_context: &TurnContext,
     memory: StablePreferenceMemory,
 ) -> anyhow::Result<Option<String>> {
+    Ok(read_canonical_memory(zmemory_context, turn_context, memory)?
+        .and_then(|memory| memory.usable_content().map(str::to_owned)))
+}
+
+fn read_canonical_memory(
+    zmemory_context: &ResolvedZmemoryContext,
+    turn_context: &TurnContext,
+    memory: StablePreferenceMemory,
+) -> anyhow::Result<Option<CanonicalMemoryRead>> {
     let uri = memory.uri();
     match run_zmemory_tool_with_context(
         zmemory_context.codex_home.as_path(),
@@ -301,12 +318,39 @@ fn read_canonical_content(
     }
 }
 
-fn read_content_from_tool_result(payload: &Value) -> Option<String> {
-    payload
-        .get("result")
-        .and_then(|result| result.get("content"))
+#[derive(Debug, Clone)]
+struct CanonicalMemoryRead {
+    raw_content: String,
+    usable_content: Option<String>,
+}
+
+impl CanonicalMemoryRead {
+    fn usable_content(&self) -> Option<&str> {
+        self.usable_content.as_deref()
+    }
+}
+
+fn read_content_from_tool_result(payload: &Value) -> Option<CanonicalMemoryRead> {
+    let result = payload.get("result")?;
+    let raw_content = result.get("content")?.as_str()?.to_owned();
+    let usable_content = match result
+        .get("governance")
+        .and_then(|governance| governance.get("status"))
         .and_then(Value::as_str)
-        .map(str::to_owned)
+    {
+        Some("conflict") => None,
+        Some(_) => result
+            .get("governance")
+            .and_then(|governance| governance.get("governedContent"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| Some(raw_content.clone())),
+        None => Some(raw_content.clone()),
+    };
+    Some(CanonicalMemoryRead {
+        raw_content,
+        usable_content,
+    })
 }
 
 fn format_recalled_memory(uri: &str, content: &str) -> String {

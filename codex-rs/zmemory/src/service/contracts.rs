@@ -43,6 +43,7 @@ pub(crate) struct ReadNodeContract {
     pub(crate) keywords: Vec<String>,
     pub(crate) children: Vec<NodeChildContract>,
     pub(crate) alias_count: i64,
+    pub(crate) governance: Option<ContentGovernanceResultContract>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

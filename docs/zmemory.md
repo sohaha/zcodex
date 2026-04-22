@@ -98,6 +98,11 @@ codex zmemory rebuild-search --json
 - `doctor`
 - `rebuild-search`
 
+其中 `read` 在受治理的 canonical URI 上会额外返回 `result.governance`：
+
+- `governedContent`：上层应优先消费的规范化内容
+- `status = "conflict"`：表示节点存在，但内容不应直接用于 recall、merge 或偏好解析
+
 ## MCP 风格工具名
 
 为对齐 MCP 生态，内置别名工具如下（映射到同一套动作层）：
