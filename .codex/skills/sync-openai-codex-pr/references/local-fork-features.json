@@ -555,7 +555,7 @@
         {
           "type": "regex",
           "path": "README.md",
-          "pattern": "@sohaha/zcodex"
+          "pattern": "zcodex.*社区维护分支|社区维护分支.*zcodex|由 <a href=\"https://github\\.com/sohaha\">sohaha</a> 维护"
         },
         {
           "type": "regex",

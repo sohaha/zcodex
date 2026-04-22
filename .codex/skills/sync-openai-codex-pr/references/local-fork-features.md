@@ -212,7 +212,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
 - better_when: 仓库决定统一回官方 branding，或者 branding 入口迁移到新文件并同步更新这里的检查路径。
 - checks:
-  - `regex` `README.md`: `@sohaha/zcodex`
+  - `regex` `README.md`: `zcodex.*社区维护分支|社区维护分支.*zcodex|由 <a href="https://github\.com/sohaha">sohaha</a> 维护`
   - `regex` `codex-rs/README.md`: `https://github\.com/sohaha/zcodex/releases`
   - `regex` `codex-rs/tui/src/update_action.rs`: `@sohaha/zcodex`
   - `regex` `docs/install.md`: `https://github\.com/sohaha/zcodex\.git`
@@ -323,11 +323,11 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 保留 provider.model_catalog 过滤、skip_reasoning_popup 传播、按 provider 选择默认远端模型目录，以及本地 synthetic/fallback ModelInfo 的字段完整性。
 - better_when: upstream 把 provider.model_catalog、skip_reasoning_popup、Anthropic 默认模型目录和本地 synthetic ModelInfo 的字段补齐都整合成更完整的实现，且本地配置行为不退化。
 - evidence:
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:232 let remote_models = if let Some(ref catalog_slugs) = provider_info.model_catalog {
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:615 if provider_info.skip_reasoning_popup {
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:231 .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider_info));
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:517 WireApi::Anthropic => model_info::anthropic_model_catalog(),
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:559 max_context_window: None,
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:263 let remote_models = if let Some(ref catalog_slugs) = provider_info.model_catalog {
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:756 if provider_info.skip_reasoning_popup {
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:262 .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider_info));
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:658 WireApi::Anthropic => model_info::anthropic_model_catalog(),
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:700 max_context_window: None,
   - `ok` `codex-rs/models-manager/src/model_info.rs`: codex-rs/models-manager/src/model_info.rs:181 max_context_window: None,
 
 ### `responses-reasoning-content-strip`
@@ -388,8 +388,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:891 tldr_cmd::run_tldr_command(tldr_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:899 run_zmemory_command(zmemory_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1783 let rendered = localize_help_output(err.to_string());
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1847 "显示帮助（使用 '-h' 查看摘要）",
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1854 .replace("Print version", "显示版本")
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1851 "显示帮助（使用 '-h' 查看摘要）",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1858 .replace("Print version", "显示版本")
 
 ### `resume-fork-provider-bridge`
 - status: `PASS`
@@ -401,10 +401,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:98 pub oss_provider: Option<String>,
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1717 interactive.provider = Some(provider);
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1720 interactive.oss_provider = Some(oss_provider);
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2265 fn resume_merges_option_flags_and_full_auto() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2296 assert_eq!(interactive.provider.as_deref(), Some("oss"));
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2328 fn fork_merges_provider_flags() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2343 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2269 fn resume_merges_option_flags_and_full_auto() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2300 assert_eq!(interactive.provider.as_deref(), Some("oss"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2332 fn fork_merges_provider_flags() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2347 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
 
 ### `buddy-surface`
 - status: `PASS`
@@ -461,8 +461,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/tests/suite/js_repl.rs`: codex-rs/core/tests/suite/js_repl.rs:207 EventMsg::Warning(ev) if ev.message.contains("已为此会话禁用 `js_repl`") => {
   - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:90 ContentItem::InputText { text } if text.starts_with("警告：")
   - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:192 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4346 text: "警告：too many unified exec processes".to_string(),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4374 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4325 text: "警告：too many unified exec processes".to_string(),
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4353 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
 
 ### `community-branding-and-release-links`
 - status: `PASS`
@@ -470,7 +470,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
 - better_when: 仓库决定统一回官方 branding，或者 branding 入口迁移到新文件并同步更新这里的检查路径。
 - evidence:
-  - `ok` `README.md`: README.md:24 npm install -g @sohaha/zcodex
+  - `ok` `README.md`: README.md:1 <p align="center"><strong>zcodex</strong> — 社区分支版本的 Codex CLI</p>
   - `ok` `codex-rs/README.md`: codex-rs/README.md:14 你也可以通过 Homebrew（`brew install --cask codex`）安装，或直接从 [GitHub Releases](https://github.com/sohaha/zcodex/releases) 下载平台...
   - `ok` `codex-rs/tui/src/update_action.rs`: codex-rs/tui/src/update_action.rs:4 /// Update via `npm install -g @sohaha/zcodex@latest`.
   - `ok` `docs/install.md`: docs/install.md:19 git clone https://github.com/sohaha/zcodex.git
@@ -483,8 +483,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - evidence:
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:763 Some(Subcommand::Zoffsec(zoffsec_cli)) => {
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1662 fn finalize_zoffsec_resume_interactive(
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2463 fn zoffsec_subcommand_registers_at_top_level() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2478 fn finalize_zoffsec_resume_enables_clean_before_resume() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2467 fn zoffsec_subcommand_registers_at_top_level() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2482 fn finalize_zoffsec_resume_enables_clean_before_resume() {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:22 pub struct ZoffsecCommand {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:119 pub async fn run_zoffsec_clean_command(
   - `ok` `codex-rs/cli/src/zoffsec_config.rs`: codex-rs/cli/src/zoffsec_config.rs:3 pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";
@@ -523,6 +523,6 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:748 pub(crate) async fn apply_pending_user_input_side_effects(
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:760 merge_tool_routing_directives(current_directives, &routing_inputs);
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:779 build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4739 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:5984 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4718 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:5963 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2339 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {

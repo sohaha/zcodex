@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+#MISE description="触发 nmtx 的 npm-only 工作流，从已有 GitHub Release 快速发布 npm"
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+repo="sohaha/nmtx"
+ref="master"
+version=""
+source_ref="$(git rev-parse HEAD)"
+targets="x86_64-unknown-linux-gnu"
+release_repo="sohaha/zcodex"
+release_tag=""
+dry_run=0
+
+usage() {
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run publish-npm --version <version> [options]
+
+选项:
+  --version <version>          必填，发布版本，例如 1.2.3 或 1.2.3-alpha.1
+  --source-ref <ref>           传给 nmtx 的 source_ref，默认当前 HEAD
+  --targets <targets>          目标平台，默认 x86_64-unknown-linux-gnu
+  --release-repo <repo>        GitHub Release 所在仓库，默认 sohaha/zcodex
+  --release-tag <tag>          可选，默认 v<version>
+  --ref <git-ref>              触发 nmtx workflow_dispatch 使用的分支，默认 master
+  --repo <owner/name>          nmtx 仓库，默认 sohaha/nmtx
+  --dry-run                    只打印将执行的检查与触发命令
+  -h, --help                   显示帮助
+
+说明:
+  1. 这个任务固定走 nmtx 的 npm-only 模式，不会触发完整构建。
+  2. 真正触发时需要环境变量 GITHUB_TOKEN 或 GH_TOKEN。
+  3. 触发前会先检查 release_repo 中对应 tag 是否已存在。
+EOF
+}
+
+die() {
+  echo "[mise] $*" >&2
+  exit 1
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    die "缺少依赖: $1"
+  fi
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      [ "$#" -ge 2 ] || die "--version 缺少参数"
+      version="$2"
+      shift 2
+      ;;
+    --source-ref)
+      [ "$#" -ge 2 ] || die "--source-ref 缺少参数"
+      source_ref="$2"
+      shift 2
+      ;;
+    --targets)
+      [ "$#" -ge 2 ] || die "--targets 缺少参数"
+      targets="$2"
+      shift 2
+      ;;
+    --release-repo)
+      [ "$#" -ge 2 ] || die "--release-repo 缺少参数"
+      release_repo="$2"
+      shift 2
+      ;;
+    --release-tag)
+      [ "$#" -ge 2 ] || die "--release-tag 缺少参数"
+      release_tag="$2"
+      shift 2
+      ;;
+    --ref)
+      [ "$#" -ge 2 ] || die "--ref 缺少参数"
+      ref="$2"
+      shift 2
+      ;;
+    --repo)
+      [ "$#" -ge 2 ] || die "--repo 缺少参数"
+      repo="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      die "未知参数: $1"
+      ;;
+  esac
+done
+
+[ -n "$version" ] || {
+  usage
+  die "必须提供 --version"
+}
+
+if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$'; then
+  die "version 仅支持 x.y.z 或 x.y.z-alpha.N: $version"
+fi
+
+if [ -z "$release_tag" ]; then
+  release_tag="v$version"
+fi
+
+[ "$release_tag" = "v$version" ] || die "release tag 必须与 version 对齐: 期望 v$version，实际 $release_tag"
+
+require_command gh
+
+echo "[mise] npm-only 发布参数:"
+echo "[mise]   version=$version"
+echo "[mise]   release_tag=$release_tag"
+echo "[mise]   release_repo=$release_repo"
+echo "[mise]   source_ref=$source_ref"
+echo "[mise]   targets=$targets"
+echo "[mise]   repo=$repo ref=$ref"
+
+if [ "$dry_run" -eq 1 ]; then
+  echo "[mise] dry-run: gh release view $release_tag --repo $release_repo"
+  echo "[mise] dry-run: $script_dir/trigger-nmtx-codex-ci --version $version --source-ref $source_ref --targets $targets --release-repo $release_repo --release-tag $release_tag --repo $repo --ref $ref --npm-only"
+  exit 0
+fi
+
+gh release view "$release_tag" --repo "$release_repo" >/dev/null \
+  || die "未找到 release: $release_repo@$release_tag"
+
+"$script_dir/trigger-nmtx-codex-ci" \
+  --version "$version" \
+  --source-ref "$source_ref" \
+  --targets "$targets" \
+  --release-repo "$release_repo" \
+  --release-tag "$release_tag" \
+  --repo "$repo" \
+  --ref "$ref" \
+  --npm-only
+
+if gh auth status >/dev/null 2>&1; then
+  run_url=""
+  for _ in 1 2 3 4 5; do
+    run_url="$(gh run list --repo "$repo" --workflow codex.yml --limit 1 --json url --jq '.[0].url // ""')"
+    if [ -n "$run_url" ]; then
+      echo "[mise] 最新 workflow: $run_url"
+      break
+    fi
+    sleep 2
+  done
+fi

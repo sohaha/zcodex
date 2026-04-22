@@ -568,10 +568,10 @@ handle_conflicting_install() {
       uninstall_cmd="brew uninstall --cask codex"
       ;;
     bun)
-      uninstall_cmd="bun remove -g @sohaha/codex"
+      uninstall_cmd="bun remove -g @sohaha/zcodex"
       ;;
     *)
-      uninstall_cmd="npm uninstall -g @sohaha/codex"
+      uninstall_cmd="npm uninstall -g @sohaha/zcodex"
       ;;
   esac
 
