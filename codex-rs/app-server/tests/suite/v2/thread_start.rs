@@ -720,9 +720,8 @@ model_reasoning_effort = "high"
 
     let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     let workspace_abs = workspace.path().to_path_buf().abs();
-    let trusted_root = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &workspace_abs)
-        .await
-        .unwrap_or(workspace_abs);
+    let trusted_root = resolve_root_git_project_for_trust(&workspace_abs)
+        .unwrap_or_else(|| workspace_abs.to_path_buf());
     let trusted_root_key = project_trust_key(trusted_root.as_path());
     assert!(config_toml.contains(&trusted_root_key));
     assert!(config_toml.contains("trust_level = \"trusted\""));
@@ -760,9 +759,8 @@ async fn thread_start_with_nested_git_cwd_trusts_repo_root() -> Result<()> {
 
     let config_toml = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     let nested_abs = nested.abs();
-    let trusted_root = resolve_root_git_project_for_trust(LOCAL_FS.as_ref(), &nested_abs)
-        .await
-        .expect("git root should resolve");
+    let trusted_root =
+        resolve_root_git_project_for_trust(&nested_abs).expect("git root should resolve");
     let trusted_root_key = project_trust_key(trusted_root.as_path());
     let nested_key = project_trust_key(&nested);
     assert!(config_toml.contains(&trusted_root_key));

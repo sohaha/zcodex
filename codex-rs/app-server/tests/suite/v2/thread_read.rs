@@ -32,6 +32,10 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
 use codex_core::ARCHIVED_SESSIONS_SUBDIR;
+use codex_protocol::AgentPath;
+use codex_protocol::protocol::AgentMessageEvent;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use core_test_support::responses;
@@ -160,6 +164,84 @@ async fn thread_read_can_include_turns() -> Result<()> {
         other => panic!("expected user message item, got {other:?}"),
     }
     assert_eq!(thread.status, ThreadStatus::NotLoaded);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_read_include_turns_skips_inter_agent_envelope_messages() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+
+    let preview = "Saved user message";
+    let conversation_id = create_fake_rollout_with_text_elements(
+        codex_home.path(),
+        "2025-01-05T12-00-00",
+        "2025-01-05T12:00:00Z",
+        preview,
+        vec![],
+        Some("mock_provider"),
+        /*git_info*/ None,
+    )?;
+    let rollout_path = rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
+    let envelope = serde_json::to_string(&InterAgentCommunication::new(
+        AgentPath::try_from("/root/runtime_persistence_audit").expect("valid author path"),
+        AgentPath::try_from("/root").expect("valid recipient path"),
+        Vec::new(),
+        "completed".into(),
+        /*trigger_turn*/ false,
+    ))?;
+    append_event_msg(
+        rollout_path.as_path(),
+        "2025-01-05T12:00:01Z",
+        EventMsg::AgentMessage(AgentMessageEvent {
+            message: envelope.clone(),
+            phase: None,
+            memory_citation: None,
+        }),
+    )?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let read_id = mcp
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: conversation_id,
+            include_turns: true,
+        })
+        .await?;
+    let read_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(read_id)),
+    )
+    .await??;
+    let ThreadReadResponse { thread, .. } = to_response::<ThreadReadResponse>(read_resp)?;
+
+    assert_eq!(thread.turns.len(), 1);
+    let turn = &thread.turns[0];
+    assert_eq!(turn.status, TurnStatus::Completed);
+    assert_eq!(
+        turn.items.len(),
+        1,
+        "inter-agent envelope should stay hidden"
+    );
+    match &turn.items[0] {
+        ThreadItem::UserMessage { content, .. } => {
+            assert_eq!(
+                content,
+                &vec![UserInput::Text {
+                    text: preview.to_string(),
+                    text_elements: Vec::new(),
+                }]
+            );
+        }
+        other => panic!("expected only user message item, got {other:?}"),
+    }
+    assert!(
+        !serde_json::to_string(&thread)?.contains(&envelope),
+        "thread/read payload should not leak mailbox envelope"
+    );
 
     Ok(())
 }
@@ -737,6 +819,19 @@ async fn thread_read_reports_system_error_idle_flag_after_failed_turn() -> Resul
 }
 
 fn append_user_message(path: &Path, timestamp: &str, text: &str) -> std::io::Result<()> {
+    append_event_msg(
+        path,
+        timestamp,
+        EventMsg::UserMessage(codex_protocol::protocol::UserMessageEvent {
+            message: text.to_string(),
+            images: None,
+            text_elements: Vec::new(),
+            local_images: Vec::new(),
+        }),
+    )
+}
+
+fn append_event_msg(path: &Path, timestamp: &str, payload: EventMsg) -> std::io::Result<()> {
     let mut file = std::fs::OpenOptions::new().append(true).open(path)?;
     writeln!(
         file,
@@ -744,12 +839,7 @@ fn append_user_message(path: &Path, timestamp: &str, text: &str) -> std::io::Res
         json!({
             "timestamp": timestamp,
             "type":"event_msg",
-            "payload": {
-                "type":"user_message",
-                "message": text,
-                "text_elements": [],
-                "local_images": []
-            }
+            "payload": serde_json::to_value(payload).expect("serialize event msg")
         })
     )
 }

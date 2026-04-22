@@ -21,6 +21,7 @@ use crate::protocol::v2::TurnStatus;
 use crate::protocol::v2::UserInput;
 use crate::protocol::v2::WebSearchAction;
 use codex_protocol::items::parse_hook_prompt_message;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
@@ -37,6 +38,7 @@ use codex_protocol::protocol::GuardianAssessmentEvent;
 use codex_protocol::protocol::GuardianAssessmentStatus;
 use codex_protocol::protocol::ImageGenerationBeginEvent;
 use codex_protocol::protocol::ImageGenerationEndEvent;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::McpToolCallBeginEvent;
@@ -288,7 +290,7 @@ impl ThreadHistoryBuilder {
         phase: Option<MessagePhase>,
         memory_citation: Option<crate::protocol::v2::MemoryCitation>,
     ) {
-        if text.is_empty() {
+        if text.is_empty() || is_inter_agent_envelope_text(&text) {
             return;
         }
 
@@ -1182,10 +1184,18 @@ impl From<&PendingTurn> for Turn {
     }
 }
 
+fn is_inter_agent_envelope_text(text: &str) -> bool {
+    InterAgentCommunication::from_message_content(&[ContentItem::OutputText {
+        text: text.to_string(),
+    }])
+    .is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::protocol::v2::CommandExecutionSource;
+    use codex_protocol::AgentPath;
     use codex_protocol::ThreadId;
     use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
     use codex_protocol::items::HookPromptFragment as CoreHookPromptFragment;
@@ -1205,6 +1215,7 @@ mod tests {
     use codex_protocol::protocol::DynamicToolCallResponseEvent;
     use codex_protocol::protocol::ExecCommandEndEvent;
     use codex_protocol::protocol::ExecCommandSource;
+    use codex_protocol::protocol::InterAgentCommunication;
     use codex_protocol::protocol::ItemStartedEvent;
     use codex_protocol::protocol::McpInvocation;
     use codex_protocol::protocol::McpToolCallEndEvent;
@@ -2603,6 +2614,48 @@ mod tests {
         assert_eq!(turns[0].id, "turn-a");
         assert_eq!(turns[1].id, "turn-b");
         assert_eq!(turns[1].items.len(), 2);
+    }
+
+    #[test]
+    fn skips_inter_agent_envelope_agent_messages() {
+        let envelope = serde_json::to_string(&InterAgentCommunication::new(
+            AgentPath::try_from("/root/runtime_persistence_audit").expect("valid author path"),
+            AgentPath::try_from("/root").expect("valid recipient path"),
+            Vec::new(),
+            "completed".into(),
+            /*trigger_turn*/ false,
+        ))
+        .expect("serialize mailbox envelope");
+        let events = vec![
+            EventMsg::UserMessage(UserMessageEvent {
+                message: "wait".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            }),
+            EventMsg::AgentMessage(AgentMessageEvent {
+                message: envelope,
+                phase: None,
+                memory_citation: None,
+            }),
+        ];
+
+        let items = events
+            .into_iter()
+            .map(RolloutItem::EventMsg)
+            .collect::<Vec<_>>();
+        let turns = build_turns_from_rollout_items(&items);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(
+            turns[0].items,
+            vec![ThreadItem::UserMessage {
+                id: "item-1".into(),
+                content: vec![UserInput::Text {
+                    text: "wait".into(),
+                    text_elements: Vec::new(),
+                }],
+            }]
+        );
     }
 
     #[test]
