@@ -324,10 +324,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: upstream 把 provider.model_catalog、skip_reasoning_popup、Anthropic 默认模型目录和本地 synthetic ModelInfo 的字段补齐都整合成更完整的实现，且本地配置行为不退化。
 - evidence:
   - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:263 let remote_models = if let Some(ref catalog_slugs) = provider_info.model_catalog {
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:756 if provider_info.skip_reasoning_popup {
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:764 if provider_info.skip_reasoning_popup {
   - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:262 .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider_info));
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:658 WireApi::Anthropic => model_info::anthropic_model_catalog(),
-  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:700 max_context_window: None,
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:666 WireApi::Anthropic => model_info::anthropic_model_catalog(),
+  - `ok` `codex-rs/models-manager/src/manager.rs`: codex-rs/models-manager/src/manager.rs:708 max_context_window: None,
   - `ok` `codex-rs/models-manager/src/model_info.rs`: codex-rs/models-manager/src/model_info.rs:181 max_context_window: None,
 
 ### `responses-reasoning-content-strip`
@@ -415,10 +415,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/buddy/mod.rs`: codex-rs/tui/src/buddy/mod.rs:91 "小伙伴已孵化：{} {}。",
   - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:5284 "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:95 SlashCommand::Buddy => "孵化、抚摸或隐藏底部小伙伴",
-  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:535 PersistBuddyVisibility(bool),
-  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:538 PersistBuddyFullVisibility,
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5684 AppEvent::PersistBuddyVisibility(visible) => {
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5687 AppEvent::PersistBuddyFullVisibility => {
+  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:531 PersistBuddyVisibility(bool),
+  - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:534 PersistBuddyFullVisibility,
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5667 AppEvent::PersistBuddyVisibility(visible) => {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:5670 AppEvent::PersistBuddyFullVisibility => {
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:289 EventMsg::BuddySoulGenerated(event) => {
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:301 EventMsg::BuddyReaction(event) => {
 
@@ -462,7 +462,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:90 ContentItem::InputText { text } if text.starts_with("警告：")
   - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:192 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
   - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4325 text: "警告：too many unified exec processes".to_string(),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4353 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；"
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4353 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；".to_string()
 
 ### `community-branding-and-release-links`
 - status: `PASS`
@@ -489,7 +489,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:119 pub async fn run_zoffsec_clean_command(
   - `ok` `codex-rs/cli/src/zoffsec_config.rs`: codex-rs/cli/src/zoffsec_config.rs:3 pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";
   - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:50 pub resume_zoffsec_clean: bool,
-  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:1392 if cli.resume_zoffsec_clean {
+  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:1391 if cli.resume_zoffsec_clean {
   - `ok` `codex-rs/tui/src/zoffsec_resume.rs`: codex-rs/tui/src/zoffsec_resume.rs:16 pub(crate) async fn clean_resume_selection_if_needed(
   - `ok` `codex-rs/rollout/src/patch.rs`: codex-rs/rollout/src/patch.rs:113 pub async fn clean_zoffsec_rollout(
 
@@ -523,6 +523,6 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:748 pub(crate) async fn apply_pending_user_input_side_effects(
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:760 merge_tool_routing_directives(current_directives, &routing_inputs);
   - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:779 build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4718 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:5963 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4717 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:5962 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2339 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
