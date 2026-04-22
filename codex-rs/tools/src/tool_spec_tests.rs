@@ -284,22 +284,47 @@ fn create_tools_json_for_responses_api_flattens_top_level_one_of_to_object() {
 }
 
 #[test]
-fn create_tools_json_for_responses_api_wraps_tldr_one_of_in_an_object() {
+fn create_tools_json_for_responses_api_flattens_tldr_to_plain_object() {
     let tools = create_tools_json_for_responses_api(&[create_tldr_tool()]).expect("serialize");
     let parameters = &tools[0]["parameters"];
+    let parameters_object = parameters.as_object().expect("ztldr parameters object");
     assert_eq!(parameters["type"], json!("object"));
     assert_eq!(parameters["required"], json!(["action"]));
-    let variants = parameters["oneOf"]
-        .as_array()
-        .expect("ztldr should keep oneOf");
-    let semantic = variants
-        .iter()
-        .find(|variant| variant["properties"]["action"]["enum"] == json!(["semantic"]))
-        .expect("semantic variant should exist");
-
-    assert_eq!(semantic["required"], json!(["action", "language", "query"]));
+    for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        assert!(
+            !parameters_object.contains_key(key),
+            "unexpected top-level {key}"
+        );
+    }
     assert_eq!(
-        semantic["properties"]["language"]["description"],
+        parameters["properties"]["action"]["enum"],
+        json!([
+            "arch",
+            "calls",
+            "cfg",
+            "change-impact",
+            "context",
+            "dead",
+            "dfg",
+            "diagnostics",
+            "doctor",
+            "extract",
+            "impact",
+            "importers",
+            "imports",
+            "notify",
+            "ping",
+            "search",
+            "semantic",
+            "slice",
+            "snapshot",
+            "status",
+            "structure",
+            "warm"
+        ])
+    );
+    assert_eq!(
+        parameters["properties"]["language"]["description"],
         json!(
             "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
         )

@@ -170,15 +170,48 @@ async fn tldr_tool_request_exposes_ztldr() -> Result<()> {
     assert!(description.contains("Use ztldr first"));
     assert!(description.contains("`language` is required"));
     assert!(description.contains("degradedMode or structuredFailure"));
+    let parameters_object = parameters.as_object().expect("ztldr parameters object");
     assert_eq!(parameters["type"], json!("object"));
     assert_eq!(parameters["required"], json!(["action"]));
-    let semantic = parameters["oneOf"]
-        .as_array()
-        .expect("ztldr parameters should preserve oneOf")
-        .iter()
-        .find(|variant| variant["properties"]["action"]["enum"] == json!(["semantic"]))
-        .expect("semantic variant should exist");
-    assert_eq!(semantic["required"], json!(["action", "language", "query"]));
+    for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+        assert!(
+            !parameters_object.contains_key(key),
+            "unexpected top-level {key}"
+        );
+    }
+    assert_eq!(
+        parameters["properties"]["action"]["enum"],
+        json!([
+            "arch",
+            "calls",
+            "cfg",
+            "change-impact",
+            "context",
+            "dead",
+            "dfg",
+            "diagnostics",
+            "doctor",
+            "extract",
+            "impact",
+            "importers",
+            "imports",
+            "notify",
+            "ping",
+            "search",
+            "semantic",
+            "slice",
+            "snapshot",
+            "status",
+            "structure",
+            "warm"
+        ])
+    );
+    assert_eq!(
+        parameters["properties"]["language"]["description"],
+        json!(
+            "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+        )
+    );
 
     Ok(())
 }

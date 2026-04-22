@@ -40,6 +40,8 @@
 ## 常见陷阱
 - 只改文档，不改代码侧 description，模型行为不会明显变化。
 - 只改 tool description，不改 shell interception message，broad grep/read 起手问题仍会保留。
+- 只修 Responses API 的 `tools[].parameters`，不修 `codex-rs/mcp-server/src/tldr_tool.rs` 手写的 `inputSchema`；一旦 MCP tool 再被桥接成 function tool，旁路 schema 仍会回到旧形状。
+- 以为“顶层 `type: object` + 保留顶层 `oneOf`”已经足够；当前 provider 还会继续拒绝任何顶层 `oneOf` / `anyOf` / `allOf` / `enum` / `not`，所以最终 contract 必须是纯 object 顶层。
 - shell interception 生成的建议参数不能省略 action 级必填字段；特别是 `semantic` / `context` 这类依赖显式 `language` 的 action，若没有可推断语言，就必须直接提示“先补 `language`”，不能把无效模板暴露给模型。
 - tool description 里的补救建议也必须遵守真实参数契约；不要在 `semantic` 缺 `language` 时再推荐 `context` / `calls` / `impact` 这类同样要求显式 `language` 的 action。若只有文件路径，应改指向 `extract` / `imports` / `slice` / `diagnostics` 这类可以按 `path` 推断语言的 action，或明确退回 raw grep/read。
 - 未以 `tool_api.rs` 为事实源，导致 action 列表和真实能力再次漂移。

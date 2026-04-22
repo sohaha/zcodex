@@ -482,7 +482,7 @@ fn create_tool_input_schema(schema: serde_json::Value, _panic_message: &str) -> 
 }
 
 fn tldr_tool_input_schema() -> serde_json::Value {
-    wrap_tldr_tool_input_variants(vec![
+    flatten_tldr_tool_input_variants(vec![
         tldr_tool_input_variant(
             "structure",
             &["language"],
@@ -620,7 +620,7 @@ fn tldr_tool_input_variant(
     })
 }
 
-fn wrap_tldr_tool_input_variants(variants: Vec<serde_json::Value>) -> serde_json::Value {
+fn flatten_tldr_tool_input_variants(variants: Vec<serde_json::Value>) -> serde_json::Value {
     let mut properties = serde_json::Map::new();
     let mut required_intersection: Option<BTreeSet<String>> = None;
 
@@ -666,7 +666,6 @@ fn wrap_tldr_tool_input_variants(variants: Vec<serde_json::Value>) -> serde_json
             "properties".to_string(),
             serde_json::Value::Object(properties),
         ),
-        ("oneOf".to_string(), serde_json::Value::Array(variants)),
         (
             "additionalProperties".to_string(),
             serde_json::Value::Bool(false),
@@ -725,6 +724,7 @@ fn merge_tldr_input_string_enum_schema(
             values.push(value.clone());
         }
     }
+    values.sort_by(|left, right| left.as_str().cmp(&right.as_str()));
     existing_map.insert("enum".to_string(), serde_json::Value::Array(values));
     Some(serde_json::Value::Object(existing_map))
 }
@@ -819,63 +819,47 @@ mod tests {
             tool_json["inputSchema"]["required"],
             serde_json::json!(["action"])
         );
+        let input_schema = tool_json["inputSchema"]
+            .as_object()
+            .expect("input schema object");
+        for key in ["oneOf", "anyOf", "allOf", "enum", "not"] {
+            assert!(
+                !input_schema.contains_key(key),
+                "unexpected top-level {key}"
+            );
+        }
         assert_eq!(
-            tool_json["inputSchema"]["oneOf"].as_array().map(Vec::len),
-            Some(22)
+            tool_json["inputSchema"]["properties"]["action"]["enum"],
+            serde_json::json!([
+                "arch",
+                "calls",
+                "cfg",
+                "change-impact",
+                "context",
+                "dead",
+                "dfg",
+                "diagnostics",
+                "doctor",
+                "extract",
+                "impact",
+                "importers",
+                "imports",
+                "notify",
+                "ping",
+                "search",
+                "semantic",
+                "slice",
+                "snapshot",
+                "status",
+                "structure",
+                "warm"
+            ])
         );
-        let semantic = tool_json["inputSchema"]["oneOf"]
-            .as_array()
-            .expect("oneOf variants")
-            .iter()
-            .find(|variant| {
-                variant["properties"]["action"]["enum"] == serde_json::json!(["semantic"])
-            })
-            .expect("semantic variant should exist");
         assert_eq!(
-            semantic["required"],
-            serde_json::json!(["action", "language", "query"])
-        );
-        assert_eq!(
-            semantic["properties"]["language"]["description"],
+            tool_json["inputSchema"]["properties"]["language"]["description"],
             serde_json::json!(
                 "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
             )
-        );
-        assert_eq!(
-            tool_json["inputSchema"]["oneOf"]
-                .as_array()
-                .expect("oneOf variants")
-                .iter()
-                .filter_map(|variant| {
-                    variant["properties"]["action"]["enum"][0]
-                        .as_str()
-                        .map(str::to_string)
-                })
-                .collect::<Vec<_>>(),
-            vec![
-                "structure",
-                "search",
-                "extract",
-                "imports",
-                "importers",
-                "context",
-                "impact",
-                "calls",
-                "dead",
-                "arch",
-                "change-impact",
-                "cfg",
-                "dfg",
-                "slice",
-                "semantic",
-                "diagnostics",
-                "doctor",
-                "ping",
-                "warm",
-                "snapshot",
-                "status",
-                "notify",
-            ]
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
         assert_eq!(
