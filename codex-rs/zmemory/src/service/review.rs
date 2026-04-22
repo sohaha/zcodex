@@ -1,9 +1,11 @@
 use crate::config::ZmemoryConfig;
 use crate::service::contracts::AuditEntryContract;
+use crate::service::contracts::ContentGovernanceResultContract;
 use crate::service::contracts::ReviewGroupContract;
 use crate::service::contracts::ReviewGroupDiffContract;
 use crate::service::contracts::ReviewNodeSnapshotContract;
 use crate::service::contracts::ReviewRollbackTargetContract;
+use crate::service::governance;
 use crate::service::history;
 use crate::service::snapshot;
 use crate::tool_api::ZmemoryUri;
@@ -58,6 +60,7 @@ pub(crate) fn review_group_diff_for_node_uuid(
     let alias_count = alias_count_for_node(conn, config.namespace(), node_uuid)?;
     let group = review_group_for_node_uuid(conn, config, node_uuid, alias_count)?;
     let node_snapshot = snapshot::load_node_snapshot_for_node(config, conn, node_uuid, None, None)?;
+    let content_governance = evaluate_snapshot_governance(&node_snapshot);
     let review_snapshot = ReviewNodeSnapshotContract {
         uri: node_snapshot.primary_uri.clone(),
         node_uuid: node_snapshot.node_uuid.clone(),
@@ -96,6 +99,7 @@ pub(crate) fn review_group_diff_for_node_uuid(
         changeset,
         rollback_targets,
         recent_audit_entries,
+        content_governance,
     })
 }
 
@@ -107,10 +111,18 @@ fn review_group_for_node_uuid(
 ) -> Result<ReviewGroupContract> {
     let node_snapshot = snapshot::load_node_snapshot_for_node(config, conn, node_uuid, None, None)?;
     let primary_uri = ZmemoryUri::parse(&node_snapshot.primary_uri)?;
+    let content_governance = evaluate_snapshot_governance(&node_snapshot);
+    let content_governance_status = summarize_governance_status(&content_governance);
+    let content_governance_issue_count = content_governance
+        .iter()
+        .filter(|result| result.status != "accepted")
+        .count() as i64;
     let trigger_count = node_snapshot.keywords.len() as i64;
     let missing_triggers = trigger_count == 0;
-    let (review_priority, priority_score) = alias_review_priority(alias_count, missing_triggers);
-    let priority_reason = alias_priority_reason(alias_count, missing_triggers);
+    let (review_priority, priority_score) =
+        alias_review_priority(alias_count, missing_triggers, &content_governance_status);
+    let priority_reason =
+        alias_priority_reason(alias_count, missing_triggers, &content_governance_status);
     let suggested_keywords = if missing_triggers {
         infer_alias_keywords(&node_snapshot.primary_uri, &node_snapshot.aliases)
     } else {
@@ -129,6 +141,8 @@ fn review_group_for_node_uuid(
         priority_reason,
         suggested_keywords,
         node_uri: node_snapshot.primary_uri,
+        content_governance_status,
+        content_governance_issue_count,
     })
 }
 
@@ -171,7 +185,37 @@ fn recent_audit_entries(
     .map_err(Into::into)
 }
 
-fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static str, i64) {
+fn evaluate_snapshot_governance(
+    node_snapshot: &snapshot::NodeSnapshot,
+) -> Vec<ContentGovernanceResultContract> {
+    let uris = std::iter::once(node_snapshot.primary_uri.as_str())
+        .chain(node_snapshot.aliases.iter().map(|alias| alias.uri.as_str()));
+    governance::evaluate_uri_strings(uris, &node_snapshot.content)
+}
+
+fn summarize_governance_status(results: &[ContentGovernanceResultContract]) -> String {
+    if results.iter().any(|result| result.status == "conflict") {
+        "conflict".to_string()
+    } else if results.iter().any(|result| result.status == "normalized") {
+        "normalized".to_string()
+    } else if results.iter().any(|result| result.status == "accepted") {
+        "accepted".to_string()
+    } else {
+        "notApplicable".to_string()
+    }
+}
+
+fn alias_review_priority(
+    alias_count: i64,
+    missing_triggers: bool,
+    content_governance_status: &str,
+) -> (&'static str, i64) {
+    if content_governance_status == "conflict" {
+        return ("high", 200 + alias_count);
+    }
+    if content_governance_status == "normalized" {
+        return ("medium", 150 + alias_count);
+    }
     if missing_triggers {
         let priority = if alias_count >= 3 { "high" } else { "medium" };
         let score = 100 + alias_count;
@@ -182,7 +226,17 @@ fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static 
     }
 }
 
-fn alias_priority_reason(alias_count: i64, missing_triggers: bool) -> String {
+fn alias_priority_reason(
+    alias_count: i64,
+    missing_triggers: bool,
+    content_governance_status: &str,
+) -> String {
+    if content_governance_status == "conflict" {
+        return "content governance conflict detected".to_string();
+    }
+    if content_governance_status == "normalized" {
+        return "content governance normalization pending review".to_string();
+    }
     if missing_triggers {
         format!("missing triggers across {alias_count} alias paths")
     } else {

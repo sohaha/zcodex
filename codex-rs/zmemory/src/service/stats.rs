@@ -3,11 +3,14 @@ use crate::doctor::run_doctor;
 use crate::service::common;
 use crate::service::contracts::AuditEntryContract;
 use crate::service::contracts::AuditResultContract;
+use crate::service::contracts::ContentGovernanceResultContract;
 use crate::service::contracts::MaintenanceDoctorContract;
 use crate::service::contracts::MaintenanceStatsContract;
 use crate::service::contracts::RebuildSearchResultContract;
+use crate::service::governance;
 use crate::service::index;
 use crate::tool_api::AuditActionParams;
+use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -25,6 +28,8 @@ pub(crate) struct StatsSnapshot {
     pub(crate) disclosure_path_count: i64,
     pub(crate) paths_missing_disclosure: i64,
     pub(crate) disclosures_needing_review: i64,
+    pub(crate) content_governance_issue_count: i64,
+    pub(crate) content_governance_conflict_count: i64,
     pub(crate) orphaned_memory_count: i64,
     pub(crate) deprecated_memory_count: i64,
     pub(crate) search_document_count: i64,
@@ -32,6 +37,7 @@ pub(crate) struct StatsSnapshot {
     pub(crate) audit_log_count: i64,
     pub(crate) latest_audit_at: Option<String>,
     pub(crate) audit_action_counts: BTreeMap<String, i64>,
+    pub(crate) content_governance_results: Vec<ContentGovernanceResultContract>,
 }
 
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
@@ -188,6 +194,8 @@ pub(crate) fn collect_stats_snapshot(
                 disclosure_path_count: row.get(7)?,
                 paths_missing_disclosure: row.get(8)?,
                 disclosures_needing_review: row.get(9)?,
+                content_governance_issue_count: 0,
+                content_governance_conflict_count: 0,
                 orphaned_memory_count: row.get(10)?,
                 deprecated_memory_count: row.get(11)?,
                 search_document_count: row.get(12)?,
@@ -195,15 +203,47 @@ pub(crate) fn collect_stats_snapshot(
                 audit_log_count: row.get(14)?,
                 latest_audit_at: row.get(15)?,
                 audit_action_counts: BTreeMap::new(),
+                content_governance_results: Vec::new(),
             })
         },
     )?;
     let audit_action_counts = collect_audit_action_counts(conn, namespace)?;
+    let content_governance_results = collect_content_governance_results(conn, config)?;
+    let content_governance_issue_count = content_governance_results
+        .iter()
+        .filter(|result| result.status != "accepted")
+        .count() as i64;
+    let content_governance_conflict_count = content_governance_results
+        .iter()
+        .filter(|result| result.status == "conflict")
+        .count() as i64;
 
     Ok(StatsSnapshot {
         audit_action_counts,
+        content_governance_issue_count,
+        content_governance_conflict_count,
+        content_governance_results,
         ..stats_row
     })
+}
+
+fn collect_content_governance_results(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+) -> Result<Vec<ContentGovernanceResultContract>> {
+    let mut results = Vec::new();
+    for raw_uri in governance::governed_uris() {
+        let uri = ZmemoryUri::parse(raw_uri)?;
+        let Some(row) = common::find_path_row(conn, config, &uri)? else {
+            continue;
+        };
+        let Some(memory) = common::read_active_memory(conn, config.namespace(), &row.node_uuid)?
+        else {
+            continue;
+        };
+        results.push(governance::evaluate_content(&uri, &memory.content));
+    }
+    Ok(results)
 }
 
 fn collect_audit_action_counts(
@@ -287,6 +327,8 @@ pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result
         alias_nodes_missing_triggers: doctor.alias_nodes_missing_triggers,
         paths_missing_disclosure: doctor.paths_missing_disclosure,
         disclosures_needing_review: doctor.disclosures_needing_review,
+        content_governance_issue_count: doctor.content_governance_issue_count,
+        content_governance_conflict_count: doctor.content_governance_conflict_count,
         issues: doctor.issues,
         stats,
         path_resolution,
@@ -317,6 +359,8 @@ fn stats_contract(config: &ZmemoryConfig, stats: &StatsSnapshot) -> MaintenanceS
         disclosure_path_count: stats.disclosure_path_count,
         paths_missing_disclosure: stats.paths_missing_disclosure,
         disclosures_needing_review: stats.disclosures_needing_review,
+        content_governance_issue_count: stats.content_governance_issue_count,
+        content_governance_conflict_count: stats.content_governance_conflict_count,
         search_document_count: stats.search_document_count,
         fts_document_count: stats.fts_document_count,
         audit_log_count: stats.audit_log_count,

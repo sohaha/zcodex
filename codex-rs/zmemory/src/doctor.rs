@@ -17,6 +17,7 @@ pub fn run_doctor(
         issues.push(DoctorIssueContract {
             code: "fts_count_mismatch".to_string(),
             message: format!("search_documents={search_count}, search_documents_fts={fts_count}"),
+            uris: Vec::new(),
         });
     }
 
@@ -37,6 +38,7 @@ pub fn run_doctor(
             message: format!(
                 "{active_memory_conflicts} nodes have more than one active memory row"
             ),
+            uris: Vec::new(),
         });
     }
 
@@ -58,6 +60,7 @@ pub fn run_doctor(
             message: format!(
                 "{dangling_keywords} glossary keyword rows point to nodes without any live path"
             ),
+            uris: Vec::new(),
         });
     }
 
@@ -66,6 +69,7 @@ pub fn run_doctor(
         issues.push(DoctorIssueContract {
             code: "orphaned_memories".to_string(),
             message: format!("orphaned memories: {orphaned_memories}"),
+            uris: Vec::new(),
         });
     }
 
@@ -74,6 +78,7 @@ pub fn run_doctor(
         issues.push(DoctorIssueContract {
             code: "deprecated_memories_awaiting_review".to_string(),
             message: format!("deprecated memories awaiting review: {deprecated_memories}"),
+            uris: Vec::new(),
         });
     }
 
@@ -86,6 +91,7 @@ pub fn run_doctor(
         issues.push(DoctorIssueContract {
             code: "alias_nodes_missing_triggers".to_string(),
             message: format!("{alias_nodes_missing} alias nodes have no keywords"),
+            uris: Vec::new(),
         });
     }
     if disclosures_needing_review > 0 {
@@ -94,6 +100,37 @@ pub fn run_doctor(
             message: format!(
                 "{disclosures_needing_review} disclosures look multi-trigger or ambiguous"
             ),
+            uris: Vec::new(),
+        });
+    }
+
+    let content_governance_issue_count = stats.content_governance_issue_count;
+    let content_governance_conflict_count = stats.content_governance_conflict_count;
+    if content_governance_issue_count > 0 {
+        let affected_uris = stats
+            .content_governance_results
+            .iter()
+            .filter(|result| result.status != "accepted")
+            .filter_map(|result| result.scope.as_ref().map(|scope| scope.uri.clone()))
+            .collect::<Vec<_>>();
+        let code = if content_governance_conflict_count > 0 {
+            "content_governance_conflicts"
+        } else {
+            "content_governance_normalization_needed"
+        };
+        let message = if content_governance_conflict_count > 0 {
+            format!(
+                "{content_governance_conflict_count} governed memories contain conflicting canonical facts"
+            )
+        } else {
+            format!(
+                "{content_governance_issue_count} governed memories need canonical content normalization"
+            )
+        };
+        issues.push(DoctorIssueContract {
+            code: code.to_string(),
+            message,
+            uris: affected_uris,
         });
     }
 
@@ -106,6 +143,8 @@ pub fn run_doctor(
         alias_nodes_missing_triggers: alias_nodes_missing,
         paths_missing_disclosure,
         disclosures_needing_review,
+        content_governance_issue_count,
+        content_governance_conflict_count,
         issues,
     })
 }

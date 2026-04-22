@@ -85,7 +85,7 @@ pub(crate) fn create_action_in_tx(
             "memoryId": memory_id,
             "priority": priority,
             "disclosure": disclosure,
-            "contentGovernance": content_governance.clone(),
+            "contentGovernance": content_governance,
         }),
     )?;
     index::reindex_node(conn, config.namespace(), &node_uuid)?;

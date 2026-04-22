@@ -118,6 +118,8 @@ pub(crate) struct ReviewGroupContract {
     pub(crate) priority_reason: String,
     pub(crate) suggested_keywords: Vec<String>,
     pub(crate) node_uri: String,
+    pub(crate) content_governance_status: String,
+    pub(crate) content_governance_issue_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -165,6 +167,7 @@ pub(crate) struct ReviewGroupDiffContract {
     pub(crate) changeset: ChangeSetRecord,
     pub(crate) rollback_targets: Vec<ReviewRollbackTargetContract>,
     pub(crate) recent_audit_entries: Vec<AuditEntryContract>,
+    pub(crate) content_governance: Vec<ContentGovernanceResultContract>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -206,6 +209,7 @@ pub(crate) struct ContentGovernanceResultContract {
 pub(crate) struct DoctorIssueContract {
     pub(crate) code: String,
     pub(crate) message: String,
+    pub(crate) uris: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -219,6 +223,8 @@ pub(crate) struct DoctorSummaryContract {
     pub(crate) alias_nodes_missing_triggers: i64,
     pub(crate) paths_missing_disclosure: i64,
     pub(crate) disclosures_needing_review: i64,
+    pub(crate) content_governance_issue_count: i64,
+    pub(crate) content_governance_conflict_count: i64,
     pub(crate) issues: Vec<DoctorIssueContract>,
 }
 
@@ -245,6 +251,8 @@ pub(crate) struct MaintenanceStatsContract {
     pub(crate) disclosure_path_count: i64,
     pub(crate) paths_missing_disclosure: i64,
     pub(crate) disclosures_needing_review: i64,
+    pub(crate) content_governance_issue_count: i64,
+    pub(crate) content_governance_conflict_count: i64,
     pub(crate) search_document_count: i64,
     pub(crate) fts_document_count: i64,
     pub(crate) audit_log_count: i64,
@@ -270,6 +278,8 @@ pub(crate) struct MaintenanceDoctorContract {
     pub(crate) alias_nodes_missing_triggers: i64,
     pub(crate) paths_missing_disclosure: i64,
     pub(crate) disclosures_needing_review: i64,
+    pub(crate) content_governance_issue_count: i64,
+    pub(crate) content_governance_conflict_count: i64,
     pub(crate) issues: Vec<DoctorIssueContract>,
     pub(crate) stats: MaintenanceStatsContract,
     pub(crate) path_resolution: PathResolutionContract,

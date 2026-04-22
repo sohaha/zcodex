@@ -1427,6 +1427,30 @@ fn stats_and_doctor_surface_review_pressure() {
         },
     )
     .expect("undisclosed create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("governed create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent");
+    let memory_id = crate::schema::active_memory_id_for_node(&conn, config.namespace(), &node_uuid)
+        .expect("active memory query should succeed")
+        .expect("governed node should have active memory");
+    conn.execute(
+        "UPDATE memories SET content = ?2 WHERE id = ?1",
+        params![
+            memory_id,
+            "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+        ],
+    )
+    .expect("dirty governed content should update");
 
     let stats = crate::service::execute_action(
         &config,
@@ -1440,9 +1464,11 @@ fn stats_and_doctor_surface_review_pressure() {
     assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
     assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
     assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
-    assert_eq!(stats["result"]["auditLogCount"], 5);
+    assert_eq!(stats["result"]["contentGovernanceIssueCount"], 1);
+    assert_eq!(stats["result"]["contentGovernanceConflictCount"], 1);
+    assert_eq!(stats["result"]["auditLogCount"], 6);
     assert!(stats["result"]["latestAuditAt"].is_string());
-    assert_eq!(stats["result"]["auditActionCounts"]["create"], 3);
+    assert_eq!(stats["result"]["auditActionCounts"]["create"], 4);
     assert_eq!(stats["result"]["auditActionCounts"]["update"], 1);
     assert_eq!(stats["result"]["auditActionCounts"]["delete-path"], 1);
     assert_eq!(
@@ -1452,6 +1478,8 @@ fn stats_and_doctor_surface_review_pressure() {
             "aliasNodesMissingTriggers",
             "auditActionCounts",
             "auditLogCount",
+            "contentGovernanceConflictCount",
+            "contentGovernanceIssueCount",
             "dbPath",
             "deprecatedMemoryCount",
             "disclosurePathCount",
@@ -1583,6 +1611,8 @@ fn stats_and_doctor_surface_review_pressure() {
         vec![
             "aliasNodeCount",
             "aliasNodesMissingTriggers",
+            "contentGovernanceConflictCount",
+            "contentGovernanceIssueCount",
             "dbPath",
             "deprecatedMemoryCount",
             "disclosuresNeedingReview",
@@ -1605,9 +1635,11 @@ fn stats_and_doctor_surface_review_pressure() {
         sorted_object_keys(&doctor["result"]["stats"]),
         sorted_object_keys(&stats["result"])
     );
-    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 5);
+    assert_eq!(doctor["result"]["contentGovernanceIssueCount"], 1);
+    assert_eq!(doctor["result"]["contentGovernanceConflictCount"], 1);
+    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 6);
     assert!(doctor["result"]["stats"]["latestAuditAt"].is_string());
-    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 3);
+    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 4);
     assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["update"], 1);
     assert_eq!(
         doctor["result"]["stats"]["auditActionCounts"]["delete-path"],
@@ -1634,7 +1666,15 @@ fn stats_and_doctor_surface_review_pressure() {
     assert!(
         issues
             .iter()
-            .all(|issue| { sorted_object_keys(issue) == vec!["code", "message"] })
+            .any(|issue| issue["code"] == "content_governance_conflicts")
+    );
+    assert!(issues.iter().any(|issue| {
+        issue["code"] == "content_governance_conflicts" && issue["uris"] == json!(["core://agent"])
+    }));
+    assert!(
+        issues
+            .iter()
+            .all(|issue| { sorted_object_keys(issue) == vec!["code", "message", "uris"] })
     );
 }
 
@@ -2928,6 +2968,72 @@ fn review_group_diff_contract_keeps_snapshot_history_and_audit_in_sync() {
     assert_eq!(
         audit_actions,
         vec!["manage-triggers", "add-alias", "update", "create"]
+    );
+}
+
+#[test]
+fn review_group_diff_surfaces_content_governance_findings() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://agent-copy".to_string()),
+            target_uri: Some("core://agent".to_string()),
+            priority: Some(8),
+            disclosure: Some("mirror".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent");
+    let memory_id = crate::schema::active_memory_id_for_node(&conn, config.namespace(), &node_uuid)
+        .expect("active memory query should succeed")
+        .expect("governed node should have active memory");
+    conn.execute(
+        "UPDATE memories SET content = ?2 WHERE id = ?1",
+        params![
+            memory_id,
+            "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+        ],
+    )
+    .expect("dirty governed content should update");
+
+    let diff = crate::service::review::review_group_diff_for_node_uuid(&conn, &config, &node_uuid)
+        .expect("review diff should build");
+
+    assert_eq!(diff.group.content_governance_status, "conflict");
+    assert_eq!(diff.group.content_governance_issue_count, 1);
+    assert_eq!(
+        diff.group.priority_reason,
+        "content governance conflict detected"
+    );
+    assert_eq!(diff.content_governance.len(), 1);
+    assert_eq!(
+        diff.content_governance[0]
+            .scope
+            .as_ref()
+            .expect("scope")
+            .uri,
+        "core://agent"
+    );
+    assert_eq!(diff.content_governance[0].status, "conflict");
+    assert_eq!(
+        diff.content_governance[0].issues[0].code,
+        "assistant_self_reference_conflict"
     );
 }
 

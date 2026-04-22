@@ -191,6 +191,35 @@ pub(crate) fn evaluate_write_content(
     Ok(result)
 }
 
+pub(crate) fn governed_uris() -> &'static [&'static str] {
+    &["core://agent", "core://my_user", "core://agent/my_user"]
+}
+
+pub(crate) fn evaluate_uri_strings<'a>(
+    uris: impl IntoIterator<Item = &'a str>,
+    content: &str,
+) -> Vec<ContentGovernanceResultContract> {
+    let mut results = Vec::new();
+    let mut seen_scopes = Vec::new();
+
+    for raw_uri in uris {
+        let Ok(uri) = ZmemoryUri::parse(raw_uri) else {
+            continue;
+        };
+        let result = evaluate_content(&uri, content);
+        let Some(scope) = result.scope.as_ref().map(|scope| scope.kind.clone()) else {
+            continue;
+        };
+        if seen_scopes.contains(&scope) {
+            continue;
+        }
+        seen_scopes.push(scope);
+        results.push(result);
+    }
+
+    results
+}
+
 fn governance_scope_for_uri(uri: &ZmemoryUri) -> Option<ContentGovernanceScope> {
     match (uri.domain.as_str(), uri.path.as_str()) {
         ("core", "agent") => Some(ContentGovernanceScope::AssistantSelfReference),

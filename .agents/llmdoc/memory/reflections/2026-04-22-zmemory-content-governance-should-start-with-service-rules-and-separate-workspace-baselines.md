@@ -8,6 +8,7 @@
 - 首轮框架只需要解决三件事：URI 作用域匹配、规范化结果建模、冲突显式建模。把这些收敛成独立 module 后，后续写入路径和诊断路径只复用同一个入口即可。
 - 以 canonical identity URI 作为首批样本时，规则也要按 registry/module 形式落地，而不是把 `core://agent`、`core://my_user`、`core://agent/my_user` 的字符串判断散在多个 action 里。
 - 本地验证若被 workspace 缺件阻塞，必须把“仓库基线坏了”和“本次改动未完成”拆开记录；这次 `cargo test -p codex-zmemory`、`just fmt`、`just fix -p codex-zmemory` 都在解析 workspace 时被缺失的 `codex-rs/federation-protocol/Cargo.toml` 阻断，不能把这个基线问题误记成治理框架本身回归。
+- 如果本地 Cargo 校验直接报 `sccache ... No such file or directory`，先排查 shell 继承的 `RUSTC_WRAPPER`，可用 `env -u RUSTC_WRAPPER ...` 临时复跑；这属于环境包装问题，不是源码编译错误。
 
 ## 这次落地
 - 在 `codex-rs/zmemory/src/service/governance.rs` 建了独立治理模块，用规则表承载 canonical identity URI 的作用域与规则。
