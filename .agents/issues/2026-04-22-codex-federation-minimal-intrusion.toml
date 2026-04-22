@@ -1,0 +1,85 @@
+plan = ".agents/plan/2026-04-22-codex-federation-minimal-intrusion.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立独立的 federation 协议与本地状态模型"
+scope = """
+新增独立的 federation 协议与本地状态模型，明确 `InstanceCard`、`InstanceId`、`Envelope`、`AckState`、租约/心跳和本地 state 目录契约，
+用于表达多个独立 Codex 实例之间的注册、发现、文本任务投递与基础 ack 语义。
+包含协议 crate、序列化结构、状态文件命名和基础读写约束；不实现 daemon、CLI 命令或主程序桥接，
+也不修改现有 `AgentPath`、`ThreadId`、`InterAgentCommunication`、`SessionSource`、`SubAgentSource` 语义。
+"""
+touch_points = ["module:federation-protocol", "path:codex-rs/federation-protocol/**", "path:codex-rs/Cargo.toml"]
+depends_on = []
+done_when = "仓库中存在独立的 federation 协议与状态模型 crate，能够稳定表达实例注册信息、文本消息信封与 ack 状态，并通过测试锁定禁止复用现有 root tree 地址语义的边界"
+validate_by = "运行仓库现有命令 cargo test -p codex-federation-protocol"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "后续 issue 若出现把跨实例身份映射为 `/root/...`、`ThreadId` 或 `SessionSource::SubAgent` 的实现，应视为偏离 a1 契约并回退到规划边界。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "落地单机 federation daemon 与本地注册表/邮箱"
+scope = """
+在独立运行面中实现单机 federation daemon，负责实例注册、心跳、peer 列表、邮箱投递、基础 ack 与过期清理，
+并使用独立的本地 state 目录和本地 IPC 接口承载这些能力。
+包含 daemon crate、Unix socket 或等价本地 IPC、注册表/inbox/ack/state 持久化与生命周期清理；不接入主 `codex` 启动流程，
+不实现 CLI 用户命令，不引入跨机器网络、广播、自动调度或共享上下文。
+"""
+touch_points = ["module:federation-daemon", "path:codex-rs/federation-daemon/**", "path:codex-rs/Cargo.toml"]
+depends_on = ["a1"]
+done_when = "本地 daemon 可以在单机上维护 federation 注册表、接收实例注册与心跳、列出在线 peers、写入/读取文本消息邮箱并返回基础 accepted ack，且超时实例和过期消息具备可测试的清理路径"
+validate_by = "运行仓库现有命令 cargo test -p codex-federation-daemon"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "a2 只负责本地联邦基础设施，不向 `codex-rs/core` 注入新的 session/thread 概念；daemon 失败或协议不满足时，后续 issue 应停止桥接而不是回写现有 multi_agent 内核。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "提供 federation client 与 CLI 命令面"
+scope = """
+基于已稳定的协议和 daemon，提供 federation client 封装与 `codex federation ...` 命令面，
+让用户或脚本可以注册实例、列出 peers、发送文本任务、读取收件箱与确认 ack。
+包含 client crate、CLI 子命令注册与基础输出；不把 federation 行为并入现有 `spawn_agent`/`send_message`/`followup_task`，
+也不在本 issue 中接入主 `codex` 默认启动流程。
+"""
+touch_points = ["module:federation-client", "module:codex-cli", "path:codex-rs/federation-client/**", "path:codex-rs/cli/src/**", "path:codex-rs/Cargo.toml"]
+depends_on = ["a1", "a2"]
+done_when = "CLI 提供独立的 federation 子命令用于启动 daemon、注册实例、列出 peers、发送文本任务与查看收件结果，且这些命令全部通过独立 federation client 与 daemon 交互，不复用现有多子代理工具接口"
+validate_by = "运行仓库现有命令 cargo test -p codex-federation-client && cargo test -p codex-cli federation"
+regress_by = "运行仓库现有命令 cargo test -p codex-federation-client && cargo test -p codex-cli federation"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "如果 CLI 接线需要新增参数或帮助文案，应保持为 federation 独立命令面，不改写现有 `codex` 子命令的默认行为。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "将 federation 作为可选桥接能力接入主 codex 启动与端到端验证"
+scope = """
+在不改变现有 `multi_agent` 语义的前提下，为主 `codex` 增加可选 federation 启动桥接：
+允许实例在启动时通过显式参数注册名称、职责、scope 与 cwd，后台发送心跳，并把收到的 federation 文本任务桥接成本地普通输入处理。
+包含最小运行时桥接、必要文档与端到端验证；不把 federation 消息转成 `InterAgentCommunication`，
+不新增 `SessionSource::Federation`，也不扩展 TUI 专门界面、自动调度或跨机器能力。
+"""
+touch_points = ["module:codex-cli", "module:codex-exec", "module:codex-core", "path:codex-rs/cli/src/**", "path:codex-rs/exec/**", "path:codex-rs/core/**", "path:docs/**"]
+depends_on = ["a1", "a2", "a3"]
+done_when = "主 `codex` 可以通过显式 federation 参数完成实例注册和后台心跳，并将收到的 federation 文本任务桥接为本地普通输入执行；两个不同目录下的独立 Codex 实例可在单机上完成注册、发现、文本任务投递与结果回传的端到端流程，同时现有单实例多子代理语义保持不变"
+validate_by = "运行仓库现有命令 cargo test -p codex-cli federation && cargo test -p codex-federation-daemon && cargo test -p codex-federation-client，并完成一次手动端到端检查：在两个不同目录分别启动启用 federation 的 codex 实例，确认可以互相注册、列出 peers、发送文本任务并回传结果"
+regress_by = "运行仓库现有命令 cargo test -p codex-cli federation && cargo test -p codex-core"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "a4 若发现必须深改 `AgentControl`、`AgentRegistry`、`AgentPath`、`InterAgentCommunication` 或 `SessionSource` 才能成立，应将 issue 标记为 `blocked` 并回到规划或 issue 阶段收缩方案，而不是在执行中扩大侵入面。"

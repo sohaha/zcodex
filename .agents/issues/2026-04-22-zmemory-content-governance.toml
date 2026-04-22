@@ -1,0 +1,85 @@
+plan = "plan/2026-04-22-zmemory-content-governance.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "在 codex-zmemory 建立通用内容治理框架"
+scope = """
+在 `codex-rs/zmemory` 的 service 层新增可复用的内容治理抽象，用于按 URI/节点类型执行规范化、冲突检测与结果建模。
+本 issue 只负责框架、接口与基础规则承载方式，不把写入路径、doctor/review 全量接线一次性塞进同一个结果单元。
+允许以当前已知高风险 canonical URI 作为首批规则验证样本，但规则必须以可扩展框架形式落地，而不是散落在 `codex-core` 或单点 if/else 中。
+不在本 issue 中完成 `create/update/import/batch-update` 的最终写入治理，也不在本 issue 中完成 `doctor`/`review` 的完整输出扩展。
+"""
+touch_points = ["module:codex-zmemory", "codex-rs/zmemory/src/service/mod.rs", "codex-rs/zmemory/src/service/contracts.rs", "codex-rs/zmemory/src/service/common.rs", "codex-rs/zmemory/src/service/tests.rs"]
+depends_on = []
+done_when = "`codex-zmemory` 内已有统一的内容治理抽象与结果模型，后续写入链路、doctor、review 都可以复用该入口；并有测试证明该框架不是只为单一上层补丁而生"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory service::tests:: --quiet"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory --quiet"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "当前会话 capability 适配结论为 none-applicable：本 issue 的事实源全部来自本地计划与仓库源码，现有会话能力里没有比直接在主代理内完成 Rust 架构收敛更合适的专用能力。执行时必须继续保持与官方原版 `memories` 主流程解耦。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "让 create/update/import/batch-update 统一接入内容治理"
+scope = """
+将阶段一的治理框架接入 `create`、`update`、`import`、`batch-update` 等底层写入路径，
+确保受治理节点在落库前统一经过规范化或冲突判定，并在无法安全判定时给出明确错误或显式可审查结果。
+包含必要的 audit、返回字段与批量路径一致性调整。
+不在本 issue 中扩展 `doctor`/`review` 的最终展示合同，也不在本 issue 中对 `codex-core` prompt/recall 做额外补丁。
+"""
+touch_points = ["module:codex-zmemory", "codex-rs/zmemory/src/service/create.rs", "codex-rs/zmemory/src/service/update.rs", "codex-rs/zmemory/src/service/import.rs", "codex-rs/zmemory/src/service/batch.rs", "codex-rs/zmemory/src/service/tests.rs"]
+depends_on = ["a1"]
+done_when = "受治理节点经过 `create`、`update`、`import`、`batch-update` 写入时，不会再直接把已知互斥事实写成新的 active 内容；批量与单条写入行为一致，相关测试覆盖通过"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory service::tests:: --quiet"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory --quiet"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时要特别核对现有版本历史、deprecated、audit、reindex 行为没有被破坏；若冲突无法安全收敛，不允许用静默 fallback 掩盖。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "扩展 doctor 与 review 的内容治理诊断合同"
+scope = """
+在底层治理框架和写入接线完成后，扩展 `doctor`、`review` 及其 contracts，
+让维护者能显式看到“内容需规范化”或“内容冲突待审查”的节点，而不是只能从上层 recall 异常倒推。
+包含必要的 doctor issue code、review group/diff 扩展、契约与测试更新。
+不在本 issue 中修改 `codex-core` 的 recall/proactive capture 接线，也不扩展无关的 alias/trigger 产品能力。
+"""
+touch_points = ["module:codex-zmemory", "codex-rs/zmemory/src/doctor.rs", "codex-rs/zmemory/src/service/stats.rs", "codex-rs/zmemory/src/service/review.rs", "codex-rs/zmemory/src/service/contracts.rs", "codex-rs/zmemory/src/service/tests.rs"]
+depends_on = ["a1", "a2"]
+done_when = "`codex zmemory doctor` 与 review 相关输出可以稳定报告内容治理异常，且测试覆盖证明异常节点能被显式发现和审查"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory service::tests:: --quiet"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory --quiet"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "本 issue 的重点是诊断与可观察性，不要把内容治理结果只埋在写入路径内部。若 contract 扩展影响 CLI 或测试断言，应在本 issue 内同步收口。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "最小对齐 codex-core 的 zmemory 接线与回归"
+scope = """
+基于前序 issue 已完成的底层治理合同，对 `codex-core` 中 `Feature::Zmemory` 的 recall / proactive capture 做最小接线调整，
+确保上层读取和写入都依赖 `codex-zmemory` 的底层治理结果，而不是继续承担修脏库职责。
+包含必要的 core e2e 回归与文档同步。
+不改写官方原版 `core/memories` 启动摘要或 consolidation 主流程，也不在本 issue 中新增新的上层内容治理策略。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/memories/zmemory_preferences.rs", "codex-rs/core/tests/suite/zmemory_e2e.rs", "codex-rs/core/src/session/tests.rs", "docs/zmemory.md"]
+depends_on = ["a2", "a3"]
+done_when = "`codex-core` 的 zmemory recall / proactive capture 与新的底层治理合同一致，相关 e2e 回归通过，且没有侵入官方原版 `memories` 主流程边界"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core --test all suite::zmemory_e2e --quiet"
+regress_by = "cd /workspace/codex-rs && cargo test -p codex-zmemory --quiet"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "若前序 issue 已经让上层无需额外补救逻辑，应在本 issue 中删除多余的 merge/replace 修复代码，而不是继续叠加条件分支。文档更新只限本轮新增合同直接相关部分。"

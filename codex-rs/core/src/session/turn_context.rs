@@ -727,7 +727,7 @@ impl Session {
                 tc,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。",
+                        "未找到模型 `{}` 的元数据，已改用兜底元数据；",
                         tc.model_info.slug
                     ),
                 }),

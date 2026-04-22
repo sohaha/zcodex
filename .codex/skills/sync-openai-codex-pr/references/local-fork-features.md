@@ -196,7 +196,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/core/src/session/mod.rs`: `期望的活跃轮次 ID 为`
   - `regex` `codex-rs/core/src/session/mod.rs`: `已为此会话禁用 `js_repl``
   - `regex` `codex-rs/core/src/session/mod.rs`: `警告：`
-  - `regex` `codex-rs/core/src/session/turn_context.rs`: `未找到模型 `\{\}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。`
+  - `regex` `codex-rs/core/src/session/turn_context.rs`: `未找到模型 `\{\}` 的元数据，已改用兜底元数据；`
   - `regex` `codex-rs/app-server/src/codex_message_processor.rs`: `无法向审查轮次追加输入`
   - `regex` `codex-rs/app-server/src/codex_message_processor.rs`: `输入不能为空`
   - `regex` `codex-rs/tui/src/app.rs`: `期望的活跃轮次 ID 为 ``
@@ -206,7 +206,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: `警告：`
   - `regex` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: `警告：`
   - `regex` `codex-rs/core/src/session/tests.rs`: `警告：too many unified exec processes`
-  - `regex` `codex-rs/core/src/session/tests.rs`: `未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。`
+  - `regex` `codex-rs/core/src/session/tests.rs`: `未找到模型 `mystery-model` 的元数据，已改用兜底元数据；`
 
 ### `community-branding-and-release-links`
 - summary: 社区分叉 branding 与 release/install 链接继续指向 sohaha/zcodex。
@@ -452,7 +452,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:212 message: format!("期望的活跃轮次 ID 为 `{expected}`，但实际是 `{actual}`"),
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:488 format!("已为此会话禁用 `js_repl`，因为配置的 Node 运行时不可用或版本不兼容。{err}")
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2214 text: format!("警告：{}", message.into()),
-  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:730 "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。",
+  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:730 "未找到模型 `{}` 的元数据，已改用兜底元数据；",
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7459 "无法向审查轮次追加输入".to_string(),
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7493 "输入不能为空".to_string(),
   - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1110 let mismatch_prefix = "期望的活跃轮次 ID 为 `";
@@ -462,7 +462,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:90 ContentItem::InputText { text } if text.starts_with("警告：")
   - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:192 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
   - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4325 text: "警告：too many unified exec processes".to_string(),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4353 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4353 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；"
 
 ### `community-branding-and-release-links`
 - status: `PASS`

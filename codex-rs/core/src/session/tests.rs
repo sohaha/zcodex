@@ -4350,8 +4350,7 @@ async fn unknown_model_warning_is_localized_for_fallback_metadata() {
         EventMsg::Warning(WarningEvent { message }) => {
             assert_eq!(
                 message,
-                "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能导致性能下降或引发兼容性问题。"
-                    .to_string()
+                "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；".to_string()
             );
         }
         other => panic!("expected warning event, got {other:?}"),
