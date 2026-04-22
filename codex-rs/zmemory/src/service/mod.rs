@@ -12,6 +12,7 @@ pub(crate) mod contracts;
 mod create;
 mod delete;
 mod export;
+pub(crate) mod governance;
 pub(crate) mod history;
 mod import;
 pub(crate) mod index;

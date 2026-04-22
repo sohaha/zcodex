@@ -169,6 +169,40 @@ pub(crate) struct ReviewGroupDiffContract {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ContentGovernanceScopeContract {
+    pub(crate) uri: String,
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContentGovernanceIssueContract {
+    pub(crate) code: String,
+    pub(crate) severity: String,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContentGovernanceRuleContract {
+    pub(crate) rule_id: String,
+    pub(crate) outcome: String,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContentGovernanceResultContract {
+    pub(crate) status: String,
+    pub(crate) scope: Option<ContentGovernanceScopeContract>,
+    pub(crate) changed: bool,
+    pub(crate) governed_content: String,
+    pub(crate) issues: Vec<ContentGovernanceIssueContract>,
+    pub(crate) rules: Vec<ContentGovernanceRuleContract>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DoctorIssueContract {
     pub(crate) code: String,
     pub(crate) message: String,

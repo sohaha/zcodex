@@ -4213,6 +4213,139 @@ fn stats_and_doctor_ignore_other_namespace_rows() {
     );
 }
 
+#[test]
+fn content_governance_skips_unscoped_paths() {
+    let uri = crate::tool_api::ZmemoryUri::parse("project://handoff").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(&uri, "Temporary project note");
+
+    assert_eq!(governance.status, "notApplicable");
+    assert_eq!(governance.scope, None);
+    assert_eq!(governance.changed, false);
+    assert_eq!(governance.governed_content, "Temporary project note");
+    assert_eq!(governance.rules, Vec::new());
+    assert_eq!(governance.has_conflicts(), false);
+}
+
+#[test]
+fn content_governance_normalizes_agent_self_reference() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent").expect("uri should parse");
+    let governance =
+        crate::service::governance::evaluate_content(&uri, "你的名字是“星尘”。以后都用这个名字。");
+
+    assert_eq!(governance.status, "normalized");
+    assert_eq!(
+        governance.scope.as_ref().expect("scope").kind,
+        "assistantSelfReference"
+    );
+    assert_eq!(governance.changed, true);
+    assert_eq!(
+        governance.governed_content,
+        "The assistant should refer to itself as \"星尘\"."
+    );
+    assert_eq!(governance.rules.len(), 1);
+    assert_eq!(
+        governance.rules[0].rule_id,
+        "canonical-agent-self-reference"
+    );
+    assert_eq!(governance.rules[0].outcome, "normalized");
+    assert_eq!(governance.issues, Vec::new());
+}
+
+#[test]
+fn content_governance_normalizes_user_address_preference() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://my_user").expect("uri should parse");
+    let governance =
+        crate::service::governance::evaluate_content(&uri, "以后称呼我“指挥官”，保持这个称呼。");
+
+    assert_eq!(governance.status, "normalized");
+    assert_eq!(
+        governance.scope.as_ref().expect("scope").kind,
+        "userAddressPreference"
+    );
+    assert_eq!(governance.changed, true);
+    assert_eq!(
+        governance.governed_content,
+        "The user prefers to be addressed as \"指挥官\"."
+    );
+    assert_eq!(
+        governance.rules[0].rule_id,
+        "canonical-user-address-preference"
+    );
+}
+
+#[test]
+fn content_governance_flags_conflicting_agent_self_reference_names() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(
+        &uri,
+        "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。",
+    );
+
+    assert_eq!(governance.status, "conflict");
+    assert_eq!(governance.changed, false);
+    assert_eq!(
+        governance.governed_content,
+        "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+    );
+    assert_eq!(governance.rules[0].outcome, "conflict");
+    assert_eq!(governance.issues.len(), 1);
+    assert_eq!(
+        governance.issues[0],
+        crate::service::contracts::ContentGovernanceIssueContract {
+            code: "assistant_self_reference_conflict".to_string(),
+            severity: "error".to_string(),
+            message: "found multiple distinct assistant self-reference values: 星尘, 白塔"
+                .to_string(),
+        }
+    );
+    assert_eq!(governance.has_conflicts(), true);
+}
+
+#[test]
+fn content_governance_normalizes_collaboration_contract_clauses() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(
+        &uri,
+        "Respond in Chinese by default. Keep responses concise by default. Respond in Chinese by default.",
+    );
+
+    assert_eq!(governance.status, "normalized");
+    assert_eq!(
+        governance.scope.as_ref().expect("scope").kind,
+        "collaborationContract"
+    );
+    assert_eq!(governance.changed, true);
+    assert_eq!(
+        governance.governed_content,
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+    assert_eq!(
+        governance.rules[0].rule_id,
+        "canonical-collaboration-contract"
+    );
+    assert_eq!(governance.rules[0].outcome, "normalized");
+    assert_eq!(governance.issues, Vec::new());
+}
+
+#[test]
+fn content_governance_flags_conflicting_collaboration_contract_clauses() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(
+        &uri,
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default.",
+    );
+
+    assert_eq!(governance.status, "conflict");
+    assert_eq!(governance.changed, false);
+    assert_eq!(governance.rules[0].outcome, "conflict");
+    assert_eq!(governance.issues.len(), 1);
+    assert_eq!(governance.issues[0].code, "collaboration_contract_conflict");
+    assert_eq!(
+        governance.issues[0].message,
+        "conflicting collaboration clauses detected for the same topic: Respond in Chinese by default. / Respond in English by default."
+    );
+}
+
 fn sorted_object_keys(value: &Value) -> Vec<&str> {
     let mut keys = value
         .as_object()
