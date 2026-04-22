@@ -23,6 +23,7 @@ use rmcp::model::CallToolResult;
 use rmcp::model::Content;
 use rmcp::model::JsonObject;
 use rmcp::model::Tool;
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs::File;
@@ -481,32 +482,102 @@ fn create_tool_input_schema(schema: serde_json::Value, _panic_message: &str) -> 
 }
 
 fn tldr_tool_input_schema() -> serde_json::Value {
-    serde_json::json!({
-        "oneOf": [
-            tldr_tool_input_variant("structure", &["language"], serde_json::json!({ "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("search", &["query"], serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic."), "matchMode": string_prop("Optional search match mode.") })),
-            tldr_tool_input_variant("extract", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("imports", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop() })),
-            tldr_tool_input_variant("importers", &["language", "module"], serde_json::json!({ "language": language_prop(), "module": string_prop("Required module path for action=importers.") })),
-            tldr_tool_input_variant("context", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("impact", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("calls", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("dead", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("arch", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("change-impact", &["language", "paths"], serde_json::json!({ "language": language_prop(), "paths": string_array_prop("Required changed paths for action=change-impact.") })),
-            tldr_tool_input_variant("cfg", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("dfg", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
-            tldr_tool_input_variant("slice", &["path", "line"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."), "path": path_prop(), "line": integer_prop("Target line for action=slice.") })),
-            tldr_tool_input_variant("semantic", &["language", "query"], serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic.") })),
-            tldr_tool_input_variant("diagnostics", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop(), "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "runLint": boolean_prop("Optional diagnostics lint toggle."), "runTypecheck": boolean_prop("Optional diagnostics typecheck toggle."), "maxIssues": integer_prop("Optional diagnostics issue limit."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") })),
-            tldr_tool_input_variant("doctor", &[], serde_json::json!({ "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") })),
-            tldr_tool_input_variant("ping", &[], serde_json::json!({})),
-            tldr_tool_input_variant("warm", &[], serde_json::json!({})),
-            tldr_tool_input_variant("snapshot", &[], serde_json::json!({})),
-            tldr_tool_input_variant("status", &[], serde_json::json!({})),
-            tldr_tool_input_variant("notify", &["path"], serde_json::json!({ "path": path_prop() }))
-        ]
-    })
+    wrap_tldr_tool_input_variants(vec![
+        tldr_tool_input_variant(
+            "structure",
+            &["language"],
+            serde_json::json!({ "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "search",
+            &["query"],
+            serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic."), "matchMode": string_prop("Optional search match mode.") }),
+        ),
+        tldr_tool_input_variant(
+            "extract",
+            &["path"],
+            serde_json::json!({ "language": language_prop(), "path": path_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "imports",
+            &["path"],
+            serde_json::json!({ "language": language_prop(), "path": path_prop() }),
+        ),
+        tldr_tool_input_variant(
+            "importers",
+            &["language", "module"],
+            serde_json::json!({ "language": language_prop(), "module": string_prop("Required module path for action=importers.") }),
+        ),
+        tldr_tool_input_variant(
+            "context",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "impact",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "calls",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "dead",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "arch",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "change-impact",
+            &["language", "paths"],
+            serde_json::json!({ "language": language_prop(), "paths": string_array_prop("Required changed paths for action=change-impact.") }),
+        ),
+        tldr_tool_input_variant(
+            "cfg",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "dfg",
+            &["language"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "slice",
+            &["path", "line"],
+            serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."), "path": path_prop(), "line": integer_prop("Target line for action=slice.") }),
+        ),
+        tldr_tool_input_variant(
+            "semantic",
+            &["language", "query"],
+            serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic.") }),
+        ),
+        tldr_tool_input_variant(
+            "diagnostics",
+            &["path"],
+            serde_json::json!({ "language": language_prop(), "path": path_prop(), "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "runLint": boolean_prop("Optional diagnostics lint toggle."), "runTypecheck": boolean_prop("Optional diagnostics typecheck toggle."), "maxIssues": integer_prop("Optional diagnostics issue limit."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") }),
+        ),
+        tldr_tool_input_variant(
+            "doctor",
+            &[],
+            serde_json::json!({ "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") }),
+        ),
+        tldr_tool_input_variant("ping", &[], serde_json::json!({})),
+        tldr_tool_input_variant("warm", &[], serde_json::json!({})),
+        tldr_tool_input_variant("snapshot", &[], serde_json::json!({})),
+        tldr_tool_input_variant("status", &[], serde_json::json!({})),
+        tldr_tool_input_variant(
+            "notify",
+            &["path"],
+            serde_json::json!({ "path": path_prop() }),
+        ),
+    ])
 }
 
 fn tldr_tool_input_variant(
@@ -547,6 +618,115 @@ fn tldr_tool_input_variant(
         "required": required_fields,
         "additionalProperties": false
     })
+}
+
+fn wrap_tldr_tool_input_variants(variants: Vec<serde_json::Value>) -> serde_json::Value {
+    let mut properties = serde_json::Map::new();
+    let mut required_intersection: Option<BTreeSet<String>> = None;
+
+    for variant in &variants {
+        let Some(object) = variant.as_object() else {
+            continue;
+        };
+        let Some(variant_properties) = object
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+        else {
+            continue;
+        };
+
+        for (key, value) in variant_properties {
+            merge_tldr_input_property_schema(&mut properties, key, value.clone());
+        }
+
+        let required = object
+            .get("required")
+            .and_then(serde_json::Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+
+        required_intersection = Some(match required_intersection.take() {
+            Some(existing) => existing.intersection(&required).cloned().collect(),
+            None => required,
+        });
+    }
+
+    let mut schema = serde_json::Map::from_iter([
+        (
+            "type".to_string(),
+            serde_json::Value::String("object".to_string()),
+        ),
+        (
+            "properties".to_string(),
+            serde_json::Value::Object(properties),
+        ),
+        ("oneOf".to_string(), serde_json::Value::Array(variants)),
+        (
+            "additionalProperties".to_string(),
+            serde_json::Value::Bool(false),
+        ),
+    ]);
+    if let Some(required) = required_intersection
+        && !required.is_empty()
+    {
+        schema.insert(
+            "required".to_string(),
+            serde_json::Value::Array(
+                required
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
+    serde_json::Value::Object(schema)
+}
+
+fn merge_tldr_input_property_schema(
+    properties: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    candidate: serde_json::Value,
+) {
+    let Some(existing) = properties.get_mut(key) else {
+        properties.insert(key.to_string(), candidate);
+        return;
+    };
+
+    if *existing == candidate {
+        return;
+    }
+
+    if let Some(merged) = merge_tldr_input_string_enum_schema(existing, &candidate) {
+        *existing = merged;
+    }
+}
+
+fn merge_tldr_input_string_enum_schema(
+    existing: &serde_json::Value,
+    candidate: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let mut existing_map = existing.as_object()?.clone();
+    let mut candidate_map = candidate.as_object()?.clone();
+    let existing_enum = existing_map.remove("enum")?;
+    let candidate_enum = candidate_map.remove("enum")?;
+    if existing_map != candidate_map {
+        return None;
+    }
+
+    let mut values = existing_enum.as_array()?.clone();
+    for value in candidate_enum.as_array()? {
+        if !values.contains(value) {
+            values.push(value.clone());
+        }
+    }
+    existing_map.insert("enum".to_string(), serde_json::Value::Array(values));
+    Some(serde_json::Value::Object(existing_map))
 }
 
 fn string_prop(description: &str) -> serde_json::Value {
@@ -633,6 +813,11 @@ mod tests {
         assert_eq!(
             tool_json["description"],
             "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
+        );
+        assert_eq!(tool_json["inputSchema"]["type"], "object");
+        assert_eq!(
+            tool_json["inputSchema"]["required"],
+            serde_json::json!(["action"])
         );
         assert_eq!(
             tool_json["inputSchema"]["oneOf"].as_array().map(Vec::len),
