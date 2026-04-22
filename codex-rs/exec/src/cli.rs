@@ -62,6 +62,30 @@ pub struct Cli {
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
+    /// Enable federation startup bridging.
+    #[arg(long = "federation-enable", default_value_t = false)]
+    pub federation_enable: bool,
+
+    /// Display name advertised to other federation peers.
+    #[arg(long = "federation-name", value_name = "NAME")]
+    pub federation_name: Option<String>,
+
+    /// Optional federation role label.
+    #[arg(long = "federation-role", value_name = "ROLE")]
+    pub federation_role: Option<String>,
+
+    /// Optional federation task scope label.
+    #[arg(long = "federation-scope", value_name = "SCOPE")]
+    pub federation_scope: Option<String>,
+
+    /// Override the federation state root. Defaults to `<CODEX_HOME>/federation`.
+    #[arg(long = "federation-state-root", value_name = "PATH")]
+    pub federation_state_root: Option<PathBuf>,
+
+    /// Override the federation instance id.
+    #[arg(long = "federation-instance-id", value_name = "UUID")]
+    pub federation_instance_id: Option<String>,
+
     /// 允许在 Git 仓库之外运行 Codex。
     #[arg(long = "skip-git-repo-check", global = true, default_value_t = false)]
     pub skip_git_repo_check: bool,

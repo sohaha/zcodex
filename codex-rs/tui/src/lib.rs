@@ -34,6 +34,7 @@ pub(crate) use codex_app_server_client::legacy_core;
 use codex_app_server_protocol::Account as AppServerAccount;
 use codex_app_server_protocol::AuthMode as AppServerAuthMode;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::FederationThreadStartParams;
 use codex_app_server_protocol::Thread as AppServerThread;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey as AppServerThreadSortKey;
@@ -685,6 +686,23 @@ fn latest_session_cwd_filter<'a>(
     }
 }
 
+fn federation_params_from_cli(cli: &Cli) -> Option<FederationThreadStartParams> {
+    cli.federation_enable.then(|| FederationThreadStartParams {
+        instance_id: cli.federation_instance_id.clone(),
+        name: cli
+            .federation_name
+            .clone()
+            .unwrap_or_else(|| "codex".to_string()),
+        role: cli.federation_role.clone(),
+        scope: cli.federation_scope.clone(),
+        state_root: cli
+            .federation_state_root
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        lease_ttl_secs: None,
+    })
+}
+
 pub async fn run_main(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
@@ -1149,7 +1167,8 @@ async fn run_ratatui_app(
         .await
         {
             Ok(app_server) => AppServerSession::new(app_server)
-                .with_remote_cwd_override(remote_cwd_override.clone()),
+                .with_remote_cwd_override(remote_cwd_override.clone())
+                .with_federation(federation_params_from_cli(&cli)),
             Err(err) => {
                 terminal_restore_guard.restore_silently();
                 session_log::log_session_end();
@@ -1467,6 +1486,7 @@ async fn run_ratatui_app(
         && trust_decision_was_made
         && WindowsSandboxLevel::from_config(&config) == WindowsSandboxLevel::Disabled;
 
+    let federation = federation_params_from_cli(&cli);
     let Cli {
         prompt,
         images,
@@ -1491,7 +1511,8 @@ async fn run_ratatui_app(
         .await
         {
             Ok(app_server) => AppServerSession::new(app_server)
-                .with_remote_cwd_override(remote_cwd_override.clone()),
+                .with_remote_cwd_override(remote_cwd_override.clone())
+                .with_federation(federation),
             Err(err) => {
                 terminal_restore_guard.restore_silently();
                 session_log::log_session_end();

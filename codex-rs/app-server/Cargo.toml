@@ -37,6 +37,8 @@ codex-core = { workspace = true }
 codex-core-plugins = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
+codex-federation-client = { workspace = true }
+codex-federation-protocol = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-otel = { workspace = true }
 codex-shell-command = { workspace = true }
@@ -102,6 +104,7 @@ axum = { workspace = true, default-features = false, features = [
     "tokio",
 ] }
 core_test_support = { workspace = true }
+codex-federation-daemon = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }

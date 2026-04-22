@@ -12,6 +12,7 @@ members = [
     "apply-patch",
     "arg0",
     "feedback",
+    "federation-client",
     "federation-daemon",
     "federation-protocol",
     "features",
@@ -143,6 +144,7 @@ codex-execpolicy = { path = "execpolicy" }
 codex-experimental-api-macros = { path = "codex-experimental-api-macros" }
 codex-features = { path = "features" }
 codex-feedback = { path = "feedback" }
+codex-federation-client = { path = "federation-client" }
 codex-federation-daemon = { path = "federation-daemon" }
 codex-federation-protocol = { path = "federation-protocol" }
 codex-file-search = { path = "file-search" }

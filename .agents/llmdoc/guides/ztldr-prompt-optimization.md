@@ -40,6 +40,7 @@
 ## 常见陷阱
 - 只改文档，不改代码侧 description，模型行为不会明显变化。
 - 只改 tool description，不改 shell interception message，broad grep/read 起手问题仍会保留。
+- shell interception 生成的建议参数不能省略 action 级必填字段；特别是 `semantic` / `context` 这类依赖显式 `language` 的 action，若没有可推断语言，就必须直接提示“先补 `language`”，不能把无效模板暴露给模型。
 - 未以 `tool_api.rs` 为事实源，导致 action 列表和真实能力再次漂移。
 - 在 Cadence issue `notes` 中写带引号的单行命令，导致 TOML 解析失败；这类内容优先改成多行字符串。
 

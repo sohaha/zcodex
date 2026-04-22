@@ -178,7 +178,7 @@ The `ztldr` tool exposes native code-context analysis with daemon-first executio
 Typical inputs:
 
 - `project` - absolute or relative project root
-- `language` - optional language, one of `rust|c|cpp|csharp|java|kotlin|typescript|javascript|lua|luau|python|go|php|ruby|swift|zig`; `extract` and `imports` can infer from file extension when omitted
+- `language` - required for `structure|importers|context|impact|calls|dead|arch|change-impact|cfg|dfg|semantic`; optional for `search`; `extract|imports|slice|diagnostics` can infer from file extension when omitted
 - `symbol` - optional symbol name for `structure|context|impact|calls|dead|arch|cfg|dfg`; required symbol-like target for `slice`
 - `query` - query string for `search` or `semantic`
 - `module` - required module path for `importers`
@@ -190,6 +190,7 @@ For `extract`, the analysis payload also includes the requested `path`, and `ana
 For `slice`, the analysis payload includes `path`, `line`, `analysis.kind = "slice"`, plus `analysis.details.slice_target` and `analysis.details.slice_lines` for the current backward slice result.
 `analysis.details.units[*]` now also carries `owner_symbol`, `owner_kind`, and `implemented_trait` when the language backend can derive them. At the moment, only Rust uses the dedicated extractor and reports precise owner / trait-implementation relationships; the other supported languages still rely on heuristic extraction and should be treated as heuristic relationship support rather than Rust-equivalent semantic modeling.
 For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `message`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`. When `source = "local"`, the payload also includes `degradedMode` so clients can tell this was a local fallback rather than a healthy daemon hit. If semantic embedding cannot initialize because ONNX Runtime is unavailable, the search now auto-falls back to non-embedding ranking: `embeddingUsed = false`, the command still succeeds, and the plain-text UX remains normal. Structured consumers can still detect the downgrade from `embeddingUsed = false`. The tool projects a stable public match shape and does **not** expose internal fields such as `unit` or `embedding_text` by default.
+If `semantic` fails with `structuredFailure` because `language` was omitted, rerun it with an explicit `language`; that failure is not a valid structural analysis result.
 For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` for the most recent semantic reindex attempt. `snapshot.last_reindex` remains the latest completed reindex, while `snapshot.last_reindex_attempt` can also surface a failed `warm` attempt. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons. When the daemon is unhealthy, the payload additionally includes `structuredFailure` and `degradedMode`.
 The output schema is modeled as a union of three result families: analysis (`structure|extract|context|impact|cfg|dfg|slice`), `semantic`, and daemon (`ping|warm|snapshot|status|notify`).
 

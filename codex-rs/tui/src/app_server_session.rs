@@ -19,6 +19,7 @@ use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportParams;
 use codex_app_server_protocol::ExternalAgentConfigImportResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
+use codex_app_server_protocol::FederationThreadStartParams;
 use codex_app_server_protocol::GetAccountParams;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::GetAccountResponse;
@@ -129,6 +130,7 @@ pub(crate) struct AppServerSession {
     client: AppServerClient,
     next_request_id: i64,
     remote_cwd_override: Option<PathBuf>,
+    federation: Option<FederationThreadStartParams>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -177,11 +179,20 @@ impl AppServerSession {
             client,
             next_request_id: 1,
             remote_cwd_override: None,
+            federation: None,
         }
     }
 
     pub(crate) fn with_remote_cwd_override(mut self, remote_cwd_override: Option<PathBuf>) -> Self {
         self.remote_cwd_override = remote_cwd_override;
+        self
+    }
+
+    pub(crate) fn with_federation(
+        mut self,
+        federation: Option<FederationThreadStartParams>,
+    ) -> Self {
+        self.federation = federation;
         self
     }
 
@@ -335,6 +346,7 @@ impl AppServerSession {
                     config,
                     self.thread_params_mode(),
                     self.remote_cwd_override.as_deref(),
+                    self.federation.clone(),
                     session_start_source,
                 ),
             })
@@ -942,6 +954,7 @@ fn thread_start_params_from_config(
     config: &Config,
     thread_params_mode: ThreadParamsMode,
     remote_cwd_override: Option<&std::path::Path>,
+    federation: Option<FederationThreadStartParams>,
     session_start_source: Option<ThreadStartSource>,
 ) -> ThreadStartParams {
     ThreadStartParams {
@@ -953,6 +966,7 @@ fn thread_start_params_from_config(
         sandbox: sandbox_mode_from_policy(config.permissions.sandbox_policy.get().clone()),
         config: config_request_overrides_from_config(config),
         ephemeral: Some(config.ephemeral),
+        federation,
         session_start_source,
         persist_extended_history: true,
         ..ThreadStartParams::default()
@@ -1268,6 +1282,7 @@ mod tests {
             &config,
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
+            /*federation*/ None,
             /*session_start_source*/ None,
         );
 
@@ -1284,10 +1299,35 @@ mod tests {
             &config,
             ThreadParamsMode::Embedded,
             /*remote_cwd_override*/ None,
+            /*federation*/ None,
             Some(ThreadStartSource::Clear),
         );
 
         assert_eq!(params.session_start_source, Some(ThreadStartSource::Clear));
+    }
+
+    #[tokio::test]
+    async fn thread_start_params_include_federation_settings() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&temp_dir).await;
+        let federation = FederationThreadStartParams {
+            instance_id: Some("instance-1".to_string()),
+            name: "tui-worker".to_string(),
+            role: Some("worker".to_string()),
+            scope: Some("repo".to_string()),
+            state_root: Some("/tmp/federation".to_string()),
+            lease_ttl_secs: None,
+        };
+
+        let params = thread_start_params_from_config(
+            &config,
+            ThreadParamsMode::Embedded,
+            /*remote_cwd_override*/ None,
+            Some(federation.clone()),
+            /*session_start_source*/ None,
+        );
+
+        assert_eq!(params.federation, Some(federation));
     }
 
     #[tokio::test]
@@ -1300,6 +1340,7 @@ mod tests {
             &config,
             ThreadParamsMode::Remote,
             /*remote_cwd_override*/ None,
+            /*federation*/ None,
             /*session_start_source*/ None,
         );
         let resume = thread_resume_params_from_config(
@@ -1334,6 +1375,7 @@ mod tests {
             &config,
             ThreadParamsMode::Remote,
             Some(remote_cwd.as_path()),
+            /*federation*/ None,
             /*session_start_source*/ None,
         );
         let resume = thread_resume_params_from_config(

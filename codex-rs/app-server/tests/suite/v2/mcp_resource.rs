@@ -176,7 +176,6 @@ async fn mcp_resource_read_returns_error_for_unknown_thread() -> Result<()> {
         loader_overrides,
         cloud_requirements: CloudRequirementsLoader::default(),
         feedback: CodexFeedback::new(),
-        log_db: None,
         environment_manager: Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
         config_warnings: Vec::new(),
         session_source: SessionSource::Cli,

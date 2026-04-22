@@ -20,11 +20,17 @@ fn stable_preference_memory_uses_canonical_core_uris() {
             ),
         ],
         vec![
-            ("core://my_user", "the user's preferred form of address"),
-            ("core://agent", "the assistant's preferred self-name"),
+            (
+                "core://my_user",
+                "the user's stable identity, preferences, and preferred form of address",
+            ),
+            (
+                "core://agent",
+                "the assistant's stable identity, personality, and self-reference",
+            ),
             (
                 "core://agent/my_user",
-                "the shared naming and addressing contract between user and assistant",
+                "the shared collaboration contract between user and assistant",
             ),
         ]
     );
@@ -34,7 +40,7 @@ fn stable_preference_memory_uses_canonical_core_uris() {
 fn stable_preference_contract_markdown_describes_dedupe_and_update_rules() {
     let markdown = stable_preference_contract_markdown();
 
-    assert!(markdown.contains("explicit, durable naming or addressing preferences"));
+    assert!(markdown.contains("explicit, durable identity, preference, or collaboration facts"));
     assert!(markdown.contains("`core://my_user`"));
     assert!(markdown.contains("`core://agent`"));
     assert!(markdown.contains("`core://agent/my_user`"));

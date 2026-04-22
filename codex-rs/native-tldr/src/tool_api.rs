@@ -718,6 +718,9 @@ pub struct TldrToolCallParam {
     pub action: TldrToolAction,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    #[schemars(
+        description = "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<TldrToolLanguage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1490,6 +1493,23 @@ pub fn action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Status => "status",
         TldrToolAction::Notify => "notify",
     }
+}
+
+pub fn action_requires_explicit_language(action: &TldrToolAction) -> bool {
+    matches!(
+        action,
+        TldrToolAction::Structure
+            | TldrToolAction::Importers
+            | TldrToolAction::Context
+            | TldrToolAction::Impact
+            | TldrToolAction::Calls
+            | TldrToolAction::Dead
+            | TldrToolAction::Arch
+            | TldrToolAction::ChangeImpact
+            | TldrToolAction::Cfg
+            | TldrToolAction::Dfg
+            | TldrToolAction::Semantic
+    )
 }
 
 pub fn analysis_cache_key(

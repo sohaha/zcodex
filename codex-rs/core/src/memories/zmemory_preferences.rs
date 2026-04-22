@@ -747,6 +747,12 @@ mod tests {
     }
 
     #[test]
+    fn detects_english_call_me_pattern_from_single_quotes() {
+        let value = extract_explicit_value("From now on, call me 'Commander'.", &["call me"]);
+        assert_eq!(value.as_deref(), Some("Commander"));
+    }
+
+    #[test]
     fn finds_case_insensitive_suffix_without_unicode_offset_mismatch() {
         let suffix = find_case_insensitive_suffix("İ以后叫我“小王”", "叫我");
         assert_eq!(suffix, Some("“小王”"));
@@ -756,6 +762,13 @@ mod tests {
     fn parses_existing_memory_content_back_to_name() {
         let value =
             parse_name_from_memory_content("The assistant should refer to itself as \"小白\".");
+        assert_eq!(value.as_deref(), Some("小白"));
+    }
+
+    #[test]
+    fn parses_existing_memory_content_back_to_name_from_curly_single_quotes() {
+        let value =
+            parse_name_from_memory_content("The assistant should refer to itself as ‘小白’.");
         assert_eq!(value.as_deref(), Some("小白"));
     }
 

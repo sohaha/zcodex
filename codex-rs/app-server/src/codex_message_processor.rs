@@ -2365,6 +2365,7 @@ impl CodexMessageProcessor {
             service_name,
             base_instructions,
             developer_instructions,
+            federation,
             dynamic_tools,
             mock_experimental_field: _mock_experimental_field,
             experimental_raw_events,
@@ -2413,6 +2414,7 @@ impl CodexMessageProcessor {
                 config,
                 typesafe_overrides,
                 dynamic_tools,
+                federation,
                 session_start_source,
                 persist_extended_history,
                 service_name,
@@ -2489,6 +2491,7 @@ impl CodexMessageProcessor {
         config_overrides: Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: ConfigOverrides,
         dynamic_tools: Option<Vec<ApiDynamicToolSpec>>,
+        federation: Option<codex_app_server_protocol::FederationThreadStartParams>,
         session_start_source: Option<codex_app_server_protocol::ThreadStartSource>,
         persist_extended_history: bool,
         service_name: Option<String>,
@@ -2677,6 +2680,34 @@ impl CodexMessageProcessor {
                         otel.name = "app_server.thread_start.config_snapshot",
                     ))
                     .await;
+                if let Some(federation) = federation
+                    && let Err(err) = crate::federation_bridge::start_thread_federation_bridge(
+                        Arc::clone(&thread),
+                        listener_task_context.codex_home.as_path(),
+                        federation,
+                        config_snapshot.cwd.as_path(),
+                    )
+                    .await
+                {
+                    let removed_thread = listener_task_context
+                        .thread_manager
+                        .remove_thread(&thread_id)
+                        .await
+                        .unwrap_or_else(|| Arc::clone(&thread));
+                    let _ = removed_thread.shutdown_and_wait().await;
+                    listener_task_context
+                        .outgoing
+                        .send_error(
+                            request_id,
+                            JSONRPCErrorError {
+                                code: INTERNAL_ERROR_CODE,
+                                message: format!("failed to start federation bridge: {err}"),
+                                data: None,
+                            },
+                        )
+                        .await;
+                    return;
+                }
                 let mut thread = build_thread_from_snapshot(
                     thread_id,
                     &config_snapshot,

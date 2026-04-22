@@ -9,16 +9,12 @@ const COLLABORATION_CONTRACT_HEADER: &str = "Shared collaboration contract:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContentGovernanceScope {
-    AssistantSelfReference,
-    UserAddressPreference,
     CollaborationContract,
 }
 
 impl ContentGovernanceScope {
     const fn kind(self) -> &'static str {
         match self {
-            Self::AssistantSelfReference => "assistantSelfReference",
-            Self::UserAddressPreference => "userAddressPreference",
             Self::CollaborationContract => "collaborationContract",
         }
     }
@@ -89,23 +85,11 @@ struct ContentGovernanceRule {
     evaluate: fn(&str) -> RuleEvaluation,
 }
 
-const CONTENT_GOVERNANCE_RULES: &[ContentGovernanceRule] = &[
-    ContentGovernanceRule {
-        id: "canonical-agent-self-reference",
-        scope: ContentGovernanceScope::AssistantSelfReference,
-        evaluate: govern_agent_self_reference,
-    },
-    ContentGovernanceRule {
-        id: "canonical-user-address-preference",
-        scope: ContentGovernanceScope::UserAddressPreference,
-        evaluate: govern_user_address_preference,
-    },
-    ContentGovernanceRule {
-        id: "canonical-collaboration-contract",
-        scope: ContentGovernanceScope::CollaborationContract,
-        evaluate: govern_collaboration_contract,
-    },
-];
+const CONTENT_GOVERNANCE_RULES: &[ContentGovernanceRule] = &[ContentGovernanceRule {
+    id: "canonical-collaboration-contract",
+    scope: ContentGovernanceScope::CollaborationContract,
+    evaluate: govern_collaboration_contract,
+}];
 
 pub(crate) fn evaluate_content(uri: &ZmemoryUri, content: &str) -> ContentGovernanceResultContract {
     let Some(scope) = governance_scope_for_uri(uri) else {
@@ -192,7 +176,7 @@ pub(crate) fn evaluate_write_content(
 }
 
 pub(crate) fn governed_uris() -> &'static [&'static str] {
-    &["core://agent", "core://my_user", "core://agent/my_user"]
+    &["core://agent/my_user"]
 }
 
 pub(crate) fn evaluate_uri_strings<'a>(
@@ -222,66 +206,42 @@ pub(crate) fn evaluate_uri_strings<'a>(
 
 fn governance_scope_for_uri(uri: &ZmemoryUri) -> Option<ContentGovernanceScope> {
     match (uri.domain.as_str(), uri.path.as_str()) {
-        ("core", "agent") => Some(ContentGovernanceScope::AssistantSelfReference),
-        ("core", "my_user") => Some(ContentGovernanceScope::UserAddressPreference),
         ("core", "agent/my_user") => Some(ContentGovernanceScope::CollaborationContract),
         _ => None,
     }
 }
 
-fn govern_agent_self_reference(content: &str) -> RuleEvaluation {
-    govern_name_statement(
-        content,
-        "The assistant should refer to itself as",
-        "assistant_self_reference_conflict",
-        "assistant self-reference",
-    )
-}
-
-fn govern_user_address_preference(content: &str) -> RuleEvaluation {
-    govern_name_statement(
-        content,
-        "The user prefers to be addressed as",
-        "user_address_preference_conflict",
-        "user address preference",
-    )
-}
-
-fn govern_name_statement(
-    content: &str,
-    template_prefix: &str,
-    conflict_code: &str,
-    label: &str,
-) -> RuleEvaluation {
-    let names = dedup_preserve_order(extract_quoted_values(content));
-    match names.as_slice() {
-        [] => RuleEvaluation::accepted(content, format!("no explicit {label} value detected")),
-        [name] => {
-            let normalized = format!("{template_prefix} \"{name}\".");
-            if content.trim() == normalized {
-                RuleEvaluation::accepted(content, format!("{label} already canonical"))
-            } else {
-                RuleEvaluation::normalized(normalized, format!("normalized {label}"))
-            }
-        }
-        _ => RuleEvaluation::conflict(
-            content,
-            conflict_code,
-            format!(
-                "found multiple distinct {label} values: {}",
-                names.join(", ")
-            ),
-        ),
-    }
-}
-
 fn govern_collaboration_contract(content: &str) -> RuleEvaluation {
-    let clauses = dedup_preserve_order(
-        extract_contract_clauses(content)
-            .into_iter()
-            .map(|clause| canonicalize_contract_clause(&clause))
-            .collect(),
-    );
+    if let Some(raw_clauses) = extract_structured_contract_clauses(content) {
+        let (clauses, has_unknown_clauses) = canonicalize_contract_clauses(&raw_clauses);
+        if clauses.is_empty() {
+            return RuleEvaluation::accepted(
+                content,
+                "no structured collaboration clauses detected",
+            );
+        }
+        if let Some(message) = detect_contract_conflict(&clauses) {
+            return RuleEvaluation::conflict(content, "collaboration_contract_conflict", message);
+        }
+        if has_unknown_clauses {
+            return RuleEvaluation::accepted(
+                content,
+                "structured collaboration contract contains ungoverned clauses",
+            );
+        }
+
+        let normalized = format_contract_clauses(&clauses);
+        return if content.trim() == normalized {
+            RuleEvaluation::accepted(content, "collaboration contract already canonical")
+        } else {
+            RuleEvaluation::normalized(
+                normalized,
+                format!("normalized {} collaboration clauses", clauses.len()),
+            )
+        };
+    }
+
+    let clauses = dedup_preserve_order(extract_recognized_contract_clauses(content));
     if clauses.is_empty() {
         return RuleEvaluation::accepted(content, "no structured collaboration clauses detected");
     }
@@ -301,7 +261,14 @@ fn govern_collaboration_contract(content: &str) -> RuleEvaluation {
 }
 
 fn extract_quoted_values(content: &str) -> Vec<String> {
-    const QUOTE_PAIRS: &[(char, char)] = &[('"', '"'), ('“', '”'), ('「', '」'), ('『', '』')];
+    const QUOTE_PAIRS: &[(char, char)] = &[
+        ('"', '"'),
+        ('\'', '\''),
+        ('“', '”'),
+        ('‘', '’'),
+        ('「', '」'),
+        ('『', '』'),
+    ];
 
     let mut values = Vec::new();
     let mut active_quote = None;
@@ -331,21 +298,29 @@ fn extract_quoted_values(content: &str) -> Vec<String> {
     values
 }
 
-fn extract_contract_clauses(content: &str) -> Vec<String> {
+fn extract_structured_contract_clauses(content: &str) -> Option<Vec<String>> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    trimmed
+        .strip_prefix(COLLABORATION_CONTRACT_HEADER)
+        .map(|rest| {
+            rest.lines()
+                .map(str::trim)
+                .filter_map(|line| line.strip_prefix("- "))
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+}
+
+fn extract_recognized_contract_clauses(content: &str) -> Vec<String> {
     let trimmed = content.trim();
     if trimmed.is_empty() {
         return Vec::new();
-    }
-
-    if let Some(rest) = trimmed.strip_prefix(COLLABORATION_CONTRACT_HEADER) {
-        return rest
-            .lines()
-            .map(str::trim)
-            .filter_map(|line| line.strip_prefix("- "))
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_string)
-            .collect();
     }
 
     let mut clauses = Vec::new();
@@ -357,7 +332,9 @@ fn extract_contract_clauses(content: &str) -> Vec<String> {
         if let Some(bullet) = line.strip_prefix("- ") {
             let bullet = bullet.trim();
             if !bullet.is_empty() {
-                clauses.push(bullet.to_string());
+                if let Some(clause) = canonicalize_contract_clause(bullet) {
+                    clauses.push(clause);
+                }
             }
             continue;
         }
@@ -365,22 +342,39 @@ fn extract_contract_clauses(content: &str) -> Vec<String> {
             line.split(['.', '。'])
                 .map(str::trim)
                 .filter(|segment| !segment.is_empty())
-                .map(str::to_string),
+                .filter_map(canonicalize_contract_clause),
         );
     }
     clauses
 }
 
-fn canonicalize_contract_clause(clause: &str) -> String {
-    let normalized_key = normalize_text_key(clause);
-    match normalized_key.as_str() {
-        "respond in chinese by default" => "Respond in Chinese by default.".to_string(),
-        "respond in english by default" => "Respond in English by default.".to_string(),
-        "keep responses concise by default" => "Keep responses concise by default.".to_string(),
-        "use verbose responses by default" => "Use verbose responses by default.".to_string(),
-        _ => canonicalize_naming_clause(clause)
-            .unwrap_or_else(|| ensure_sentence_period(clause.trim())),
+fn canonicalize_contract_clauses(clauses: &[String]) -> (Vec<String>, bool) {
+    let mut canonicalized = Vec::new();
+    let mut has_unknown_clauses = false;
+
+    for clause in clauses {
+        if let Some(clause) = canonicalize_contract_clause(clause) {
+            canonicalized.push(clause);
+        } else {
+            has_unknown_clauses = true;
+        }
     }
+
+    (dedup_preserve_order(canonicalized), has_unknown_clauses)
+}
+
+fn canonicalize_contract_clause(clause: &str) -> Option<String> {
+    let normalized_key = normalize_text_key(clause);
+    let known = match normalized_key.as_str() {
+        "respond in chinese by default" => Some("Respond in Chinese by default.".to_string()),
+        "respond in english by default" => Some("Respond in English by default.".to_string()),
+        "keep responses concise by default" => {
+            Some("Keep responses concise by default.".to_string())
+        }
+        "use verbose responses by default" => Some("Use verbose responses by default.".to_string()),
+        _ => None,
+    };
+    known.or_else(|| canonicalize_naming_clause(clause))
 }
 
 fn canonicalize_naming_clause(clause: &str) -> Option<String> {
@@ -444,11 +438,6 @@ fn format_contract_clauses(clauses: &[String]) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     )
-}
-
-fn ensure_sentence_period(clause: &str) -> String {
-    let clause = clause.trim().trim_end_matches(['.', '。']);
-    format!("{clause}.")
 }
 
 fn normalize_text_key(value: &str) -> String {

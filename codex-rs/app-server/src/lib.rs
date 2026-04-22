@@ -72,6 +72,7 @@ mod config_api;
 mod dynamic_tools;
 mod error_code;
 mod external_agent_config_api;
+mod federation_bridge;
 mod filters;
 mod fs_api;
 mod fs_watch;

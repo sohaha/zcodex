@@ -1581,6 +1581,8 @@ dependencies = [
  "codex-core-plugins",
  "codex-exec-server",
  "codex-features",
+ "codex-federation-client",
+ "codex-federation-protocol",
  "codex-feedback",
  "codex-file-search",
  "codex-git-utils",
@@ -1821,6 +1823,9 @@ dependencies = [
  "codex-exec-server",
  "codex-execpolicy",
  "codex-features",
+ "codex-federation-client",
+ "codex-federation-daemon",
+ "codex-federation-protocol",
  "codex-login",
  "codex-mcp",
  "codex-mcp-server",
@@ -2367,6 +2372,19 @@ dependencies = [
  "serde",
  "toml 0.9.11+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "codex-federation-client"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-federation-daemon",
+ "codex-federation-protocol",
+ "pretty_assertions",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

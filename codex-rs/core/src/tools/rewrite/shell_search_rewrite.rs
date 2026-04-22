@@ -13,6 +13,7 @@ use codex_native_tldr::tool_api::TldrToolLanguage;
 use std::path::Path;
 
 pub(crate) struct ShellSearchInterception {
+    pub(crate) action: &'static str,
     pub(crate) message: String,
 }
 
@@ -53,10 +54,17 @@ pub(crate) fn maybe_intercept_shell_search(
         max_issues: None,
         include_install_hints: None,
     };
-    let arguments = serde_json::to_string(&args).ok()?;
+    let arguments = if codex_native_tldr::tool_api::action_requires_explicit_language(&args.action)
+        && args.language.is_none()
+    {
+        None
+    } else {
+        Some(serde_json::to_string(&args).ok()?)
+    };
 
     Some(ShellSearchInterception {
-        message: shell_intercept_message(reason, &arguments),
+        action: codex_native_tldr::tool_api::action_name(&args.action),
+        message: shell_intercept_message(reason, &args, arguments.as_deref()),
     })
 }
 
@@ -315,7 +323,7 @@ mod tests {
                 .message
                 .contains("mixed_shell_symbol_intercept")
         );
-        assert!(interception.message.contains(r#""action":"context""#));
+        assert_eq!(interception.action, "context");
     }
 
     #[test]
@@ -334,25 +342,16 @@ mod tests {
         )
         .expect("should intercept");
 
-        let project = serde_json::to_string(&repo_root.display().to_string())
-            .expect("project path should serialize");
-        let paths =
-            serde_json::to_string(&vec!["src".to_string()]).expect("paths should serialize");
-
+        assert_eq!(interception.action, "context");
         assert!(
-            interception
+            !interception
                 .message
                 .contains(r#""symbol":"create_tldr_tool""#)
         );
         assert!(
             interception
                 .message
-                .contains(&format!(r#""project":{project}"#))
-        );
-        assert!(
-            interception
-                .message
-                .contains(&format!(r#""paths":{paths}"#))
+                .contains("No runnable ztldr arguments are suggested yet")
         );
     }
 
@@ -432,12 +431,50 @@ mod tests {
                 .message
                 .contains("structural_shell_pathlike_intercept")
         );
-        assert!(interception.message.contains(r#""action":"semantic""#));
+        assert_eq!(interception.action, "semantic");
         assert!(
             interception
                 .message
-                .contains(r#""query":"src/tools/spec.rs""#)
+                .contains("No runnable ztldr arguments are suggested yet")
         );
+        assert!(!interception.message.contains("Suggested ztldr arguments:"));
+    }
+
+    #[test]
+    fn natural_language_shell_queries_warn_when_semantic_language_is_missing() {
+        let interception = maybe_intercept_shell_search(
+            "rg 'web terminal'",
+            "ztok grep 'web terminal'",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives::default(),
+        )
+        .expect("should intercept");
+
+        assert_eq!(interception.action, "semantic");
+        assert!(
+            interception
+                .message
+                .contains("No runnable ztldr arguments are suggested yet")
+        );
+        assert!(!interception.message.contains("Suggested ztldr arguments:"));
+    }
+
+    #[test]
+    fn symbol_shell_queries_without_paths_do_not_emit_invalid_context_json() {
+        let interception = maybe_intercept_shell_search(
+            "rg create_tldr_tool",
+            "ztok grep create_tldr_tool",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives::default(),
+        )
+        .expect("should intercept");
+
+        assert!(
+            interception
+                .message
+                .contains("No runnable ztldr arguments are suggested yet")
+        );
+        assert!(!interception.message.contains("Suggested ztldr arguments:"));
     }
 
     #[test]
@@ -477,12 +514,7 @@ mod tests {
                         interception.message.contains(expected_reason),
                         "command: {command}"
                     );
-                    assert!(
-                        interception
-                            .message
-                            .contains(&format!(r#""action":"{expected_action}""#)),
-                        "command: {command}"
-                    );
+                    assert_eq!(interception.action, expected_action, "command: {command}");
                     *reason_counts.entry(expected_reason).or_insert(0usize) += 1;
                     *action_counts.entry(expected_action).or_insert(0usize) += 1;
                 }

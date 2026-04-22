@@ -79,73 +79,354 @@ pub fn create_local_shell_tool() -> ToolSpec {
 }
 
 pub fn create_tldr_tool() -> ToolSpec {
-    let properties = BTreeMap::from([
-        (
-            "action".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "project".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional project root. Defaults to the current session working directory."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "language".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional language. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "symbol".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."
-                        .to_string(),
-                ),
-            },
-        ),
-        (
-            "query".to_string(),
-            JsonSchema::String {
-                description: Some("Query text for action=search or action=semantic.".to_string()),
-            },
-        ),
-        (
-            "path".to_string(),
-            JsonSchema::String {
-                description: Some(
-                    "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify."
-                        .to_string(),
-                ),
-            },
-        ),
-    ]);
-
     ToolSpec::Function(ResponsesApiTool {
         name: "ztldr".to_string(),
-        description: "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
+        description: "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
             .to_string(),
         strict: false,
         defer_loading: None,
-        parameters: JsonSchema::Object {
-            properties,
-            required: Some(vec!["action".to_string()]),
-            additional_properties: Some(false.into()),
-        },
+        parameters: tldr_parameters_schema(),
         output_schema: Some(tldr_tool_output_schema()),
     })
+}
+
+fn tldr_parameters_schema() -> JsonSchema {
+    JsonSchema::OneOf {
+        variants: vec![
+            tldr_variant(
+                "structure",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "search",
+                vec![
+                    tldr_project_prop(),
+                    tldr_optional_language_prop(),
+                    tldr_query_prop(),
+                    tldr_match_mode_prop(),
+                ],
+                vec!["query"],
+            ),
+            tldr_variant(
+                "extract",
+                vec![
+                    tldr_project_prop(),
+                    tldr_optional_language_prop(),
+                    tldr_path_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["path"],
+            ),
+            tldr_variant(
+                "imports",
+                vec![
+                    tldr_project_prop(),
+                    tldr_optional_language_prop(),
+                    tldr_path_prop(),
+                ],
+                vec!["path"],
+            ),
+            tldr_variant(
+                "importers",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_module_prop(),
+                ],
+                vec!["language", "module"],
+            ),
+            tldr_variant(
+                "context",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "impact",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "calls",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "dead",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "arch",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "change-impact",
+                vec![tldr_project_prop(), tldr_language_prop(), tldr_paths_prop()],
+                vec!["language", "paths"],
+            ),
+            tldr_variant(
+                "cfg",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "dfg",
+                vec![
+                    tldr_project_prop(),
+                    tldr_language_prop(),
+                    tldr_symbol_prop(),
+                ],
+                vec!["language"],
+            ),
+            tldr_variant(
+                "slice",
+                vec![
+                    tldr_project_prop(),
+                    tldr_optional_language_prop(),
+                    tldr_symbol_prop(),
+                    tldr_path_prop(),
+                    tldr_line_prop(),
+                ],
+                vec!["path", "line"],
+            ),
+            tldr_variant(
+                "semantic",
+                vec![tldr_project_prop(), tldr_language_prop(), tldr_query_prop()],
+                vec!["language", "query"],
+            ),
+            tldr_variant(
+                "diagnostics",
+                vec![
+                    tldr_project_prop(),
+                    tldr_optional_language_prop(),
+                    tldr_path_prop(),
+                    tldr_only_tools_prop(),
+                    tldr_run_lint_prop(),
+                    tldr_run_typecheck_prop(),
+                    tldr_max_issues_prop(),
+                    tldr_include_install_hints_prop(),
+                ],
+                vec!["path"],
+            ),
+            tldr_variant(
+                "doctor",
+                vec![
+                    tldr_project_prop(),
+                    tldr_only_tools_prop(),
+                    tldr_include_install_hints_prop(),
+                ],
+                vec![],
+            ),
+            tldr_variant("ping", vec![tldr_project_prop()], vec![]),
+            tldr_variant("warm", vec![tldr_project_prop()], vec![]),
+            tldr_variant("snapshot", vec![tldr_project_prop()], vec![]),
+            tldr_variant("status", vec![tldr_project_prop()], vec![]),
+            tldr_variant(
+                "notify",
+                vec![tldr_project_prop(), tldr_path_prop()],
+                vec!["path"],
+            ),
+        ],
+    }
+}
+
+fn tldr_variant(
+    action: &str,
+    properties: Vec<(String, JsonSchema)>,
+    required: Vec<&str>,
+) -> JsonSchema {
+    let mut variant_properties = BTreeMap::from([(
+        "action".to_string(),
+        JsonSchema::LiteralString {
+            value: action.to_string(),
+            description: Some(
+                "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify."
+                    .to_string(),
+            ),
+        },
+    )]);
+    variant_properties.extend(properties);
+    let mut required_fields = vec!["action".to_string()];
+    required_fields.extend(required.into_iter().map(str::to_string));
+    JsonSchema::Object {
+        properties: variant_properties,
+        required: Some(required_fields),
+        additional_properties: Some(false.into()),
+    }
+}
+
+fn tldr_project_prop() -> (String, JsonSchema) {
+    (
+        "project".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional project root. Defaults to the current session working directory."
+                    .to_string(),
+            ),
+        },
+    )
+}
+
+fn tldr_language_prop() -> (String, JsonSchema) {
+    (
+        "language".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+                    .to_string(),
+            ),
+        },
+    )
+}
+
+fn tldr_optional_language_prop() -> (String, JsonSchema) {
+    tldr_language_prop()
+}
+
+fn tldr_symbol_prop() -> (String, JsonSchema) {
+    (
+        "symbol".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."
+                    .to_string(),
+            ),
+        },
+    )
+}
+
+fn tldr_query_prop() -> (String, JsonSchema) {
+    (
+        "query".to_string(),
+        JsonSchema::String {
+            description: Some("Query text for action=search or action=semantic.".to_string()),
+        },
+    )
+}
+
+fn tldr_match_mode_prop() -> (String, JsonSchema) {
+    (
+        "matchMode".to_string(),
+        JsonSchema::String {
+            description: Some("Optional search match mode.".to_string()),
+        },
+    )
+}
+
+fn tldr_module_prop() -> (String, JsonSchema) {
+    (
+        "module".to_string(),
+        JsonSchema::String {
+            description: Some("Required module path for action=importers.".to_string()),
+        },
+    )
+}
+
+fn tldr_path_prop() -> (String, JsonSchema) {
+    (
+        "path".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify."
+                    .to_string(),
+            ),
+        },
+    )
+}
+
+fn tldr_line_prop() -> (String, JsonSchema) {
+    (
+        "line".to_string(),
+        JsonSchema::Integer {
+            description: Some("Target line for action=slice.".to_string()),
+        },
+    )
+}
+
+fn tldr_paths_prop() -> (String, JsonSchema) {
+    (
+        "paths".to_string(),
+        JsonSchema::Array {
+            items: Box::new(JsonSchema::String { description: None }),
+            description: Some("Required changed paths for action=change-impact.".to_string()),
+        },
+    )
+}
+
+fn tldr_only_tools_prop() -> (String, JsonSchema) {
+    (
+        "onlyTools".to_string(),
+        JsonSchema::Array {
+            items: Box::new(JsonSchema::String { description: None }),
+            description: Some("Optional tool filters for diagnostics or doctor.".to_string()),
+        },
+    )
+}
+
+fn tldr_run_lint_prop() -> (String, JsonSchema) {
+    (
+        "runLint".to_string(),
+        JsonSchema::Boolean {
+            description: Some("Optional diagnostics lint toggle.".to_string()),
+        },
+    )
+}
+
+fn tldr_run_typecheck_prop() -> (String, JsonSchema) {
+    (
+        "runTypecheck".to_string(),
+        JsonSchema::Boolean {
+            description: Some("Optional diagnostics typecheck toggle.".to_string()),
+        },
+    )
+}
+
+fn tldr_max_issues_prop() -> (String, JsonSchema) {
+    (
+        "maxIssues".to_string(),
+        JsonSchema::Integer {
+            description: Some("Optional diagnostics issue limit.".to_string()),
+        },
+    )
+}
+
+fn tldr_include_install_hints_prop() -> (String, JsonSchema) {
+    (
+        "includeInstallHints".to_string(),
+        JsonSchema::Boolean {
+            description: Some("Optional doctor or diagnostics install-hint toggle.".to_string()),
+        },
+    )
 }
 
 pub fn create_image_generation_tool(output_format: &str) -> ToolSpec {
@@ -229,18 +510,26 @@ pub fn create_tools_json_for_responses_api(
 
 fn responses_api_tool_json(tool: &ToolSpec) -> Result<Value, serde_json::Error> {
     match tool {
-        ToolSpec::Function(ResponsesApiTool {
-            parameters: JsonSchema::OneOf { .. },
-            ..
-        }) => {
+        ToolSpec::Function(
+            responses_tool @ ResponsesApiTool {
+                parameters: JsonSchema::OneOf { .. },
+                ..
+            },
+        ) => {
             let mut json = serde_json::to_value(tool)?;
-            if let Some(parameters) = json.get_mut("parameters") {
+            if !should_preserve_top_level_one_of(responses_tool)
+                && let Some(parameters) = json.get_mut("parameters")
+            {
                 *parameters = normalize_top_level_schema(parameters.take());
             }
             Ok(json)
         }
         _ => serde_json::to_value(tool),
     }
+}
+
+fn should_preserve_top_level_one_of(tool: &ResponsesApiTool) -> bool {
+    tool.name == "ztldr"
 }
 
 fn normalize_top_level_schema(schema: Value) -> Value {

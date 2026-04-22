@@ -114,16 +114,45 @@ fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
     assert_eq!(tool.name, "ztldr");
     assert_eq!(
         tool.description,
-        "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
+        "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
     );
-    let JsonSchema::Object { properties, .. } = tool.parameters else {
-        panic!("expected object schema");
+    let JsonSchema::OneOf { variants } = tool.parameters else {
+        panic!("expected oneOf schema");
+    };
+    let semantic_variant = variants
+        .iter()
+        .find(|variant| {
+            matches!(
+                variant,
+                JsonSchema::Object { properties, .. }
+                    if matches!(
+                        properties.get("action"),
+                        Some(JsonSchema::LiteralString { value, .. }) if value == "semantic"
+                    )
+            )
+        })
+        .expect("semantic variant should exist");
+    let JsonSchema::Object {
+        properties,
+        required,
+        ..
+    } = semantic_variant
+    else {
+        panic!("semantic variant should be an object");
     };
     assert_eq!(
-        properties["action"],
+        properties["language"],
         JsonSchema::String {
-            description: Some("Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify.".to_string()),
+            description: Some("Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.".to_string()),
         }
+    );
+    assert_eq!(
+        required.clone().expect("semantic required fields"),
+        vec![
+            "action".to_string(),
+            "language".to_string(),
+            "query".to_string()
+        ]
     );
 }
 
@@ -251,6 +280,27 @@ fn create_tools_json_for_responses_api_flattens_top_level_one_of_to_object() {
                 "additionalProperties": false,
             },
         })]
+    );
+}
+
+#[test]
+fn create_tools_json_for_responses_api_preserves_tldr_one_of_constraints() {
+    let tools = create_tools_json_for_responses_api(&[create_tldr_tool()]).expect("serialize");
+    let parameters = &tools[0]["parameters"];
+    let variants = parameters["oneOf"]
+        .as_array()
+        .expect("ztldr should keep oneOf");
+    let semantic = variants
+        .iter()
+        .find(|variant| variant["properties"]["action"]["enum"] == json!(["semantic"]))
+        .expect("semantic variant should exist");
+
+    assert_eq!(semantic["required"], json!(["action", "language", "query"]));
+    assert_eq!(
+        semantic["properties"]["language"]["description"],
+        json!(
+            "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+        )
     );
 }
 

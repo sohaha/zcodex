@@ -23,7 +23,6 @@ use rmcp::model::CallToolResult;
 use rmcp::model::Content;
 use rmcp::model::JsonObject;
 use rmcp::model::Tool;
-use schemars::r#gen::SchemaSettings;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fs::File;
@@ -35,19 +34,15 @@ use std::sync::Arc;
 use tokio::process::Command;
 
 pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
-    let schema = SchemaSettings::draft2019_09()
-        .with(|settings| {
-            settings.inline_subschemas = true;
-            settings.option_add_null_type = false;
-        })
-        .into_generator()
-        .into_root_schema_for::<TldrToolCallParam>();
-    let input_schema = create_tool_input_schema(schema, "TLDR tool schema should serialize");
+    let input_schema = create_tool_input_schema(
+        tldr_tool_input_schema(),
+        "TLDR tool schema should serialize",
+    );
 
     Tool {
         name: "ztldr".into(),
         title: Some("Native ZTLDR".to_string()),
-        description: Some("Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly.".into()),
+        description: Some("Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly.".into()),
         input_schema,
         output_schema: Some(match tldr_tool_output_schema() {
             serde_json::Value::Object(map) => Arc::new(map),
@@ -460,25 +455,139 @@ fn cleanup_file_if_exists(path: PathBuf) {
     }
 }
 
-fn create_tool_input_schema(
-    schema: schemars::schema::RootSchema,
-    panic_message: &str,
-) -> Arc<JsonObject> {
-    #[expect(clippy::expect_used)]
-    let schema_value = serde_json::to_value(&schema).expect(panic_message);
-    let mut schema_object = match schema_value {
+fn create_tool_input_schema(schema: serde_json::Value, _panic_message: &str) -> Arc<JsonObject> {
+    let mut schema_object = match schema {
         serde_json::Value::Object(object) => object,
         _ => panic!("tool schema should serialize to a JSON object"),
     };
 
     let mut input_schema = JsonObject::new();
-    for key in ["properties", "required", "type", "$defs", "definitions"] {
+    for key in [
+        "properties",
+        "required",
+        "type",
+        "oneOf",
+        "anyOf",
+        "allOf",
+        "$defs",
+        "definitions",
+    ] {
         if let Some(value) = schema_object.remove(key) {
             input_schema.insert(key.to_string(), value);
         }
     }
 
     Arc::new(input_schema)
+}
+
+fn tldr_tool_input_schema() -> serde_json::Value {
+    serde_json::json!({
+        "oneOf": [
+            tldr_tool_input_variant("structure", &["language"], serde_json::json!({ "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("search", &["query"], serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic."), "matchMode": string_prop("Optional search match mode.") })),
+            tldr_tool_input_variant("extract", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("imports", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop() })),
+            tldr_tool_input_variant("importers", &["language", "module"], serde_json::json!({ "language": language_prop(), "module": string_prop("Required module path for action=importers.") })),
+            tldr_tool_input_variant("context", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("impact", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("calls", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("dead", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("arch", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("change-impact", &["language", "paths"], serde_json::json!({ "language": language_prop(), "paths": string_array_prop("Required changed paths for action=change-impact.") })),
+            tldr_tool_input_variant("cfg", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("dfg", &["language"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice.") })),
+            tldr_tool_input_variant("slice", &["path", "line"], serde_json::json!({ "language": language_prop(), "symbol": string_prop("Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."), "path": path_prop(), "line": integer_prop("Target line for action=slice.") })),
+            tldr_tool_input_variant("semantic", &["language", "query"], serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic.") })),
+            tldr_tool_input_variant("diagnostics", &["path"], serde_json::json!({ "language": language_prop(), "path": path_prop(), "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "runLint": boolean_prop("Optional diagnostics lint toggle."), "runTypecheck": boolean_prop("Optional diagnostics typecheck toggle."), "maxIssues": integer_prop("Optional diagnostics issue limit."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") })),
+            tldr_tool_input_variant("doctor", &[], serde_json::json!({ "onlyTools": string_array_prop("Optional tool filters for diagnostics or doctor."), "includeInstallHints": boolean_prop("Optional doctor or diagnostics install-hint toggle.") })),
+            tldr_tool_input_variant("ping", &[], serde_json::json!({})),
+            tldr_tool_input_variant("warm", &[], serde_json::json!({})),
+            tldr_tool_input_variant("snapshot", &[], serde_json::json!({})),
+            tldr_tool_input_variant("status", &[], serde_json::json!({})),
+            tldr_tool_input_variant("notify", &["path"], serde_json::json!({ "path": path_prop() }))
+        ]
+    })
+}
+
+fn tldr_tool_input_variant(
+    action: &str,
+    required: &[&str],
+    extra_properties: serde_json::Value,
+) -> serde_json::Value {
+    let mut properties = serde_json::Map::from_iter([
+        (
+            "action".to_string(),
+            serde_json::json!({
+                "type": "string",
+                "enum": [action],
+                "description": "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, doctor. Diagnostics (requires path): diagnostics. Daemon: ping, warm, snapshot, status, notify."
+            }),
+        ),
+        (
+            "project".to_string(),
+            string_prop(
+                "Optional project root. Defaults to the current session working directory.",
+            ),
+        ),
+    ]);
+    if let serde_json::Value::Object(extra) = extra_properties {
+        properties.extend(extra);
+    }
+
+    let mut required_fields = vec![serde_json::Value::String("action".to_string())];
+    required_fields.extend(
+        required
+            .into_iter()
+            .map(|field| serde_json::Value::String(field.to_string())),
+    );
+
+    serde_json::json!({
+        "type": "object",
+        "properties": properties,
+        "required": required_fields,
+        "additionalProperties": false
+    })
+}
+
+fn string_prop(description: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "string",
+        "description": description
+    })
+}
+
+fn integer_prop(description: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "integer",
+        "description": description
+    })
+}
+
+fn boolean_prop(description: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "boolean",
+        "description": description
+    })
+}
+
+fn string_array_prop(description: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "array",
+        "items": { "type": "string" },
+        "description": description
+    })
+}
+
+fn language_prop() -> serde_json::Value {
+    string_prop(
+        "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.",
+    )
+}
+
+fn path_prop() -> serde_json::Value {
+    string_prop(
+        "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify.",
+    )
 }
 
 #[cfg(test)]
@@ -523,16 +632,42 @@ mod tests {
         assert_eq!(tool_json["title"], "Native ZTLDR");
         assert_eq!(
             tool_json["description"],
-            "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
-        );
-        assert_eq!(tool_json["inputSchema"]["type"], "object");
-        assert_eq!(
-            tool_json["inputSchema"]["required"],
-            serde_json::json!(["action"])
+            "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
         );
         assert_eq!(
-            tool_json["inputSchema"]["properties"]["action"]["enum"],
-            serde_json::json!([
+            tool_json["inputSchema"]["oneOf"].as_array().map(Vec::len),
+            Some(22)
+        );
+        let semantic = tool_json["inputSchema"]["oneOf"]
+            .as_array()
+            .expect("oneOf variants")
+            .iter()
+            .find(|variant| {
+                variant["properties"]["action"]["enum"] == serde_json::json!(["semantic"])
+            })
+            .expect("semantic variant should exist");
+        assert_eq!(
+            semantic["required"],
+            serde_json::json!(["action", "language", "query"])
+        );
+        assert_eq!(
+            semantic["properties"]["language"]["description"],
+            serde_json::json!(
+                "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+            )
+        );
+        assert_eq!(
+            tool_json["inputSchema"]["oneOf"]
+                .as_array()
+                .expect("oneOf variants")
+                .iter()
+                .filter_map(|variant| {
+                    variant["properties"]["action"]["enum"][0]
+                        .as_str()
+                        .map(str::to_string)
+                })
+                .collect::<Vec<_>>(),
+            vec![
                 "structure",
                 "search",
                 "extract",
@@ -554,8 +689,8 @@ mod tests {
                 "warm",
                 "snapshot",
                 "status",
-                "notify"
-            ])
+                "notify",
+            ]
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
         assert_eq!(

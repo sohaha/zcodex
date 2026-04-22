@@ -55,6 +55,18 @@ fn tool_description(body: &Value, tool_name: &str) -> Option<String> {
         })
 }
 
+fn tool_parameters<'a>(body: &'a Value, tool_name: &str) -> Option<&'a Value> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .and_then(|tools| {
+            tools.iter().find_map(|tool| {
+                (tool.get("name").and_then(Value::as_str) == Some(tool_name))
+                    .then(|| tool.get("parameters"))
+                    .flatten()
+            })
+        })
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn tldr_function_output_exposes_bounded_json_to_model() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -153,9 +165,18 @@ async fn tldr_tool_request_exposes_ztldr() -> Result<()> {
     let body = resp_mock.single_request().body_json();
     let description =
         tool_description(&body, "ztldr").expect("ztldr description should be present");
+    let parameters = tool_parameters(&body, "ztldr").expect("ztldr parameters should be present");
     assert!(tool_names(&body).contains(&"ztldr".to_string()));
     assert!(description.contains("Use ztldr first"));
+    assert!(description.contains("`language` is required"));
     assert!(description.contains("degradedMode or structuredFailure"));
+    let semantic = parameters["oneOf"]
+        .as_array()
+        .expect("ztldr parameters should preserve oneOf")
+        .iter()
+        .find(|variant| variant["properties"]["action"]["enum"] == json!(["semantic"]))
+        .expect("semantic variant should exist");
+    assert_eq!(semantic["required"], json!(["action", "language", "query"]));
 
     Ok(())
 }

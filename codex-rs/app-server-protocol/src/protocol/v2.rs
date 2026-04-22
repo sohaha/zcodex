@@ -2732,6 +2732,30 @@ pub enum CommandExecOutputStream {
 
 // === Threads, Turns, and Items ===
 // Thread APIs
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct FederationThreadStartParams {
+    /// Optional stable instance id. When omitted, the server generates one for
+    /// this process start.
+    #[ts(optional = nullable)]
+    pub instance_id: Option<String>,
+    /// Display name advertised to other federation peers.
+    pub name: String,
+    /// Optional role label advertised to other federation peers.
+    #[ts(optional = nullable)]
+    pub role: Option<String>,
+    /// Optional task scope label advertised to other federation peers.
+    #[ts(optional = nullable)]
+    pub scope: Option<String>,
+    /// Override the federation state root. Defaults to `<CODEX_HOME>/federation`.
+    #[ts(optional = nullable)]
+    pub state_root: Option<String>,
+    /// Optional lease TTL override in seconds. Defaults to 30.
+    #[ts(optional = nullable)]
+    pub lease_ttl_secs: Option<u32>,
+}
+
 #[derive(
     Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS, ExperimentalApi,
 )]
@@ -2769,6 +2793,8 @@ pub struct ThreadStartParams {
     pub base_instructions: Option<String>,
     #[ts(optional = nullable)]
     pub developer_instructions: Option<String>,
+    #[ts(optional = nullable)]
+    pub federation: Option<FederationThreadStartParams>,
     #[ts(optional = nullable)]
     pub personality: Option<Personality>,
     #[ts(optional = nullable)]
@@ -9077,6 +9103,30 @@ mod tests {
         let serialized_without_override =
             serde_json::to_value(ThreadStartParams::default()).expect("params should serialize");
         assert_eq!(serialized_without_override.get("serviceTier"), None);
+    }
+
+    #[test]
+    fn thread_start_params_round_trip_federation_settings() {
+        let params: ThreadStartParams = serde_json::from_value(json!({
+            "federation": {
+                "instanceId": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                "name": "planner-a",
+                "role": "planner",
+                "scope": "repo-a",
+                "stateRoot": "/tmp/codex-federation",
+                "leaseTtlSecs": 45
+            }
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params.federation.as_ref().map(|value| value.name.as_str()),
+            Some("planner-a")
+        );
+        assert_eq!(
+            serde_json::to_value(&params).expect("params should serialize")["federation"]["leaseTtlSecs"],
+            json!(45)
+        );
     }
 
     #[test]

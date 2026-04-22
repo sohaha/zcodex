@@ -2,7 +2,10 @@ use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::tool_api::TldrToolAction;
+use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolLanguage;
+use codex_native_tldr::tool_api::action_name;
+use codex_native_tldr::tool_api::action_requires_explicit_language;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,10 +159,26 @@ pub(crate) fn shell_intercept_reason(
     }
 }
 
-pub(crate) fn shell_intercept_message(reason: &str, arguments: &str) -> String {
-    format!(
-        "Intercepted broad shell search ({reason}). Use ztldr first (context for symbols, semantic for natural-language code search).\nPass through raw grep/read for regex patterns, exact text checks, or explicit raw requests.\nIf ztldr returns degradedMode or structuredFailure, report that explicitly.\nSuggested ztldr arguments: {arguments}"
-    )
+pub(crate) fn shell_intercept_message(
+    reason: &str,
+    args: &TldrToolCallParam,
+    arguments: Option<&str>,
+) -> String {
+    let mut message = format!(
+        "Intercepted broad shell search ({reason}). Use ztldr first (context for symbols, semantic for natural-language code search).\nPass through raw grep/read for regex patterns, exact text checks, or explicit raw requests.\nIf ztldr returns degradedMode or structuredFailure, report that explicitly."
+    );
+    let guidance = if action_requires_explicit_language(&args.action) && args.language.is_none() {
+        format!(
+            "\nNo runnable ztldr arguments are suggested yet because `{}` still needs an explicit `language`; add it before running ztldr, and treat a missing-language structuredFailure as a failed attempt rather than valid analysis.",
+            action_name(&args.action)
+        )
+    } else if let Some(arguments) = arguments {
+        format!("\nSuggested ztldr arguments: {arguments}")
+    } else {
+        String::new()
+    };
+    message.push_str(&guidance);
+    message
 }
 
 pub(crate) fn non_code_reason(path: &Path) -> &'static str {

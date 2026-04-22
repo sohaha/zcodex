@@ -45,6 +45,7 @@ use supports_color::Stream;
 mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
+mod federation_cmd;
 mod marketplace_cmd;
 mod mcp_cmd;
 mod responses_cmd;
@@ -54,6 +55,7 @@ mod wsl_paths;
 mod zmemory_cmd;
 mod zmemory_compat_server;
 
+use crate::federation_cmd::FederationCli;
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 use crate::responses_cmd::ResponsesCommand;
@@ -125,6 +127,9 @@ enum Subcommand {
 
     /// 运行 Token 优化的命令包装器。
     Ztok(ZtokArgs),
+
+    /// 管理本地 federation daemon 与多实例消息投递。
+    Federation(FederationCli),
 
     /// 管理 Codex 插件。
     Plugin(PluginCli),
@@ -863,6 +868,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 interactive.config_profile.clone(),
             )
             .await?;
+        }
+        Some(Subcommand::Federation(federation_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "federation",
+            )?;
+            federation_cli.run().await?;
         }
         Some(Subcommand::Plugin(plugin_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -1737,6 +1750,24 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
     if let Some(cwd) = subcommand_cli.cwd {
         interactive.cwd = Some(cwd);
     }
+    if subcommand_cli.federation_enable {
+        interactive.federation_enable = true;
+    }
+    if let Some(name) = subcommand_cli.federation_name {
+        interactive.federation_name = Some(name);
+    }
+    if let Some(role) = subcommand_cli.federation_role {
+        interactive.federation_role = Some(role);
+    }
+    if let Some(scope) = subcommand_cli.federation_scope {
+        interactive.federation_scope = Some(scope);
+    }
+    if let Some(state_root) = subcommand_cli.federation_state_root {
+        interactive.federation_state_root = Some(state_root);
+    }
+    if let Some(instance_id) = subcommand_cli.federation_instance_id {
+        interactive.federation_instance_id = Some(instance_id);
+    }
     if subcommand_cli.web_search {
         interactive.web_search = true;
     }
@@ -2492,6 +2523,59 @@ mod tests {
         assert!(interactive.resume_last);
         assert!(interactive.resume_zoffsec_clean);
         assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
+    }
+
+    #[test]
+    fn finalize_resume_preserves_federation_flags() {
+        let interactive = finalize_resume_from_args(&[
+            "codex",
+            "resume",
+            "--last",
+            "--federation-enable",
+            "--federation-name",
+            "resume-worker",
+            "--federation-role",
+            "worker",
+            "--federation-scope",
+            "repo",
+            "--federation-state-root",
+            "/tmp/fed",
+            "--federation-instance-id",
+            "instance-1",
+        ]);
+
+        assert!(interactive.resume_last);
+        assert!(interactive.federation_enable);
+        assert_eq!(
+            interactive.federation_name.as_deref(),
+            Some("resume-worker")
+        );
+        assert_eq!(interactive.federation_role.as_deref(), Some("worker"));
+        assert_eq!(interactive.federation_scope.as_deref(), Some("repo"));
+        assert_eq!(
+            interactive.federation_state_root,
+            Some(PathBuf::from("/tmp/fed"))
+        );
+        assert_eq!(
+            interactive.federation_instance_id.as_deref(),
+            Some("instance-1")
+        );
+    }
+
+    #[test]
+    fn finalize_fork_preserves_federation_flags() {
+        let interactive = finalize_fork_from_args(&[
+            "codex",
+            "fork",
+            "--last",
+            "--federation-enable",
+            "--federation-name",
+            "fork-worker",
+        ]);
+
+        assert!(interactive.fork_last);
+        assert!(interactive.federation_enable);
+        assert_eq!(interactive.federation_name.as_deref(), Some("fork-worker"));
     }
 
     #[test]

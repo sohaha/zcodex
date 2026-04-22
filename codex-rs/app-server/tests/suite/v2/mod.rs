@@ -14,6 +14,7 @@ mod dynamic_tools;
 mod experimental_api;
 mod experimental_feature_list;
 mod external_agent_config;
+mod federation;
 mod fs;
 mod initialize;
 mod marketplace_add;

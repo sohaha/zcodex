@@ -21,6 +21,7 @@ use codex_app_server_client::InProcessClientStartArgs;
 use codex_app_server_client::InProcessServerEvent;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::FederationThreadStartParams;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationAction;
 use codex_app_server_protocol::McpServerElicitationRequestResponse;
@@ -202,6 +203,7 @@ struct ExecRunArgs {
     prompt: Option<String>,
     skip_git_repo_check: bool,
     stderr_with_ansi: bool,
+    federation: Option<FederationThreadStartParams>,
 }
 
 fn exec_root_span() -> tracing::Span {
@@ -228,6 +230,12 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         full_auto,
         dangerously_bypass_approvals_and_sandbox,
         cwd,
+        federation_enable,
+        federation_name,
+        federation_role,
+        federation_scope,
+        federation_state_root,
+        federation_instance_id,
         skip_git_repo_check,
         add_dir,
         ephemeral,
@@ -356,6 +364,14 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     } else {
         None // No OSS mode enabled
     };
+    let federation = federation_enable.then(|| FederationThreadStartParams {
+        instance_id: federation_instance_id,
+        name: federation_name.unwrap_or_else(|| "codex-exec".to_string()),
+        role: federation_role,
+        scope: federation_scope,
+        state_root: federation_state_root.map(|path| path.to_string_lossy().to_string()),
+        lease_ttl_secs: None,
+    });
 
     // When using `--oss`, let the bootstrapper pick the model based on selected provider
     let model = if let Some(model) = model_cli_arg {
@@ -510,6 +526,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
+        federation,
     })
     .instrument(exec_span)
     .await
@@ -531,6 +548,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         prompt,
         skip_git_repo_check,
         stderr_with_ansi,
+        federation,
     } = args;
 
     let mut event_processor: Box<dyn EventProcessor> = match json_mode {
@@ -663,7 +681,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                     &client,
                     ClientRequest::ThreadStart {
                         request_id: request_ids.next(),
-                        params: thread_start_params_from_config(&config),
+                        params: thread_start_params_from_config(&config, federation.clone()),
                     },
                     "thread/start",
                 )
@@ -678,7 +696,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 &client,
                 ClientRequest::ThreadStart {
                     request_id: request_ids.next(),
-                    params: thread_start_params_from_config(&config),
+                    params: thread_start_params_from_config(&config, federation),
                 },
                 "thread/start",
             )
@@ -906,7 +924,10 @@ fn sandbox_mode_from_policy(
     }
 }
 
-fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
+fn thread_start_params_from_config(
+    config: &Config,
+    federation: Option<FederationThreadStartParams>,
+) -> ThreadStartParams {
     ThreadStartParams {
         model: config.model.clone(),
         model_provider: Some(config.model_provider_id.clone()),
@@ -916,6 +937,7 @@ fn thread_start_params_from_config(config: &Config) -> ThreadStartParams {
         sandbox: sandbox_mode_from_policy(config.permissions.sandbox_policy.get()),
         config: config_request_overrides_from_config(config),
         ephemeral: Some(config.ephemeral),
+        federation,
         ..ThreadStartParams::default()
     }
 }

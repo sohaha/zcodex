@@ -1432,14 +1432,28 @@ fn stats_and_doctor_surface_review_pressure() {
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
-            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
     .expect("governed create should succeed");
 
     let conn = Connection::open(config.db_path()).expect("db should open");
-    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent");
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent/my_user");
     let memory_id = crate::schema::active_memory_id_for_node(&conn, config.namespace(), &node_uuid)
         .expect("active memory query should succeed")
         .expect("governed node should have active memory");
@@ -1447,7 +1461,7 @@ fn stats_and_doctor_surface_review_pressure() {
         "UPDATE memories SET content = ?2 WHERE id = ?1",
         params![
             memory_id,
-            "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+            "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
         ],
     )
     .expect("dirty governed content should update");
@@ -1462,13 +1476,13 @@ fn stats_and_doctor_surface_review_pressure() {
     .expect("stats should succeed");
     assert_eq!(stats["result"]["deprecatedMemoryCount"], 1);
     assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
-    assert_eq!(stats["result"]["pathsMissingDisclosure"], 2);
+    assert_eq!(stats["result"]["pathsMissingDisclosure"], 3);
     assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
     assert_eq!(stats["result"]["contentGovernanceIssueCount"], 1);
     assert_eq!(stats["result"]["contentGovernanceConflictCount"], 1);
-    assert_eq!(stats["result"]["auditLogCount"], 6);
+    assert_eq!(stats["result"]["auditLogCount"], 7);
     assert!(stats["result"]["latestAuditAt"].is_string());
-    assert_eq!(stats["result"]["auditActionCounts"]["create"], 4);
+    assert_eq!(stats["result"]["auditActionCounts"]["create"], 5);
     assert_eq!(stats["result"]["auditActionCounts"]["update"], 1);
     assert_eq!(stats["result"]["auditActionCounts"]["delete-path"], 1);
     assert_eq!(
@@ -1637,9 +1651,9 @@ fn stats_and_doctor_surface_review_pressure() {
     );
     assert_eq!(doctor["result"]["contentGovernanceIssueCount"], 1);
     assert_eq!(doctor["result"]["contentGovernanceConflictCount"], 1);
-    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 6);
+    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 7);
     assert!(doctor["result"]["stats"]["latestAuditAt"].is_string());
-    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 4);
+    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 5);
     assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["update"], 1);
     assert_eq!(
         doctor["result"]["stats"]["auditActionCounts"]["delete-path"],
@@ -1669,7 +1683,8 @@ fn stats_and_doctor_surface_review_pressure() {
             .any(|issue| issue["code"] == "content_governance_conflicts")
     );
     assert!(issues.iter().any(|issue| {
-        issue["code"] == "content_governance_conflicts" && issue["uris"] == json!(["core://agent"])
+        issue["code"] == "content_governance_conflicts"
+            && issue["uris"] == json!(["core://agent/my_user"])
     }));
     assert!(
         issues
@@ -2982,7 +2997,21 @@ fn review_group_diff_surfaces_content_governance_findings() {
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
-            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -2991,8 +3020,8 @@ fn review_group_diff_surfaces_content_governance_findings() {
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
-            new_uri: Some("alias://agent-copy".to_string()),
-            target_uri: Some("core://agent".to_string()),
+            new_uri: Some("alias://collaboration-copy".to_string()),
+            target_uri: Some("core://agent/my_user".to_string()),
             priority: Some(8),
             disclosure: Some("mirror".to_string()),
             ..ZmemoryToolCallParam::default()
@@ -3001,7 +3030,7 @@ fn review_group_diff_surfaces_content_governance_findings() {
     .expect("add alias should succeed");
 
     let conn = Connection::open(config.db_path()).expect("db should open");
-    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent");
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "agent/my_user");
     let memory_id = crate::schema::active_memory_id_for_node(&conn, config.namespace(), &node_uuid)
         .expect("active memory query should succeed")
         .expect("governed node should have active memory");
@@ -3009,7 +3038,7 @@ fn review_group_diff_surfaces_content_governance_findings() {
         "UPDATE memories SET content = ?2 WHERE id = ?1",
         params![
             memory_id,
-            "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+            "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
         ],
     )
     .expect("dirty governed content should update");
@@ -3030,12 +3059,12 @@ fn review_group_diff_surfaces_content_governance_findings() {
             .as_ref()
             .expect("scope")
             .uri,
-        "core://agent"
+        "core://agent/my_user"
     );
     assert_eq!(diff.content_governance[0].status, "conflict");
     assert_eq!(
         diff.content_governance[0].issues[0].code,
-        "assistant_self_reference_conflict"
+        "collaboration_contract_conflict"
     );
 }
 
@@ -4341,78 +4370,56 @@ fn content_governance_skips_unscoped_paths() {
 }
 
 #[test]
-fn content_governance_normalizes_agent_self_reference() {
+fn content_governance_skips_agent_identity_anchor() {
     let uri = crate::tool_api::ZmemoryUri::parse("core://agent").expect("uri should parse");
     let governance =
-        crate::service::governance::evaluate_content(&uri, "你的名字是“星尘”。以后都用这个名字。");
+        crate::service::governance::evaluate_content(&uri, "你是专业的架构师，偏好先做边界审查。");
 
-    assert_eq!(governance.status, "normalized");
-    assert_eq!(
-        governance.scope.as_ref().expect("scope").kind,
-        "assistantSelfReference"
-    );
-    assert_eq!(governance.changed, true);
+    assert_eq!(governance.status, "notApplicable");
+    assert_eq!(governance.scope, None);
+    assert_eq!(governance.changed, false);
     assert_eq!(
         governance.governed_content,
-        "The assistant should refer to itself as \"星尘\"."
+        "你是专业的架构师，偏好先做边界审查。"
     );
-    assert_eq!(governance.rules.len(), 1);
-    assert_eq!(
-        governance.rules[0].rule_id,
-        "canonical-agent-self-reference"
-    );
-    assert_eq!(governance.rules[0].outcome, "normalized");
+    assert_eq!(governance.rules, Vec::new());
     assert_eq!(governance.issues, Vec::new());
 }
 
 #[test]
-fn content_governance_normalizes_user_address_preference() {
+fn content_governance_skips_user_identity_anchor() {
     let uri = crate::tool_api::ZmemoryUri::parse("core://my_user").expect("uri should parse");
-    let governance =
-        crate::service::governance::evaluate_content(&uri, "以后称呼我“指挥官”，保持这个称呼。");
-
-    assert_eq!(governance.status, "normalized");
-    assert_eq!(
-        governance.scope.as_ref().expect("scope").kind,
-        "userAddressPreference"
-    );
-    assert_eq!(governance.changed, true);
-    assert_eq!(
-        governance.governed_content,
-        "The user prefers to be addressed as \"指挥官\"."
-    );
-    assert_eq!(
-        governance.rules[0].rule_id,
-        "canonical-user-address-preference"
-    );
-}
-
-#[test]
-fn content_governance_flags_conflicting_agent_self_reference_names() {
-    let uri = crate::tool_api::ZmemoryUri::parse("core://agent").expect("uri should parse");
     let governance = crate::service::governance::evaluate_content(
         &uri,
-        "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。",
+        "你是长期合作的产品负责人，重视可验证结果。",
     );
 
-    assert_eq!(governance.status, "conflict");
+    assert_eq!(governance.status, "notApplicable");
+    assert_eq!(governance.scope, None);
     assert_eq!(governance.changed, false);
     assert_eq!(
         governance.governed_content,
-        "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+        "你是长期合作的产品负责人，重视可验证结果。"
     );
-    assert_eq!(governance.rules[0].outcome, "conflict");
-    assert_eq!(governance.issues.len(), 1);
+    assert_eq!(governance.rules, Vec::new());
+    assert_eq!(governance.issues, Vec::new());
+}
+
+#[test]
+fn content_governance_normalizes_collaboration_naming_clause_from_single_quotes() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(
+        &uri,
+        "Use 'Stardust' for the assistant and 'Commander' for the user in future interactions.",
+    );
+
+    assert_eq!(governance.status, "normalized");
+    assert_eq!(governance.changed, true);
     assert_eq!(
-        governance.issues[0],
-        crate::service::contracts::ContentGovernanceIssueContract {
-            code: "assistant_self_reference_conflict".to_string(),
-            severity: "error".to_string(),
-            message: "found multiple distinct assistant self-reference values: 星尘, 白塔"
-                .to_string(),
-        }
+        governance.governed_content,
+        "Shared collaboration contract:\n- Use \"Stardust\" for the assistant and \"Commander\" for the user in future interactions."
     );
-    assert_eq!(governance.has_conflicts(), true);
+    assert_eq!(governance.issues, Vec::new());
 }
 
 #[test]
@@ -4442,6 +4449,35 @@ fn content_governance_normalizes_collaboration_contract_clauses() {
 }
 
 #[test]
+fn content_governance_keeps_plain_collaboration_text_unchanged() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
+    let governance = crate::service::governance::evaluate_content(
+        &uri,
+        "Discuss release notes before changing any collaboration defaults.",
+    );
+
+    assert_eq!(governance.status, "accepted");
+    assert_eq!(governance.changed, false);
+    assert_eq!(
+        governance.governed_content,
+        "Discuss release notes before changing any collaboration defaults."
+    );
+    assert_eq!(governance.issues, Vec::new());
+}
+
+#[test]
+fn content_governance_keeps_structured_contract_with_unknown_clause_unchanged() {
+    let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
+    let content = "Shared collaboration contract:\n- Respond in Chinese by default.\n- Mention release IDs in summaries.";
+    let governance = crate::service::governance::evaluate_content(&uri, content);
+
+    assert_eq!(governance.status, "accepted");
+    assert_eq!(governance.changed, false);
+    assert_eq!(governance.governed_content, content);
+    assert_eq!(governance.issues, Vec::new());
+}
+
+#[test]
 fn content_governance_flags_conflicting_collaboration_contract_clauses() {
     let uri = crate::tool_api::ZmemoryUri::parse("core://agent/my_user").expect("uri should parse");
     let governance = crate::service::governance::evaluate_content(
@@ -4463,12 +4499,26 @@ fn content_governance_flags_conflicting_collaboration_contract_clauses() {
 #[test]
 fn create_normalizes_governed_content_and_exposes_result() {
     let (_dir, config) = config();
-    let create = crate::service::execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
-            content: Some("你的名字是“星尘”。以后都用这个名字。".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Respond in Chinese by default. Keep responses concise by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -4477,7 +4527,43 @@ fn create_normalizes_governed_content_and_exposes_result() {
     assert_eq!(create["result"]["governance"]["status"], "normalized");
     assert_eq!(
         create["result"]["governance"]["governedContent"],
-        "The assistant should refer to itself as \"星尘\"."
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(
+        read["result"]["content"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+}
+
+#[test]
+fn create_keeps_agent_identity_anchor_text_and_skips_read_governance() {
+    let (_dir, config) = config();
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("你是专业的架构师，回答前先确认边界和风险。".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    assert_eq!(create["result"]["governance"]["status"], "notApplicable");
+    assert_eq!(create["result"]["governance"]["scope"], Value::Null);
+    assert_eq!(
+        create["result"]["governance"]["governedContent"],
+        "你是专业的架构师，回答前先确认边界和风险。"
     );
 
     let read = crate::service::execute_action(
@@ -4489,9 +4575,26 @@ fn create_normalizes_governed_content_and_exposes_result() {
         },
     )
     .expect("read should succeed");
+
     assert_eq!(
         read["result"]["content"],
-        "The assistant should refer to itself as \"星尘\"."
+        "你是专业的架构师，回答前先确认边界和风险。"
+    );
+    assert_eq!(read["result"]["governance"], Value::Null);
+    assert_eq!(
+        sorted_object_keys(&read["result"]),
+        vec![
+            "aliasCount",
+            "children",
+            "content",
+            "disclosure",
+            "governance",
+            "keywords",
+            "memoryId",
+            "nodeUuid",
+            "priority",
+            "uri",
+        ]
     );
 }
 
@@ -4503,7 +4606,21 @@ fn read_exposes_governance_for_existing_dirty_governed_content() {
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
-            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -4523,10 +4640,10 @@ fn read_exposes_governance_for_existing_dirty_governed_content() {
              LIMIT 1
          )",
         params![
-            "你的名字是“星尘”。以后都用这个名字。",
+            "Respond in Chinese by default. Keep responses concise by default.",
             config.namespace(),
             "core",
-            "agent"
+            "agent/my_user"
         ],
     )
     .expect("dirty content should update");
@@ -4535,7 +4652,7 @@ fn read_exposes_governance_for_existing_dirty_governed_content() {
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
-            uri: Some("core://agent".to_string()),
+            uri: Some("core://agent/my_user".to_string()),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -4543,40 +4660,37 @@ fn read_exposes_governance_for_existing_dirty_governed_content() {
 
     assert_eq!(
         read["result"]["content"],
-        "你的名字是“星尘”。以后都用这个名字。"
+        "Respond in Chinese by default. Keep responses concise by default."
     );
     assert_eq!(read["result"]["governance"]["status"], "normalized");
     assert_eq!(
         read["result"]["governance"]["governedContent"],
-        "The assistant should refer to itself as \"星尘\"."
-    );
-    assert_eq!(
-        sorted_object_keys(&read["result"]),
-        vec![
-            "aliasCount",
-            "children",
-            "content",
-            "disclosure",
-            "governance",
-            "keywords",
-            "memoryId",
-            "nodeUuid",
-            "priority",
-            "uri",
-        ]
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
     );
 }
 
 #[test]
 fn create_rejects_governed_content_conflicts() {
     let (_dir, config) = config();
-    let error = crate::service::execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
             content: Some(
-                "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
                     .to_string(),
             ),
             ..ZmemoryToolCallParam::default()
@@ -4586,7 +4700,7 @@ fn create_rejects_governed_content_conflicts() {
 
     assert_eq!(
         error.to_string(),
-        "found multiple distinct assistant self-reference values: 星尘, 白塔"
+        "conflicting collaboration clauses detected for the same topic: Respond in Chinese by default. / Respond in English by default."
     );
 }
 
@@ -4597,8 +4711,22 @@ fn update_normalizes_governed_content_and_persists_canonical_form() {
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
-            uri: Some("core://my_user".to_string()),
-            content: Some("The user prefers to be addressed as \"指挥官\".".to_string()),
+            uri: Some("core://agent".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -4608,8 +4736,10 @@ fn update_normalizes_governed_content_and_persists_canonical_form() {
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
-            uri: Some("core://my_user".to_string()),
-            content: Some("以后称呼我“舰长”。".to_string()),
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Respond in English by default. Use verbose responses by default.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
@@ -4618,21 +4748,21 @@ fn update_normalizes_governed_content_and_persists_canonical_form() {
     assert_eq!(update["result"]["governance"]["status"], "normalized");
     assert_eq!(
         update["result"]["governance"]["governedContent"],
-        "The user prefers to be addressed as \"舰长\"."
+        "Shared collaboration contract:\n- Respond in English by default.\n- Use verbose responses by default."
     );
 
     let read = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
-            uri: Some("core://my_user".to_string()),
+            uri: Some("core://agent/my_user".to_string()),
             ..ZmemoryToolCallParam::default()
         },
     )
     .expect("read should succeed");
     assert_eq!(
         read["result"]["content"],
-        "The user prefers to be addressed as \"舰长\"."
+        "Shared collaboration contract:\n- Respond in English by default.\n- Use verbose responses by default."
     );
 }
 
@@ -4644,11 +4774,25 @@ fn batch_update_rolls_back_when_governed_content_conflicts() {
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
-            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
             ..ZmemoryToolCallParam::default()
         },
     )
-    .expect("create agent should succeed");
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create contract should succeed");
     crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
@@ -4670,8 +4814,8 @@ fn batch_update_rolls_back_when_governed_content_conflicts() {
                     "append": " updated"
                 }),
                 json!({
-                    "uri": "core://agent",
-                    "content": "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+                    "uri": "core://agent/my_user",
+                    "content": "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
                 }),
             ]),
             ..ZmemoryToolCallParam::default()
@@ -4681,7 +4825,7 @@ fn batch_update_rolls_back_when_governed_content_conflicts() {
 
     assert_eq!(
         error.to_string(),
-        "found multiple distinct assistant self-reference values: 星尘, 白塔"
+        "conflicting collaboration clauses detected for the same topic: Respond in Chinese by default. / Respond in English by default."
     );
 
     let read = crate::service::execute_action(
@@ -4746,6 +4890,56 @@ fn import_normalizes_governed_content_and_exposes_result() {
         read["result"]["content"],
         "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
     );
+}
+
+#[test]
+fn create_keeps_plain_collaboration_text_for_governed_uri() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some(
+                "Canonical assistant identity anchor for collaboration preferences.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Discuss release notes before changing any collaboration defaults.".to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    assert_eq!(create["result"]["governance"]["status"], "accepted");
+    assert_eq!(
+        create["result"]["governance"]["governedContent"],
+        "Discuss release notes before changing any collaboration defaults."
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(
+        read["result"]["content"],
+        "Discuss release notes before changing any collaboration defaults."
+    );
+    assert_eq!(read["result"]["governance"]["status"], "accepted");
 }
 
 fn sorted_object_keys(value: &Value) -> Vec<&str> {

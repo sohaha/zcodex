@@ -16,8 +16,6 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixListener;
-#[cfg(unix)]
-use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
 
@@ -266,6 +264,7 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -391,7 +390,7 @@ mod tests {
         assert!(!endpoint_path.exists());
     }
 
-    async fn wait_for_endpoint(endpoint_path: &PathBuf) {
+    async fn wait_for_endpoint(endpoint_path: &Path) {
         for _ in 0..50 {
             if endpoint_path.exists() {
                 return;
@@ -402,7 +401,7 @@ mod tests {
     }
 
     async fn send_command(
-        endpoint_path: &PathBuf,
+        endpoint_path: &Path,
         command: FederationDaemonCommand,
     ) -> FederationDaemonResponse {
         #[cfg(unix)]

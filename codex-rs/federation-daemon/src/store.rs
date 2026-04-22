@@ -370,9 +370,7 @@ mod tests {
         store
             .register_instance(active.clone())
             .expect("register active");
-        store
-            .register_instance(expired.clone())
-            .expect("register expired");
+        store.register_instance(expired).expect("register expired");
 
         let peers = store
             .list_peers(Some(active.instance_id), 120)
