@@ -3,6 +3,7 @@ use crate::service::contracts::ContentGovernanceResultContract;
 use crate::service::contracts::ContentGovernanceRuleContract;
 use crate::service::contracts::ContentGovernanceScopeContract;
 use crate::tool_api::ZmemoryUri;
+use anyhow::Result;
 
 const COLLABORATION_CONTRACT_HEADER: &str = "Shared collaboration contract:";
 
@@ -163,6 +164,31 @@ impl ContentGovernanceResultContract {
     pub(crate) fn has_conflicts(&self) -> bool {
         self.status == "conflict"
     }
+
+    pub(crate) fn conflict_summary(&self) -> Option<String> {
+        (!self.issues.is_empty()).then(|| {
+            self.issues
+                .iter()
+                .map(|issue| issue.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; ")
+        })
+    }
+}
+
+pub(crate) fn evaluate_write_content(
+    uri: &ZmemoryUri,
+    content: &str,
+) -> Result<ContentGovernanceResultContract> {
+    let result = evaluate_content(uri, content);
+    anyhow::ensure!(
+        !result.has_conflicts(),
+        "{}",
+        result
+            .conflict_summary()
+            .unwrap_or_else(|| format!("content governance rejected write for {uri}"))
+    );
+    Ok(result)
 }
 
 fn governance_scope_for_uri(uri: &ZmemoryUri) -> Option<ContentGovernanceScope> {

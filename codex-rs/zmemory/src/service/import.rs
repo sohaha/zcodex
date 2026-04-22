@@ -80,5 +80,6 @@ fn import_item_in_tx(
         "nodeUuid": create_result["nodeUuid"],
         "aliasCount": item.aliases.len(),
         "keywordCount": item.keywords.len(),
+        "governance": create_result["governance"].clone(),
     }))
 }

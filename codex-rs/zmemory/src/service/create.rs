@@ -1,5 +1,6 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
+use crate::service::governance;
 use crate::service::index;
 use crate::tool_api::CreateActionParams;
 use crate::tool_api::ZmemoryUri;
@@ -34,6 +35,7 @@ pub(crate) fn create_action_in_tx(
         common::find_path_row(conn, config, &uri)?.is_none(),
         "memory already exists at {uri}"
     );
+    let content_governance = governance::evaluate_write_content(&uri, &args.content)?;
 
     let parent_uri = uri.parent();
     let parent = if parent_uri.is_root() {
@@ -49,7 +51,11 @@ pub(crate) fn create_action_in_tx(
     conn.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
     conn.execute(
         "INSERT INTO memories(namespace, node_uuid, content) VALUES (?1, ?2, ?3)",
-        params![config.namespace(), node_uuid, args.content],
+        params![
+            config.namespace(),
+            node_uuid,
+            content_governance.governed_content.as_str()
+        ],
     )?;
     let memory_id = conn.last_insert_rowid();
     conn.execute(
@@ -79,6 +85,7 @@ pub(crate) fn create_action_in_tx(
             "memoryId": memory_id,
             "priority": priority,
             "disclosure": disclosure,
+            "contentGovernance": content_governance.clone(),
         }),
     )?;
     index::reindex_node(conn, config.namespace(), &node_uuid)?;
@@ -89,6 +96,7 @@ pub(crate) fn create_action_in_tx(
         "memoryId": memory_id,
         "priority": priority,
         "disclosure": disclosure,
+        "governance": content_governance,
     }))
 }
 

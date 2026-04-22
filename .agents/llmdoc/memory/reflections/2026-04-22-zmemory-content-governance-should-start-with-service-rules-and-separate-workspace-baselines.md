@@ -16,4 +16,5 @@
 
 ## 后续提醒
 - 第二阶段接写入路径时，应直接消费治理结果里的 `status/changed/governed_content/issues`，不要重新发明一套局部返回值。
+- `import` 和批量动作应继续复用 `create_action_in_tx` / `update_action_in_tx` 暴露出来的治理结果，只做事务编排和汇总，不要在外层再拼一套近似 contract。
 - 第三阶段扩 `doctor/review` 时，也应复用同一治理入口做“检测”，不要在诊断层重写一遍冲突判断。

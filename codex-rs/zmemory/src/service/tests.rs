@@ -4346,6 +4346,210 @@ fn content_governance_flags_conflicting_collaboration_contract_clauses() {
     );
 }
 
+#[test]
+fn create_normalizes_governed_content_and_exposes_result() {
+    let (_dir, config) = config();
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("你的名字是“星尘”。以后都用这个名字。".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    assert_eq!(create["result"]["governance"]["status"], "normalized");
+    assert_eq!(
+        create["result"]["governance"]["governedContent"],
+        "The assistant should refer to itself as \"星尘\"."
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(
+        read["result"]["content"],
+        "The assistant should refer to itself as \"星尘\"."
+    );
+}
+
+#[test]
+fn create_rejects_governed_content_conflicts() {
+    let (_dir, config) = config();
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some(
+                "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+                    .to_string(),
+            ),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("create should fail");
+
+    assert_eq!(
+        error.to_string(),
+        "found multiple distinct assistant self-reference values: 星尘, 白塔"
+    );
+}
+
+#[test]
+fn update_normalizes_governed_content_and_persists_canonical_form() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://my_user".to_string()),
+            content: Some("The user prefers to be addressed as \"指挥官\".".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let update = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://my_user".to_string()),
+            content: Some("以后称呼我“舰长”。".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+
+    assert_eq!(update["result"]["governance"]["status"], "normalized");
+    assert_eq!(
+        update["result"]["governance"]["governedContent"],
+        "The user prefers to be addressed as \"舰长\"."
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(
+        read["result"]["content"],
+        "The user prefers to be addressed as \"舰长\"."
+    );
+}
+
+#[test]
+fn batch_update_rolls_back_when_governed_content_conflicts() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("The assistant should refer to itself as \"星尘\".".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create agent should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("project://note".to_string()),
+            content: Some("initial".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create note should succeed");
+
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::BatchUpdate,
+            items: Some(vec![
+                json!({
+                    "uri": "project://note",
+                    "append": " updated"
+                }),
+                json!({
+                    "uri": "core://agent",
+                    "content": "The assistant should refer to itself as \"星尘\", 但有时也写成 \"白塔\"。"
+                }),
+            ]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("batch update should fail");
+
+    assert_eq!(
+        error.to_string(),
+        "found multiple distinct assistant self-reference values: 星尘, 白塔"
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("project://note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "initial");
+}
+
+#[test]
+fn import_normalizes_governed_content_and_exposes_result() {
+    let (_dir, config) = config();
+    let import = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://agent/my_user",
+                "content": "Respond in Chinese by default. Keep responses concise by default."
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("import should succeed");
+
+    assert_eq!(
+        import["result"]["results"][0]["governance"]["status"],
+        "normalized"
+    );
+    assert_eq!(
+        import["result"]["results"][0]["governance"]["governedContent"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(
+        read["result"]["content"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+    );
+}
+
 fn sorted_object_keys(value: &Value) -> Vec<&str> {
     let mut keys = value
         .as_object()
