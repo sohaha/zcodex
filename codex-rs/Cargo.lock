@@ -1582,6 +1582,7 @@ dependencies = [
  "codex-exec-server",
  "codex-features",
  "codex-federation-client",
+ "codex-federation-daemon",
  "codex-federation-protocol",
  "codex-feedback",
  "codex-file-search",

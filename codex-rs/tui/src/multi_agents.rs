@@ -480,7 +480,7 @@ fn wait_complete_lines(
     agent_statuses: &[CollabAgentStatusEntry],
 ) -> Vec<Line<'static>> {
     if statuses.is_empty() && agent_statuses.is_empty() {
-        return vec![Line::from(Span::from("尚无智能体完成"))];
+        return vec![Line::from(Span::from("检测到邮箱活动"))];
     }
 
     let entries = if agent_statuses.is_empty() {
@@ -681,6 +681,20 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n\n");
         assert_snapshot!("collab_agent_transcript", snapshot);
+    }
+
+    #[test]
+    fn waiting_end_empty_statuses_mentions_mailbox_activity() {
+        let sender_thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000001")
+            .expect("valid sender thread id");
+        let cell = waiting_end(CollabWaitingEndEvent {
+            sender_thread_id,
+            call_id: "call-wait".to_string(),
+            agent_statuses: Vec::new(),
+            statuses: HashMap::new(),
+        });
+
+        assert_eq!(cell_to_text(&cell), "• 等待完成\n  └ 检测到邮箱活动");
     }
 
     #[cfg(target_os = "macos")]

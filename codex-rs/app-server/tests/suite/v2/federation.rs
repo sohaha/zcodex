@@ -112,7 +112,10 @@ async fn federation_thread_start_bridges_text_task_and_returns_text_result() -> 
     Ok(())
 }
 
-async fn register_sender(client: &FederationClient, cwd_root: &std::path::Path) -> Result<InstanceCard> {
+async fn register_sender(
+    client: &FederationClient,
+    cwd_root: &std::path::Path,
+) -> Result<InstanceCard> {
     let registered_at = unix_now();
     let card = InstanceCard {
         instance_id: InstanceId::new(),
@@ -192,8 +195,8 @@ async fn wait_for_endpoint(endpoint_path: &std::path::Path) {
 }
 
 fn unix_now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_secs() as i64
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(err) => panic!("system time should be after unix epoch: {err}"),
+    }
 }

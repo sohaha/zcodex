@@ -652,6 +652,55 @@
       ],
       "type": "string"
     },
+    "FederationThreadStartParams": {
+      "properties": {
+        "instanceId": {
+          "description": "Optional stable instance id. When omitted, the server generates one for this process start.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "leaseTtlSecs": {
+          "description": "Optional lease TTL override in seconds. Defaults to 30.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name advertised to other federation peers.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Optional role label advertised to other federation peers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "description": "Optional task scope label advertised to other federation peers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stateRoot": {
+          "description": "Override the federation state root. Defaults to `<CODEX_HOME>/federation`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "FeedbackUploadParams": {
       "properties": {
         "classification": {
@@ -3342,6 +3391,16 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "federation": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FederationThreadStartParams"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "model": {

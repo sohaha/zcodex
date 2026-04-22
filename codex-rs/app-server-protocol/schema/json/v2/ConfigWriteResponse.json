@@ -100,6 +100,32 @@
           "type": "object"
         },
         {
+          "description": "Community fork config layer from $CODEX_HOME/zconfig.toml. This layer sits above [ConfigLayerSource::User] and allows community forks to ship their own default configuration values without modifying the official config.toml.",
+          "properties": {
+            "file": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AbsolutePathBuf"
+                }
+              ],
+              "description": "This is the path to the zconfig.toml file, though it is not guaranteed to exist."
+            },
+            "type": {
+              "enum": [
+                "zConfig"
+              ],
+              "title": "ZConfigConfigLayerSourceType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "type"
+          ],
+          "title": "ZConfigConfigLayerSource",
+          "type": "object"
+        },
+        {
           "description": "Path to a .codex/ folder within a project. There could be multiple of these between `cwd` and the project/repo root.",
           "properties": {
             "dotCodexFolder": {

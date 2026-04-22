@@ -70,6 +70,11 @@
         "model": {
           "type": "string"
         },
+        "skipReasoningPopup": {
+          "default": false,
+          "description": "When true, selecting this model skips the reasoning-effort popup.",
+          "type": "boolean"
+        },
         "supportedReasoningEfforts": {
           "items": {
             "$ref": "#/definitions/ReasoningEffortOption"

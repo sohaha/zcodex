@@ -331,10 +331,10 @@ fn extract_recognized_contract_clauses(content: &str) -> Vec<String> {
         }
         if let Some(bullet) = line.strip_prefix("- ") {
             let bullet = bullet.trim();
-            if !bullet.is_empty() {
-                if let Some(clause) = canonicalize_contract_clause(bullet) {
-                    clauses.push(clause);
-                }
+            if !bullet.is_empty()
+                && let Some(clause) = canonicalize_contract_clause(bullet)
+            {
+                clauses.push(clause);
             }
             continue;
         }

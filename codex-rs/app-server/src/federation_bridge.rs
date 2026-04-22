@@ -316,7 +316,7 @@ async fn send_result_envelope(
         .context("federation result send returned no ack")?;
     if ack.state != AckState::Accepted {
         let detail = ack.detail.unwrap_or_else(|| ack.state.state_message());
-        bail!("federation result envelope was not accepted: {}", detail);
+        bail!("federation result envelope was not accepted: {detail}");
     }
     Ok(())
 }
@@ -366,10 +366,10 @@ async fn wait_for_federated_turn(
 }
 
 fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_secs() as i64
+    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => duration.as_secs() as i64,
+        Err(err) => panic!("system time should be after unix epoch: {err}"),
+    }
 }
 
 trait AckStateMessage {

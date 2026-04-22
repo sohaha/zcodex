@@ -4559,12 +4559,7 @@ fn create_keeps_agent_identity_anchor_text_and_skips_read_governance() {
     )
     .expect("create should succeed");
 
-    assert_eq!(create["result"]["governance"]["status"], "notApplicable");
-    assert_eq!(create["result"]["governance"]["scope"], Value::Null);
-    assert_eq!(
-        create["result"]["governance"]["governedContent"],
-        "你是专业的架构师，回答前先确认边界和风险。"
-    );
+    assert_eq!(create["result"]["governance"], Value::Null);
 
     let read = crate::service::execute_action(
         &config,
@@ -4596,6 +4591,39 @@ fn create_keeps_agent_identity_anchor_text_and_skips_read_governance() {
             "uri",
         ]
     );
+}
+
+#[test]
+fn create_keeps_user_identity_anchor_text_and_skips_public_governance() {
+    let (_dir, config) = config();
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://my_user".to_string()),
+            content: Some("你是长期合作的产品负责人，偏好先对齐目标。".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    assert_eq!(create["result"]["governance"], Value::Null);
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+
+    assert_eq!(
+        read["result"]["content"],
+        "你是长期合作的产品负责人，偏好先对齐目标。"
+    );
+    assert_eq!(read["result"]["governance"], Value::Null);
 }
 
 #[test]

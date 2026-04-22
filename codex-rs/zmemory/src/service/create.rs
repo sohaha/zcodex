@@ -36,6 +36,10 @@ pub(crate) fn create_action_in_tx(
         "memory already exists at {uri}"
     );
     let content_governance = governance::evaluate_write_content(&uri, &args.content)?;
+    let public_governance = content_governance
+        .scope
+        .is_some()
+        .then_some(content_governance.clone());
 
     let parent_uri = uri.parent();
     let parent = if parent_uri.is_root() {
@@ -85,7 +89,7 @@ pub(crate) fn create_action_in_tx(
             "memoryId": memory_id,
             "priority": priority,
             "disclosure": disclosure,
-            "contentGovernance": content_governance,
+            "contentGovernance": public_governance,
         }),
     )?;
     index::reindex_node(conn, config.namespace(), &node_uuid)?;
@@ -96,7 +100,7 @@ pub(crate) fn create_action_in_tx(
         "memoryId": memory_id,
         "priority": priority,
         "disclosure": disclosure,
-        "governance": content_governance,
+        "governance": public_governance,
     }))
 }
 

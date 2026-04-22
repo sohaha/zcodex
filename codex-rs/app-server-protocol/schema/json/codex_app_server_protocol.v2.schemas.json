@@ -3465,6 +3465,32 @@
           "type": "object"
         },
         {
+          "description": "Community fork config layer from $CODEX_HOME/zconfig.toml. This layer sits above [ConfigLayerSource::User] and allows community forks to ship their own default configuration values without modifying the official config.toml.",
+          "properties": {
+            "file": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/AbsolutePathBuf"
+                }
+              ],
+              "description": "This is the path to the zconfig.toml file, though it is not guaranteed to exist."
+            },
+            "type": {
+              "enum": [
+                "zConfig"
+              ],
+              "title": "ZConfigConfigLayerSourceType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "file",
+            "type"
+          ],
+          "title": "ZConfigConfigLayerSource",
+          "type": "object"
+        },
+        {
           "description": "Path to a .codex/ folder within a project. There could be multiple of these between `cwd` and the project/repo root.",
           "properties": {
             "dotCodexFolder": {
@@ -4270,6 +4296,55 @@
         "MCP_SERVER_CONFIG"
       ],
       "type": "string"
+    },
+    "FederationThreadStartParams": {
+      "properties": {
+        "instanceId": {
+          "description": "Optional stable instance id. When omitted, the server generates one for this process start.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "leaseTtlSecs": {
+          "description": "Optional lease TTL override in seconds. Defaults to 30.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name advertised to other federation peers.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Optional role label advertised to other federation peers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "description": "Optional task scope label advertised to other federation peers.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stateRoot": {
+          "description": "Override the federation state root. Defaults to `<CODEX_HOME>/federation`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     },
     "FeedbackUploadParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -5496,6 +5571,7 @@
         "sessionFlags",
         "legacyManagedConfigFile",
         "legacyManagedConfigMdm",
+        "zConfig",
         "unknown"
       ],
       "type": "string"
@@ -6542,6 +6618,11 @@
         },
         "model": {
           "type": "string"
+        },
+        "skipReasoningPopup": {
+          "default": false,
+          "description": "When true, selecting this model skips the reasoning-effort popup.",
+          "type": "boolean"
         },
         "supportedReasoningEfforts": {
           "items": {
@@ -12798,6 +12879,16 @@
           "type": [
             "boolean",
             "null"
+          ]
+        },
+        "federation": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FederationThreadStartParams"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "model": {

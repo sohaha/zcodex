@@ -43,6 +43,9 @@ pub(crate) fn update_action_in_tx(
     let content_governance = resolve_updated_content(args, &current_memory.content)?
         .map(|content| governance::evaluate_write_content(uri, &content))
         .transpose()?;
+    let public_governance = content_governance
+        .clone()
+        .filter(|governance| governance.scope.is_some());
     let updated_content = content_governance
         .as_ref()
         .map(|governance| governance.governed_content.as_str());
@@ -92,7 +95,7 @@ pub(crate) fn update_action_in_tx(
             "contentChanged": content_changed,
             "priority": priority,
             "disclosure": disclosure,
-            "contentGovernance": content_governance.clone(),
+            "contentGovernance": public_governance,
         }),
     )?;
     index::reindex_node(conn, config.namespace(), &row.node_uuid)?;
@@ -104,7 +107,7 @@ pub(crate) fn update_action_in_tx(
         "priority": priority,
         "disclosure": disclosure,
         "contentChanged": content_changed,
-        "governance": content_governance,
+        "governance": public_governance,
     }))
 }
 

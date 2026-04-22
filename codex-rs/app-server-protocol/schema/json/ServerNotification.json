@@ -1610,6 +1610,7 @@
         "sessionFlags",
         "legacyManagedConfigFile",
         "legacyManagedConfigMdm",
+        "zConfig",
         "unknown"
       ],
       "type": "string"
