@@ -4753,6 +4753,44 @@ async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
 }
 
 #[tokio::test]
+async fn turn_start_zmemory_recall_note_includes_rich_agent_identity_anchor() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let identity_input = vec![UserInput::Text {
+        text: "你是专业的架构师。".to_string(),
+        text_elements: Vec::new(),
+    }];
+    crate::memories::zmemory_preferences::capture_stable_preference_memories(
+        &session,
+        &turn_context,
+        &identity_input,
+    )
+    .await;
+
+    let recall_trigger = vec![UserInput::Text {
+        text: "继续按上次方式。".to_string(),
+        text_elements: Vec::new(),
+    }];
+    crate::session::handlers::set_turn_start_zmemory_recall_note(
+        &session,
+        &turn_context,
+        &recall_trigger,
+    )
+    .await;
+
+    let pending = session
+        .state
+        .lock()
+        .await
+        .pending_zmemory_recall_note_for(turn_context.sub_id.as_str());
+    let recall_note = pending.expect("regular turn should queue recall note");
+    assert!(recall_note.contains("## Zmemory Recall"));
+    assert!(recall_note.contains("The assistant's stable identity is 专业的架构师."));
+}
+
+#[tokio::test]
 async fn build_initial_context_omits_default_image_save_location_with_image_history() {
     let (session, turn_context) = make_session_and_context().await;
     session
