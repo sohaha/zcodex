@@ -675,9 +675,11 @@ mod tests {
     use super::format_recalled_memory;
     use super::merge_contract_content;
     use super::parse_name_from_memory_content;
+    use super::read_content_from_tool_result;
     use super::recall_targets_for_texts;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
+    use serde_json::json;
 
     #[test]
     fn detects_both_preferences_from_single_text_item() {
@@ -832,6 +834,61 @@ mod tests {
                 StablePreferenceMemory::CollaborationAddressContract,
                 StablePreferenceMemory::AgentSelfReference,
             ]
+        );
+    }
+
+    #[test]
+    fn canonical_read_prefers_governed_content_for_non_conflicts() {
+        let memory = read_content_from_tool_result(&json!({
+            "result": {
+                "content": "你的名字是“星尘”。以后都用这个名字。",
+                "governance": {
+                    "status": "normalized",
+                    "governedContent": "The assistant should refer to itself as \"星尘\"."
+                }
+            }
+        }))
+        .expect("memory should parse");
+
+        assert_eq!(memory.raw_content, "你的名字是“星尘”。以后都用这个名字。");
+        assert_eq!(
+            memory.usable_content(),
+            Some("The assistant should refer to itself as \"星尘\".")
+        );
+    }
+
+    #[test]
+    fn canonical_read_excludes_conflicting_content_from_recall() {
+        let memory = read_content_from_tool_result(&json!({
+            "result": {
+                "content": "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default.",
+                "governance": {
+                    "status": "conflict",
+                    "governedContent": "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
+                }
+            }
+        }))
+        .expect("memory should parse");
+
+        assert_eq!(
+            memory.raw_content,
+            "Shared collaboration contract:\n- Respond in Chinese by default.\n- Respond in English by default."
+        );
+        assert_eq!(memory.usable_content(), None);
+    }
+
+    #[test]
+    fn canonical_read_falls_back_to_raw_content_when_governance_is_missing() {
+        let memory = read_content_from_tool_result(&json!({
+            "result": {
+                "content": "The user prefers to be addressed as \"指挥官\"."
+            }
+        }))
+        .expect("memory should parse");
+
+        assert_eq!(
+            memory.usable_content(),
+            Some("The user prefers to be addressed as \"指挥官\".")
         );
     }
 
