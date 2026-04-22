@@ -1053,7 +1053,6 @@ async fn run_ratatui_app(
     let remote_mode = matches!(&app_server_target, AppServerTarget::Remote { .. });
     color_eyre::install()?;
 
-    tooltips::announcement::prewarm();
     session_log::maybe_init(&initial_config);
 
     // Forward panic reports through tracing so they appear in the UI status

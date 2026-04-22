@@ -2057,12 +2057,7 @@ impl App {
     }
 
     /// Spawns a background task to fetch account rate limits and deliver the
-    /// result as a `RateLimitsLoaded` event.
-    ///
-    /// The `origin` is forwarded to the completion handler so it can distinguish
-    /// a startup prefetch (which only updates cached snapshots and schedules a
-    /// frame) from a `/status`-triggered refresh (which must finalize the
-    /// corresponding status card).
+    /// result as a `RateLimitsLoaded` event for `/status`.
     fn refresh_rate_limits(
         &mut self,
         app_server: &AppServerSession,
@@ -3948,7 +3943,6 @@ impl App {
         let feedback_audience = bootstrap.feedback_audience;
         let auth_mode = bootstrap.auth_mode;
         let has_chatgpt_account = bootstrap.has_chatgpt_account;
-        let requires_openai_auth = bootstrap.requires_openai_auth;
         let status_account_display = bootstrap.status_account_display.clone();
         let initial_plan_type = bootstrap.plan_type;
         let session_telemetry = SessionTelemetry::new(
@@ -4170,12 +4164,8 @@ impl App {
         tokio::pin!(tui_events);
 
         tui.frame_requester().schedule_frame();
+        crate::tooltips::announcement::prewarm();
         app.refresh_startup_skills(&app_server);
-        // Kick off a non-blocking rate-limit prefetch so the first `/status`
-        // already has data, without delaying the initial frame render.
-        if requires_openai_auth && has_chatgpt_account {
-            app.refresh_rate_limits(&app_server, RateLimitRefreshOrigin::StartupPrefetch);
-        }
 
         let mut listen_for_app_server_events = true;
         let mut waiting_for_initial_session_configured = wait_for_initial_session_configured;
@@ -4937,22 +4927,15 @@ impl App {
                     for snapshot in snapshots {
                         self.chat_widget.on_rate_limit_snapshot(Some(snapshot));
                     }
-                    match origin {
-                        RateLimitRefreshOrigin::StartupPrefetch => {
-                            tui.frame_requester().schedule_frame();
-                        }
-                        RateLimitRefreshOrigin::StatusCommand { request_id } => {
-                            self.chat_widget
-                                .finish_status_rate_limit_refresh(request_id);
-                        }
-                    }
+                    let RateLimitRefreshOrigin::StatusCommand { request_id } = origin;
+                    self.chat_widget
+                        .finish_status_rate_limit_refresh(request_id);
                 }
                 Err(err) => {
                     tracing::warn!("account/rateLimits/read failed during TUI refresh: {err}");
-                    if let RateLimitRefreshOrigin::StatusCommand { request_id } = origin {
-                        self.chat_widget
-                            .finish_status_rate_limit_refresh(request_id);
-                    }
+                    let RateLimitRefreshOrigin::StatusCommand { request_id } = origin;
+                    self.chat_widget
+                        .finish_status_rate_limit_refresh(request_id);
                 }
             },
             AppEvent::ConnectorsLoaded { result, is_final } => {
