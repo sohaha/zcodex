@@ -517,10 +517,12 @@ fn responses_api_tool_json(tool: &ToolSpec) -> Result<Value, serde_json::Error> 
             },
         ) => {
             let mut json = serde_json::to_value(tool)?;
-            if !should_preserve_top_level_one_of(responses_tool)
-                && let Some(parameters) = json.get_mut("parameters")
-            {
-                *parameters = normalize_top_level_schema(parameters.take());
+            if let Some(parameters) = json.get_mut("parameters") {
+                *parameters = if should_preserve_top_level_one_of(responses_tool) {
+                    preserve_top_level_one_of_as_object(parameters.take())
+                } else {
+                    normalize_top_level_schema(parameters.take())
+                };
             }
             Ok(json)
         }
@@ -530,6 +532,17 @@ fn responses_api_tool_json(tool: &ToolSpec) -> Result<Value, serde_json::Error> 
 
 fn should_preserve_top_level_one_of(tool: &ResponsesApiTool) -> bool {
     tool.name == "ztldr"
+}
+
+fn preserve_top_level_one_of_as_object(schema: Value) -> Value {
+    let Some(variants) = schema.get("oneOf").and_then(Value::as_array).cloned() else {
+        return schema;
+    };
+    let Some(Value::Object(mut wrapped)) = collapse_top_level_one_of_to_object(&variants) else {
+        return schema;
+    };
+    wrapped.insert("oneOf".to_string(), Value::Array(variants));
+    Value::Object(wrapped)
 }
 
 fn normalize_top_level_schema(schema: Value) -> Value {

@@ -170,6 +170,8 @@ async fn tldr_tool_request_exposes_ztldr() -> Result<()> {
     assert!(description.contains("Use ztldr first"));
     assert!(description.contains("`language` is required"));
     assert!(description.contains("degradedMode or structuredFailure"));
+    assert_eq!(parameters["type"], json!("object"));
+    assert_eq!(parameters["required"], json!(["action"]));
     let semantic = parameters["oneOf"]
         .as_array()
         .expect("ztldr parameters should preserve oneOf")

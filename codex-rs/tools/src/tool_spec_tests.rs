@@ -284,9 +284,11 @@ fn create_tools_json_for_responses_api_flattens_top_level_one_of_to_object() {
 }
 
 #[test]
-fn create_tools_json_for_responses_api_preserves_tldr_one_of_constraints() {
+fn create_tools_json_for_responses_api_wraps_tldr_one_of_in_an_object() {
     let tools = create_tools_json_for_responses_api(&[create_tldr_tool()]).expect("serialize");
     let parameters = &tools[0]["parameters"];
+    assert_eq!(parameters["type"], json!("object"));
+    assert_eq!(parameters["required"], json!(["action"]));
     let variants = parameters["oneOf"]
         .as_array()
         .expect("ztldr should keep oneOf");
