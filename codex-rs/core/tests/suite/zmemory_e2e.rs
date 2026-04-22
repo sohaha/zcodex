@@ -2493,7 +2493,9 @@ async fn zmemory_recall_note_skips_conflicting_canonical_contract_content() -> R
 
     test.submit_turn("继续按上次方式。").await?;
 
-    let developer_texts = response_mock.single_request().message_input_texts("developer");
+    let developer_texts = response_mock
+        .single_request()
+        .message_input_texts("developer");
     assert!(
         !developer_texts
             .iter()

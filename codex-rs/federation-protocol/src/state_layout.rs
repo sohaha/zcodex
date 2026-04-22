@@ -218,12 +218,12 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
-    use crate::Envelope;
-    use crate::EnvelopeId;
-    use crate::EnvelopePayload;
     use crate::DAEMON_DIRNAME;
     use crate::DAEMON_ENDPOINT_FILENAME;
     use crate::DAEMON_PID_FILENAME;
+    use crate::Envelope;
+    use crate::EnvelopeId;
+    use crate::EnvelopePayload;
     use crate::FederationStateLayout;
     use crate::FederationStateManifest;
     use crate::InstanceId;
@@ -244,7 +244,10 @@ mod tests {
         );
         assert_eq!(
             layout.daemon_pid_path(),
-            tempdir.path().join(DAEMON_DIRNAME).join(DAEMON_PID_FILENAME)
+            tempdir
+                .path()
+                .join(DAEMON_DIRNAME)
+                .join(DAEMON_PID_FILENAME)
         );
         assert_eq!(
             layout.instance_card_path(instance_id),

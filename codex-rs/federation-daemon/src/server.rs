@@ -192,11 +192,8 @@ async fn handle_command(
                 peers: Some(peers),
                 ..FederationDaemonResponse::ok("peers listed")
             }),
-        FederationDaemonCommand::SendEnvelope { envelope } => store
-            .lock()
-            .await
-            .send_envelope(envelope)
-            .map(|ack| {
+        FederationDaemonCommand::SendEnvelope { envelope } => {
+            store.lock().await.send_envelope(envelope).map(|ack| {
                 let message = match ack.state {
                     codex_federation_protocol::AckState::Accepted => "envelope accepted",
                     codex_federation_protocol::AckState::Rejected => "envelope rejected",
@@ -207,7 +204,8 @@ async fn handle_command(
                     ack: Some(ack),
                     ..FederationDaemonResponse::ok(message)
                 }
-            }),
+            })
+        }
         FederationDaemonCommand::ReadInbox { recipient, now } => store
             .lock()
             .await
@@ -216,22 +214,26 @@ async fn handle_command(
                 envelopes: Some(envelopes),
                 ..FederationDaemonResponse::ok("inbox read")
             }),
-        FederationDaemonCommand::WriteAck { ack } => store
-            .lock()
-            .await
-            .write_ack(ack)
-            .map(|ack| FederationDaemonResponse {
-                ack: Some(ack),
-                ..FederationDaemonResponse::ok("ack written")
-            }),
-        FederationDaemonCommand::Cleanup { now } => store
-            .lock()
-            .await
-            .cleanup(now)
-            .map(|cleanup| FederationDaemonResponse {
-                cleanup: Some(cleanup),
-                ..FederationDaemonResponse::ok("cleanup complete")
-            }),
+        FederationDaemonCommand::WriteAck { ack } => {
+            store
+                .lock()
+                .await
+                .write_ack(ack)
+                .map(|ack| FederationDaemonResponse {
+                    ack: Some(ack),
+                    ..FederationDaemonResponse::ok("ack written")
+                })
+        }
+        FederationDaemonCommand::Cleanup { now } => {
+            store
+                .lock()
+                .await
+                .cleanup(now)
+                .map(|cleanup| FederationDaemonResponse {
+                    cleanup: Some(cleanup),
+                    ..FederationDaemonResponse::ok("cleanup complete")
+                })
+        }
         FederationDaemonCommand::Shutdown => Ok(FederationDaemonResponse::ok("shutdown requested")),
     };
 
@@ -336,10 +338,7 @@ mod tests {
             },
         )
         .await;
-        assert_eq!(
-            send_response.ack.expect("ack").state,
-            AckState::Accepted
-        );
+        assert_eq!(send_response.ack.expect("ack").state, AckState::Accepted);
 
         let inbox_response = send_command(
             &endpoint_path,
@@ -349,7 +348,10 @@ mod tests {
             },
         )
         .await;
-        assert_eq!(inbox_response.envelopes.expect("envelopes"), vec![envelope.clone()]);
+        assert_eq!(
+            inbox_response.envelopes.expect("envelopes"),
+            vec![envelope.clone()]
+        );
 
         let write_ack_response = send_command(
             &endpoint_path,
@@ -374,7 +376,10 @@ mod tests {
             },
         )
         .await;
-        assert_eq!(empty_inbox.envelopes.expect("envelopes"), Vec::<Envelope>::new());
+        assert_eq!(
+            empty_inbox.envelopes.expect("envelopes"),
+            Vec::<Envelope>::new()
+        );
 
         let shutdown = send_command(&endpoint_path, FederationDaemonCommand::Shutdown).await;
         assert!(shutdown.ok);

@@ -251,7 +251,11 @@ fn write_and_verify_canonical_memory(
     content: &str,
 ) -> anyhow::Result<()> {
     let existing_content = read_canonical_memory(zmemory_context, turn_context, memory)?;
-    if existing_content.as_ref().map(|memory| memory.raw_content.as_str()) == Some(content) {
+    if existing_content
+        .as_ref()
+        .map(|memory| memory.raw_content.as_str())
+        == Some(content)
+    {
         return Ok(());
     }
 
@@ -291,8 +295,10 @@ fn read_canonical_content(
     turn_context: &TurnContext,
     memory: StablePreferenceMemory,
 ) -> anyhow::Result<Option<String>> {
-    Ok(read_canonical_memory(zmemory_context, turn_context, memory)?
-        .and_then(|memory| memory.usable_content().map(str::to_owned)))
+    Ok(
+        read_canonical_memory(zmemory_context, turn_context, memory)?
+            .and_then(|memory| memory.usable_content().map(str::to_owned)),
+    )
 }
 
 fn read_canonical_memory(

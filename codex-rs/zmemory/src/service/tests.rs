@@ -4541,7 +4541,10 @@ fn read_exposes_governance_for_existing_dirty_governed_content() {
     )
     .expect("read should succeed");
 
-    assert_eq!(read["result"]["content"], "你的名字是“星尘”。以后都用这个名字。");
+    assert_eq!(
+        read["result"]["content"],
+        "你的名字是“星尘”。以后都用这个名字。"
+    );
     assert_eq!(read["result"]["governance"]["status"], "normalized");
     assert_eq!(
         read["result"]["governance"]["governedContent"],

@@ -8,17 +8,16 @@ use codex_federation_protocol::AckState;
 use codex_federation_protocol::CARDS_DIRNAME;
 use codex_federation_protocol::Envelope;
 use codex_federation_protocol::EnvelopeAck;
-use codex_federation_protocol::EnvelopeId;
 use codex_federation_protocol::FederationCleanupReport;
 use codex_federation_protocol::FederationStateLayout;
 use codex_federation_protocol::FederationStateManifest;
+use codex_federation_protocol::Heartbeat;
 use codex_federation_protocol::INBOX_DIRNAME;
+use codex_federation_protocol::INSTANCES_DIRNAME;
 use codex_federation_protocol::InstanceCard;
 use codex_federation_protocol::InstanceId;
-use codex_federation_protocol::INSTANCES_DIRNAME;
-use codex_federation_protocol::MAILBOXES_DIRNAME;
-use codex_federation_protocol::Heartbeat;
 use codex_federation_protocol::Lease;
+use codex_federation_protocol::MAILBOXES_DIRNAME;
 
 pub(crate) struct FederationStore {
     layout: FederationStateLayout,
@@ -69,9 +68,11 @@ impl FederationStore {
                     .unwrap_or(true)
         });
         peers.sort_by(|left, right| {
-            left.display_name
-                .cmp(&right.display_name)
-                .then_with(|| left.instance_id.to_string().cmp(&right.instance_id.to_string()))
+            left.display_name.cmp(&right.display_name).then_with(|| {
+                left.instance_id
+                    .to_string()
+                    .cmp(&right.instance_id.to_string())
+            })
         });
         Ok(peers)
     }
@@ -172,8 +173,8 @@ impl FederationStore {
                 if envelope.expires_at <= now {
                     remove_file_if_exists(&envelope_path)?;
                     report.expired_envelopes_removed += 1;
-                    report.acks_updated += self
-                        .write_expired_ack(&envelope, now, "envelope expired during cleanup")?;
+                    report.acks_updated +=
+                        self.write_expired_ack(&envelope, now, "envelope expired during cleanup")?;
                 }
             }
         }
@@ -198,8 +199,10 @@ impl FederationStore {
             .write_json(&self.layout.instance_card_path(card.instance_id), card)?;
         self.layout
             .write_json(&self.layout.lease_path(card.instance_id), &card.lease)?;
-        self.layout
-            .write_json(&self.layout.heartbeat_path(card.instance_id), &card.heartbeat)?;
+        self.layout.write_json(
+            &self.layout.heartbeat_path(card.instance_id),
+            &card.heartbeat,
+        )?;
         Ok(())
     }
 
@@ -221,7 +224,11 @@ impl FederationStore {
     fn read_all_cards(&self) -> Result<Vec<InstanceCard>> {
         let mut cards = Vec::new();
         for path in read_json_paths(
-            &self.layout.root().join(INSTANCES_DIRNAME).join(CARDS_DIRNAME),
+            &self
+                .layout
+                .root()
+                .join(INSTANCES_DIRNAME)
+                .join(CARDS_DIRNAME),
         )? {
             let card: InstanceCard = self.layout.read_json(&path)?;
             card.validate().map_err(anyhow::Error::msg)?;
@@ -249,7 +256,8 @@ impl FederationStore {
         let mut report = FederationCleanupReport::default();
         for envelope in self.read_envelopes_for_recipient(recipient)? {
             remove_file_if_exists(
-                &self.layout
+                &self
+                    .layout
                     .envelope_path(envelope.recipient, envelope.envelope_id),
             )?;
             report.expired_envelopes_removed += 1;
@@ -414,7 +422,13 @@ mod tests {
         );
     }
 
-    fn test_card(name: &str, cwd: &str, issued_at: i64, ttl_secs: u32, heartbeat_at: i64) -> InstanceCard {
+    fn test_card(
+        name: &str,
+        cwd: &str,
+        issued_at: i64,
+        ttl_secs: u32,
+        heartbeat_at: i64,
+    ) -> InstanceCard {
         let lease = Lease::new(issued_at, ttl_secs).expect("lease");
         InstanceCard {
             instance_id: InstanceId::default(),
