@@ -71,6 +71,7 @@ use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
 use crate::version::CODEX_CLI_VERSION;
+use crate::zteam;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
@@ -137,6 +138,7 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SkillErrorInfo;
 use codex_protocol::protocol::TokenUsage;
+use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::user_agent;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
@@ -2036,6 +2038,91 @@ impl App {
         Ok(())
     }
 
+    async fn handle_zteam_command(
+        &mut self,
+        app_server: &mut AppServerSession,
+        command: zteam::Command,
+    ) -> Result<()> {
+        match command {
+            zteam::Command::Start => {
+                let config = self.chat_widget.config_ref().clone();
+                self.submit_active_thread_op(
+                    app_server,
+                    AppCommand::user_turn(
+                        vec![UserInput::Text {
+                            text: zteam::start_prompt(),
+                            text_elements: Vec::new(),
+                        }],
+                        config.cwd.to_path_buf(),
+                        config.permissions.approval_policy.value(),
+                        config.permissions.sandbox_policy.get().clone(),
+                        self.chat_widget.current_model().to_string(),
+                        self.chat_widget.current_reasoning_effort(),
+                        /*summary*/ None,
+                        Some(self.chat_widget.current_service_tier()),
+                        /*final_output_json_schema*/ None,
+                        /*collaboration_mode*/ None,
+                        config.personality,
+                    ),
+                )
+                .await?;
+                self.chat_widget.mark_zteam_start_requested();
+                self.chat_widget.add_info_message(
+                    "已请求主线程创建 frontend/backend worker。等待 spawn 事件把它们注册到 ZTeam 状态。"
+                        .to_string(),
+                    /*hint*/ None,
+                );
+            }
+            zteam::Command::Status => {
+                self.chat_widget
+                    .add_info_message(self.chat_widget.zteam_status_message(), /*hint*/ None);
+            }
+            zteam::Command::Dispatch { worker, message } => {
+                let Some((thread_id, communication)) = self
+                    .chat_widget
+                    .zteam_build_root_dispatch(worker, message.clone())
+                else {
+                    self.chat_widget
+                        .add_error_message(self.chat_widget.zteam_missing_worker_message(worker));
+                    return Ok(());
+                };
+                self.submit_thread_op(
+                    app_server,
+                    thread_id,
+                    Op::InterAgentCommunication { communication }.into(),
+                )
+                .await?;
+                self.chat_widget.record_zteam_dispatch(worker, &message);
+                self.chat_widget.add_info_message(
+                    format!("已向 {worker} worker 分派任务。"),
+                    /*hint*/ None,
+                );
+            }
+            zteam::Command::Relay { from, to, message } => {
+                let Some((thread_id, communication)) =
+                    self.chat_widget
+                        .zteam_build_worker_relay(from, to, message.clone())
+                else {
+                    self.chat_widget
+                        .add_error_message(self.chat_widget.zteam_missing_relay_message(from, to));
+                    return Ok(());
+                };
+                self.submit_thread_op(
+                    app_server,
+                    thread_id,
+                    Op::InterAgentCommunication { communication }.into(),
+                )
+                .await?;
+                self.chat_widget.record_zteam_dispatch(to, &message);
+                self.chat_widget.add_info_message(
+                    format!("已把消息从 {from} 转发给 {to}。"),
+                    /*hint*/ None,
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Spawn a background task that fetches MCP server status from the app-server
     /// via paginated RPCs, then delivers the result back through
     /// `AppEvent::McpInventoryLoaded`.
@@ -2740,6 +2827,8 @@ impl App {
         thread_id: ThreadId,
         notification: ServerNotification,
     ) -> Result<()> {
+        self.chat_widget
+            .observe_zteam_thread_notification(thread_id, &notification);
         let inferred_session = self
             .infer_session_for_thread_notification(thread_id, &notification)
             .await;
@@ -4702,6 +4791,9 @@ impl App {
             }
             AppEvent::CodexOp(op) => {
                 self.submit_active_thread_op(app_server, op.into()).await?;
+            }
+            AppEvent::ZteamCommand(command) => {
+                self.handle_zteam_command(app_server, command).await?;
             }
             AppEvent::SubmitThreadOp { thread_id, op } => {
                 self.submit_thread_op(app_server, thread_id, op.into())

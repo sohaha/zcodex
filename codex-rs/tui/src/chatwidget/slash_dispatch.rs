@@ -504,6 +504,29 @@ impl ChatWidget {
                 self.handle_buddy_command(trimmed);
                 self.bottom_pane.drain_pending_submission_state();
             }
+            SlashCommand::Zteam => {
+                let prepared_args = if self.bottom_pane.composer_text().is_empty() {
+                    args
+                } else {
+                    let Some((prepared_args, _prepared_elements)) = self
+                        .bottom_pane
+                        .prepare_inline_args_submission(/*record_history*/ false)
+                    else {
+                        return;
+                    };
+                    prepared_args
+                };
+                match crate::zteam::Command::parse(&prepared_args) {
+                    Ok(command) => {
+                        self.app_event_tx.send(AppEvent::ZteamCommand(command));
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                    Err(message) => {
+                        self.add_error_message(message);
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                }
+            }
             _ => self.dispatch_command(cmd),
         }
     }

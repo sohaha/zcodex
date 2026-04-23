@@ -32,6 +32,7 @@ use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::history_cell::HistoryCell;
 use crate::legacy_core::plugins::PluginCapabilitySummary;
+use crate::zteam::Command as ZteamCommand;
 
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
@@ -99,6 +100,9 @@ pub(crate) enum AppEvent {
     OpenAgentPicker,
     /// Switch the active thread to the selected agent.
     SelectAgentThread(ThreadId),
+
+    /// Execute a ZTeam collaboration command.
+    ZteamCommand(ZteamCommand),
 
     /// Submit an op to the specified thread, regardless of current focus.
     SubmitThreadOp {

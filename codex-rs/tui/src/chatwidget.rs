@@ -815,6 +815,7 @@ pub(crate) struct ChatWidget {
     running_commands: HashMap<String, RunningCommand>,
     collab_agent_metadata: HashMap<ThreadId, CollabAgentMetadata>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
+    zteam_state: zteam::State,
     suppressed_exec_calls: HashSet<String>,
     skills_all: Vec<ProtocolSkillMetadata>,
     skills_initial_state: Option<HashMap<PathBuf, bool>>,
@@ -4856,6 +4857,7 @@ impl ChatWidget {
             running_commands: HashMap::new(),
             collab_agent_metadata: HashMap::new(),
             pending_collab_spawn_requests: HashMap::new(),
+            zteam_state: zteam::State::default(),
             suppressed_exec_calls: HashSet::new(),
             last_unified_wait: None,
             unified_exec_wait_streak: None,
@@ -9636,6 +9638,56 @@ impl ChatWidget {
 
     fn zteam_enabled(&self) -> bool {
         self.config.zteam_enabled
+    }
+
+    pub(crate) fn observe_zteam_thread_notification(
+        &mut self,
+        thread_id: ThreadId,
+        notification: &codex_app_server_protocol::ServerNotification,
+    ) {
+        self.zteam_state
+            .observe_notification(thread_id, notification);
+    }
+
+    pub(crate) fn mark_zteam_start_requested(&mut self) {
+        self.zteam_state.mark_start_requested();
+    }
+
+    pub(crate) fn zteam_build_root_dispatch(
+        &self,
+        worker: zteam::WorkerSlot,
+        message: String,
+    ) -> Option<(ThreadId, codex_protocol::protocol::InterAgentCommunication)> {
+        self.zteam_state.build_root_dispatch(worker, message)
+    }
+
+    pub(crate) fn zteam_build_worker_relay(
+        &self,
+        from: zteam::WorkerSlot,
+        to: zteam::WorkerSlot,
+        message: String,
+    ) -> Option<(ThreadId, codex_protocol::protocol::InterAgentCommunication)> {
+        self.zteam_state.build_worker_relay(from, to, message)
+    }
+
+    pub(crate) fn record_zteam_dispatch(&mut self, worker: zteam::WorkerSlot, message: &str) {
+        self.zteam_state.record_dispatch(worker, message);
+    }
+
+    pub(crate) fn zteam_status_message(&self) -> String {
+        self.zteam_state.status_message()
+    }
+
+    pub(crate) fn zteam_missing_worker_message(&self, worker: zteam::WorkerSlot) -> String {
+        self.zteam_state.missing_worker_message(worker)
+    }
+
+    pub(crate) fn zteam_missing_relay_message(
+        &self,
+        from: zteam::WorkerSlot,
+        to: zteam::WorkerSlot,
+    ) -> String {
+        self.zteam_state.missing_relay_message(from, to)
     }
 
     pub(crate) fn open_zteam_entry(&mut self) {

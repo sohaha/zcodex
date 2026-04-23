@@ -228,6 +228,7 @@ pub(super) async fn make_chatwidget_manual_with_config(
         running_commands: HashMap::new(),
         collab_agent_metadata: HashMap::new(),
         pending_collab_spawn_requests: HashMap::new(),
+        zteam_state: crate::zteam::State::default(),
         suppressed_exec_calls: HashSet::new(),
         skills_all: Vec::new(),
         skills_initial_state: None,

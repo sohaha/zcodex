@@ -139,6 +139,7 @@ impl SlashCommand {
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
                 | SlashCommand::Buddy
+                | SlashCommand::Zteam
         )
     }
 

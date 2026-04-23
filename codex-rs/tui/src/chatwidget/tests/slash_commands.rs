@@ -351,6 +351,10 @@ async fn zteam_slash_command_shows_entry_notice() {
         rendered.contains("ZTeam 入口已启用"),
         "expected zteam entry notice, got {rendered:?}"
     );
+    assert!(
+        rendered.contains("/zteam start"),
+        "expected zteam usage hint, got {rendered:?}"
+    );
 }
 
 #[tokio::test]
@@ -369,6 +373,72 @@ async fn zteam_entry_reports_disabled_configuration() {
     assert!(
         rendered.contains("ZTeam 已在当前 TUI 配置中关闭"),
         "expected disabled zteam notice, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn zteam_start_inline_command_requests_app_event() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Zteam, "start".to_string(), Vec::new());
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Start))
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_frontend_inline_command_requests_task_dispatch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Zteam,
+        "frontend 修复导航栏布局".to_string(),
+        Vec::new(),
+    );
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Dispatch { worker, message }))
+            if worker == crate::zteam::WorkerSlot::Frontend && message == "修复导航栏布局"
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_relay_inline_command_requests_worker_message() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Zteam,
+        "relay frontend backend 对齐接口字段".to_string(),
+        Vec::new(),
+    );
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Relay { from, to, message }))
+            if from == crate::zteam::WorkerSlot::Frontend
+                && to == crate::zteam::WorkerSlot::Backend
+                && message == "对齐接口字段"
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_inline_command_rejects_invalid_subcommand() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Zteam, "frontend".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("用法：/zteam start"),
+        "expected zteam usage error, got {rendered:?}"
     );
 }
 
