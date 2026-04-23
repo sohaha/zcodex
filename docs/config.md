@@ -1,20 +1,18 @@
-# Configuration
+# 配置
 
-For basic configuration instructions, see [this documentation](https://developers.openai.com/codex/config-basic).
+基础配置说明见：[此文档](https://developers.openai.com/codex/config-basic)。
 
-For advanced configuration instructions, see [this documentation](https://developers.openai.com/codex/config-advanced).
+高级配置说明见：[此文档](https://developers.openai.com/codex/config-advanced)。
 
-For a full configuration reference, see [this documentation](https://developers.openai.com/codex/config-reference).
+完整配置参考见：[此文档](https://developers.openai.com/codex/config-reference)。
 
-## Connecting to MCP servers
+## 连接 MCP 服务器
 
-Codex can connect to MCP servers configured in `~/.codex/config.toml`. See the configuration reference for the latest MCP server options:
+Codex 可以连接在 `~/.codex/config.toml` 中配置的 MCP 服务器。最新的 MCP 服务器选项以配置参考为准：
 
 - https://developers.openai.com/codex/config-reference
 
-MCP tools default to serialized calls. To mark every tool exposed by one server
-as eligible for parallel tool calls, set `supports_parallel_tool_calls` on that
-server:
+MCP 工具默认按“串行”（一次只跑一个）调用。若要把某个服务器暴露的所有工具都标记为可并行工具调用，请在该服务器配置上设置 `supports_parallel_tool_calls`：
 
 ```toml
 [mcp_servers.docs]
@@ -22,16 +20,11 @@ command = "docs-server"
 supports_parallel_tool_calls = true
 ```
 
-Only enable parallel calls for MCP servers whose tools are safe to run at the
-same time. If tools read and write shared state, files, databases, or external
-resources, review those read/write race conditions before enabling this setting.
+只应对“工具可以安全并行运行”的 MCP 服务器启用并行调用。如果工具会读写共享状态、文件、数据库或外部资源，请在启用该设置前先审视并处理潜在的读写竞态问题。
 
-## MCP tool approvals
+## MCP 工具审批
 
-Codex stores approval defaults and per-tool overrides for custom MCP servers
-under `mcp_servers` in `~/.codex/config.toml`. Set
-`default_tools_approval_mode` on the server to apply a default to every tool,
-and use per-tool `approval_mode` entries for exceptions:
+Codex 会把自定义 MCP 服务器的审批默认值与逐工具覆盖项存放在 `~/.codex/config.toml` 的 `mcp_servers` 下。可以在服务器上设置 `default_tools_approval_mode` 来给所有工具一个默认值，然后用逐工具的 `approval_mode` 为少数例外单独覆盖：
 
 ```toml
 [mcp_servers.docs]
@@ -42,15 +35,13 @@ default_tools_approval_mode = "approve"
 approval_mode = "prompt"
 ```
 
-## Apps (Connectors)
+## Apps（连接器）
 
-Use `$` in the composer to insert a ChatGPT connector; the popover lists accessible
-apps. The `/apps` command lists available and installed apps. Connected apps appear first
-and are labeled as connected; others are marked as can be installed.
+在 composer 中输入 `$` 可插入一个 ChatGPT 连接器；弹出层会列出你可访问的 apps。`/apps` 命令会列出可用与已安装的 apps。已连接的 app 会优先显示并标记为 connected；其余会标记为可安装。
 
-## TUI pasted image compression
+## TUI 粘贴图片压缩
 
-The TUI can automatically recompress images pasted with `Ctrl+V` before upload. Configure it in `~/.codex/config.toml`:
+TUI 可以在上传前自动重新压缩通过 `Ctrl+V` 粘贴的图片。可在 `~/.codex/config.toml` 中配置：
 
 ```toml
 [tui]
@@ -60,25 +51,29 @@ pasted_image_max_height = 720
 pasted_image_jpeg_quality = 85
 ```
 
-Behavior:
+行为说明：
 
-- images larger than the configured width or height are resized proportionally,
-- transparent images stay PNG,
-- non-transparent images are encoded as both PNG and JPEG and Codex keeps the smaller result,
-- invalid width/height/quality values fall back to the built-in defaults.
+- 大于配置宽度或高度的图片会按比例缩放，
+- 透明图片保持为 PNG，
+- 非透明图片会同时编码为 PNG 和 JPEG，Codex 会保留体积更小的结果，
+- 宽/高/质量配置值无效时会回退到内置默认值。
 
-For implementation details and composer behavior, see `docs/tui-chat-composer.md`.
+实现细节与 composer 行为见 `docs/tui-chat-composer.md`。
 
-## ZTeam entry
+## ZTeam 入口
 
-The TUI exposes a local `ZTeam` collaboration entry by default. Hide it in `~/.codex/config.toml` when you want the regular single-thread surface only:
+TUI 默认会暴露一个本地 `ZTeam` 协作入口。如果你只想要常规的单线程交互面，可以在 `~/.codex/config.toml` 中把它隐藏：
 
 ```toml
 [tui]
 zteam_enabled = false
 ```
 
-When disabled, `/zteam` is removed from the command palette and slash-command parsing, so the TUI will not initialize the local ZTeam entry path.
+禁用后，`/zteam` 会从命令面板和斜杠命令解析中移除，因此 TUI 不会初始化本地 ZTeam 入口路径。
+
+启用时，`/zteam` 会打开本地工作台；`/zteam start` 会让主线程派生 frontend/backend worker；`/zteam attach` 会恢复最近一次、且仍归属当前主线程的 worker 状态。
+
+如果 TUI 线程是通过 `--federation-*` 选项启动的，ZTeam 工作台还会显示准备好的外部 adapter 摘要。这里仅是在既有 federation bridge 之上的本地 adapter 接缝；它不会为 ZTeam workers 引入一个独立的公共身份空间。
 
 ## ZTOK
 
@@ -110,29 +105,27 @@ behavior = "basic"
 
 ## Notify
 
-Codex can run a notification hook when the agent finishes a turn. See the configuration reference for the latest notification settings:
+当 agent 完成一个 turn 时，Codex 可以运行一个通知 hook。最新的通知相关配置以配置参考为准：
 
 - https://developers.openai.com/codex/config-reference
 
-When Codex knows which client started the turn, the legacy notify JSON payload also includes a top-level `client` field. The TUI reports `codex-tui`, and the app server reports the `clientInfo.name` value from `initialize`.
+当 Codex 知道是哪个客户端启动了这个 turn 时，legacy notify 的 JSON payload 还会包含一个顶层 `client` 字段。TUI 会上报 `codex-tui`，app server 会上报初始化 `initialize` 中的 `clientInfo.name` 值。
 
 ## Memories / zmemory
 
-Rust Codex CLI now enables native memory and `zmemory` independently by
-default:
+Rust Codex CLI 现在会默认分别启用 native memory 与 `zmemory`（两者互相独立）：
 
-- `native_memories`: controls the built-in read-only memory pipeline and
-  `get_memory`
-- `zmemory`: controls the embedded writable SQLite-backed memory tool
+- `native_memories`：控制内置只读 memory 管线与 `get_memory`
+- `zmemory`：控制内嵌的“可写、基于 SQLite”的 memory 工具
 
-To explicitly disable one of them for the current run:
+如需在本次运行中显式禁用其中一个：
 
 ```shell
 codex --disable native_memories
 codex --disable zmemory
 ```
 
-To disable one persistently in `~/.codex/config.toml`:
+如需在 `~/.codex/config.toml` 中持久禁用：
 
 ```toml
 [features]
@@ -140,8 +133,7 @@ native_memories = false
 zmemory = false
 ```
 
-`[memories]` only configures the native memory pipeline. `zmemory` now has its
-own config block:
+`[memories]` 只用于配置 native memory 管线。`zmemory` 现在有自己独立的配置块：
 
 ```toml
 [zmemory]
@@ -155,33 +147,32 @@ core_memory_uris = [
 ]
 ```
 
-`[zmemory]` fields:
+`[zmemory]` 字段：
 
-- `path`: optional database path override
-- `namespace`: optional runtime namespace override for namespace-aware databases
-- `valid_domains`: optional runtime writable domains override
-- `core_memory_uris`: optional runtime boot anchor override
+- `path`：可选，覆盖数据库路径
+- `namespace`：可选，支持 namespace-aware 数据库时的运行时 namespace 覆盖
+- `valid_domains`：可选，运行时可写 domain 白名单覆盖
+- `core_memory_uris`：可选，运行时 boot anchor 覆盖
 
-Runtime precedence is:
+运行时优先级为：
 
-1. `[zmemory]` in `config.toml`
-2. environment variables (`VALID_DOMAINS`, `CORE_MEMORY_URIS`)
-3. product defaults
+1. `config.toml` 的 `[zmemory]`
+2. 环境变量（`VALID_DOMAINS`、`CORE_MEMORY_URIS`）
+3. 产品默认值
 
-- Absolute paths are used directly.
-- Relative paths are resolved against the active repo root when Codex is
-  inside a git repository, otherwise against the current working directory.
-- When `[zmemory].path` is unset, Codex now uses the project-scoped default
-  database at `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`.
-- If you want one shared global database across projects, configure it
-  explicitly:
+路径解析规则：
+
+- 绝对路径会直接使用。
+- 相对路径在 Codex 处于 git 仓库内时，会以活跃的 repo root 为基准解析；否则以当前工作目录为基准解析。
+- 当 `[zmemory].path` 未设置时，Codex 会使用 project-scoped 的默认数据库：`$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`。
+- 若你想跨项目共用一个全局数据库，请显式配置：
 
 ```toml
 [zmemory]
 path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 ```
 
-You can verify the active resolution with:
+你可以用下面的命令验证当前实际生效的路径解析结果：
 
 ```shell
 codex zmemory stats --json
@@ -190,9 +181,7 @@ codex zmemory read system://workspace --json
 codex zmemory read system://defaults --json
 ```
 
-The stable diagnostic payload is `result.pathResolution` (and the same
-`dbPath` / `workspaceKey` / `source` / `reason` fields are mirrored at the top
-level of `result` for quick checks):
+稳定的诊断 payload 位于 `result.pathResolution`（同样的 `dbPath` / `workspaceKey` / `source` / `reason` 字段也会镜像到 `result` 顶层，便于快速检查）：
 
 ```json
 {
@@ -203,55 +192,29 @@ level of `result` for quick checks):
 }
 ```
 
-`system://workspace` is the runtime fact view for the active session. It adds
-fields such as `hasExplicitZmemoryPath`, `defaultDbPath`, `dbPathDiffers`,
-`defaultWorkspaceKey`, `bootHealthy`, and an embedded `boot` snapshot so you
-can tell whether the current session is using the default project database or an explicit
-override. It always reports the currently effective runtime profile, including
-configured `validDomains` and `coreMemoryUris`.
+`system://workspace` 是当前会话的运行时事实视图。它会增加诸如 `hasExplicitZmemoryPath`、`defaultDbPath`、`dbPathDiffers`、`defaultWorkspaceKey`、`bootHealthy` 以及内嵌的 `boot` 快照等字段，从而让你判断当前会话使用的是默认的项目数据库还是显式 override。它也会始终报告当前实际生效的 runtime profile，包括已配置的 `validDomains` 和 `coreMemoryUris`。
 
-When `Feature::Zmemory` is enabled, `codex-core` may proactively persist
-high-confidence naming/addressing preferences into the active `zmemory`
-database. That orchestration still uses the normal `zmemory` action layer:
-inspect `system://workspace` first, then read/write the canonical URIs
-`core://my_user`, `core://agent`, and `core://agent/my_user`, and finally read
-back the written URI for verification. Failures are surfaced as observable
-warnings rather than silent success.
+当启用 `Feature::Zmemory` 时，`codex-core` 可能会把“高置信度的命名/称谓偏好”等信息主动写入当前生效的 `zmemory` 数据库。该编排仍然使用标准的 `zmemory` action 层：先检查 `system://workspace`，再读写 canonical URI `core://my_user`、`core://agent`、`core://agent/my_user`，最后读回已写入的 URI 做验证。失败会以可观察的 warning 形式暴露，而不是静默成功。
 
-`system://defaults` is the product-default fact view. It reports the default
-`validDomains`, `coreMemoryUris`, and default DB path policy without conflating
-those values with the current workspace state. User config changes the
-workspace/runtime view, not the defaults view.
+`system://defaults` 是产品默认事实视图。它会报告默认的 `validDomains`、`coreMemoryUris` 以及默认的 DB 路径策略，并且不会把这些默认值与当前 workspace 状态混淆。用户配置会改变 workspace/runtime 视图，但不会改变 defaults 视图。
 
-If a direct `read <uri>` misses or `search` returns no matches, use
-`system://workspace`, `stats`, `doctor`, and `system://alias` before concluding
-that no durable memory exists at all; an unhealthy boot graph or missing
-triggers can mean the issue is recall coverage rather than missing data.
+如果直接 `read <uri>` 失败，或 `search` 没有命中，请在下结论“确实不存在任何 durable memory”之前先使用 `system://workspace`、`stats`、`doctor` 与 `system://alias` 排查：boot 图不健康或 trigger 缺失时，问题可能是 recall 覆盖不足，而不一定是数据缺失。
 
-For a dedicated `zmemory` usage guide covering commands, system views, and
-troubleshooting, see `docs/zmemory.md`.
+关于 `zmemory` 的专用使用指南（涵盖命令、系统视图与排障）见 `docs/zmemory.md`。
 
 ## JSON Schema
 
-The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
+`config.toml` 的自动生成 JSON Schema 位于 `codex-rs/core/config.schema.json`。
 
-## Built-in model providers
+## 内置 Model Providers
 
-Codex ships with built-in `openai`, `anthropic`, `ollama`, and `lmstudio`
-model provider entries. For Anthropic-compatible setups, use
-`wire_api = "anthropic"` and provide credentials with `ANTHROPIC_API_KEY`
-unless you override the provider config. The built-in `anthropic` provider
-defaults to `https://api.anthropic.com/v1`, and you can override that with
-`ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
-User-defined `model_providers` entries may also override built-in IDs such as
-`openai` when you want to change the default provider wiring.
-You can also set `model_providers.<id>.model` to give that provider its own
-default model; when present, it takes precedence over the global `model`
-setting for requests sent through that provider, including when the provider
-is selected via `-P` or `--model-provider`, while explicit CLI model overrides
-such as `--model` still win.
+Codex 内置了 `openai`、`anthropic`、`ollama`、`lmstudio` 等 model provider 条目。对于 Anthropic 兼容的接入方式，使用 `wire_api = "anthropic"` 并通过 `ANTHROPIC_API_KEY` 提供凭证（除非你覆盖了 provider 配置）。内置 `anthropic` provider 默认使用 `https://api.anthropic.com/v1`，你也可以用 `ANTHROPIC_BASE_URL` 或自定义的 `model_providers.<id>.base_url` 覆盖它。
 
-Example overriding the built-in OpenAI provider to use Chat Completions:
+用户自定义的 `model_providers` 也可以覆盖内置 ID（例如 `openai`），以便你改变默认 provider 的接线方式。
+
+你还可以设置 `model_providers.<id>.model`，为某个 provider 提供它自己的默认模型；一旦设置，它在“通过该 provider 发送的请求”中会优先于全局 `model` 设置（包括使用 `-P`/`--model-provider` 选择该 provider 的情况），但显式的 CLI 模型覆盖（例如 `--model`）仍然优先。
+
+示例：覆盖内置 OpenAI provider，使其使用 Chat Completions：
 
 ```toml
 model_provider = "openai"
@@ -263,25 +226,13 @@ env_key = "OPENAI_API_KEY"
 wire_api = "chat"
 ```
 
-When `wire_api = "chat"` is selected, Codex uses `/v1/chat/completions`.
-This path does not support hosted-only tools such as `web_search` or
-`image_generation`, and only `user` messages may include image inputs.
-Named tool choice is supported via `tool_choice = "required:<tool_name>"`.
-Those are Chat Completions API limits, not Codex-only restrictions. Use
-`wire_api = "responses"` when you need hosted tools.
+当选择 `wire_api = "chat"` 时，Codex 会使用 `/v1/chat/completions`。该路径不支持仅 hosted 的工具（例如 `web_search`、`image_generation`），并且只有 `user` 消息允许包含图片输入。可以通过 `tool_choice = "required:<tool_name>"` 指定“命名工具选择”。这些限制来自 Chat Completions API 本身，并非 Codex 特有。需要 hosted 工具时请使用 `wire_api = "responses"`。
 
-To retry a failed primary request against another provider, set
-`fallback_provider` to a provider ID from `model_providers` (or a built-in
-provider) and optionally set `fallback_model` to the model slug that fallback
-request should use. Codex retries the fallback only for the current request;
-new requests still start with the primary `model_provider`.
+如果你希望在主请求失败后用另一个 provider 重试，可以把 `fallback_provider` 设置为 `model_providers` 中的某个 provider ID（或内置 provider），并可选地把 `fallback_model` 设置为 fallback 请求要使用的模型 slug。Codex 只会对“当前这次请求”做 fallback 重试；后续新请求仍会从主 `model_provider` 开始。
 
-**Note**: `fallback_model` is optional. If not specified, Codex will use the
-fallback provider's default model (if configured) or fall back to the primary
-requested model. This allows you to switch providers without changing models,
-or explicitly downgrade models when needed.
+**注意**：`fallback_model` 是可选的。不指定时，Codex 会使用 fallback provider 的默认模型（如果配置了），否则回退到主请求指定的模型。这允许你在不改变模型的情况下切换 provider，或在需要时显式降级模型。
 
-For multi-step fallback, use `fallback_providers` in priority order:
+如需多级 fallback，可使用按优先级排序的 `fallback_providers`：
 
 ```toml
 model_provider = "openai"
@@ -292,14 +243,14 @@ fallback_providers = [
 ]
 ```
 
-Example with a relay primary provider plus OpenRouter and a backup relay:
+示例：主 provider 为 relay，并配合 OpenRouter 与备用 relay：
 
 ```toml
 model = "gpt-5.1"
 model_provider = "cn-relay"
 
 [model_providers.cn-relay]
-# Primary relay (OpenAI-compatible)
+# 主 relay（OpenAI-compatible）
 name = "CN relay"
 model = "gpt-5.1"
 base_url = "https://relay.example.com/v1"
@@ -328,37 +279,34 @@ stream_max_retries = 0
 supports_websockets = false
 
 fallback_providers = [
-  # Try OpenRouter first when the primary relay fails.
+  # 主 relay 失败时，先尝试 OpenRouter。
   { provider = "openrouter", model = "openai/gpt-4.1" },
-  # Then fall back to a secondary relay.
+  # 再回退到备用 relay。
   { provider = "cn-relay-backup", model = "gpt-4.1" },
 ]
 ```
 
-`fallback_provider` + `fallback_model` remain supported for a single fallback.
-When both styles are present, Codex treats them as part of the same ordered
-fallback list for the current request only.
+`fallback_provider` + `fallback_model` 仍支持“单级 fallback”。当两种写法同时存在时，Codex 会把它们视为同一个“仅针对当前请求”的有序 fallback 列表的一部分。
 
-For Chinese-commented example configs, including:
+更多带中文注释的示例配置（包含）：
 
 - `OpenRouter + relay`
 - `relay + relay backup`
 - `Azure OpenAI + OpenRouter`
 
-see `docs/fallback-providers.zh-example.md`.
+见 `docs/fallback-providers.zh-example.md`。
 
+## 重试与超时配置
 
-## Retry and timeout configuration
+Model provider 支持多种重试与超时选项：
 
-Model providers support several retry and timeout options:
+- `request_max_retries`：对该 provider 的失败 HTTP 请求最多重试次数。
+- `stream_max_retries`：流式响应连接中断时，重连的最大重试次数（超过后失败）。
+- `stream_idle_timeout_ms`：流式响应的空闲超时（毫秒）。在该时间内无活动则认为连接已丢失。
+- `websocket_connect_timeout_ms`：websocket 连接尝试的最大等待时间（毫秒）。超出则视为失败。
+- `retry_base_delay_ms`：重试退避的基础延迟（毫秒）。实际重试间隔为该值乘以 `2^(attempt-1)` 并加 jitter。默认 `200`。
 
-- `request_max_retries`: Maximum number of times to retry a failed HTTP request to this provider.
-- `stream_max_retries`: Number of times to retry reconnecting a dropped streaming response before failing.
-- `stream_idle_timeout_ms`: Idle timeout (in milliseconds) to wait for activity on a streaming response before treating the connection as lost.
-- `websocket_connect_timeout_ms`: Maximum time (in milliseconds) to wait for a websocket connection attempt before treating it as failed.
-- `retry_base_delay_ms`: Base delay (in milliseconds) for retry backoff. The actual delay between retries will be this value multiplied by 2^(attempt-1) with jitter. Defaults to `200`.
-
-Example:
+示例：
 
 ```toml
 [model_providers.myprovider]
@@ -366,73 +314,47 @@ request_max_retries = 4
 stream_max_retries = 5
 stream_idle_timeout_ms = 300000
 websocket_connect_timeout_ms = 15000
-retry_base_delay_ms = 500  # Longer base delay for slower networks
+retry_base_delay_ms = 500  # 更慢网络可增大 base delay
 ```
 
-## Custom model catalogs
+## 自定义 Model Catalog
 
-Codex supports two startup-only config keys for overriding available models:
+Codex 支持两个“仅在启动时读取”的配置项，用于覆盖可用模型列表：
 
-- `model_catalog_json` replaces the bundled catalog for the active provider.
-- `model_catalog_merge_json` merges additional models into the bundled catalog.
+- `model_catalog_json`：替换活跃 provider 的内置 catalog。
+- `model_catalog_merge_json`：把额外模型合并进内置 catalog。
 
-If both are set, Codex uses `model_catalog_json` as the base catalog and then
-applies `model_catalog_merge_json` on top. Merge entries match by `slug`; when
-the same slug appears in both catalogs, the merge entry wins.
+如果两者都设置了，Codex 会以 `model_catalog_json` 作为基础 catalog，然后在其上应用 `model_catalog_merge_json`。合并时按 `slug` 匹配；当同一个 slug 同时出现在两份 catalog 中时，以 merge 条目为准。
 
-For Responses-based providers, `model_catalog_merge_json` does not disable
-remote `/models` refreshes; it overlays additional entries on top of the
-built-in/remote catalog snapshot instead.
+对于基于 Responses 的 provider，`model_catalog_merge_json` 不会禁用远端 `/models` 刷新；它会把额外条目叠加到“内置/远端”catalog 快照之上。
 
-This is especially useful for Anthropic-compatible proxies that expose model
-slugs not present in the built-in Claude catalog.
+这对 Anthropic 兼容代理尤其有用：它们可能暴露了内置 Claude catalog 中不存在的模型 slug。
 
-## SQLite State DB
+## SQLite 状态 DB
 
-Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
-`CODEX_SQLITE_HOME` environment variable. When unset, WorkspaceWrite sandbox
-sessions default to a temp directory; other modes default to `CODEX_HOME`.
+Codex 会把 SQLite 状态 DB 存放在 `sqlite_home`（配置项）或 `CODEX_SQLITE_HOME`（环境变量）指定的位置。当两者都未设置时，WorkspaceWrite 沙盒会话默认使用临时目录；其他模式默认使用 `CODEX_HOME`。
 
-## Custom CA Certificates
+## 自定义 CA 证书
 
-Codex can trust a custom root CA bundle for outbound HTTPS and secure websocket
-connections when enterprise proxies or gateways intercept TLS. This applies to
-login flows and to Codex's other external connections, including Codex
-components that build reqwest clients or secure websocket clients through the
-shared `codex-client` CA-loading path and remote MCP connections that use it.
+当企业代理或网关会拦截 TLS 时，Codex 支持为出站 HTTPS 与安全 websocket 连接信任自定义根 CA bundle。这适用于登录流程与 Codex 的其他对外连接，包括：通过共享的 `codex-client` CA 加载路径构建 reqwest client 或安全 websocket client 的 Codex 组件，以及使用该路径的远端 MCP 连接。
 
-Set `CODEX_CA_CERTIFICATE` to the path of a PEM file containing one or more
-certificate blocks to use a Codex-specific CA bundle. If
-`CODEX_CA_CERTIFICATE` is unset, Codex falls back to `SSL_CERT_FILE`. If
-neither variable is set, Codex uses the system root certificates.
+将 `CODEX_CA_CERTIFICATE` 设置为一个 PEM 文件路径（该文件可包含一个或多个证书块），即可让 Codex 使用专用的 CA bundle。若 `CODEX_CA_CERTIFICATE` 未设置，Codex 会回退到 `SSL_CERT_FILE`。若两者都未设置，Codex 使用系统根证书。
 
-`CODEX_CA_CERTIFICATE` takes precedence over `SSL_CERT_FILE`. Empty values are
-treated as unset.
+`CODEX_CA_CERTIFICATE` 的优先级高于 `SSL_CERT_FILE`。空值会被视为未设置。
 
-The PEM file may contain multiple certificates. Codex also tolerates OpenSSL
-`TRUSTED CERTIFICATE` labels and ignores well-formed `X509 CRL` sections in the
-same bundle. If the file is empty, unreadable, or malformed, the affected Codex
-HTTP or secure websocket connection reports a user-facing error that points
-back to these environment variables.
+PEM 文件可以包含多张证书。Codex 也能容忍 OpenSSL 的 `TRUSTED CERTIFICATE` 标签，并会忽略同一 bundle 中格式正确的 `X509 CRL` 区块。如果文件为空、不可读或格式损坏，受影响的 Codex HTTP 或安全 websocket 连接会报告用户可见的错误信息，并指向这些环境变量。
 
 ## Notices
 
-Codex stores "do not show again" flags for some UI prompts under the `[notice]` table.
+Codex 会把部分 UI 提示的“不再显示”标记存放在 `[notice]` 表下。
 
-## Plan mode defaults
+## Plan 模式默认值
 
-`plan_mode_reasoning_effort` lets you set a Plan-mode-specific default reasoning
-effort override. When unset, Plan mode uses the built-in Plan preset default
-(currently `medium`). When explicitly set (including `none`), it overrides the
-Plan preset. The string value `none` means "no reasoning" (an explicit Plan
-override), not "inherit the global default". There is currently no separate
-config value for "follow the global default in Plan mode".
+`plan_mode_reasoning_effort` 允许你为 Plan 模式设置一个“Plan 模式专用”的默认 reasoning effort 覆盖值。未设置时，Plan 模式会使用内置 Plan preset 的默认值（当前为 `medium`）。当显式设置时（包括 `none`），它会覆盖 Plan preset。字符串 `none` 表示“不推理”（对 Plan 的显式覆盖），而不是“继承全局默认”。目前没有单独的配置项可用于表达“Plan 模式跟随全局默认”。
 
-## Realtime start instructions
+## Realtime Start Instructions
 
-`experimental_realtime_start_instructions` lets you replace the built-in
-developer message Codex inserts when realtime becomes active. It only affects
-the realtime start message in prompt history and does not change websocket
-backend prompt settings or the realtime end/inactive message.
+`experimental_realtime_start_instructions` 允许你替换 Codex 在 realtime 变为 active 时插入的内置 developer message。它只影响 prompt history 中的 realtime start message，不会改变 websocket 后端的 prompt 设置，也不会改变 realtime end/inactive message。
 
-Ctrl+C/Ctrl+D quitting uses a ~1 second double-press hint (`ctrl + c again to quit`).
+使用 Ctrl+C/Ctrl+D 退出时，会有一个约 1 秒的双击提示（`ctrl + c again to quit`）。
+
