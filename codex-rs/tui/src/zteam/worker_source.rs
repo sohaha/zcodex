@@ -16,7 +16,6 @@ pub(crate) struct FederationWorkerConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FederationAdapter {
     frontend: FederationWorkerConfig,
-    ios: FederationWorkerConfig,
     backend: FederationWorkerConfig,
 }
 
@@ -24,15 +23,14 @@ impl FederationAdapter {
     pub(crate) fn from_thread_start_params(params: FederationThreadStartParams) -> Self {
         Self {
             frontend: federation_worker_config(&params, WorkerSlot::Frontend),
-            ios: federation_worker_config(&params, WorkerSlot::Ios),
             backend: federation_worker_config(&params, WorkerSlot::Backend),
         }
     }
 
     pub(crate) fn summary(&self) -> String {
         format!(
-            "frontend => {}，ios => {}，backend => {}",
-            self.frontend.name, self.ios.name, self.backend.name
+            "frontend => {}，backend => {}",
+            self.frontend.name, self.backend.name
         )
     }
 }
@@ -83,14 +81,6 @@ fn slot_matches_agent_nickname(slot: WorkerSlot, agent_nickname: &str) -> bool {
                 if nickname == "前端"
                     || nickname.eq_ignore_ascii_case("android")
                     || nickname.eq_ignore_ascii_case("android frontend")
-        )
-        || matches!(
-            slot,
-            WorkerSlot::Ios
-                if nickname.eq_ignore_ascii_case("ios")
-                    || nickname.eq_ignore_ascii_case("ios frontend")
-                    || nickname == "iOS"
-                    || nickname == "iOS 前端"
         )
         || matches!(
             slot,

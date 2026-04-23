@@ -7,15 +7,11 @@ expression: normalized_backend_snapshot(terminal.backend())
 "ZTeam 工作台                                                                                        " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " ")]
 "╭──────────────────────────────────────────────────────────────────────────────────────────────────╮"
 "│ 概况                                                                                             │" Hidden by multi-width symbols: [(3, " "), (5, " ")]
-"│ 整体状态：尚未启动。先运行 `/zteam start` 创建 frontend/ios/backend worker。                     │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " "), (25, " "), (27, " "), (45, " "), (47, " "), (77, " ")]
+"│ 整体状态：尚未启动。先运行 `/zteam start` 创建 frontend/backend worker。                         │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " "), (25, " "), (27, " "), (45, " "), (47, " "), (73, " ")]
 "│ 阻塞提示：当前还没有可分派目标；工作台只会显示空态。                                             │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " "), (25, " "), (27, " "), (29, " "), (31, " "), (33, " "), (35, " "), (37, " "), (39, " "), (41, " "), (43, " "), (45, " "), (47, " "), (49, " "), (51, " "), (53, " ")]
 "│                                                                                                  │"
 "│ Worker 面板                                                                                      │" Hidden by multi-width symbols: [(10, " "), (12, " ")]
 "│ Android 前端：等待注册 · /root/frontend                                                          │" Hidden by multi-width symbols: [(11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " ")]
-"│   来源：本地 subagent                                                                            │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
-"│   最近任务：无                                                                                   │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " ")]
-"│   最近结果：无                                                                                   │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " ")]
-"│ iOS 前端：等待注册 · /root/ios                                                                   │" Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " ")]
 "│   来源：本地 subagent                                                                            │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
 "│   最近任务：无                                                                                   │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " ")]
 "│   最近结果：无                                                                                   │" Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " ")]
@@ -26,7 +22,6 @@ expression: normalized_backend_snapshot(terminal.backend())
 "│                                                                                                  │"
 "│ 任务板                                                                                           │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " ")]
 "│ Android 前端：等待任务                                                                           │" Hidden by multi-width symbols: [(11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " ")]
-"│ iOS 前端：等待任务                                                                               │" Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " ")]
 "│ 后端：等待任务                                                                                   │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " ")]
 "│                                                                                                  │"
 "│ 消息流                                                                                           │" Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " ")]

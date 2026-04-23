@@ -27,10 +27,8 @@ pub(crate) use worker_source::WorkerSource;
 pub(crate) const MODE_NAME: &str = "ZTeam";
 pub(crate) const COMMAND_NAME: &str = "/zteam";
 const FRONTEND_TASK_NAME: &str = "frontend";
-const IOS_TASK_NAME: &str = "ios";
 const BACKEND_TASK_NAME: &str = "backend";
 const FRONTEND_ROLE: &str = "frontend-engineer";
-const IOS_ROLE: &str = "mobile-engineer";
 const BACKEND_ROLE: &str = "backend-engineer";
 const MAX_ACTIVITY_ITEMS: usize = 6;
 const MAX_RESULT_ITEMS: usize = 4;
@@ -38,7 +36,6 @@ const MAX_RESULT_ITEMS: usize = 4;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum WorkerSlot {
     Frontend,
-    Ios,
     Backend,
 }
 
@@ -46,7 +43,6 @@ impl WorkerSlot {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "frontend" => Some(Self::Frontend),
-            "ios" => Some(Self::Ios),
             "backend" => Some(Self::Backend),
             _ => None,
         }
@@ -55,7 +51,6 @@ impl WorkerSlot {
     pub(crate) fn task_name(self) -> &'static str {
         match self {
             Self::Frontend => FRONTEND_TASK_NAME,
-            Self::Ios => IOS_TASK_NAME,
             Self::Backend => BACKEND_TASK_NAME,
         }
     }
@@ -63,7 +58,6 @@ impl WorkerSlot {
     pub(crate) fn role_name(self) -> &'static str {
         match self {
             Self::Frontend => FRONTEND_ROLE,
-            Self::Ios => IOS_ROLE,
             Self::Backend => BACKEND_ROLE,
         }
     }
@@ -71,7 +65,6 @@ impl WorkerSlot {
     pub(crate) fn display_name(self) -> &'static str {
         match self {
             Self::Frontend => "Android 前端",
-            Self::Ios => "iOS 前端",
             Self::Backend => "后端",
         }
     }
@@ -197,7 +190,6 @@ pub(crate) struct State {
 struct SharedState {
     start_requested: bool,
     frontend: WorkerState,
-    ios: WorkerState,
     backend: WorkerState,
     activity: VecDeque<ActivityEntry>,
     recent_results: VecDeque<ResultEntry>,
@@ -227,7 +219,6 @@ struct ResultEntry {
 struct Snapshot {
     start_requested: bool,
     frontend: WorkerState,
-    ios: WorkerState,
     backend: WorkerState,
     activity: Vec<ActivityEntry>,
     recent_results: Vec<ResultEntry>,
@@ -238,7 +229,6 @@ impl Snapshot {
     fn worker(&self, worker: WorkerSlot) -> &WorkerState {
         match worker {
             WorkerSlot::Frontend => &self.frontend,
-            WorkerSlot::Ios => &self.ios,
             WorkerSlot::Backend => &self.backend,
         }
     }
@@ -471,7 +461,6 @@ impl State {
         Snapshot {
             start_requested: state.start_requested,
             frontend: state.frontend.clone(),
-            ios: state.ios.clone(),
             backend: state.backend.clone(),
             activity: state.activity.iter().cloned().collect(),
             recent_results: state.recent_results.iter().cloned().collect(),
@@ -561,9 +550,6 @@ impl SharedState {
         if self.frontend.connection.known_thread_id() == Some(thread_id) {
             return Some(WorkerSlot::Frontend);
         }
-        if self.ios.connection.known_thread_id() == Some(thread_id) {
-            return Some(WorkerSlot::Ios);
-        }
         if self.backend.connection.known_thread_id() == Some(thread_id) {
             return Some(WorkerSlot::Backend);
         }
@@ -573,7 +559,6 @@ impl SharedState {
     fn worker(&self, worker: WorkerSlot) -> &WorkerState {
         match worker {
             WorkerSlot::Frontend => &self.frontend,
-            WorkerSlot::Ios => &self.ios,
             WorkerSlot::Backend => &self.backend,
         }
     }
@@ -581,7 +566,6 @@ impl SharedState {
     fn worker_mut(&mut self, worker: WorkerSlot) -> &mut WorkerState {
         match worker {
             WorkerSlot::Frontend => &mut self.frontend,
-            WorkerSlot::Ios => &mut self.ios,
             WorkerSlot::Backend => &mut self.backend,
         }
     }
@@ -602,7 +586,7 @@ fn push_result(results: &mut VecDeque<ResultEntry>, worker: WorkerSlot, summary:
 }
 
 impl WorkerSlot {
-    const ALL: [Self; 3] = [Self::Frontend, Self::Ios, Self::Backend];
+    const ALL: [Self; 2] = [Self::Frontend, Self::Backend];
 }
 
 pub(crate) fn disabled_message() -> String {
@@ -614,17 +598,16 @@ pub(crate) fn disabled_hint() -> &'static str {
 }
 
 pub(crate) fn usage() -> &'static str {
-    "用法：/zteam start | /zteam status | /zteam attach | /zteam <frontend|ios|backend> <任务> | /zteam relay <frontend|ios|backend> <frontend|ios|backend> <消息>"
+    "用法：/zteam start | /zteam status | /zteam attach | /zteam <frontend|backend> <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
 }
 
 pub(crate) fn start_prompt() -> String {
     concat!(
-        "进入 ZTeam 本地协作模式。立即使用 `spawn_agent` 创建三个长期 worker：\n",
+        "进入 ZTeam 本地协作模式。立即使用 `spawn_agent` 创建两个长期 worker：\n",
         "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
-        "2. `task_name = \"ios\"`，`agent_type = \"mobile-engineer\"`\n",
-        "3. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
-        "对三个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
-        "创建完成后，只用一条简短中文消息汇报三个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
+        "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
+        "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
+        "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
     )
     .to_string()
 }
@@ -756,13 +739,6 @@ mod tests {
                 from: WorkerSlot::Frontend,
                 to: WorkerSlot::Backend,
                 message: "对齐接口字段".to_string(),
-            })
-        );
-        assert_eq!(
-            Command::parse("ios 修复列表滚动卡顿"),
-            Ok(Command::Dispatch {
-                worker: WorkerSlot::Ios,
-                message: "修复列表滚动卡顿".to_string(),
             })
         );
     }
@@ -1015,7 +991,6 @@ mod tests {
         let status = state.status_message();
         assert!(status.contains("外部 adapter"));
         assert!(status.contains("zteam-frontend"));
-        assert!(status.contains("zteam-ios"));
         assert!(status.contains("zteam-backend"));
     }
 
@@ -1059,7 +1034,6 @@ mod tests {
         assert_eq!(state.worker_thread_id(WorkerSlot::Frontend), None);
         let status = state.status_message();
         assert!(status.contains("Android 前端：未注册"));
-        assert!(status.contains("iOS 前端：未注册"));
         assert!(status.contains("最近任务：无"));
         assert!(status.contains("最近结果：无"));
     }

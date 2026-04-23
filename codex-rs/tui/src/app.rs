@@ -2092,7 +2092,7 @@ impl App {
                 self.chat_widget.open_zteam_workbench();
                 if outcome.restored == 0 {
                     self.chat_widget.add_info_message(
-                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/ios/backend worker。"
+                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/backend worker。"
                             .to_string(),
                         /*hint*/ None,
                     );
