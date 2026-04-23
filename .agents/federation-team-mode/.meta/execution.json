@@ -1,0 +1,27 @@
+{
+  "feature": "federation-team-mode",
+  "createdAt": "2026-04-23T02:25:55Z",
+  "parameters": {
+    "skipUI": false,
+    "skipDeploy": false,
+    "quick": false
+  },
+  "stages": {
+    "1": { "status": "completed", "startTime": "2026-04-23T02:25:55Z", "endTime": "2026-04-23T03:05:00Z" },
+    "2": { "status": "completed", "startTime": "2026-04-23T03:05:00Z", "endTime": "2026-04-23T03:35:00Z" },
+    "3": { "status": "pending", "startTime": null, "endTime": null },
+    "4": { "status": "pending", "startTime": null, "endTime": null }
+  },
+  "qualityGates": {
+    "gate0": "requirements-aligned",
+    "gate1": "planning-approved",
+    "gate2": null
+  },
+  "humanInterventions": [
+    {
+      "at": "2026-04-23T02:20:00Z",
+      "type": "scope-decision",
+      "summary": "用户确认使用工作流开始完整文档设计，且 federation 未发布，可直接重构，不考虑向后兼容。"
+    }
+  ]
+}

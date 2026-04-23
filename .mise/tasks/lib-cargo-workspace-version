@@ -127,15 +127,29 @@ recover_stale_cargo_workspace_version_override() {
 restore_cargo_workspace_version_override() {
   local cargo_toml="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET:-}"
   local backup="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP:-}"
+  local patched_fingerprint="${CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_PATCHED_FINGERPRINT:-}"
+  local current_fingerprint
 
   if [ -z "$cargo_toml" ] || [ -z "$backup" ] || [ ! -f "$backup" ]; then
     return 0
+  fi
+
+  if [ -n "$patched_fingerprint" ] && [ -f "$cargo_toml" ]; then
+    current_fingerprint="$(cksum "$cargo_toml" | awk '{print $1 ":" $2}')"
+    if [ "$current_fingerprint" != "$patched_fingerprint" ]; then
+      echo "[mise] codex-rs/Cargo.toml 在构建期间发生额外改动，未自动恢复 workspace version，备份保留: $backup" >&2
+      unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET
+      unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP
+      unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_PATCHED_FINGERPRINT
+      return 0
+    fi
   fi
 
   cp "$backup" "$cargo_toml"
   rm -f "$backup"
   unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_TARGET
   unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_BACKUP
+  unset CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_PATCHED_FINGERPRINT
 }
 
 restore_cargo_workspace_version_override_on_signal() {
@@ -152,8 +166,7 @@ ensure_cargo_workspace_version_override_safe() {
   fi
 
   if [ -n "$(git -C "$codex_rs_dir" status --short --untracked-files=no -- Cargo.toml)" ]; then
-    echo "[mise] codex-rs/Cargo.toml 已有本地改动，无法安全临时覆盖 workspace version" >&2
-    return 1
+    echo "[mise] codex-rs/Cargo.toml 已有本地改动，将临时覆盖 workspace version 并在结束后尝试恢复" >&2
   fi
 }
 
@@ -212,6 +225,8 @@ activate_cargo_workspace_version_override() {
   fi
 
   mv "$patched" "$cargo_toml"
+  export CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_PATCHED_FINGERPRINT
+  CODEX_CARGO_WORKSPACE_VERSION_OVERRIDE_PATCHED_FINGERPRINT="$(cksum "$cargo_toml" | awk '{print $1 ":" $2}')"
 
   echo "[$task_name] 已临时同步 codex-rs/Cargo.toml workspace version -> $version" >&2
 }

@@ -1,145 +1,131 @@
+CHARTER_CHECK:
+- Clarification level: MEDIUM
+- Task domain: planning
+- Must NOT do: 不做代码实现; 不把底层 daemon 原语直接当成 MVP 成品; 不把评审/测试单独拆成脱离功能的孤立任务
+- Success criteria: 给出基于现状的可执行 PM 方案; 产出 API 合同文件; 产出含依赖与验收标准的任务计划 JSON
+- Assumptions: 目标是把 federation 从实验性 IPC 底座推进到“前端 Codex + 后端 Codex 可持续协作”的 MVP; 默认优先 app-server/TUI 主路径; 默认面向同机多实例、同仓或相邻仓协作
+
 status: completed
 summary:
-  - 基于现有 ztok 实现、既有计划和 sqz selective-reference 边界，整理了下一阶段适合推进的功能分层。
-  - 结论重点是：下一步应继续扩展“通用内容压缩底座的覆盖面、会话缓存治理与可观察性”，而不是引入 sqz 的 hook/proxy/gain/resume/dashboard/插件产品面。
+  - 基于现有 `federation-protocol`、`federation-daemon`、`federation-client`、`app-server` bridge 和现有多 agent 能力，整理了“前后端双 Codex 可随时通讯”的产品化方案。
+  - 结论是：当前仓库已经有可运行的 federation 底座，但仍停留在 `TextTask/TextResult + inbox` 原语层；真正缺的是 peer 发现、持续会话、消息回流、可见状态和恢复语义。
+  - MVP 应聚焦“双 worker 协作工作台”：能启动两个角色化 worker、互发消息、共享上下文引用、把结果回流到主线程，而不是继续扩更多底层命令。
 files_changed:
   - .agents/results/result-pm.md
+  - .agents/results/plan-pm.json
+  - .agents/skills/_shared/api-contracts/federation-collab-mvp.md
 acceptance_criteria_checklist:
-  - [x] 基于仓库现状与已有文档分析
-  - [x] 输出 P0/P1/P2 分层
-  - [x] 每项包含作用、预期效果、依赖关系、适配当前边界的理由
-  - [x] 明确非目标边界
-  - [x] 给出推荐阶段顺序
+  - [x] 基于仓库现状与关键实现路径分析
+  - [x] 明确真实使用场景、关键工作流、MVP 范围与非目标
+  - [x] 输出 API-first 合同草案
+  - [x] 输出可分派的任务计划 JSON
 
-## ztok 下一阶段功能分层
+## 现状判断
 
-### 当前基线
+- 已存在的底座能力：
+  - `codex-rs/federation-protocol/src/envelope.rs` 只有 `TextTask` / `TextResult` 两类 payload，说明目前更像任务投递原语，不是协作产品面。
+  - `codex-rs/federation-daemon/src/store.rs` 已支持注册实例、列 peer、发信封、读 inbox、写 ack、清理过期状态，说明本地 IPC 与状态模型已经成立。
+  - `codex-rs/app-server/src/federation_bridge.rs` 会在 `thread/start` 时注册实例、轮询 inbox、把 `TextTask` 转成普通本地 `Op::UserTurn`，并把完成结果回投成 `TextResult`。
+  - `codex-rs/app-server/tests/suite/v2/federation.rs` 已覆盖 `thread/start -> TextTask -> TextResult` 闭环。
+  - `codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs` 已有单会话内 agent 间发消息的成熟交互模型，可复用其 UX 语义。
 
-- 已完成能力：
-  - 共享内容压缩入口已覆盖 `read/json/log/summary`
-  - 会话级 exact dedup 已落地，并由 CLI 注入 `CODEX_THREAD_ID -> CODEX_ZTOK_SESSION_ID`
-  - SimHash + LCS near-diff 已落地
-  - `basic/enhanced` 行为模式已落地，`basic` 会整条链路绕开 dedup / near-diff / sqlite
-  - `tracking.rs` 仍是显式 no-op 适配层，不承接 analytics / telemetry / persistence 产品面
-  - `.version/sqz.toml` 与 `upgrade-rtk` 已把 `sqz` 固定为 selective reference，而不是 parity 目标
+- 现阶段不足：
+  - 只能发“任务”和“结果”，不能发中途协作消息，也没有共享上下文引用。
+  - 结果默认回 inbox，不自然回到当前主线程、TUI 或 IDE 主视图。
+  - bridge 只在 `thread/start` 挂载，缺少 resume/reconnect 的用户级恢复语义。
+  - 缺少“前端 worker / 后端 worker / 当前负责人 / 最近消息 / 是否在线”的高层状态模型。
 
-- 现阶段真正缺的不是“再做一次 dedup”，而是：
-  - 让更多高价值输出进入现有压缩底座
-  - 给已有 sqlite session cache 补治理与可观察性
-  - 让 generic compression 从 `read/json/log/summary` 扩到更通用的 shell / wrapper 输出
+## 用户场景
 
-### P0
+### 核心用户
 
-- 内容感知的通用 shell 输出压缩
-  - 作用：把现有 `compression` 底座接到 `ztok shell` 与高频 wrapper 的 stdout/stderr 后处理，而不只局限于 `read/json/log/summary`
-  - 预期效果：`gh api`、`curl`、`kubectl`、`docker`、`npm/pnpm`、`cargo test/build` 等命令输出能自动落到 JSON/日志/文本压缩路径，减少“必须先手工选对 ztok 子命令”的成本
-  - 依赖关系：复用现有 `compression.rs`、`compression_json.rs`、`compression_log.rs`，需要在 `runner.rs` / 各 wrapper 命令返回后增加统一出口
-  - 适合当前边界的原因：仍然是“Codex 内嵌命令过滤层”；不需要引入 hook/proxy/resume，只是把已存在的底座复用到更多入口
-  - 不适合拖后的原因：当前 generic compression 的价值还只覆盖少数命令，用户实际最常见的是 arbitrary shell 和 wrapper 输出
+- 独立开发者：希望让一个 Codex 负责前端，一个 Codex 负责后端，主线程像 Tech Lead 一样协调。
+- 小团队开发者：把本地多个 Codex 窗口当作不同角色 worker，减少上下文切换。
+- IDE / app-server 客户端用户：希望在图形界面里看到谁在做什么、谁需要回复、谁已经产出可集成结果。
 
-- session cache 生命周期治理
-  - 作用：为 `CODEX_HOME/.ztok-cache/<session-id>.sqlite` 增加过期、清理、损坏恢复与容量上限策略
-  - 预期效果：避免长期使用后缓存无限膨胀、历史 session 残留、损坏文件导致 dedup 反复 fallback
-  - 依赖关系：基于现有 `session_dedup.rs` 的 schema / path 逻辑扩展即可
-  - 适合当前边界的原因：这是当前已落地 sqlite cache 的必要收尾，不是扩张产品面
-  - 为什么是 P0：当前缓存已经在真实链路中生效，但还缺明确治理；这属于“已有功能可持续运行”的基础能力
+### 高频场景
 
-- dedup / near-diff 最小可观察性
-  - 作用：让用户或调试者能看见本次输出是 full、short reference、diff，命中原因是什么，fallback 原因是什么
-  - 预期效果：排查误命中、误回退、basic/enhanced 行为差异时，不需要读源码或猜 sqlite 状态
-  - 依赖关系：现有 `CompressionResult.output_kind`、`ExplicitFallbackReason` 已具备数据模型，只差统一暴露方式
-  - 适合当前边界的原因：这是对现有显式行为合同的补强，不是 `sqz stats/gain/dashboard`
-  - 边界控制：应做成轻量 debug / inspect / verbose 级别能力，而不是独立分析产品
+1. 启动协作
+   - 主线程一键创建“前端 worker”和“后端 worker”，都带角色标签和工作目录。
 
-### P1
+2. 分工执行
+   - 主线程给两边下达各自任务；worker 开始处理。
 
-- 新内容类型压缩器：diff / patch / tabular / config 文本
-  - 作用：在现有 `Code/Json/Log/Text` 之外，补上高频但结构特殊的输出类型
-  - 预期效果：
-    - unified diff / patch 输出更适合“只看变更块”
-    - 表格/列表输出更适合裁剪列与汇总
-    - `toml/yaml/env/ini` 这类配置文本不必退回普通 text
-  - 依赖关系：扩展 `ContentKind`、内容探测与对应 renderer
-  - 适合当前边界的原因：仍属于 compression seam 的自然扩展，比引入 sqz 外围产品面更贴近仓库价值
-  - 为什么不是 P0：现有用户痛点首先是“更多命令接到底座”和“cache 可治理”，再往后才是内容类型细分
+3. 中途通讯
+   - 前端 worker 发现 API 字段不确定，直接给后端 worker 发消息。
+   - 后端 worker 发现接口会影响页面交互，也能主动通知前端 worker。
 
-- shell 重写器与压缩底座联动增强
-  - 作用：让 `cat/head/tail/find/rg` 之外的更多 shell 形态更稳定地落到 `ztok` 专用子命令或统一压缩出口
-  - 预期效果：减少 `rewrite.rs` 因 unsupported arguments / command shape 直接回退 raw shell 的比例
-  - 依赖关系：依赖现有 `rewrite.rs` allowlist 与 command-shape 判定；也依赖 P0 的“通用 shell 输出压缩”作为兜底
-  - 适合当前边界的原因：这是 embedded command surface 的增强，符合 `upgrade-rtk` 对 curated surface 的定义
-  - 限制：不应为了覆盖率引入复杂 shell 解释器或 hook 注入
+4. 结果回流
+   - 任一 worker 产生阶段成果，主线程能直接看到摘要、阻塞和后续需要。
 
-- binary / 超大输入的元数据压缩路径
-  - 作用：避免 `read_to_string` 失败或大文件把当前压缩链路直接拖入异常/无意义全文输出
-  - 预期效果：对二进制、超长单行、大型日志/JSON 文件输出“文件类型 + 尺寸 + 结构摘要/采样窗口”，而不是失败或全量
-  - 依赖关系：需要在 `read.rs` 和内容探测层加入非 UTF-8 / oversized 输入分支
-  - 适合当前边界的原因：仍是本地 CLI 过滤层能力，不涉及外部平台
-  - 为什么是 P1：价值高，但不如 P0 直接补当前已上线 session cache 与 generic shell 覆盖的缺口
+5. 中断恢复
+   - 某个 worker 关闭、闪退或主线程重开后，仍能看到会话关系、最近消息和未处理状态。
 
-- session cache inspect / clear 操作
-  - 作用：提供最小运维入口，查看某 session 是否命中过 dedup、清理指定 session cache
-  - 预期效果：调试和 CI 更容易复现实验，不必手工删 `.ztok-cache`
-  - 依赖关系：基于当前 cache 文件布局增加只读/删除命令即可
-  - 适合当前边界的原因：是对已有 session cache 的运维补充，不等于 `sqz resume/stats`
-  - 为什么不是 P0：优先级低于“自动治理”和“输出可观察性”；更像运维辅助面
+## 最关键工作流
 
-### P2
+1. 创建双 worker 协作会话
+   - 用户从主线程选择“启动协作模式”。
+   - 指定两个角色：`frontend`、`backend`。
+   - 系统为两个 worker 建立可发现、可恢复的 federation session。
 
-- 阈值与策略配置化
-  - 作用：把 near-diff 的 `max_hamming_distance`、`min_similarity_ratio`、`max_diff_lines` 等从硬编码变为可配置策略
-  - 预期效果：不同仓库或不同命令可调优 dedup/diff 灵敏度
-  - 依赖关系：依赖现有 behavior/config 桥接模式；应由 CLI 配置系统桥接，不让 ztok 自己解析全局配置
-  - 适合当前边界的原因：属于现有算法可调优，不是新产品面
-  - 为什么放 P2：在当前缺少更广覆盖和 cache 治理前，开放参数只会放大调试面
+2. 主线程向 worker 分派任务
+   - 主线程给前端和后端分别发送首个任务。
+   - 任务消息带 `session_id`、角色、来源线程、可选上下文引用。
 
-- 更强的 source-aware lineage 策略
-  - 作用：把 dedup / near-diff 候选从“同 output_signature 池内比较”升级为更理解来源语义的比较，例如区分同一路径、同命令、同资源类型
-  - 预期效果：降低跨来源误命中，提高 diff 可读性
-  - 依赖关系：需要扩展 `output_signature` 或缓存索引结构
-  - 适合当前边界的原因：仍然完全在本地 sqlite + compression seam 内
-  - 为什么是 P2：当前实现已有可用版本，先补覆盖与治理更值当
+3. worker 间随时互发消息
+   - 前端可向后端发“需求澄清”“字段确认”“接口变更通知”。
+   - 消息不是结束任务，而是中途通讯。
 
-- 针对特定 wrapper 的垂直压缩器
-  - 作用：为 `git`、`cargo`、`pytest`、`kubectl`、`docker` 等提供更专用的摘要模板
-  - 预期效果：输出比 generic log/json/text 更准，更贴近用户任务
-  - 依赖关系：建立在 P0/P1 通用出口和内容探测基础上
-  - 适合当前边界的原因：属于 embedded wrapper 的精修
-  - 为什么不是更早：当前还没把所有 wrapper 稳定送入通用压缩出口，过早做垂直模板会导致维护面分散
+4. 主线程接收回流
+   - 主线程自动收到 worker 的结果摘要、阻塞提醒和关键决策。
+   - 主线程能决定是否继续分派、介入或合并成果。
 
-## 非目标
+5. 会话恢复
+   - 重新进入 TUI/app-server 后，可恢复该协作 session，并继续看未读消息与在线状态。
 
-- 不适合当前仓库边界，建议明确排除：
-  - `sqz init`、hook 安装、shell/profile 注入
-  - proxy、dashboard、browser/IDE 插件、MCP 打包
-  - gain/stats/telemetry 分析产品面
-  - resume / cross-session narrative 历史恢复产品
-  - 完整 `sqz_engine` parity 或 wholesale import
-  - 将 `tracking.rs` 从 no-op 扩成遥测/持久化系统
+## MVP 定义
 
-## 推荐阶段顺序
+### MVP 必须有
 
-1. P0.1 内容感知的通用 shell 输出压缩
-   原因：这是把“已完成的通用压缩底座”变成真实高频能力覆盖面的关键一步。
+- 角色化 peer 会话
+  - 至少支持两个命名 worker：前端、后端。
+- 持续消息类型
+  - 不止 `task/result`，至少支持 `task`、`message`、`result`。
+- 主线程回流
+  - worker 结果和关键消息会自动回到主线程视图，不要求用户手工读 inbox。
+- 在线状态
+  - 能看到 peer 在线/离线、最近心跳、最近一条消息时间。
+- 恢复语义
+  - `thread/resume` 或等效入口可恢复 federation session 绑定，而不是只在 fresh start 有效。
 
-2. P0.2 session cache 生命周期治理
-   原因：sqlite cache 已经上线，继续扩功能前先补运行面稳定性。
+### MVP 不做
 
-3. P0.3 dedup / near-diff 最小可观察性
-   原因：后续任何调参与覆盖扩展都需要可观测证据，不然排障成本会快速上升。
+- 跨机器远程 federation。
+- 多于两个 worker 的复杂网状协作编排。
+- 自动冲突合并、自动代码整合或任务自动再分解。
+- 富媒体附件、代码 diff 结构化引用、语音/实时共享。
+- 完整 project management 面板或复杂权限体系。
 
-4. P1.1 diff / table / config 等新内容类型
-   原因：在更广入口都进入底座后，再做内容细分类，收益最大。
+## 产品判断
 
-5. P1.2 binary / 超大输入元数据路径
-   原因：这会补足 read/generic shell 的边界鲁棒性。
+- 这不是“再补一个 daemon 命令”的问题，而是把 federation 从基础设施升级成协作工作流。
+- 最接近用户价值的切口不是更复杂的 envelope，而是：
+  - session 级协作关系
+  - 主线程可见的消息回流
+  - worker 间持续沟通
+  - 恢复与状态可见性
 
-6. P1.3 inspect / clear 运维命令
-   原因：适合在 cache 规则基本稳定后补。
+## 推荐方案
 
-7. P2 阈值配置、source lineage、wrapper 专用模板
-   原因：这些都属于“在底座覆盖和治理到位后再做精调”的工作。
+- 产品层采用“协作 session”概念，而不是让用户直接操作 instance id 和 inbox。
+- 技术层继续复用现有 `federation-daemon` 和 `app-server thread/start` bridge。
+- UX 层借鉴现有 `multi_agents_v2`：
+  - 有明确 sender / receiver
+  - 有 interaction begin/end 事件
+  - 有主线程可见的协作历史
 
-## 一句话结论
+## 风险与边界
 
-ztok 下一阶段最值得做的不是继续追 `sqz` 产品面，而是把现有“共享压缩 + session dedup + near-diff”底座接到更多真实命令出口，并补齐 sqlite cache 的治理与可观察性；这三件事完成后，再做内容类型扩展和策略调优才划算。
+- 如果只扩 daemon API，不补 app-server/TUI 主路径，功能仍会停留在工程演示层。
+- 如果直接做复杂的多 worker 网状编排，MVP 会被“消息路由、恢复、一致性”拖慢。
+- 如果不定义 `session_id` 和消息类别，后续恢复和聚合会变得混乱。

@@ -150,7 +150,7 @@ Example:
 
 This tool is available only when `codex-mcp-server` is built with `--features tldr`.
 
-The `ztldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Use it first for structural code understanding such as symbols, call relationships, impact analysis, and semantic code search; prefer raw grep/read for regex-heavy or exact-text verification. Daemon actions still require a live daemon. The current action surface is:
+The `ztldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Use it first for structural code understanding such as symbols, call relationships, impact analysis, and semantic code search; prefer raw grep/read for regex-heavy or exact-text verification. Use canonical fields `query`, `matchMode`, `path`, and `paths` when invoking it. Daemon actions still require a live daemon. The current action surface is:
 
 - `structure`
 - `search`
@@ -178,11 +178,13 @@ The `ztldr` tool exposes native code-context analysis with daemon-first executio
 Typical inputs:
 
 - `project` - absolute or relative project root
-- `language` - required for `structure|importers|context|impact|calls|dead|arch|change-impact|cfg|dfg|semantic`; optional for `search`; `extract|imports|slice|diagnostics` can infer from file extension when omitted
+- `language` - required for `structure|importers|context|impact|calls|dead|arch|cfg|dfg|semantic`; optional for `search`; `extract|imports|slice|diagnostics|change-impact` can infer from file extension when omitted
 - `symbol` - optional symbol name for `structure|context|impact|calls|dead|arch|cfg|dfg`; required symbol-like target for `slice`
 - `query` - query string for `search` or `semantic`
+- `matchMode` - optional search match mode for `search`
 - `module` - required module path for `importers`
 - `path` - file path for `extract|imports|slice` and dirty file path for `notify`
+- `paths` - changed file paths for `change-impact`
 - `line` - target line for `slice`
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, `symbolExtractor`, `relationshipSupport`, and `summary`.

@@ -641,6 +641,52 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
     Err(error) => panic!("output schema literal should parse: {error}"),
 });
 
+pub const TLDR_TOOL_DESCRIPTION: &str = "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Use canonical fields: `query` for search/semantic text, `matchMode` for search mode, `path` for file-based actions, and `paths` for change-impact. `language` is required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic; extract, imports, slice, diagnostics, and change-impact can infer it from `path` or `paths` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly.";
+pub const TLDR_TOOL_LANGUAGE_DESCRIPTION: &str = "Supported language. Required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, diagnostics, and change-impact can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.";
+pub const TLDR_TOOL_QUERY_DESCRIPTION: &str =
+    "Query text for action=search or action=semantic. Use `query` as the canonical field name.";
+pub const TLDR_TOOL_MATCH_MODE_DESCRIPTION: &str =
+    "Optional search match mode. Use `matchMode` as the canonical field name.";
+pub const TLDR_TOOL_PATH_DESCRIPTION: &str = "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify. Use `path` as the canonical field name.";
+pub const TLDR_TOOL_PATHS_DESCRIPTION: &str =
+    "Required changed paths for action=change-impact. Use `paths` as the canonical field name.";
+pub const TLDR_TOOL_ARGUMENT_RETRY_HINT: &str = "Use canonical fields like `query`, `matchMode`, `path`, and `paths`. The parser repairs common near-miss inputs such as `pattern`, `match_mode`, `file`, `filePath`, and single-path `change-impact` requests.";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TldrToolArgumentError {
+    reason: String,
+    retry_hint: Option<String>,
+}
+
+impl TldrToolArgumentError {
+    fn new(reason: impl Into<String>, retry_hint: Option<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            retry_hint,
+        }
+    }
+
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+
+    pub fn retry_hint(&self) -> Option<&str> {
+        self.retry_hint.as_deref()
+    }
+}
+
+impl std::fmt::Display for TldrToolArgumentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.reason)?;
+        if let Some(retry_hint) = self.retry_hint() {
+            write!(f, " Retry hint: {retry_hint}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for TldrToolArgumentError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolAction {
@@ -719,22 +765,34 @@ pub struct TldrToolCallParam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
     #[schemars(
-        description = "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
+        description = "Supported language. Required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, diagnostics, and change-impact can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<TldrToolLanguage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
+    #[schemars(
+        description = "Query text for action=search or action=semantic. Use `query` as the canonical field name."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    #[schemars(
+        description = "Optional search match mode. Use `matchMode` as the canonical field name."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_mode: Option<SearchMatchMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub module: Option<String>,
+    #[schemars(
+        description = "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify. Use `path` as the canonical field name."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
+    #[schemars(
+        description = "Required changed paths for action=change-impact. Use `paths` as the canonical field name."
+    )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -767,6 +825,113 @@ impl Default for TldrToolCallParam {
             run_typecheck: None,
             max_issues: None,
             include_install_hints: None,
+        }
+    }
+}
+
+pub fn parse_tldr_tool_call_value(
+    value: serde_json::Value,
+) -> Result<TldrToolCallParam, TldrToolArgumentError> {
+    let normalized = normalize_tldr_tool_call_value(value)?;
+    serde_json::from_value(normalized).map_err(|error| {
+        TldrToolArgumentError::new(
+            format!("Failed to parse ztldr tool arguments: {error}"),
+            Some(TLDR_TOOL_ARGUMENT_RETRY_HINT.to_string()),
+        )
+    })
+}
+
+pub fn parse_tldr_tool_call_str(raw: &str) -> Result<TldrToolCallParam, TldrToolArgumentError> {
+    let value = serde_json::from_str(raw).map_err(|error| {
+        TldrToolArgumentError::new(
+            format!("Failed to parse ztldr tool arguments: {error}"),
+            Some(TLDR_TOOL_ARGUMENT_RETRY_HINT.to_string()),
+        )
+    })?;
+    parse_tldr_tool_call_value(value)
+}
+
+fn normalize_tldr_tool_call_value(
+    value: serde_json::Value,
+) -> Result<serde_json::Value, TldrToolArgumentError> {
+    let mut object = value.as_object().cloned().ok_or_else(|| {
+        TldrToolArgumentError::new(
+            "Failed to parse ztldr tool arguments: expected a JSON object",
+            Some(TLDR_TOOL_ARGUMENT_RETRY_HINT.to_string()),
+        )
+    })?;
+    let action = object
+        .get("action")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+
+    repair_argument_aliases(&mut object);
+    repair_action_specific_shapes(&mut object, action.as_deref());
+
+    Ok(serde_json::Value::Object(object))
+}
+
+fn repair_argument_aliases(object: &mut serde_json::Map<String, serde_json::Value>) {
+    move_field_if_missing(object, "query", &["pattern"]);
+    move_field_if_missing(object, "matchMode", &["match_mode"]);
+    move_field_if_missing(object, "module", &["modulePath", "module_path"]);
+    move_field_if_missing(object, "path", &["file", "filePath", "file_path"]);
+    move_field_if_missing(object, "paths", &["changedPaths", "changed_paths"]);
+    move_field_if_missing(
+        object,
+        "onlyTools",
+        &["only_tools", "toolFilters", "tool_filters"],
+    );
+    move_field_if_missing(object, "runLint", &["run_lint"]);
+    move_field_if_missing(object, "runTypecheck", &["run_typecheck"]);
+    move_field_if_missing(object, "maxIssues", &["max_issues"]);
+    move_field_if_missing(object, "includeInstallHints", &["include_install_hints"]);
+}
+
+fn repair_action_specific_shapes(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    action: Option<&str>,
+) {
+    match action {
+        Some("change-impact") => {
+            if !object.contains_key("paths")
+                && let Some(path) = object.remove("path")
+            {
+                object.insert("paths".to_string(), serde_json::Value::Array(vec![path]));
+            }
+        }
+        Some("extract") | Some("imports") | Some("slice") | Some("diagnostics")
+        | Some("notify") => {
+            if !object.contains_key("path")
+                && let Some(path) = single_path_from_paths(object)
+            {
+                object.insert("path".to_string(), path);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn single_path_from_paths(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let paths = object.get("paths")?.as_array()?;
+    (paths.len() == 1).then(|| paths[0].clone())
+}
+
+fn move_field_if_missing(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    canonical: &str,
+    aliases: &[&str],
+) {
+    if object.contains_key(canonical) {
+        return;
+    }
+
+    for alias in aliases {
+        if let Some(value) = object.remove(*alias) {
+            object.insert(canonical.to_string(), value);
+            return;
         }
     }
 }
@@ -961,7 +1126,7 @@ where
                 .clone()
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| anyhow::anyhow!("`paths` is required for action=change-impact"))?;
-            let language = required_language(&args)?;
+            let language = required_or_inferred_language(&args, paths.first().map(String::as_str))?;
             run_change_impact_tool(&project_root, language, paths, &query, &ensure_running).await
         }
         TldrToolAction::Cfg => {
@@ -1886,6 +2051,7 @@ mod tests {
     use super::TldrToolCallParam;
     use super::TldrToolLanguage;
     use super::action_name;
+    use super::parse_tldr_tool_call_value;
     use super::query_daemon_with_hooks_detailed;
     use super::run_tldr_tool_with_hooks;
     use crate::api::SearchMatchMode;
@@ -2358,6 +2524,66 @@ mod tests {
             error.to_string(),
             "`paths` is required for action=change-impact"
         );
+    }
+
+    #[test]
+    fn parse_tldr_tool_call_value_repairs_common_search_shapes() {
+        let parsed = parse_tldr_tool_call_value(serde_json::json!({
+            "action": "search",
+            "language": "rust",
+            "pattern": "resolveProjectAvatar(",
+            "match_mode": "literal"
+        }))
+        .expect("search aliases should normalize");
+
+        assert_eq!(parsed.action, TldrToolAction::Search);
+        assert_eq!(parsed.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(parsed.query.as_deref(), Some("resolveProjectAvatar("));
+        assert_eq!(parsed.match_mode, Some(SearchMatchMode::Literal));
+    }
+
+    #[test]
+    fn parse_tldr_tool_call_value_repairs_single_path_change_impact() {
+        let parsed = parse_tldr_tool_call_value(serde_json::json!({
+            "action": "change-impact",
+            "path": "src/lib.rs"
+        }))
+        .expect("single path change-impact should normalize");
+
+        assert_eq!(parsed.action, TldrToolAction::ChangeImpact);
+        assert_eq!(parsed.path, None);
+        assert_eq!(parsed.paths, Some(vec!["src/lib.rs".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_change_impact_infers_language_from_paths() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src_dir = tempdir.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(src_dir.join("lib.rs"), "pub fn auth() {}\n").expect("fixture should write");
+
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::ChangeImpact,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                match_mode: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: Some(vec!["src/lib.rs".to_string()]),
+                ..Default::default()
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("change-impact should infer language from paths");
+
+        assert_eq!(result.structured_content["action"], "change-impact");
+        assert_eq!(result.structured_content["language"], "rust");
     }
 
     #[test]

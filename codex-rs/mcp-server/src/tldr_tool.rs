@@ -10,9 +10,16 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::lifecycle::QueryHooksResult;
 use codex_native_tldr::load_tldr_config;
+use codex_native_tldr::tool_api::TLDR_TOOL_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_LANGUAGE_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_MATCH_MODE_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_PATH_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_PATHS_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_QUERY_DESCRIPTION;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolResult;
 use codex_native_tldr::tool_api::daemon_unavailable_error_for_project;
+use codex_native_tldr::tool_api::parse_tldr_tool_call_value;
 use codex_native_tldr::tool_api::query_daemon_with_hooks_detailed;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
@@ -43,7 +50,7 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     Tool {
         name: "ztldr".into(),
         title: Some("Native ZTLDR".to_string()),
-        description: Some("Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly.".into()),
+        description: Some(TLDR_TOOL_DESCRIPTION.into()),
         input_schema,
         output_schema: Some(match tldr_tool_output_schema() {
             serde_json::Value::Object(map) => Arc::new(map),
@@ -58,10 +65,13 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
 
 pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResult {
     let args = match arguments.map(serde_json::Value::Object) {
-        Some(json_val) => match serde_json::from_value::<TldrToolCallParam>(json_val) {
+        Some(json_val) => match parse_tldr_tool_call_value(json_val) {
             Ok(args) => args,
             Err(err) => {
-                return error_result(format!("Failed to parse ztldr tool arguments: {err}"));
+                return error_result(format!(
+                    "Failed to parse ztldr tool arguments: {}",
+                    err.reason()
+                ));
             }
         },
         None => return error_result("Missing arguments for ztldr tool-call.".to_string()),
@@ -226,6 +236,18 @@ fn error_result(text: String) -> CallToolResult {
 }
 
 fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
+    if let Some(reason) = text.strip_prefix("Failed to parse ztldr tool arguments: ") {
+        return Some(serde_json::json!({
+            "structuredFailure": {
+                "error_type": "invalid_arguments",
+                "reason": reason,
+                "retryable": true,
+                "retry_hint": codex_native_tldr::tool_api::TLDR_TOOL_ARGUMENT_RETRY_HINT
+            },
+            "degradedMode": serde_json::Value::Null
+        }));
+    }
+
     if let Some(reason) = invalid_regex_reason(text) {
         return Some(serde_json::json!({
             "structuredFailure": {
@@ -491,7 +513,7 @@ fn tldr_tool_input_schema() -> serde_json::Value {
         tldr_tool_input_variant(
             "search",
             &["query"],
-            serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic."), "matchMode": string_prop("Optional search match mode.") }),
+            serde_json::json!({ "language": language_prop(), "query": string_prop(TLDR_TOOL_QUERY_DESCRIPTION), "matchMode": string_prop(TLDR_TOOL_MATCH_MODE_DESCRIPTION) }),
         ),
         tldr_tool_input_variant(
             "extract",
@@ -535,8 +557,8 @@ fn tldr_tool_input_schema() -> serde_json::Value {
         ),
         tldr_tool_input_variant(
             "change-impact",
-            &["language", "paths"],
-            serde_json::json!({ "language": language_prop(), "paths": string_array_prop("Required changed paths for action=change-impact.") }),
+            &["paths"],
+            serde_json::json!({ "language": language_prop(), "paths": string_array_prop(TLDR_TOOL_PATHS_DESCRIPTION) }),
         ),
         tldr_tool_input_variant(
             "cfg",
@@ -556,7 +578,7 @@ fn tldr_tool_input_schema() -> serde_json::Value {
         tldr_tool_input_variant(
             "semantic",
             &["language", "query"],
-            serde_json::json!({ "language": language_prop(), "query": string_prop("Query text for action=search or action=semantic.") }),
+            serde_json::json!({ "language": language_prop(), "query": string_prop(TLDR_TOOL_QUERY_DESCRIPTION) }),
         ),
         tldr_tool_input_variant(
             "diagnostics",
@@ -608,7 +630,7 @@ fn tldr_tool_input_variant(
     let mut required_fields = vec![serde_json::Value::String("action".to_string())];
     required_fields.extend(
         required
-            .into_iter()
+            .iter()
             .map(|field| serde_json::Value::String(field.to_string())),
     );
 
@@ -759,24 +781,24 @@ fn string_array_prop(description: &str) -> serde_json::Value {
 }
 
 fn language_prop() -> serde_json::Value {
-    string_prop(
-        "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.",
-    )
+    string_prop(TLDR_TOOL_LANGUAGE_DESCRIPTION)
 }
 
 fn path_prop() -> serde_json::Value {
-    string_prop(
-        "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify.",
-    )
+    string_prop(TLDR_TOOL_PATH_DESCRIPTION)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::TLDR_TOOL_DESCRIPTION;
+    use super::TLDR_TOOL_LANGUAGE_DESCRIPTION;
+    use super::TLDR_TOOL_PATHS_DESCRIPTION;
     use super::cleanup_stale_artifacts;
     use super::create_tool_for_tldr_tool_call_param;
     use super::daemon_metadata_looks_alive_with_launcher_lock;
     use super::ensure_daemon_running;
     use super::launcher_lock_is_held;
+    use super::run_tldr_tool;
     use super::run_tldr_tool_with_mcp_hooks;
     use super::try_open_launcher_lock;
     use codex_native_tldr::daemon::TldrDaemonCommand;
@@ -810,10 +832,7 @@ mod tests {
         let tool_json = serde_json::to_value(&tool).expect("tool serializes");
         assert_eq!(tool_json["name"], "ztldr");
         assert_eq!(tool_json["title"], "Native ZTLDR");
-        assert_eq!(
-            tool_json["description"],
-            "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
-        );
+        assert_eq!(tool_json["description"], TLDR_TOOL_DESCRIPTION);
         assert_eq!(tool_json["inputSchema"]["type"], "object");
         assert_eq!(
             tool_json["inputSchema"]["required"],
@@ -857,9 +876,11 @@ mod tests {
         );
         assert_eq!(
             tool_json["inputSchema"]["properties"]["language"]["description"],
-            serde_json::json!(
-                "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
-            )
+            serde_json::json!(TLDR_TOOL_LANGUAGE_DESCRIPTION)
+        );
+        assert_eq!(
+            tool_json["inputSchema"]["properties"]["paths"]["description"],
+            serde_json::json!(TLDR_TOOL_PATHS_DESCRIPTION)
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
         assert_eq!(
@@ -917,6 +938,52 @@ mod tests {
                 "language": "typescript",
                 "query": "where is auth"
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_repairs_common_argument_shapes() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "resolveProjectAvatar(\n")
+            .expect("fixture should write");
+
+        let arguments = serde_json::json!({
+            "action": "search",
+            "project": tempdir.path().display().to_string(),
+            "language": "rust",
+            "pattern": "resolveProjectAvatar(",
+            "match_mode": "literal"
+        });
+        let result = run_tldr_tool(arguments.as_object().cloned()).await;
+        let structured = result
+            .structured_content
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(structured["action"], "search");
+        assert_eq!(structured["matchMode"], "literal");
+        assert_eq!(structured["search"]["pattern"], "resolveProjectAvatar(");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_surfaces_invalid_argument_contract() {
+        let arguments = serde_json::json!({
+            "action": 7
+        });
+        let result = run_tldr_tool(arguments.as_object().cloned()).await;
+        let structured = result
+            .structured_content
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            structured["structuredFailure"]["error_type"],
+            "invalid_arguments"
+        );
+        assert_eq!(
+            structured["structuredFailure"]["retry_hint"],
+            codex_native_tldr::tool_api::TLDR_TOOL_ARGUMENT_RETRY_HINT
         );
     }
 

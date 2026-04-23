@@ -9,6 +9,8 @@ use crate::FreeformToolFormat;
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
 use crate::create_tools_json_for_responses_api;
+use codex_native_tldr::tool_api::TLDR_TOOL_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_LANGUAGE_DESCRIPTION;
 use codex_protocol::config_types::WebSearchContextSize;
 use codex_protocol::config_types::WebSearchFilters as ConfigWebSearchFilters;
 use codex_protocol::config_types::WebSearchUserLocation as ConfigWebSearchUserLocation;
@@ -112,10 +114,7 @@ fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
     };
 
     assert_eq!(tool.name, "ztldr");
-    assert_eq!(
-        tool.description,
-        "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
-    );
+    assert_eq!(tool.description, TLDR_TOOL_DESCRIPTION);
     let JsonSchema::OneOf { variants } = tool.parameters else {
         panic!("expected oneOf schema");
     };
@@ -143,7 +142,7 @@ fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
     assert_eq!(
         properties["language"],
         JsonSchema::String {
-            description: Some("Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.".to_string()),
+            description: Some(TLDR_TOOL_LANGUAGE_DESCRIPTION.to_string()),
         }
     );
     assert_eq!(
@@ -153,6 +152,26 @@ fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
             "language".to_string(),
             "query".to_string()
         ]
+    );
+    let change_impact_variant = variants
+        .iter()
+        .find(|variant| {
+            matches!(
+                variant,
+                JsonSchema::Object { properties, .. }
+                    if matches!(
+                        properties.get("action"),
+                        Some(JsonSchema::LiteralString { value, .. }) if value == "change-impact"
+                    )
+            )
+        })
+        .expect("change-impact variant should exist");
+    let JsonSchema::Object { required, .. } = change_impact_variant else {
+        panic!("change-impact variant should be an object");
+    };
+    assert_eq!(
+        required.clone().expect("change-impact required fields"),
+        vec!["action".to_string(), "paths".to_string()]
     );
 }
 
@@ -325,9 +344,7 @@ fn create_tools_json_for_responses_api_flattens_tldr_to_plain_object() {
     );
     assert_eq!(
         parameters["properties"]["language"]["description"],
-        json!(
-            "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
-        )
+        json!(TLDR_TOOL_LANGUAGE_DESCRIPTION)
     );
 }
 

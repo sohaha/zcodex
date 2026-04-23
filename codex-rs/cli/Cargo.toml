@@ -16,6 +16,10 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = ["realtime-webrtc-native"]
+realtime-webrtc-native = ["codex-tui/realtime-webrtc-native"]
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }

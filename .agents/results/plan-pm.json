@@ -1,0 +1,89 @@
+{
+  "status": "completed",
+  "summary": "将 federation 从实验性 IPC 底座推进为“双 worker 可持续协作”MVP，优先解决 session、消息回流、在线状态与恢复语义。",
+  "assumptions": [
+    "目标用户是使用主线程协调前端与后端两个 Codex worker 的开发者",
+    "MVP 默认运行在同机多实例场景，复用现有 federation daemon",
+    "优先 app-server/TUI 主路径，不新增独立控制台产品面"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "agent": "backend",
+      "title": "定义 federation 协作 session 与消息模型",
+      "acceptance_criteria": [
+        "在 app-server v2 或 federation 协议层定义稳定的 session_id、peer_role、message_type 和 message status",
+        "消息类型至少覆盖 task、message、result 三类，并保留 sender、recipient、created_at、in_reply_to",
+        "协议文档明确恢复语义与兼容策略",
+        "新增或更新协议测试，验证序列化标签稳定且非法负载被拒绝"
+      ],
+      "priority": "P0",
+      "dependencies": []
+    },
+    {
+      "id": "T2",
+      "agent": "backend",
+      "title": "在 app-server 暴露 federation 协作主路径 API",
+      "acceptance_criteria": [
+        "提供面向产品工作流的 API，而不是只暴露 daemon 原语",
+        "至少包含创建/加入协作 session、列出 peers、发送协作消息、读取或订阅消息流的能力",
+        "主线程可以收到 worker 消息或结果的回流通知",
+        "app-server 集成测试覆盖 thread/start 或 resume 进入协作 session 的闭环"
+      ],
+      "priority": "P0",
+      "dependencies": ["T1"]
+    },
+    {
+      "id": "T3",
+      "agent": "backend",
+      "title": "补齐 federation 恢复与在线状态语义",
+      "acceptance_criteria": [
+        "resume 或重连后可恢复协作 session 绑定，不要求重新注册整个工作流",
+        "peer 在线状态至少包含 online、stale、offline 三种可观察状态",
+        "状态判断基于现有 lease/heartbeat 机制，并能向上层返回最近心跳时间",
+        "测试覆盖会话恢复、心跳过期与离线展示所需数据"
+      ],
+      "priority": "P0",
+      "dependencies": ["T1"]
+    },
+    {
+      "id": "T4",
+      "agent": "frontend",
+      "title": "设计并实现 TUI/app-server 客户端的双 worker 协作视图",
+      "acceptance_criteria": [
+        "用户可以创建或进入前端/后端双 worker 协作模式",
+        "主线程可看到两个 worker 的角色、在线状态、最近消息和是否有待处理结果",
+        "支持从主线程向任一 worker 发消息，且支持 worker 间消息在主线程中可见",
+        "新增用户可见 UI 的 snapshot 或等效前端回归覆盖"
+      ],
+      "priority": "P0",
+      "dependencies": ["T2", "T3"]
+    },
+    {
+      "id": "T5",
+      "agent": "frontend",
+      "title": "打通 worker 间中途通讯的交互入口",
+      "acceptance_criteria": [
+        "worker 可以在不结束当前任务的情况下向另一个 worker 发送 message 类消息",
+        "交互文案清楚区分 task、message、result，避免用户误把中途通讯当成交付完成",
+        "主线程历史中能区分谁发给谁以及是否需要主线程介入",
+        "前端交互测试或 snapshot 覆盖消息发送与回流状态"
+      ],
+      "priority": "P1",
+      "dependencies": ["T4"]
+    },
+    {
+      "id": "T6",
+      "agent": "docs",
+      "title": "补充 federation 协作模式的用户与开发文档",
+      "acceptance_criteria": [
+        "文档说明目标场景、MVP 边界、主线程与 worker 的职责",
+        "文档包含至少一条“前端 worker + 后端 worker + 中途通讯”的端到端示例",
+        "文档明确 federation 协作模式与现有 multi-agent 单会话协作的差异",
+        "更新相关 README 或 llmdoc 路由，确保后续协作者能找到事实源"
+      ],
+      "priority": "P1",
+      "dependencies": ["T2", "T4"]
+    }
+  ]
+}

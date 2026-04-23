@@ -1,4 +1,3 @@
-use super::parse_arguments;
 use crate::function_tool::FunctionCallError;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::FunctionToolOutput;
@@ -21,6 +20,7 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::action_name;
+use codex_native_tldr::tool_api::parse_tldr_tool_call_str;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use codex_native_tldr::wire::daemon_failure_payload_for_project;
 use codex_protocol::models::function_call_output_content_items_to_text;
@@ -130,7 +130,8 @@ fn prepare_tldr_args(
             ));
         }
     };
-    let mut args: TldrToolCallParam = parse_arguments(&arguments)?;
+    let mut args: TldrToolCallParam = parse_tldr_tool_call_str(&arguments)
+        .map_err(|error| FunctionCallError::RespondToModel(error.to_string()))?;
     if args.project.is_none() {
         args.project = Some(default_tldr_project(cwd));
     }
@@ -1100,6 +1101,34 @@ mod tests {
 
         assert_eq!(args.project, Some(default_tldr_project(tempdir.path())));
         assert_eq!(args.symbol.as_deref(), Some("AuthService"));
+    }
+
+    #[tokio::test]
+    async fn handler_repairs_common_search_argument_shapes() {
+        let (session, turn) = make_session_and_context().await;
+        let args = prepare_tldr_args(
+            invocation(
+                Arc::new(session),
+                Arc::new(turn),
+                json!({
+                    "action": "search",
+                    "project": "/tmp/project",
+                    "language": "rust",
+                    "pattern": "resolveProjectAvatar(",
+                    "match_mode": "literal"
+                }),
+            )
+            .payload,
+            Path::new("/workspace/codex-rs"),
+        )
+        .expect("handler should normalize common search argument shapes");
+
+        assert_eq!(args.project.as_deref(), Some("/tmp/project"));
+        assert_eq!(args.query.as_deref(), Some("resolveProjectAvatar("));
+        assert_eq!(
+            args.match_mode,
+            Some(codex_native_tldr::api::SearchMatchMode::Literal)
+        );
     }
 
     #[tokio::test]

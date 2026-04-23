@@ -168,7 +168,7 @@ codex-otel = { path = "otel" }
 codex-plugin = { path = "plugin" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
-codex-realtime-webrtc = { path = "realtime-webrtc" }
+codex-realtime-webrtc = { path = "realtime-webrtc", default-features = false }
 codex-response-debug-context = { path = "response-debug-context" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-rmcp-client = { path = "rmcp-client" }

@@ -2,6 +2,12 @@ use crate::FreeformTool;
 use crate::JsonSchema;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiTool;
+use codex_native_tldr::tool_api::TLDR_TOOL_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_LANGUAGE_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_MATCH_MODE_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_PATH_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_PATHS_DESCRIPTION;
+use codex_native_tldr::tool_api::TLDR_TOOL_QUERY_DESCRIPTION;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchContextSize;
@@ -81,8 +87,7 @@ pub fn create_local_shell_tool() -> ToolSpec {
 pub fn create_tldr_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "ztldr".to_string(),
-        description: "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. `language` is required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic; extract, imports, slice, and diagnostics can infer it from `path` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly."
-            .to_string(),
+        description: TLDR_TOOL_DESCRIPTION.to_string(),
         strict: false,
         defer_loading: None,
         parameters: tldr_parameters_schema(),
@@ -188,7 +193,7 @@ fn tldr_parameters_schema() -> JsonSchema {
             tldr_variant(
                 "change-impact",
                 vec![tldr_project_prop(), tldr_language_prop(), tldr_paths_prop()],
-                vec!["language", "paths"],
+                vec!["paths"],
             ),
             tldr_variant(
                 "cfg",
@@ -301,10 +306,7 @@ fn tldr_language_prop() -> (String, JsonSchema) {
     (
         "language".to_string(),
         JsonSchema::String {
-            description: Some(
-                "Supported language. Required for structure, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, and diagnostics can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
-                    .to_string(),
-            ),
+            description: Some(TLDR_TOOL_LANGUAGE_DESCRIPTION.to_string()),
         },
     )
 }
@@ -329,7 +331,7 @@ fn tldr_query_prop() -> (String, JsonSchema) {
     (
         "query".to_string(),
         JsonSchema::String {
-            description: Some("Query text for action=search or action=semantic.".to_string()),
+            description: Some(TLDR_TOOL_QUERY_DESCRIPTION.to_string()),
         },
     )
 }
@@ -338,7 +340,7 @@ fn tldr_match_mode_prop() -> (String, JsonSchema) {
     (
         "matchMode".to_string(),
         JsonSchema::String {
-            description: Some("Optional search match mode.".to_string()),
+            description: Some(TLDR_TOOL_MATCH_MODE_DESCRIPTION.to_string()),
         },
     )
 }
@@ -356,10 +358,7 @@ fn tldr_path_prop() -> (String, JsonSchema) {
     (
         "path".to_string(),
         JsonSchema::String {
-            description: Some(
-                "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify."
-                    .to_string(),
-            ),
+            description: Some(TLDR_TOOL_PATH_DESCRIPTION.to_string()),
         },
     )
 }
@@ -378,7 +377,7 @@ fn tldr_paths_prop() -> (String, JsonSchema) {
         "paths".to_string(),
         JsonSchema::Array {
             items: Box::new(JsonSchema::String { description: None }),
-            description: Some("Required changed paths for action=change-impact.".to_string()),
+            description: Some(TLDR_TOOL_PATHS_DESCRIPTION.to_string()),
         },
     )
 }
