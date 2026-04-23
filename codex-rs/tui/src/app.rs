@@ -2067,15 +2067,10 @@ impl App {
                 )
                 .await?;
                 self.chat_widget.mark_zteam_start_requested();
-                self.chat_widget.add_info_message(
-                    "已请求主线程创建 frontend/backend worker。等待 spawn 事件把它们注册到 ZTeam 状态。"
-                        .to_string(),
-                    /*hint*/ None,
-                );
+                self.chat_widget.open_zteam_workbench();
             }
             zteam::Command::Status => {
-                self.chat_widget
-                    .add_info_message(self.chat_widget.zteam_status_message(), /*hint*/ None);
+                self.chat_widget.open_zteam_workbench();
             }
             zteam::Command::Dispatch { worker, message } => {
                 let Some((thread_id, communication)) = self
@@ -2113,7 +2108,7 @@ impl App {
                     Op::InterAgentCommunication { communication }.into(),
                 )
                 .await?;
-                self.chat_widget.record_zteam_dispatch(to, &message);
+                self.chat_widget.record_zteam_relay(from, to, &message);
                 self.chat_widget.add_info_message(
                     format!("已把消息从 {from} 转发给 {to}。"),
                     /*hint*/ None,

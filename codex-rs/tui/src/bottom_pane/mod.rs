@@ -32,11 +32,9 @@ use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
-use bottom_pane_view::BottomPaneView;
+pub(crate) use bottom_pane_view::ViewCompletion;
 
 use codex_config::types::BuddySoul;
-
-use bottom_pane_view::ViewCompletion;
 
 use codex_features::Features;
 use codex_file_search::FileMatch;
@@ -105,6 +103,7 @@ pub(crate) use list_selection_view::popup_content_width;
 pub(crate) use list_selection_view::side_by_side_layout_widths;
 pub(crate) use memories_settings_view::MemoriesSettingsView;
 mod feedback_view;
+pub(crate) use bottom_pane_view::BottomPaneView;
 pub(crate) use feedback_view::FeedbackAudience;
 pub(crate) use feedback_view::feedback_classification;
 pub(crate) use feedback_view::feedback_disabled_params;
@@ -934,6 +933,12 @@ impl BottomPane {
     #[cfg(test)]
     pub(crate) fn has_active_view(&self) -> bool {
         !self.view_stack.is_empty()
+    }
+
+    pub(crate) fn active_view_is(&self, view_id: &'static str) -> bool {
+        self.view_stack
+            .last()
+            .is_some_and(|view| view.view_id() == Some(view_id))
     }
 
     /// Return true when the pane is in the regular composer state without any

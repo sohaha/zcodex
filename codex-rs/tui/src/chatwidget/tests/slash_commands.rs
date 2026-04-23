@@ -338,22 +338,21 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
 }
 
 #[tokio::test]
-async fn zteam_slash_command_shows_entry_notice() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+async fn zteam_slash_command_opens_workbench_view() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.dispatch_command(SlashCommand::Zteam);
 
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one info message");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert_chatwidget_snapshot!("zteam_entry_notice", rendered);
-    assert!(
-        rendered.contains("ZTeam 入口已启用"),
-        "expected zteam entry notice, got {rendered:?}"
-    );
-    assert!(
-        rendered.contains("/zteam start"),
-        "expected zteam usage hint, got {rendered:?}"
+    let height = chat.desired_height(/*width*/ 100);
+    let mut terminal = Terminal::new(TestBackend::new(100, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw zteam workbench");
+    assert_chatwidget_snapshot!(
+        "zteam_workbench_empty_view",
+        normalized_backend_snapshot(terminal.backend())
     );
 }
 
@@ -373,6 +372,119 @@ async fn zteam_entry_reports_disabled_configuration() {
     assert!(
         rendered.contains("ZTeam 已在当前 TUI 配置中关闭"),
         "expected disabled zteam notice, got {rendered:?}"
+    );
+}
+
+fn zteam_test_thread(
+    thread_id: ThreadId,
+    slot: crate::zteam::WorkerSlot,
+) -> codex_app_server_protocol::Thread {
+    use codex_app_server_protocol::SessionSource;
+    use codex_app_server_protocol::Thread;
+    use codex_app_server_protocol::ThreadStatus;
+    use codex_protocol::protocol::SubAgentSource;
+    use codex_utils_absolute_path::test_support::PathBufExt;
+    use codex_utils_absolute_path::test_support::test_path_buf;
+
+    Thread {
+        id: thread_id.to_string(),
+        forked_from_id: None,
+        preview: String::new(),
+        ephemeral: false,
+        model_provider: "openai".to_string(),
+        created_at: 0,
+        updated_at: 0,
+        status: ThreadStatus::Idle,
+        path: None,
+        cwd: test_path_buf("/tmp").abs(),
+        cli_version: "0.0.0".to_string(),
+        source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            parent_thread_id: ThreadId::from_string("00000000-0000-0000-0000-000000000001")
+                .expect("valid thread id"),
+            depth: 1,
+            parent_model: None,
+            agent_path: None,
+            agent_nickname: Some(slot.display_name().to_string()),
+            agent_role: Some(slot.role_name().to_string()),
+        }),
+        agent_nickname: Some(slot.display_name().to_string()),
+        agent_role: Some(slot.role_name().to_string()),
+        git_info: None,
+        name: None,
+        turns: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn zteam_workbench_updates_with_worker_activity() {
+    use codex_app_server_protocol::ItemCompletedNotification;
+    use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::ThreadStartedNotification;
+    use codex_protocol::models::MessagePhase;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let frontend_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+    let backend_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Zteam);
+    chat.mark_zteam_start_requested();
+    chat.observe_zteam_thread_notification(
+        frontend_id,
+        &ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: zteam_test_thread(frontend_id, crate::zteam::WorkerSlot::Frontend),
+        }),
+    );
+    chat.observe_zteam_thread_notification(
+        backend_id,
+        &ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: zteam_test_thread(backend_id, crate::zteam::WorkerSlot::Backend),
+        }),
+    );
+    chat.record_zteam_dispatch(crate::zteam::WorkerSlot::Frontend, "修复导航栏布局");
+    chat.record_zteam_relay(
+        crate::zteam::WorkerSlot::Frontend,
+        crate::zteam::WorkerSlot::Backend,
+        "对齐接口字段",
+    );
+    chat.observe_zteam_thread_notification(
+        frontend_id,
+        &ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: codex_app_server_protocol::ThreadItem::AgentMessage {
+                id: "msg-1".to_string(),
+                text: "前端阶段结果：工作台布局已完成，并补上移动端断点。".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: frontend_id.to_string(),
+            turn_id: "turn-1".to_string(),
+        }),
+    );
+    chat.observe_zteam_thread_notification(
+        backend_id,
+        &ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: codex_app_server_protocol::ThreadItem::AgentMessage {
+                id: "msg-2".to_string(),
+                text: "后端阶段结果：接口字段已统一，并补齐错误态返回。".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: backend_id.to_string(),
+            turn_id: "turn-2".to_string(),
+        }),
+    );
+
+    let height = chat.desired_height(/*width*/ 100);
+    let mut terminal = Terminal::new(TestBackend::new(100, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw active zteam workbench");
+    assert_chatwidget_snapshot!(
+        "zteam_workbench_active_view",
+        normalized_backend_snapshot(terminal.backend())
     );
 }
 

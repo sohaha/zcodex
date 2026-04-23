@@ -1,6 +1,0 @@
----
-source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 349
-expression: rendered
----
-• ZTeam 入口已启用。先用 `/zteam start` 创建 frontend/backend worker，再用 `/zteam frontend <任务>` 或 `/zteam backend <任务>` 分派任务。 可用 `/zteam status` 查看当前状态，或用 `/zteam relay frontend backend <消息>` 在 worker 间转发中途消息。

@@ -25,8 +25,14 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-21` 计算，覆盖 `2026-04-19` 至 `2026-04-21`。
+- 时间窗按当前日期 `2026-04-23` 计算，覆盖 `2026-04-21` 至 `2026-04-23`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-23-zteam-should-be-tui-first-and-treat-federation-as-local-adapter.md`：当 federation 被明确为本地特性且仓库需要长期同步 upstream 时，优先把产品化能力收敛为 `tui` 内局部 `z*` 模式，先复用现有 local multi-agent 做工作流闭环，再把 federation 作为 adapter 接入。
+- `.agents/llmdoc/memory/reflections/2026-04-23-zteam-worker-routing-should-bind-fixed-task-names-to-thread-notifications.md`：当 TUI 要把现有 multi-agent runtime 产品化成工作台时，优先用固定 canonical task name 绑定 worker 身份，用 `ThreadStarted/ItemCompleted` 等线程通知回流状态，并直接复用 `Op::InterAgentCommunication` 做 root/worker/worker 间路由，而不是先扩 app-server 公共 RPC。
+- `.agents/llmdoc/memory/reflections/2026-04-23-zteam-workbench-should-use-refreshable-bottom-pane-surface.md`：TUI 里的协作工作台若需要随着共享状态持续刷新，应直接落到 `BottomPaneView` 这类持续渲染 surface；普通 history scrollback 只适合事件记录，不适合动态工作台。
+- `.agents/llmdoc/memory/reflections/2026-04-23-federation-practicality-needs-workflow-productization.md`：评估 federation 实用性时要区分“旁路架构已成立”和“日常工作流已产品化”；当前实现更适合作为实验性多实例 IPC/编排底座，而不是普通用户的主协作入口。
+- `.agents/llmdoc/memory/reflections/2026-04-23-ztldr-argument-repair-must-live-in-shared-parser.md`：`ztldr` 的错参修复要下沉到 `native-tldr` 共享 parser，再让 `core`/Responses/MCP 复用；如果运行时已支持从 `paths` 推断 `change-impact` 的语言，schema required 也必须同步更新，不能继续各入口局部补 alias。
+- `.agents/llmdoc/memory/reflections/2026-04-23-zteam-entry-gate-must-bind-command-visibility-and-parser.md`：TUI 本地模式开关若被定义为行为真相源，就必须同时驱动命令列表显隐、精确 slash command 解析和 handler 兜底反馈，避免出现半禁用入口。
 - `.agents/llmdoc/memory/reflections/2026-04-21-tui-defaults-and-app-event-tests-need-end-to-end-coverage.md`：TUI 回归里若 `config_toml` 默认值和最终 `core::Config` 组装值脱节，单看反序列化测试会漏掉真实默认路径回归；同时 app 异步事件测试不能假设首个 `recv()` 就是目标事件，应该在时限内筛目标事件并先核对文案源头与断言是否同层。
 - `.agents/llmdoc/memory/reflections/2026-04-21-subagent-config-reload-must-gate-on-enabled-project-layers.md`：子 agent 派生配置默认应保留 live `turn.config`；只有按新 `turn.cwd` 重载后确实启用了 project layer 且归一化后仍有实质差异时才切过去，同时 runtime provider 要同步回灌字段和 provider map。
 - `.agents/llmdoc/memory/reflections/2026-04-21-models-endpoint-unsupported-state-must-persist-and-refresh-via-openai-fallback.md`：自定义 provider 缺少 `GET /models` 时，单进程熔断和 bundled catalog 只能止住当次重试，挡不住下个进程再次探测；unsupported 状态必须持久化，并且 `Online` 刷新要直接切到配置里的 `openai` provider 更新 cache，而不是每次启动都先打主 provider。

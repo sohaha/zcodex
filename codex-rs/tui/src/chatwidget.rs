@@ -9645,12 +9645,19 @@ impl ChatWidget {
         thread_id: ThreadId,
         notification: &codex_app_server_protocol::ServerNotification,
     ) {
-        self.zteam_state
+        let changed = self
+            .zteam_state
             .observe_notification(thread_id, notification);
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
     }
 
     pub(crate) fn mark_zteam_start_requested(&mut self) {
-        self.zteam_state.mark_start_requested();
+        let changed = self.zteam_state.mark_start_requested();
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
     }
 
     pub(crate) fn zteam_build_root_dispatch(
@@ -9671,11 +9678,22 @@ impl ChatWidget {
     }
 
     pub(crate) fn record_zteam_dispatch(&mut self, worker: zteam::WorkerSlot, message: &str) {
-        self.zteam_state.record_dispatch(worker, message);
+        let changed = self.zteam_state.record_dispatch(worker, message);
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
     }
 
-    pub(crate) fn zteam_status_message(&self) -> String {
-        self.zteam_state.status_message()
+    pub(crate) fn record_zteam_relay(
+        &mut self,
+        from: zteam::WorkerSlot,
+        to: zteam::WorkerSlot,
+        message: &str,
+    ) {
+        let changed = self.zteam_state.record_relay(from, to, message);
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
     }
 
     pub(crate) fn zteam_missing_worker_message(&self, worker: zteam::WorkerSlot) -> String {
@@ -9691,18 +9709,25 @@ impl ChatWidget {
     }
 
     pub(crate) fn open_zteam_entry(&mut self) {
-        let (message, hint) = if self.zteam_enabled() {
-            (
-                zteam::entry_message(),
-                Some(zteam::entry_hint().to_string()),
-            )
+        if self.zteam_enabled() {
+            self.open_zteam_workbench();
         } else {
-            (
+            self.add_info_message(
                 zteam::disabled_message(),
                 Some(zteam::disabled_hint().to_string()),
-            )
-        };
-        self.add_info_message(message, hint);
+            );
+        }
+    }
+
+    pub(crate) fn open_zteam_workbench(&mut self) {
+        if !self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.bottom_pane
+                .show_view(Box::new(zteam::WorkbenchView::new(
+                    self.zteam_state.clone(),
+                )));
+        } else {
+            self.request_redraw();
+        }
     }
 
     fn initial_collaboration_mask(

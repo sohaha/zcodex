@@ -7,7 +7,15 @@ use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::SubAgentSource;
+use std::collections::VecDeque;
 use std::fmt;
+use std::sync::Arc;
+use std::sync::RwLock;
+
+mod view;
+
+pub(crate) use view::WORKBENCH_VIEW_ID;
+pub(crate) use view::WorkbenchView;
 
 pub(crate) const MODE_NAME: &str = "ZTeam";
 pub(crate) const COMMAND_NAME: &str = "/zteam";
@@ -15,6 +23,8 @@ const FRONTEND_TASK_NAME: &str = "frontend";
 const BACKEND_TASK_NAME: &str = "backend";
 const FRONTEND_ROLE: &str = "frontend-engineer";
 const BACKEND_ROLE: &str = "backend-engineer";
+const MAX_ACTIVITY_ITEMS: usize = 6;
+const MAX_RESULT_ITEMS: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkerSlot {
@@ -104,20 +114,31 @@ impl Command {
             return Err(usage().to_string());
         };
         match head.to_ascii_lowercase().as_str() {
-            "start" => Ok(Self::Start),
-            "status" => Ok(Self::Status),
+            "start" => {
+                if parts.next().is_some() {
+                    return Err(usage().to_string());
+                }
+                Ok(Self::Start)
+            }
+            "status" => {
+                if parts.next().is_some() {
+                    return Err(usage().to_string());
+                }
+                Ok(Self::Status)
+            }
             "relay" => {
-                let Some(from_raw) = parts.next() else {
+                let Some((_, rest)) = trimmed.split_once(char::is_whitespace) else {
                     return Err(usage().to_string());
                 };
-                let Some(to_raw) = parts.next() else {
+                let rest = rest.trim_start();
+                let Some((from_raw, rest)) = rest.split_once(char::is_whitespace) else {
                     return Err(usage().to_string());
                 };
-                let Some(message) = trimmed
-                    .splitn(4, char::is_whitespace)
-                    .nth(3)
-                    .map(str::trim)
-                    .filter(|message| !message.is_empty())
+                let rest = rest.trim_start();
+                let Some((to_raw, message)) = rest.split_once(char::is_whitespace) else {
+                    return Err(usage().to_string());
+                };
+                let Some(message) = Some(message.trim()).filter(|message| !message.is_empty())
                 else {
                     return Err(usage().to_string());
                 };
@@ -153,11 +174,18 @@ impl Command {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct State {
+    inner: Arc<RwLock<SharedState>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SharedState {
     start_requested: bool,
     frontend: WorkerState,
     backend: WorkerState,
+    activity: VecDeque<ActivityEntry>,
+    recent_results: VecDeque<ResultEntry>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -168,13 +196,42 @@ struct WorkerState {
     closed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActivityEntry {
+    summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResultEntry {
+    worker: WorkerSlot,
+    summary: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Snapshot {
+    start_requested: bool,
+    frontend: WorkerState,
+    backend: WorkerState,
+    activity: Vec<ActivityEntry>,
+    recent_results: Vec<ResultEntry>,
+}
+
 impl State {
-    pub(crate) fn mark_start_requested(&mut self) {
-        self.start_requested = true;
+    pub(crate) fn mark_start_requested(&mut self) -> bool {
+        let mut state = self.write_state();
+        if state.start_requested {
+            return false;
+        }
+        state.start_requested = true;
+        push_activity(
+            &mut state.activity,
+            "主线程已请求创建 frontend/backend worker。等待 spawn 事件注册。".to_string(),
+        );
+        true
     }
 
     pub(crate) fn worker_thread_id(&self, worker: WorkerSlot) -> Option<ThreadId> {
-        self.worker(worker).thread_id
+        self.read_state().worker(worker).thread_id
     }
 
     pub(crate) fn build_root_dispatch(
@@ -214,43 +271,65 @@ impl State {
         Some((to_thread_id, communication))
     }
 
-    pub(crate) fn record_dispatch(&mut self, worker: WorkerSlot, message: &str) {
-        let worker = self.worker_mut(worker);
-        worker.closed = false;
-        worker.last_dispatched_task = Some(message.to_string());
+    pub(crate) fn record_dispatch(&mut self, worker: WorkerSlot, message: &str) -> bool {
+        let mut state = self.write_state();
+        let worker_state = state.worker_mut(worker);
+        worker_state.closed = false;
+        worker_state.last_dispatched_task = Some(message.to_string());
+        push_activity(
+            &mut state.activity,
+            format!("主线程 -> {worker}：{}", preview(message)),
+        );
+        true
+    }
+
+    pub(crate) fn record_relay(&mut self, from: WorkerSlot, to: WorkerSlot, message: &str) -> bool {
+        let mut state = self.write_state();
+        let target_state = state.worker_mut(to);
+        target_state.closed = false;
+        target_state.last_dispatched_task = Some(message.to_string());
+        push_activity(
+            &mut state.activity,
+            format!("{from} -> {to}：{}", preview(message)),
+        );
+        true
     }
 
     pub(crate) fn observe_notification(
         &mut self,
         thread_id: ThreadId,
         notification: &ServerNotification,
-    ) {
+    ) -> bool {
         match notification {
             ServerNotification::ThreadStarted(notification) => {
-                self.observe_thread_started(thread_id, &notification.thread);
+                self.observe_thread_started(thread_id, &notification.thread)
             }
             ServerNotification::ItemCompleted(notification) => {
-                self.observe_completed_item(thread_id, &notification.item);
+                self.observe_completed_item(thread_id, &notification.item)
             }
             ServerNotification::ThreadClosed(notification) => {
                 if notification.thread_id == thread_id.to_string() {
-                    self.observe_thread_closed(thread_id);
+                    self.observe_thread_closed(thread_id)
+                } else {
+                    false
                 }
             }
-            _ => {}
+            _ => false,
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn status_message(&self) -> String {
+        let state = self.read_state();
         let mut lines = Vec::new();
         lines.push(format!("{MODE_NAME} 状态："));
-        if self.start_requested {
+        if state.start_requested {
             lines.push("已请求创建 frontend/backend worker。".to_string());
         } else {
             lines.push("尚未请求创建 worker；先运行 `/zteam start`。".to_string());
         }
-        lines.push(worker_status_line(WorkerSlot::Frontend, &self.frontend));
-        lines.push(worker_status_line(WorkerSlot::Backend, &self.backend));
+        lines.push(worker_status_line(WorkerSlot::Frontend, &state.frontend));
+        lines.push(worker_status_line(WorkerSlot::Backend, &state.backend));
         lines.join("\n")
     }
 
@@ -268,41 +347,94 @@ impl State {
         )
     }
 
-    fn observe_thread_started(&mut self, thread_id: ThreadId, thread: &Thread) {
-        if let Some(worker) = WorkerSlot::ALL
+    fn snapshot(&self) -> Snapshot {
+        let state = self.read_state();
+        Snapshot {
+            start_requested: state.start_requested,
+            frontend: state.frontend.clone(),
+            backend: state.backend.clone(),
+            activity: state.activity.iter().cloned().collect(),
+            recent_results: state.recent_results.iter().cloned().collect(),
+        }
+    }
+
+    fn observe_thread_started(&mut self, thread_id: ThreadId, thread: &Thread) -> bool {
+        let Some(worker) = WorkerSlot::ALL
             .into_iter()
             .find(|worker| worker.matches_thread(thread))
-        {
-            let worker_state = self.worker_mut(worker);
-            worker_state.thread_id = Some(thread_id);
-            worker_state.closed = false;
+        else {
+            return false;
+        };
+        let mut state = self.write_state();
+        let worker_state = state.worker_mut(worker);
+        if worker_state.thread_id == Some(thread_id) && !worker_state.closed {
+            return false;
         }
+        worker_state.thread_id = Some(thread_id);
+        worker_state.closed = false;
+        push_activity(
+            &mut state.activity,
+            format!(
+                "{worker} worker 已注册到 `{}`。",
+                worker.canonical_task_name()
+            ),
+        );
+        true
     }
 
-    fn observe_completed_item(&mut self, thread_id: ThreadId, item: &ThreadItem) {
-        let Some(worker) = self.worker_slot_for_thread(thread_id) else {
-            return;
+    fn observe_completed_item(&mut self, thread_id: ThreadId, item: &ThreadItem) -> bool {
+        let worker = {
+            let state = self.read_state();
+            let Some(worker) = state.worker_slot_for_thread(thread_id) else {
+                return false;
+            };
+            worker
         };
         let ThreadItem::AgentMessage { text, phase, .. } = item else {
-            return;
+            return false;
         };
         if text.trim().is_empty() || *phase == Some(MessagePhase::Commentary) {
-            return;
+            return false;
         }
-        let worker_state = self.worker_mut(worker);
+        let mut state = self.write_state();
+        let worker_state = state.worker_mut(worker);
         worker_state.last_result = Some(text.clone());
         worker_state.closed = false;
+        push_result(&mut state.recent_results, worker, preview(text));
+        true
     }
 
-    fn observe_thread_closed(&mut self, thread_id: ThreadId) {
-        let Some(worker) = self.worker_slot_for_thread(thread_id) else {
-            return;
+    fn observe_thread_closed(&mut self, thread_id: ThreadId) -> bool {
+        let worker = {
+            let state = self.read_state();
+            let Some(worker) = state.worker_slot_for_thread(thread_id) else {
+                return false;
+            };
+            worker
         };
-        let worker_state = self.worker_mut(worker);
+        let mut state = self.write_state();
+        let worker_state = state.worker_mut(worker);
         worker_state.thread_id = None;
         worker_state.closed = true;
+        push_activity(
+            &mut state.activity,
+            format!("{worker} worker 已关闭，等待重新创建。"),
+        );
+        true
     }
 
+    fn read_state(&self) -> std::sync::RwLockReadGuard<'_, SharedState> {
+        #[expect(clippy::expect_used)]
+        self.inner.read().expect("zteam state poisoned")
+    }
+
+    fn write_state(&self) -> std::sync::RwLockWriteGuard<'_, SharedState> {
+        #[expect(clippy::expect_used)]
+        self.inner.write().expect("zteam state poisoned")
+    }
+}
+
+impl SharedState {
     fn worker_slot_for_thread(&self, thread_id: ThreadId) -> Option<WorkerSlot> {
         if self.frontend.thread_id == Some(thread_id) {
             return Some(WorkerSlot::Frontend);
@@ -328,18 +460,22 @@ impl State {
     }
 }
 
+fn push_activity(activity: &mut VecDeque<ActivityEntry>, summary: String) {
+    activity.push_front(ActivityEntry { summary });
+    if activity.len() > MAX_ACTIVITY_ITEMS {
+        activity.pop_back();
+    }
+}
+
+fn push_result(results: &mut VecDeque<ResultEntry>, worker: WorkerSlot, summary: String) {
+    results.push_front(ResultEntry { worker, summary });
+    if results.len() > MAX_RESULT_ITEMS {
+        results.pop_back();
+    }
+}
+
 impl WorkerSlot {
     const ALL: [Self; 2] = [Self::Frontend, Self::Backend];
-}
-
-pub(crate) fn entry_message() -> String {
-    format!(
-        "{MODE_NAME} 入口已启用。先用 `/zteam start` 创建 frontend/backend worker，再用 `/zteam frontend <任务>` 或 `/zteam backend <任务>` 分派任务。"
-    )
-}
-
-pub(crate) fn entry_hint() -> &'static str {
-    "可用 `/zteam status` 查看当前状态，或用 `/zteam relay frontend backend <消息>` 在 worker 间转发中途消息。"
 }
 
 pub(crate) fn disabled_message() -> String {
@@ -372,6 +508,7 @@ fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
     }
 }
 
+#[cfg(test)]
 fn worker_status_line(worker: WorkerSlot, state: &WorkerState) -> String {
     let state_text = match (state.thread_id, state.closed) {
         (Some(thread_id), _) => format!("已注册 ({thread_id})"),
@@ -471,13 +608,27 @@ mod tests {
                 message: "对齐接口字段".to_string(),
             })
         );
+        assert_eq!(
+            Command::parse("relay   frontend backend    对齐接口字段"),
+            Ok(Command::Relay {
+                from: WorkerSlot::Frontend,
+                to: WorkerSlot::Backend,
+                message: "对齐接口字段".to_string(),
+            })
+        );
     }
 
     #[test]
     fn command_parser_rejects_invalid_forms() {
         assert_eq!(Command::parse(""), Err(usage().to_string()));
+        assert_eq!(Command::parse("start extra"), Err(usage().to_string()));
+        assert_eq!(Command::parse("status extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("frontend"), Err(usage().to_string()));
         assert_eq!(Command::parse("relay frontend"), Err(usage().to_string()));
+        assert_eq!(
+            Command::parse("relay frontend backend"),
+            Err(usage().to_string())
+        );
         assert_eq!(Command::parse("unknown test"), Err(usage().to_string()));
     }
 
