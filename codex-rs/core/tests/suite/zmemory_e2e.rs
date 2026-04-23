@@ -26,6 +26,7 @@ use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use rusqlite::Connection;
+use rusqlite::Row;
 use rusqlite::params;
 use serde_json::Value;
 use serde_json::json;
@@ -2669,7 +2670,7 @@ async fn zmemory_proactive_capture_updates_existing_conflicting_contract_memory(
              (SELECT COUNT(*) FROM paths WHERE namespace = '' AND domain = 'core' AND path = 'agent/my_user')
          FROM target",
         [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row: &Row<'_>| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )?;
     assert_eq!(memory_count, 2);
     assert_eq!(deprecated_count, 1);

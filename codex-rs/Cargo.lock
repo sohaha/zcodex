@@ -2139,6 +2139,7 @@ dependencies = [
  "regex-lite",
  "reqwest 0.12.28",
  "rmcp",
+ "rusqlite",
  "schemars 0.8.22",
  "serde",
  "serde_json",
