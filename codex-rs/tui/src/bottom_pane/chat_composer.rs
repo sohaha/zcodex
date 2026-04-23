@@ -2388,7 +2388,7 @@ impl ChatComposer {
             && let Some(cmd) =
                 slash_commands::find_builtin_command(name, self.builtin_command_flags())
         {
-            if self.reject_slash_command_if_unavailable(cmd) {
+            if self.reject_slash_command_if_unavailable(cmd, /*inline_args*/ None) {
                 self.stage_slash_command_history();
                 self.record_pending_slash_command_history();
                 return Some(InputResult::None);
@@ -2422,7 +2422,7 @@ impl ChatComposer {
         if !cmd.supports_inline_args() {
             return None;
         }
-        if self.reject_slash_command_if_unavailable(cmd) {
+        if self.reject_slash_command_if_unavailable(cmd, Some(rest.trim())) {
             self.stage_slash_command_history();
             self.record_pending_slash_command_history();
             return Some(InputResult::None);
@@ -2467,8 +2467,16 @@ impl ChatComposer {
         Some((trimmed_rest.to_string(), args_elements))
     }
 
-    fn reject_slash_command_if_unavailable(&self, cmd: SlashCommand) -> bool {
-        if !self.is_task_running || cmd.available_during_task() {
+    fn reject_slash_command_if_unavailable(
+        &self,
+        cmd: SlashCommand,
+        inline_args: Option<&str>,
+    ) -> bool {
+        let available = match cmd {
+            SlashCommand::Zteam => crate::zteam::entry_available_during_task(inline_args),
+            _ => cmd.available_during_task(),
+        };
+        if !self.is_task_running || available {
             return false;
         }
         let message = format!(
@@ -6547,6 +6555,107 @@ mod tests {
             }
         }
         assert!(found_error, "expected error history cell to be sent");
+    }
+
+    #[test]
+    fn zteam_bare_command_is_allowed_while_task_running() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, mut rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "让 Codex 帮你做任何事".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+        composer.set_zteam_enabled(true);
+        composer.set_task_running(/*running*/ true);
+        composer.textarea.set_text_clearing_elements("/zteam");
+
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(InputResult::Command(SlashCommand::Zteam), result);
+        assert!(rx.try_recv().is_err(), "expected no disabled-command error");
+    }
+
+    #[test]
+    fn zteam_status_inline_command_is_allowed_while_task_running() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, mut rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "让 Codex 帮你做任何事".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+        composer.set_zteam_enabled(true);
+        composer.set_task_running(/*running*/ true);
+        composer
+            .textarea
+            .set_text_clearing_elements("/zteam status");
+
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(
+            InputResult::CommandWithArgs(SlashCommand::Zteam, "status".to_string(), Vec::new()),
+            result
+        );
+        assert!(rx.try_recv().is_err(), "expected no disabled-command error");
+    }
+
+    #[test]
+    fn zteam_mutating_inline_command_stays_blocked_while_task_running() {
+        use crossterm::event::KeyCode;
+        use crossterm::event::KeyEvent;
+        use crossterm::event::KeyModifiers;
+
+        let (tx, mut rx) = unbounded_channel::<AppEvent>();
+        let sender = AppEventSender::new(tx);
+        let mut composer = ChatComposer::new(
+            /*has_input_focus*/ true,
+            sender,
+            /*enhanced_keys_supported*/ false,
+            "让 Codex 帮你做任何事".to_string(),
+            /*disable_paste_burst*/ false,
+        );
+        composer.set_zteam_enabled(true);
+        composer.set_task_running(/*running*/ true);
+        composer
+            .textarea
+            .set_text_clearing_elements("/zteam frontend 修复布局");
+
+        let (result, _needs_redraw) =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(InputResult::None, result);
+        assert_eq!("/zteam frontend 修复布局", composer.textarea.text());
+
+        let mut found_error = false;
+        while let Ok(event) = rx.try_recv() {
+            if let AppEvent::InsertHistoryCell(cell) = event {
+                let message = cell
+                    .display_lines(/*width*/ 80)
+                    .into_iter()
+                    .map(|line| line.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(message.contains("'/zteam' is disabled while a task is in progress"));
+                found_error = true;
+                break;
+            }
+        }
+        assert!(found_error, "expected zteam disabled-command error");
     }
 
     #[test]

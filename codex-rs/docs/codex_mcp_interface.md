@@ -181,7 +181,7 @@ Typical inputs:
 - `language` - required for `structure|importers|context|impact|calls|dead|arch|cfg|dfg|semantic`; optional for `search`; `extract|imports|slice|diagnostics|change-impact` can infer from file extension when omitted
 - `symbol` - optional symbol name for `structure|context|impact|calls|dead|arch|cfg|dfg`; required symbol-like target for `slice`
 - `query` - query string for `search` or `semantic`
-- `matchMode` - optional search match mode for `search`
+- `matchMode` - optional search match mode for `search`; allowed values are `literal` (default) or `regex`, and older `substring` wording should be normalized to `literal`
 - `module` - required module path for `importers`
 - `path` - file path for `extract|imports|slice` and dirty file path for `notify`
 - `paths` - changed file paths for `change-impact`

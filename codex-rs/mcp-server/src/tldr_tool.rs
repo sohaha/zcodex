@@ -967,6 +967,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_repairs_substring_match_mode_value() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "resolveProjectAvatar(\n")
+            .expect("fixture should write");
+
+        let arguments = serde_json::json!({
+            "action": "search",
+            "project": tempdir.path().display().to_string(),
+            "language": "rust",
+            "query": "resolveProjectAvatar(",
+            "matchMode": "substring"
+        });
+        let result = run_tldr_tool(arguments.as_object().cloned()).await;
+        let structured = result
+            .structured_content
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(structured["action"], "search");
+        assert_eq!(structured["matchMode"], "literal");
+        assert_eq!(structured["search"]["match_mode"], "literal");
+    }
+
+    #[tokio::test]
     async fn run_tldr_tool_surfaces_invalid_argument_contract() {
         let arguments = serde_json::json!({
             "action": 7

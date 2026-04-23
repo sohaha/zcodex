@@ -7,6 +7,7 @@
 - 当问题同时包含“结构理解 + 事实核对”时，默认先用 `ztldr` 建立结构视图，再读取少量源码验证默认值、feature gate、文档或测试结论。
 - 当 `ztldr` 返回 `degradedMode` 或 `structuredFailure` 时，agent 应显式说明已降级或暂不可用，而不是把结果当作正常成功。
 - 调用时优先使用规范字段名：`query`、`matchMode`、`path`、`paths`；不要把内部 `pattern` / `match_mode` / `file` 这类实现细节当成对外 contract。
+- `search.matchMode` 只接受 `literal`（默认）或 `regex`；旧提示若出现 `substring`，应改写为 `literal`，不要原样传参。
 
 ## 适用场景
 

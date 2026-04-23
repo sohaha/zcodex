@@ -530,6 +530,24 @@ pub(crate) async fn run_turn(
                     else {
                         break Err(err);
                     };
+                    let fallback_route = {
+                        let provider_id = next_turn_context.config.model_provider_id.as_str();
+                        let model = next_turn_context.model_info.slug.as_str();
+                        if provider_id == model {
+                            model.to_string()
+                        } else {
+                            format!("{provider_id}/{model}")
+                        }
+                    };
+                    let warning_message =
+                        format!("此请求已被路由到 {fallback_route} 作为后备方案。");
+                    sess.send_event(
+                        &attempt_turn_context,
+                        EventMsg::Warning(WarningEvent {
+                            message: warning_message.clone(),
+                        }),
+                    )
+                    .await;
                     fallback_start_index = index.saturating_add(1);
                     attempt_fallback_provider_index = Some(index);
                     client_session = client_session

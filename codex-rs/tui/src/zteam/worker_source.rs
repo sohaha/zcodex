@@ -16,6 +16,7 @@ pub(crate) struct FederationWorkerConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FederationAdapter {
     frontend: FederationWorkerConfig,
+    ios: FederationWorkerConfig,
     backend: FederationWorkerConfig,
 }
 
@@ -23,14 +24,15 @@ impl FederationAdapter {
     pub(crate) fn from_thread_start_params(params: FederationThreadStartParams) -> Self {
         Self {
             frontend: federation_worker_config(&params, WorkerSlot::Frontend),
+            ios: federation_worker_config(&params, WorkerSlot::Ios),
             backend: federation_worker_config(&params, WorkerSlot::Backend),
         }
     }
 
     pub(crate) fn summary(&self) -> String {
         format!(
-            "frontend => {}，backend => {}",
-            self.frontend.name, self.backend.name
+            "frontend => {}，ios => {}，backend => {}",
+            self.frontend.name, self.ios.name, self.backend.name
         )
     }
 }
@@ -59,11 +61,41 @@ pub(crate) fn local_thread_matches_slot(slot: WorkerSlot, thread: &Thread) -> bo
             ..
         }) if agent_path.to_string() == slot.canonical_task_name() => true,
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+            agent_nickname: Some(agent_nickname),
             agent_role: Some(agent_role),
             ..
-        }) if agent_role == slot.role_name() => true,
+        }) if agent_role == slot.role_name()
+            && slot_matches_agent_nickname(slot, agent_nickname) =>
+        {
+            true
+        }
         _ => false,
     }
+}
+
+fn slot_matches_agent_nickname(slot: WorkerSlot, agent_nickname: &str) -> bool {
+    let nickname = agent_nickname.trim();
+    nickname == slot.display_name()
+        || nickname.eq_ignore_ascii_case(slot.task_name())
+        || matches!(
+            slot,
+            WorkerSlot::Frontend
+                if nickname == "前端"
+                    || nickname.eq_ignore_ascii_case("android")
+                    || nickname.eq_ignore_ascii_case("android frontend")
+        )
+        || matches!(
+            slot,
+            WorkerSlot::Ios
+                if nickname.eq_ignore_ascii_case("ios")
+                    || nickname.eq_ignore_ascii_case("ios frontend")
+                    || nickname == "iOS"
+                    || nickname == "iOS 前端"
+        )
+        || matches!(
+            slot,
+            WorkerSlot::Backend if nickname == "后端" || nickname.eq_ignore_ascii_case("server")
+        )
 }
 
 fn federation_worker_config(

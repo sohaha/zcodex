@@ -730,6 +730,12 @@ struct ThreadEventChannel {
     store: Arc<Mutex<ThreadEventStore>>,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ZteamAttachOutcome {
+    restored: usize,
+    live_attached: usize,
+}
+
 impl ThreadEventChannel {
     fn new(capacity: usize) -> Self {
         let (sender, receiver) = mpsc::channel(capacity);
@@ -2080,19 +2086,39 @@ impl App {
                 self.chat_widget.open_zteam_workbench();
             }
             zteam::Command::Attach => {
-                let restored = self
+                let outcome = self
                     .restore_zteam_workers_from_thread_list(app_server)
                     .await?;
                 self.chat_widget.open_zteam_workbench();
-                if restored == 0 {
+                if outcome.restored == 0 {
                     self.chat_widget.add_info_message(
-                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/backend worker。"
+                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/ios/backend worker。"
                             .to_string(),
+                        /*hint*/ None,
+                    );
+                } else if outcome.live_attached == outcome.restored {
+                    self.chat_widget.add_info_message(
+                        format!(
+                            "已重新附着 {count} 个 ZTeam worker。",
+                            count = outcome.live_attached
+                        ),
+                        /*hint*/ None,
+                    );
+                } else if outcome.live_attached == 0 {
+                    self.chat_widget.add_info_message(
+                        format!(
+                            "已恢复 {restored} 个 ZTeam worker 的最近状态；暂未重新附着 live 会话。",
+                            restored = outcome.restored
+                        ),
                         /*hint*/ None,
                     );
                 } else {
                     self.chat_widget.add_info_message(
-                        format!("已同步 {restored} 个 ZTeam worker 的最近状态。"),
+                        format!(
+                            "已恢复 {restored} 个 ZTeam worker，其中 {live} 个已重新附着。",
+                            restored = outcome.restored,
+                            live = outcome.live_attached
+                        ),
                         /*hint*/ None,
                     );
                 }
@@ -3831,16 +3857,25 @@ impl App {
         }
     }
 
-    fn restore_zteam_workers_from_threads(&mut self, threads: Vec<Thread>) -> usize {
+    async fn restore_zteam_workers_from_threads(
+        &mut self,
+        app_server: &mut AppServerSession,
+        threads: Vec<Thread>,
+    ) -> usize {
         let Some(primary_thread_id) = self.primary_thread_id else {
             return 0;
         };
 
         let mut restored = 0;
         for thread in zteam::latest_local_threads_for_primary(threads, primary_thread_id) {
-            if let Some(recovered) = zteam::recover_local_worker(&thread) {
-                self.chat_widget.restore_zteam_worker(recovered);
+            if let Some(live_attached) = self
+                .restore_zteam_worker_candidate(app_server, thread, /*live_connection*/ true)
+                .await
+            {
                 restored += 1;
+                if !live_attached {
+                    tracing::debug!("loaded zteam worker restored without live attach");
+                }
             }
         }
         restored
@@ -3888,17 +3923,79 @@ impl App {
             }
         }
 
-        self.restore_zteam_workers_from_threads(threads)
+        self.restore_zteam_workers_from_threads(app_server, threads)
+            .await
+    }
+
+    async fn loaded_thread_ids_for_zteam_recovery(
+        &mut self,
+        app_server: &mut AppServerSession,
+    ) -> std::collections::HashSet<ThreadId> {
+        let loaded_thread_ids = match app_server
+            .thread_loaded_list(ThreadLoadedListParams {
+                cursor: None,
+                limit: None,
+            })
+            .await
+        {
+            Ok(response) => response.data,
+            Err(err) => {
+                tracing::warn!(%err, "failed to list loaded threads for zteam attach");
+                return std::collections::HashSet::new();
+            }
+        };
+
+        loaded_thread_ids
+            .into_iter()
+            .filter_map(|thread_id| match ThreadId::from_string(&thread_id) {
+                Ok(thread_id) => Some(thread_id),
+                Err(_) => {
+                    tracing::warn!("ignoring loaded thread with invalid id during zteam attach");
+                    None
+                }
+            })
+            .collect()
+    }
+
+    async fn restore_zteam_worker_candidate(
+        &mut self,
+        app_server: &mut AppServerSession,
+        thread: Thread,
+        live_connection: bool,
+    ) -> Option<bool> {
+        let thread_id = ThreadId::from_string(&thread.id).ok()?;
+        let live_connection = if live_connection {
+            match self
+                .attach_live_thread_for_selection(app_server, thread_id)
+                .await
+            {
+                Ok(live_attached) => live_attached,
+                Err(err) => {
+                    tracing::warn!(
+                        thread_id = %thread_id,
+                        %err,
+                        "failed to live-attach zteam worker; falling back to replay-only recovery"
+                    );
+                    false
+                }
+            }
+        } else {
+            false
+        };
+        let recovered = zteam::recover_local_worker(&thread, live_connection)?;
+        self.chat_widget.restore_zteam_worker(recovered);
+        Some(live_connection)
     }
 
     async fn restore_zteam_workers_from_thread_list(
         &mut self,
         app_server: &mut AppServerSession,
-    ) -> Result<usize> {
+    ) -> Result<ZteamAttachOutcome> {
         let Some(primary_thread_id) = self.primary_thread_id else {
-            return Ok(0);
+            return Ok(ZteamAttachOutcome::default());
         };
 
+        let loaded_thread_ids = self.loaded_thread_ids_for_zteam_recovery(app_server).await;
         let mut cursor = None;
         let mut threads = Vec::new();
         loop {
@@ -3945,7 +4042,22 @@ impl App {
             }
         }
 
-        Ok(self.restore_zteam_workers_from_threads(threads))
+        let mut outcome = ZteamAttachOutcome::default();
+        for thread in zteam::latest_local_threads_for_primary(threads, primary_thread_id) {
+            let live_connection = ThreadId::from_string(&thread.id)
+                .ok()
+                .is_some_and(|thread_id| loaded_thread_ids.contains(&thread_id));
+            if let Some(live_attached) = self
+                .restore_zteam_worker_candidate(app_server, thread, live_connection)
+                .await
+            {
+                outcome.restored += 1;
+                if live_attached {
+                    outcome.live_attached += 1;
+                }
+            }
+        }
+        Ok(outcome)
     }
 
     /// Returns the adjacent thread id for keyboard navigation, backfilling from the server if the
@@ -7123,6 +7235,7 @@ mod tests {
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionConfiguredEvent;
     use codex_protocol::protocol::SessionSource;
+    use codex_protocol::protocol::SubAgentSource;
     use codex_protocol::protocol::TurnContextItem;
     use codex_protocol::request_permissions::RequestPermissionProfile;
     use codex_protocol::user_input::TextElement;
@@ -8616,6 +8729,42 @@ mod tests {
             format!("Agent thread {thread_id} is not yet available for replay or live attach.")
         );
         assert!(!app.thread_event_channels.contains_key(&thread_id));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn restore_loaded_zteam_workers_marks_unattachable_threads_for_reattach() -> Result<()> {
+        let mut app = make_test_app().await;
+        let mut app_server =
+            crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref())
+                .await
+                .expect("embedded app server");
+        let primary_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        app.primary_thread_id = Some(primary_thread_id);
+
+        let restored = app
+            .restore_zteam_workers_from_threads(
+                &mut app_server,
+                vec![test_zteam_thread(
+                    frontend_id,
+                    primary_thread_id,
+                    crate::zteam::WorkerSlot::Frontend,
+                    codex_app_server_protocol::ThreadStatus::Idle,
+                    10,
+                )],
+            )
+            .await;
+
+        assert_eq!(restored, 1);
+        assert!(!app.thread_event_channels.contains_key(&frontend_id));
+        assert!(
+            app.chat_widget
+                .zteam_missing_worker_message(crate::zteam::WorkerSlot::Frontend)
+                .contains("/zteam attach")
+        );
         Ok(())
     }
 
@@ -10391,6 +10540,46 @@ guardian_approval = true
             started_at: None,
             completed_at: None,
             duration_ms: None,
+        }
+    }
+
+    fn test_zteam_thread(
+        thread_id: ThreadId,
+        parent_thread_id: ThreadId,
+        slot: crate::zteam::WorkerSlot,
+        status: codex_app_server_protocol::ThreadStatus,
+        updated_at: i64,
+    ) -> Thread {
+        Thread {
+            id: thread_id.to_string(),
+            forked_from_id: None,
+            preview: String::new(),
+            ephemeral: false,
+            model_provider: "openai".to_string(),
+            created_at: updated_at,
+            updated_at,
+            status,
+            path: None,
+            cwd: test_absolute_path("/tmp"),
+            cli_version: "0.0.0".to_string(),
+            source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                parent_model: None,
+                agent_path: Some(
+                    format!("/root/{}", slot.task_name())
+                        .parse()
+                        .expect("valid task path"),
+                ),
+                agent_nickname: Some(slot.display_name().to_string()),
+                agent_role: Some(slot.role_name().to_string()),
+            })
+            .into(),
+            agent_nickname: Some(slot.display_name().to_string()),
+            agent_role: Some(slot.role_name().to_string()),
+            git_info: None,
+            name: None,
+            turns: Vec::new(),
         }
     }
 

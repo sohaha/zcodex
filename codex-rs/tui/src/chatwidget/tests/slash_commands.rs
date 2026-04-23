@@ -426,6 +426,8 @@ async fn zteam_workbench_updates_with_worker_activity() {
 
     let frontend_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+    let ios_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000015").expect("valid thread");
     let backend_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -439,12 +441,19 @@ async fn zteam_workbench_updates_with_worker_activity() {
         }),
     );
     chat.observe_zteam_thread_notification(
+        ios_id,
+        &ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: zteam_test_thread(ios_id, crate::zteam::WorkerSlot::Ios),
+        }),
+    );
+    chat.observe_zteam_thread_notification(
         backend_id,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: zteam_test_thread(backend_id, crate::zteam::WorkerSlot::Backend),
         }),
     );
     chat.record_zteam_dispatch(crate::zteam::WorkerSlot::Frontend, "修复导航栏布局");
+    chat.record_zteam_dispatch(crate::zteam::WorkerSlot::Ios, "修复 iOS 列表滚动卡顿");
     chat.record_zteam_relay(
         crate::zteam::WorkerSlot::Frontend,
         crate::zteam::WorkerSlot::Backend,
@@ -461,6 +470,19 @@ async fn zteam_workbench_updates_with_worker_activity() {
             },
             thread_id: frontend_id.to_string(),
             turn_id: "turn-1".to_string(),
+        }),
+    );
+    chat.observe_zteam_thread_notification(
+        ios_id,
+        &ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: codex_app_server_protocol::ThreadItem::AgentMessage {
+                id: "msg-ios".to_string(),
+                text: "iOS 阶段结果：列表滚动卡顿已修复，并统一了安全区间距。".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: ios_id.to_string(),
+            turn_id: "turn-ios".to_string(),
         }),
     );
     chat.observe_zteam_thread_notification(
@@ -515,6 +537,45 @@ async fn zteam_attach_inline_command_requests_app_event() {
 }
 
 #[tokio::test]
+async fn zteam_status_inline_command_requests_app_event_while_task_running() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    chat.dispatch_command_with_args(SlashCommand::Zteam, "status".to_string(), Vec::new());
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Status))
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_frontend_inline_command_is_disabled_while_task_running() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Zteam,
+        "frontend 修复导航栏布局".to_string(),
+        Vec::new(),
+    );
+
+    let event = rx.try_recv().expect("expected disabled command error");
+    match event {
+        AppEvent::InsertHistoryCell(cell) => {
+            let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+            assert!(
+                rendered.contains("'/zteam' 在任务进行中被禁用。"),
+                "expected /zteam task-running error, got {rendered:?}"
+            );
+        }
+        other => panic!("expected InsertHistoryCell error, got {other:?}"),
+    }
+    assert!(rx.try_recv().is_err(), "expected no follow-up events");
+}
+
+#[tokio::test]
 async fn zteam_frontend_inline_command_requests_task_dispatch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -528,6 +589,24 @@ async fn zteam_frontend_inline_command_requests_task_dispatch() {
         rx.try_recv(),
         Ok(AppEvent::ZteamCommand(crate::zteam::Command::Dispatch { worker, message }))
             if worker == crate::zteam::WorkerSlot::Frontend && message == "修复导航栏布局"
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_ios_inline_command_requests_task_dispatch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Zteam,
+        "ios 修复列表滚动卡顿".to_string(),
+        Vec::new(),
+    );
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Dispatch { worker, message }))
+            if worker == crate::zteam::WorkerSlot::Ios && message == "修复列表滚动卡顿"
     );
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
@@ -575,6 +654,8 @@ async fn zteam_workbench_shows_reattach_required_workers_and_adapter_summary() {
 
     let frontend_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+    let ios_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000015").expect("valid thread");
     let backend_id =
         ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -594,6 +675,13 @@ async fn zteam_workbench_shows_reattach_required_workers_and_adapter_summary() {
         source: crate::zteam::WorkerSource::LocalThreadSpawn,
         last_dispatched_task: Some("修复导航栏布局".to_string()),
         last_result: Some("前端阶段结果：等待重新附着。".to_string()),
+    });
+    chat.restore_zteam_worker(crate::zteam::RecoveredWorker {
+        slot: crate::zteam::WorkerSlot::Ios,
+        connection: crate::zteam::WorkerConnection::ReattachRequired(ios_id),
+        source: crate::zteam::WorkerSource::LocalThreadSpawn,
+        last_dispatched_task: Some("修复 iOS 列表滚动卡顿".to_string()),
+        last_result: Some("iOS 阶段结果：等待重新附着。".to_string()),
     });
     chat.restore_zteam_worker(crate::zteam::RecoveredWorker {
         slot: crate::zteam::WorkerSlot::Backend,

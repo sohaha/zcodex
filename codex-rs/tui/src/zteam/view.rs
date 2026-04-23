@@ -64,47 +64,32 @@ impl WorkbenchView {
         lines.push(Line::from(""));
 
         lines.push(section_header("Worker 面板"));
-        lines.extend(worker_panel_lines(
-            &snapshot.frontend,
-            WorkerSlot::Frontend,
-            inner_width,
-        ));
-        lines.extend(worker_panel_lines(
-            &snapshot.backend,
-            WorkerSlot::Backend,
-            inner_width,
-        ));
+        for worker in WorkerSlot::ALL {
+            lines.extend(worker_panel_lines(
+                snapshot.worker(worker),
+                worker,
+                inner_width,
+            ));
+        }
         lines.push(Line::from(""));
 
         lines.push(section_header("任务板"));
-        push_wrapped(
-            &mut lines,
-            inner_width,
-            format!(
-                "前端：{}",
-                snapshot
-                    .frontend
-                    .last_dispatched_task
-                    .as_deref()
-                    .map(super::preview)
-                    .unwrap_or_else(|| "等待任务".to_string())
-            ),
-            "  ",
-        );
-        push_wrapped(
-            &mut lines,
-            inner_width,
-            format!(
-                "后端：{}",
-                snapshot
-                    .backend
-                    .last_dispatched_task
-                    .as_deref()
-                    .map(super::preview)
-                    .unwrap_or_else(|| "等待任务".to_string())
-            ),
-            "  ",
-        );
+        for worker in WorkerSlot::ALL {
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!(
+                    "{worker}：{}",
+                    snapshot
+                        .worker(worker)
+                        .last_dispatched_task
+                        .as_deref()
+                        .map(super::preview)
+                        .unwrap_or_else(|| "等待任务".to_string())
+                ),
+                "  ",
+            );
+        }
         lines.push(Line::from(""));
 
         lines.push(section_header("消息流"));
@@ -223,9 +208,7 @@ impl Renderable for WorkbenchView {
                 "/zteam attach".cyan(),
                 " 再附着".dim(),
                 " · ".dim(),
-                "/zteam frontend <任务>".cyan(),
-                " / ".dim(),
-                "/zteam backend <任务>".cyan(),
+                "/zteam <worker> <任务>".cyan(),
             ]))
             .render(hint_area, buf);
         }
@@ -296,7 +279,10 @@ fn worker_panel_lines(
 
 fn overview_status(snapshot: &Snapshot) -> String {
     if !snapshot.start_requested {
-        return "尚未启动。先运行 `/zteam start` 创建 frontend/backend worker。".to_string();
+        return format!(
+            "尚未启动。先运行 `/zteam start` 创建 {} worker。",
+            worker_task_list(&WorkerSlot::ALL)
+        );
     }
 
     let reattach = reattach_workers(snapshot);
@@ -312,7 +298,10 @@ fn overview_status(snapshot: &Snapshot) -> String {
         return format!("已请求创建 worker，等待 {} 注册。", worker_list(&missing));
     }
 
-    "frontend/backend worker 已就绪，可继续分派任务或转发消息。".to_string()
+    format!(
+        "{} worker 已就绪，可继续分派任务或转发消息。",
+        worker_task_list(&WorkerSlot::ALL)
+    )
 }
 
 fn blocking_note(snapshot: &Snapshot) -> Option<String> {
@@ -340,37 +329,27 @@ fn blocking_note(snapshot: &Snapshot) -> Option<String> {
 }
 
 fn missing_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
-    let mut workers = Vec::new();
-    if matches!(
-        snapshot.frontend.connection,
-        super::WorkerConnection::Pending
-    ) {
-        workers.push(WorkerSlot::Frontend);
-    }
-    if matches!(
-        snapshot.backend.connection,
-        super::WorkerConnection::Pending
-    ) {
-        workers.push(WorkerSlot::Backend);
-    }
-    workers
+    WorkerSlot::ALL
+        .into_iter()
+        .filter(|worker| {
+            matches!(
+                snapshot.worker(*worker).connection,
+                super::WorkerConnection::Pending
+            )
+        })
+        .collect()
 }
 
 fn reattach_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
-    let mut workers = Vec::new();
-    if matches!(
-        snapshot.frontend.connection,
-        super::WorkerConnection::ReattachRequired(_)
-    ) {
-        workers.push(WorkerSlot::Frontend);
-    }
-    if matches!(
-        snapshot.backend.connection,
-        super::WorkerConnection::ReattachRequired(_)
-    ) {
-        workers.push(WorkerSlot::Backend);
-    }
-    workers
+    WorkerSlot::ALL
+        .into_iter()
+        .filter(|worker| {
+            matches!(
+                snapshot.worker(*worker).connection,
+                super::WorkerConnection::ReattachRequired(_)
+            )
+        })
+        .collect()
 }
 
 fn worker_list(workers: &[WorkerSlot]) -> String {
@@ -379,6 +358,14 @@ fn worker_list(workers: &[WorkerSlot]) -> String {
         .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join("、")
+}
+
+fn worker_task_list(workers: &[WorkerSlot]) -> String {
+    workers
+        .iter()
+        .map(|worker| worker.task_name())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn push_wrapped(lines: &mut Vec<Line<'static>>, width: usize, text: String, indent: &str) {

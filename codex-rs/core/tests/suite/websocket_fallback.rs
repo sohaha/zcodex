@@ -1,6 +1,8 @@
 use anyhow::Result;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -312,6 +314,119 @@ async fn request_fallback_switches_to_configured_provider_and_model() -> Result<
     let fallback_request = fallback_mock.single_request();
     let fallback_body: Value = fallback_request.body_json();
     assert_eq!(fallback_body["model"].as_str(), Some("fallback-model"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_fallback_emits_warning_event_without_warning_item() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = responses::start_mock_server().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("primary failed"))
+        .mount(&primary_server)
+        .await;
+
+    let fallback_server = responses::start_mock_server().await;
+    let fallback_mock = mount_sse_once(
+        &fallback_server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let fallback_base_url = format!("{}/v1", fallback_server.uri());
+        move |config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+            config.model_provider.supports_websockets = false;
+            config.fallback_provider_id = Some("z-ai".to_string());
+            config.fallback_provider = Some(ModelProviderInfo {
+                name: Some("z-ai".to_string()),
+                model: None,
+                base_url: Some(fallback_base_url),
+                env_key: None,
+                model_catalog: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                wire_api: WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: Some(0),
+                stream_max_retries: Some(0),
+                stream_idle_timeout_ms: None,
+                retry_base_delay_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+                model_context_window: None,
+                model_auto_compact_token_limit: None,
+                max_output_tokens: None,
+                skip_reasoning_popup: false,
+            });
+            config.fallback_model = Some("glm4.7".to_string());
+        }
+    });
+    let TestCodex { codex, cwd, .. } = builder.build(&primary_server).await?;
+
+    codex
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: cwd.path().to_path_buf(),
+            approval_policy: AskForApproval::Never,
+            approvals_reviewer: None,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            model: "gpt-5".to_string(),
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    let mut warning_message = None;
+    let mut warning_item = None;
+    loop {
+        let event = timeout(Duration::from_secs(10), codex.next_event())
+            .await
+            .expect("timeout waiting for event")
+            .expect("event stream ended unexpectedly")
+            .msg;
+        match event {
+            EventMsg::Warning(warning) => warning_message = Some(warning.message),
+            EventMsg::RawResponseItem(raw) => {
+                if let ResponseItem::Message { content, .. } = raw.item
+                    && content.iter().any(|item| {
+                        matches!(
+                            item,
+                            ContentItem::InputText { text }
+                                if text.contains("此请求已被路由到 z-ai/glm4.7 作为后备方案。")
+                        )
+                    })
+                {
+                    warning_item = Some(());
+                }
+            }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
+
+    assert_eq!(
+        warning_message.as_deref(),
+        Some("此请求已被路由到 z-ai/glm4.7 作为后备方案。")
+    );
+    assert_eq!(warning_item, None);
+    assert_eq!(fallback_mock.requests().len(), 1);
 
     Ok(())
 }

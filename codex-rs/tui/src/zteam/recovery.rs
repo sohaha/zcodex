@@ -11,6 +11,7 @@ use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::SubAgentSource;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -52,8 +53,7 @@ pub(crate) fn latest_local_threads_for_primary(
     primary_thread_id: ThreadId,
 ) -> Vec<Thread> {
     let descendants = descendant_threads(threads, primary_thread_id);
-    let mut frontend = None;
-    let mut backend = None;
+    let mut latest = BTreeMap::new();
     for thread in descendants {
         let Some(slot) = WorkerSlot::ALL
             .into_iter()
@@ -61,24 +61,32 @@ pub(crate) fn latest_local_threads_for_primary(
         else {
             continue;
         };
-        match slot {
-            WorkerSlot::Frontend => replace_if_newer(&mut frontend, thread),
-            WorkerSlot::Backend => replace_if_newer(&mut backend, thread),
+        let should_replace = latest
+            .get(&slot)
+            .is_none_or(|existing: &Thread| existing.updated_at <= thread.updated_at);
+        if should_replace {
+            latest.insert(slot, thread);
         }
     }
 
-    [frontend, backend].into_iter().flatten().collect()
+    WorkerSlot::ALL
+        .into_iter()
+        .filter_map(|slot| latest.remove(&slot))
+        .collect()
 }
 
-pub(crate) fn recover_local_worker(thread: &Thread) -> Option<RecoveredWorker> {
+pub(crate) fn recover_local_worker(
+    thread: &Thread,
+    live_connection: bool,
+) -> Option<RecoveredWorker> {
     let slot = WorkerSlot::ALL
         .into_iter()
         .find(|slot| local_thread_matches_slot(*slot, thread))?;
     let thread_id = ThreadId::from_string(&thread.id).ok()?;
-    let connection = if matches!(thread.status, ThreadStatus::NotLoaded) {
-        WorkerConnection::ReattachRequired(thread_id)
-    } else {
+    let connection = if live_connection && !matches!(thread.status, ThreadStatus::NotLoaded) {
         WorkerConnection::Live(thread_id)
+    } else {
+        WorkerConnection::ReattachRequired(thread_id)
     };
     let (last_dispatched_task, last_result) = summarize_turns(&thread.turns, &thread.preview);
     Some(RecoveredWorker {
@@ -128,15 +136,6 @@ fn descendant_threads(threads: Vec<Thread>, primary_thread_id: ThreadId) -> Vec<
         .into_iter()
         .filter_map(|thread_id| threads_by_id.remove(&thread_id))
         .collect()
-}
-
-fn replace_if_newer(current: &mut Option<Thread>, candidate: Thread) {
-    if current
-        .as_ref()
-        .is_none_or(|existing| existing.updated_at <= candidate.updated_at)
-    {
-        *current = Some(candidate);
-    }
 }
 
 fn summarize_turns(turns: &[Turn], thread_preview: &str) -> (Option<String>, Option<String>) {
@@ -329,7 +328,7 @@ mod tests {
             duration_ms: None,
         }];
 
-        let recovered = recover_local_worker(&thread);
+        let recovered = recover_local_worker(&thread, /*live_connection*/ false);
 
         assert_eq!(
             recovered,
@@ -339,6 +338,34 @@ mod tests {
                 source: crate::zteam::WorkerSource::LocalThreadSpawn,
                 last_dispatched_task: Some("整理接口字段".to_string()),
                 last_result: Some("后端阶段结果：接口字段已统一。".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn recover_local_worker_marks_live_only_when_explicitly_allowed() {
+        let primary_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        let thread = test_thread(
+            frontend_id,
+            primary_thread_id,
+            WorkerSlot::Frontend,
+            ThreadStatus::Idle,
+            10,
+        );
+
+        let recovered = recover_local_worker(&thread, /*live_connection*/ true);
+
+        assert_eq!(
+            recovered,
+            Some(RecoveredWorker {
+                slot: WorkerSlot::Frontend,
+                connection: WorkerConnection::Live(frontend_id),
+                source: crate::zteam::WorkerSource::LocalThreadSpawn,
+                last_dispatched_task: None,
+                last_result: None,
             })
         );
     }

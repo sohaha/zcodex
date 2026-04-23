@@ -641,16 +641,15 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
     Err(error) => panic!("output schema literal should parse: {error}"),
 });
 
-pub const TLDR_TOOL_DESCRIPTION: &str = "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Use canonical fields: `query` for search/semantic text, `matchMode` for search mode, `path` for file-based actions, and `paths` for change-impact. `language` is required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic; extract, imports, slice, diagnostics, and change-impact can infer it from `path` or `paths` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly.";
+pub const TLDR_TOOL_DESCRIPTION: &str = "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Use canonical fields: `query` for search/semantic text, `matchMode` for search mode, `path` for file-based actions, and `paths` for change-impact. For `search`, `matchMode` accepts `literal` (default) or `regex`; if an older prompt says `substring`, treat it as `literal`. `language` is required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic; extract, imports, slice, diagnostics, and change-impact can infer it from `path` or `paths` when supported. Prefer raw grep/read for regex or exact text checks. If semantic fails because `language` is missing, rerun with `language`; if you only have a file path, switch to extract/imports/slice/diagnostics so ztldr can infer `language` from `path` when supported. If output includes degradedMode or structuredFailure, report it explicitly.";
 pub const TLDR_TOOL_LANGUAGE_DESCRIPTION: &str = "Supported language. Required for structure, importers, context, impact, calls, dead, arch, cfg, dfg, and semantic. Optional for search. Extract, imports, slice, diagnostics, and change-impact can infer it from path extensions when supported. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig.";
 pub const TLDR_TOOL_QUERY_DESCRIPTION: &str =
     "Query text for action=search or action=semantic. Use `query` as the canonical field name.";
-pub const TLDR_TOOL_MATCH_MODE_DESCRIPTION: &str =
-    "Optional search match mode. Use `matchMode` as the canonical field name.";
+pub const TLDR_TOOL_MATCH_MODE_DESCRIPTION: &str = "Optional search match mode. Use `matchMode` as the canonical field name. Allowed values: `literal` (default) or `regex`; treat older `substring` wording as `literal`.";
 pub const TLDR_TOOL_PATH_DESCRIPTION: &str = "Path for action=extract/imports/slice/diagnostics, or changed path for action=notify. Use `path` as the canonical field name.";
 pub const TLDR_TOOL_PATHS_DESCRIPTION: &str =
     "Required changed paths for action=change-impact. Use `paths` as the canonical field name.";
-pub const TLDR_TOOL_ARGUMENT_RETRY_HINT: &str = "Use canonical fields like `query`, `matchMode`, `path`, and `paths`. The parser repairs common near-miss inputs such as `pattern`, `match_mode`, `file`, `filePath`, and single-path `change-impact` requests.";
+pub const TLDR_TOOL_ARGUMENT_RETRY_HINT: &str = "Use canonical fields like `query`, `matchMode`, `path`, and `paths`. The parser repairs common near-miss inputs such as `pattern`, `match_mode`, `matchMode=substring`, `file`, `filePath`, and single-path `change-impact` requests.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TldrToolArgumentError {
@@ -777,7 +776,7 @@ pub struct TldrToolCallParam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
     #[schemars(
-        description = "Optional search match mode. Use `matchMode` as the canonical field name."
+        description = "Optional search match mode. Use `matchMode` as the canonical field name. Allowed values: `literal` (default) or `regex`; treat older `substring` wording as `literal`."
     )]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_mode: Option<SearchMatchMode>,
@@ -866,6 +865,7 @@ fn normalize_tldr_tool_call_value(
         .map(str::to_owned);
 
     repair_argument_aliases(&mut object);
+    repair_argument_values(&mut object);
     repair_action_specific_shapes(&mut object, action.as_deref());
 
     Ok(serde_json::Value::Object(object))
@@ -886,6 +886,20 @@ fn repair_argument_aliases(object: &mut serde_json::Map<String, serde_json::Valu
     move_field_if_missing(object, "runTypecheck", &["run_typecheck"]);
     move_field_if_missing(object, "maxIssues", &["max_issues"]);
     move_field_if_missing(object, "includeInstallHints", &["include_install_hints"]);
+}
+
+fn repair_argument_values(object: &mut serde_json::Map<String, serde_json::Value>) {
+    let Some(match_mode) = object.get_mut("matchMode") else {
+        return;
+    };
+
+    let Some(value) = match_mode.as_str() else {
+        return;
+    };
+
+    if value.eq_ignore_ascii_case("substring") {
+        *match_mode = serde_json::Value::String(SearchMatchMode::Literal.as_str().to_string());
+    }
 }
 
 fn repair_action_specific_shapes(
@@ -2535,6 +2549,22 @@ mod tests {
             "match_mode": "literal"
         }))
         .expect("search aliases should normalize");
+
+        assert_eq!(parsed.action, TldrToolAction::Search);
+        assert_eq!(parsed.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(parsed.query.as_deref(), Some("resolveProjectAvatar("));
+        assert_eq!(parsed.match_mode, Some(SearchMatchMode::Literal));
+    }
+
+    #[test]
+    fn parse_tldr_tool_call_value_repairs_substring_match_mode() {
+        let parsed = parse_tldr_tool_call_value(serde_json::json!({
+            "action": "search",
+            "language": "rust",
+            "query": "resolveProjectAvatar(",
+            "matchMode": "substring"
+        }))
+        .expect("substring matchMode should normalize");
 
         assert_eq!(parsed.action, TldrToolAction::Search);
         assert_eq!(parsed.language, Some(TldrToolLanguage::Rust));
