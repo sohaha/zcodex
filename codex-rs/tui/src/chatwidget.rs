@@ -78,6 +78,7 @@ use crate::terminal_title::clear_terminal_title;
 use crate::terminal_title::set_terminal_title;
 use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
+use crate::zteam;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::CollabAgentState as AppServerCollabAgentState;
@@ -4953,6 +4954,7 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_collaboration_modes_enabled(/*enabled*/ true);
+        widget.bottom_pane.set_zteam_enabled(widget.zteam_enabled());
         widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
         widget.sync_plugins_command_enabled();
@@ -9630,6 +9632,25 @@ impl ChatWidget {
 
     fn collaboration_modes_enabled(&self) -> bool {
         true
+    }
+
+    fn zteam_enabled(&self) -> bool {
+        self.config.zteam_enabled
+    }
+
+    pub(crate) fn open_zteam_entry(&mut self) {
+        let (message, hint) = if self.zteam_enabled() {
+            (
+                zteam::entry_message(),
+                Some(zteam::entry_hint().to_string()),
+            )
+        } else {
+            (
+                zteam::disabled_message(),
+                Some(zteam::disabled_hint().to_string()),
+            )
+        };
+        self.add_info_message(message, hint);
     }
 
     fn initial_collaboration_mask(

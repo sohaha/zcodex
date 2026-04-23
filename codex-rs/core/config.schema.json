@@ -2289,6 +2289,11 @@
           "default": null,
           "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
           "type": "string"
+        },
+        "zteam_enabled": {
+          "default": true,
+          "description": "Expose the local ZTeam collaboration entry points in the TUI. Defaults to `true`.",
+          "type": "boolean"
         }
       },
       "type": "object"

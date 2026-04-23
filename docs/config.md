@@ -69,6 +69,17 @@ Behavior:
 
 For implementation details and composer behavior, see `docs/tui-chat-composer.md`.
 
+## ZTeam entry
+
+The TUI exposes a local `ZTeam` collaboration entry by default. Hide it in `~/.codex/config.toml` when you want the regular single-thread surface only:
+
+```toml
+[tui]
+zteam_enabled = false
+```
+
+When disabled, `/zteam` is removed from the command palette and slash-command parsing, so the TUI will not initialize the local ZTeam entry path.
+
 ## ZTOK
 
 `codex ztok` 和 `ztok` alias 都会读取同一份 `config.toml` 里的 `[ztok]` 配置：

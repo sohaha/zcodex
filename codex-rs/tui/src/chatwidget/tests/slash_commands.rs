@@ -338,6 +338,41 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
 }
 
 #[tokio::test]
+async fn zteam_slash_command_shows_entry_notice() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Zteam);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("zteam_entry_notice", rendered);
+    assert!(
+        rendered.contains("ZTeam 入口已启用"),
+        "expected zteam entry notice, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn zteam_entry_reports_disabled_configuration() {
+    let mut config = test_config().await;
+    config.zteam_enabled = false;
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual_with_config(config, /*model_override*/ None).await;
+
+    chat.open_zteam_entry();
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("zteam_entry_disabled_notice", rendered);
+    assert!(
+        rendered.contains("ZTeam 已在当前 TUI 配置中关闭"),
+        "expected disabled zteam notice, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn paste_image_error_message_is_localized() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

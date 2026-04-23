@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 368
+expression: rendered
+---
+• ZTeam 已在当前 TUI 配置中关闭，/zteam 不再可用。 在 `config.toml` 中设置 `[tui].zteam_enabled = true` 后可再次启用。

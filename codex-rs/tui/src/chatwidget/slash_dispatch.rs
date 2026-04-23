@@ -104,6 +104,9 @@ impl ChatWidget {
                 }
                 self.app_event_tx.compact();
             }
+            SlashCommand::Zteam => {
+                self.open_zteam_entry();
+            }
             SlashCommand::Review => {
                 self.open_review_popup();
             }

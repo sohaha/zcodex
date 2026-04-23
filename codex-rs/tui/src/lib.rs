@@ -176,6 +176,7 @@ mod tooltips;
 mod tui;
 mod ui_consts;
 pub(crate) mod update_action;
+mod zteam;
 pub use update_action::UpdateAction;
 mod update_prompt;
 mod updates;

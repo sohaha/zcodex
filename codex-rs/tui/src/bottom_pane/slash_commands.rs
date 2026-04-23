@@ -13,6 +13,7 @@ use crate::slash_command::built_in_slash_commands;
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct BuiltinCommandFlags {
     pub(crate) collaboration_modes_enabled: bool,
+    pub(crate) zteam_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
     pub(crate) fast_command_enabled: bool,
@@ -31,6 +32,7 @@ pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static st
             flags.collaboration_modes_enabled
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
         })
+        .filter(|(_, cmd)| flags.zteam_enabled || *cmd != SlashCommand::Zteam)
         .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
         .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
         .filter(|(_, cmd)| flags.fast_command_enabled || *cmd != SlashCommand::Fast)
@@ -64,6 +66,7 @@ mod tests {
     fn all_enabled_flags() -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: true,
+            zteam_enabled: true,
             connectors_enabled: true,
             plugins_command_enabled: true,
             fast_command_enabled: true,
@@ -109,6 +112,13 @@ mod tests {
         let mut flags = all_enabled_flags();
         flags.fast_command_enabled = false;
         assert_eq!(find_builtin_command("fast", flags), None);
+    }
+
+    #[test]
+    fn zteam_command_is_hidden_when_disabled() {
+        let mut flags = all_enabled_flags();
+        flags.zteam_enabled = false;
+        assert_eq!(find_builtin_command("zteam", flags), None);
     }
 
     #[test]

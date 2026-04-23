@@ -450,6 +450,7 @@ fn config_toml_deserializes_model_availability_nux() {
         cfg.tui.expect("tui config should deserialize"),
         Tui {
             notification_settings: TuiNotificationSettings::default(),
+            zteam_enabled: true,
             animations: true,
             show_tooltips: false,
             show_buddy: true,
@@ -1183,6 +1184,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
         tui,
         Tui {
             notification_settings: TuiNotificationSettings::default(),
+            zteam_enabled: true,
             animations: true,
             show_tooltips: false,
             show_buddy: true,
@@ -3663,6 +3665,7 @@ fn expected_precedence_config(
         notify: None,
         tui_notifications: Default::default(),
         animations: true,
+        zteam_enabled: true,
         show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         tui_alternate_screen: AltScreenMode::Auto,
@@ -6963,6 +6966,17 @@ fn test_tui_auto_compress_pasted_images_can_be_disabled() {
         toml::from_str(toml).expect("deserialize auto_compress_pasted_images=false");
     let tui = parsed.tui.expect("tui config should deserialize");
     assert!(!tui.auto_compress_pasted_images);
+}
+
+#[test]
+fn test_tui_zteam_enabled_can_be_disabled() {
+    let toml = r#"
+            [tui]
+            zteam_enabled = false
+        "#;
+    let parsed: ConfigToml = toml::from_str(toml).expect("deserialize zteam_enabled=false");
+    let tui = parsed.tui.expect("tui config should deserialize");
+    assert!(!tui.zteam_enabled);
 }
 
 #[test]

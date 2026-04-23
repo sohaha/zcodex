@@ -31,6 +31,7 @@ pub(crate) struct CommandPopup {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CommandPopupFlags {
     pub(crate) collaboration_modes_enabled: bool,
+    pub(crate) zteam_enabled: bool,
     pub(crate) connectors_enabled: bool,
     pub(crate) plugins_command_enabled: bool,
     pub(crate) fast_command_enabled: bool,
@@ -44,6 +45,7 @@ impl From<CommandPopupFlags> for slash_commands::BuiltinCommandFlags {
     fn from(value: CommandPopupFlags) -> Self {
         Self {
             collaboration_modes_enabled: value.collaboration_modes_enabled,
+            zteam_enabled: value.zteam_enabled,
             connectors_enabled: value.connectors_enabled,
             plugins_command_enabled: value.plugins_command_enabled,
             fast_command_enabled: value.fast_command_enabled,
@@ -349,9 +351,28 @@ mod tests {
     }
 
     #[test]
+    fn zteam_command_hidden_when_disabled() {
+        let mut popup = CommandPopup::new(CommandPopupFlags::default());
+        popup.on_composer_text_change("/".to_string());
+
+        let cmds: Vec<&str> = popup
+            .filtered_items()
+            .into_iter()
+            .map(|item| match item {
+                CommandItem::Builtin(cmd) => cmd.command(),
+            })
+            .collect();
+        assert!(
+            !cmds.contains(&"zteam"),
+            "expected '/zteam' to be hidden when disabled, got {cmds:?}"
+        );
+    }
+
+    #[test]
     fn collab_command_visible_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags {
             collaboration_modes_enabled: true,
+            zteam_enabled: false,
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
@@ -372,6 +393,7 @@ mod tests {
     fn plan_command_visible_when_collaboration_modes_enabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags {
             collaboration_modes_enabled: true,
+            zteam_enabled: false,
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
@@ -392,6 +414,7 @@ mod tests {
     fn personality_command_hidden_when_disabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags {
             collaboration_modes_enabled: true,
+            zteam_enabled: false,
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
@@ -419,6 +442,7 @@ mod tests {
     fn personality_command_visible_when_enabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags {
             collaboration_modes_enabled: true,
+            zteam_enabled: false,
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
@@ -439,6 +463,7 @@ mod tests {
     fn settings_command_hidden_when_audio_device_selection_is_disabled() {
         let mut popup = CommandPopup::new(CommandPopupFlags {
             collaboration_modes_enabled: false,
+            zteam_enabled: false,
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
@@ -461,6 +486,27 @@ mod tests {
             !cmds.contains(&"settings"),
             "expected '/settings' to be hidden when audio device selection is disabled, got {cmds:?}"
         );
+    }
+
+    #[test]
+    fn zteam_command_visible_when_enabled() {
+        let mut popup = CommandPopup::new(CommandPopupFlags {
+            collaboration_modes_enabled: true,
+            zteam_enabled: true,
+            connectors_enabled: false,
+            plugins_command_enabled: false,
+            fast_command_enabled: false,
+            personality_command_enabled: true,
+            realtime_conversation_enabled: false,
+            audio_device_selection_enabled: false,
+            windows_degraded_sandbox_active: false,
+        });
+        popup.on_composer_text_change("/zteam".to_string());
+
+        match popup.selected_item() {
+            Some(CommandItem::Builtin(cmd)) => assert_eq!(cmd.command(), "zteam"),
+            other => panic!("expected zteam to be selected for exact match, got {other:?}"),
+        }
     }
 
     #[test]

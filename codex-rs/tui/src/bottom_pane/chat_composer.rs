@@ -348,6 +348,7 @@ pub(crate) struct ChatComposer {
     mention_bindings: HashMap<u64, ComposerMentionBinding>,
     recent_submission_mention_bindings: Vec<MentionBinding>,
     collaboration_modes_enabled: bool,
+    zteam_enabled: bool,
     config: ChatComposerConfig,
     collaboration_mode_indicator: Option<CollaborationModeIndicator>,
     connectors_enabled: bool,
@@ -402,6 +403,7 @@ impl ChatComposer {
     fn builtin_command_flags(&self) -> BuiltinCommandFlags {
         BuiltinCommandFlags {
             collaboration_modes_enabled: self.collaboration_modes_enabled,
+            zteam_enabled: self.zteam_enabled,
             connectors_enabled: self.connectors_enabled,
             plugins_command_enabled: self.plugins_command_enabled,
             fast_command_enabled: self.fast_command_enabled,
@@ -483,6 +485,7 @@ impl ChatComposer {
             mention_bindings: HashMap::new(),
             recent_submission_mention_bindings: Vec::new(),
             collaboration_modes_enabled: false,
+            zteam_enabled: false,
             config,
             collaboration_mode_indicator: None,
             connectors_enabled: false,
@@ -563,6 +566,10 @@ impl ChatComposer {
 
     pub fn set_collaboration_modes_enabled(&mut self, enabled: bool) {
         self.collaboration_modes_enabled = enabled;
+    }
+
+    pub fn set_zteam_enabled(&mut self, enabled: bool) {
+        self.zteam_enabled = enabled;
     }
 
     pub fn set_connectors_enabled(&mut self, enabled: bool) {
@@ -3240,6 +3247,7 @@ impl ChatComposer {
             _ => {
                 if is_editing_slash_command_name {
                     let collaboration_modes_enabled = self.collaboration_modes_enabled;
+                    let zteam_enabled = self.zteam_enabled;
                     let connectors_enabled = self.connectors_enabled;
                     let plugins_command_enabled = self.plugins_command_enabled;
                     let fast_command_enabled = self.fast_command_enabled;
@@ -3248,6 +3256,7 @@ impl ChatComposer {
                     let audio_device_selection_enabled = self.audio_device_selection_enabled;
                     let mut command_popup = CommandPopup::new(CommandPopupFlags {
                         collaboration_modes_enabled,
+                        zteam_enabled,
                         connectors_enabled,
                         plugins_command_enabled,
                         fast_command_enabled,

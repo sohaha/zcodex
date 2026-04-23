@@ -318,6 +318,11 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub fn set_zteam_enabled(&mut self, enabled: bool) {
+        self.composer.set_zteam_enabled(enabled);
+        self.request_redraw();
+    }
+
     pub fn set_connectors_enabled(&mut self, enabled: bool) {
         self.composer.set_connectors_enabled(enabled);
     }

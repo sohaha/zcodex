@@ -30,6 +30,7 @@ pub enum SlashCommand {
     Fork,
     Init,
     Compact,
+    Zteam,
     Plan,
     Collab,
     Agent,
@@ -81,6 +82,7 @@ impl SlashCommand {
             SlashCommand::Resume => "恢复已保存的聊天",
             SlashCommand::Clear => "清空终端并开始新的聊天",
             SlashCommand::Fork => "复制当前聊天",
+            SlashCommand::Zteam => "打开 ZTeam 协作入口",
             // SlashCommand::Undo => "ask Codex to undo a turn",
             SlashCommand::Quit | SlashCommand::Exit => "退出 Codex",
             SlashCommand::Copy => "将最新 Codex 输出复制到剪贴板",
@@ -148,6 +150,7 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
+            | SlashCommand::Zteam
             // | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::Fast

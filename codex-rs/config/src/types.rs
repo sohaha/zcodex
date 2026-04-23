@@ -576,6 +576,11 @@ pub struct Tui {
     #[serde(default, flatten)]
     pub notification_settings: TuiNotificationSettings,
 
+    /// Expose the local ZTeam collaboration entry points in the TUI.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub zteam_enabled: bool,
+
     /// Enable animations (welcome screen, shimmer effects, spinners).
     /// Defaults to `true`.
     #[serde(default = "default_true")]

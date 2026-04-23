@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 349
+expression: rendered
+---
+• ZTeam 入口已启用。当前阶段先冻结命名与配置开关，双 worker 编排和协作工作台会在后续 issue 中落地。 可用 `tui.zteam_enabled = false` 隐藏该入口。

@@ -1,0 +1,81 @@
+plan = ".agents/plan/2026-04-23-zteam-tui-collaboration-mode.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 ZTeam 模式入口与默认开启的配置开关"
+scope = """
+在 `codex-rs/tui` 中引入 `ZTeam` 的基础入口和配置控制，明确它是一个本地 `z*` 协作模式而不是 federation 命令面的重命名。
+包含模式命名落地、入口显隐逻辑、`tui.zteam_enabled` 默认值、关闭后的禁用行为，以及必要的 schema/配置链路刷新；
+不在本 issue 中实现双 worker 编排、工作台 UI、恢复逻辑或 federation adapter。
+"""
+touch_points = ["module:codex-tui", "module:codex-core", "path:codex-rs/tui/src/**", "path:codex-rs/core/src/config/**", "schema:codex-rs/core/config.schema.json"]
+depends_on = []
+done_when = "TUI 中存在稳定的 ZTeam 入口与模式开关，`tui.zteam_enabled` 默认值为 true，显式关闭后 ZTeam 入口和相关提示不再暴露，同时配置链路与 schema 保持一致"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core config` 与 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-core config` 与 `cargo test -p codex-tui zteam`。完成后执行 `cd codex-rs && just write-config-schema` 并确认 schema 同步"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core config && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为对应的 `cargo test`"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-23：a1 完成。已新增 `[tui].zteam_enabled`（默认 true），并以 `/zteam` 作为本地 ZTeam 的唯一表面入口；关闭后命令列表与命令解析同步隐藏，避免半禁用状态。验证通过：`env -u RUSTC_WRAPPER cargo test -p codex-core --lib config`、`env -u RUSTC_WRAPPER cargo test -p codex-tui zteam`、`env -u RUSTC_WRAPPER cargo test -p codex-tui`、`env -u RUSTC_WRAPPER just write-config-schema`。补充：`cargo test -p codex-core config` 当前会被仓库既有的 `core/tests/suite/zmemory_e2e.rs` 中 `rusqlite` 编译错误阻断，因此本轮对配置链路使用了 `--lib` 定向取证。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "落地 ZTeam 的本地双 worker 编排闭环"
+scope = """
+在不改写现有 `spawn_agent`、`send_message`、`followup_task` 语义的前提下，为 ZTeam 建立“主线程 + frontend worker + backend worker”的本地协作闭环。
+包含 worker roster、角色绑定、任务分派入口、中途消息路由和结果回流所需的内部状态与编排逻辑；
+不实现完整工作台渲染、不引入 federation 新协议、不把外部 peer 伪装成 `/root/...` 节点。
+"""
+touch_points = ["module:codex-tui", "module:codex-core", "path:codex-rs/tui/src/**", "path:codex-rs/core/src/tools/handlers/multi_agents_v2/**", "path:codex-rs/core/src/agent/**"]
+depends_on = ["a1"]
+done_when = "ZTeam 可以在单个 TUI 会话中稳定创建 frontend/backend 两个本地 worker，支持向任一 worker 分派任务、在 worker 间发送中途消息，并把阶段结果回流到主线程状态模型，同时不改变现有多智能体工具的外部语义"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core multi_agent_v2` 与 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为对应的 `cargo test`，并确认测试覆盖 worker 创建、消息路由和结果回流"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core multi_agent_v2 && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为对应的 `cargo test`"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "a2 的主路径必须站在现有 local multi-agent 之上编排，不能以新增 federation 公共协议或改写 `InterAgentCommunication` 作为前置条件；若需要新抽象，优先放在 TUI 内部的 ZTeam 状态层。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "实现 ZTeam 协作工作台与任务/消息/结果视图"
+scope = """
+在 `codex-rs/tui` 中实现 ZTeam 的工作台 UI，向主线程呈现 worker 状态、任务分派、消息流、结果回流、阻塞提示和相关空态/异常态。
+包含新的 `zteam` 视图模块、必要的入口接线、snapshot 覆盖和交互态文案；
+不负责恢复持久化、federation 外部 worker adapter，也不扩展 app-server 公共 RPC。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/**", "path:codex-rs/tui/tests/**", "path:codex-rs/tui/src/**/snapshots/**"]
+depends_on = ["a1", "a2"]
+done_when = "TUI 中存在可进入的 ZTeam 工作台，主线程可一屏看到 frontend/backend worker 状态、任务板、消息流和结果回流区，禁用态/空态/阻塞态都有明确反馈，且用户可见变更具备 snapshot 覆盖"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。完成后使用 `cd codex-rs && cargo insta pending-snapshots -p codex-tui` 审阅待接受的 snapshot 变更"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "ZTeam UI 必须优先落在新的独立模块，避免继续膨胀 `chatwidget.rs` 或其他中心编排文件；界面文案和布局应围绕协作工作台，而不是暴露 federation transport 细节。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "补齐 ZTeam 恢复语义并预留 federation adapter 接线"
+scope = """
+为 ZTeam 补齐最近状态恢复、阻塞/未读收口，以及将来接入现有 federation bridge 所需的最小 adapter seam。
+包含 ZTeam 的恢复入口、状态再附着策略、worker source 抽象与对现有 `--federation-*` 启动桥接的接入说明；
+不在本 issue 中重写 federation protocol/daemon/client，也不把 federated peer 直接并入 root tree 身份语义。
+"""
+touch_points = ["module:codex-tui", "module:codex-app-server", "path:codex-rs/tui/src/**", "path:codex-rs/app-server/src/federation_bridge.rs", "path:codex-rs/tui/src/app_server_session.rs", "path:docs/**"]
+depends_on = ["a2", "a3"]
+done_when = "ZTeam 支持恢复最近协作状态与显式的再附着入口，并且代码结构中已经存在可将现有 federation bridge 作为外部 worker source 接入的 adapter seam，同时保持 federation 仍是本地特性底座而不是新的公共身份域"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam` 与 `cd codex-rs && cargo nextest run -p codex-app-server federation`；若本地未安装 cargo-nextest，则改为对应的 `cargo test`。完成后按文档做一次手动检查：确认 ZTeam 可恢复最近状态，且 federation 启动参数仍可单独工作"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui && cargo nextest run -p codex-app-server federation`；若本地未安装 cargo-nextest，则改为对应的 `cargo test`"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "a4 只预留 adapter seam 和恢复合同，不把本轮目标重新拉回 federation v2。若执行中出现必须先改公共协议或身份模型的前提，应视为契约阻塞并回到 planning/issue-generation 收缩方案。"
