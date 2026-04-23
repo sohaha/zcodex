@@ -53,7 +53,7 @@ async fn features_enable_under_development_feature_prints_warning() -> Result<()
     cmd.args(["features", "enable", "runtime_metrics"])
         .assert()
         .success()
-        .stderr(contains("已启用开发中的功能：runtime_metrics。"));
+        .stderr(contains("已启用开发中功能：runtime_metrics。"));
 
     Ok(())
 }

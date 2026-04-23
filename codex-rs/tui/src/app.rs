@@ -1331,7 +1331,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "Cannot disable Auto-review in this profile because `approvals_reviewer` is configured outside the active profile.".to_string(),
+                        "`approvals_reviewer` 在当前配置档之外已配置，无法在此配置档中停用 Guardian 审批。".to_string(),
                     );
                 continue;
             }
@@ -1342,9 +1342,8 @@ impl App {
                     feature = feature_key,
                     "failed to update constrained feature flags"
                 );
-                self.chat_widget.add_error_message(format!(
-                    "Failed to update experimental feature `{feature_key}`: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("更新实验性功能 `{feature_key}` 失败：{err}"));
                 continue;
             }
             let effective_enabled = feature_config.features.enabled(feature);
@@ -1364,7 +1363,7 @@ impl App {
                             .into(),
                     });
                     if previous_approvals_reviewer != guardian_approvals_preset.approvals_reviewer {
-                        permissions_history_label = Some("Auto-review");
+                        permissions_history_label = Some("Guardian 审批");
                     }
                 } else if !effective_enabled {
                     if profile_approvals_reviewer_configured || self.active_profile.is_none() {
@@ -1374,7 +1373,7 @@ impl App {
                     }
                     feature_config.approvals_reviewer = ApprovalsReviewer::User;
                     if previous_approvals_reviewer != ApprovalsReviewer::User {
-                        permissions_history_label = Some("Default");
+                        permissions_history_label = Some("默认");
                     }
                 }
                 approvals_reviewer_override = Some(feature_config.approvals_reviewer);
@@ -1387,7 +1386,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "Failed to enable Auto-review",
+                    "启用 Guardian 审批失败",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1395,7 +1394,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "Failed to enable Auto-review",
+                    "启用 Guardian 审批失败",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1426,7 +1425,7 @@ impl App {
         if let Err(err) = builder.apply().await {
             tracing::error!(error = %err, "failed to persist feature flags");
             self.chat_widget
-                .add_error_message(format!("Failed to update experimental features: {err}"));
+                .add_error_message(format!("更新实验性功能失败：{err}"));
             return;
         }
 
@@ -1458,7 +1457,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("Failed to enable Auto-review: {err}"));
+                .add_error_message(format!("启用 Guardian 审批失败：{err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1517,10 +1516,8 @@ impl App {
         }
 
         if let Some(label) = permissions_history_label {
-            self.chat_widget.add_info_message(
-                format!("Permissions updated to {label}"),
-                /*hint*/ None,
-            );
+            self.chat_widget
+                .add_info_message(format!("权限设置已更新为：{label}"), /*hint*/ None);
         }
     }
 
@@ -9060,7 +9057,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Auto-review"));
+        assert!(rendered.contains("权限设置已更新为：Guardian 审批"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -9157,7 +9154,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限设置已更新为：默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -9448,7 +9445,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限设置已更新为：默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -9514,7 +9511,7 @@ guardian_approval = true
                 AppEvent::InsertHistoryCell(cell) => cell
                     .display_lines(/*width*/ 120)
                     .iter()
-                    .any(|line| line.to_string().contains("Permissions updated to")),
+                    .any(|line| line.to_string().contains("权限设置已更新为：")),
                 _ => false,
             }),
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"

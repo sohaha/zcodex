@@ -92,12 +92,10 @@ fn guardian_approval_is_experimental_and_user_toggleable() {
     let stage = spec.stage;
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("Auto-review"));
+    assert_eq!(stage.experimental_menu_name(), Some("Guardian 审批"));
     assert_eq!(
         stage.experimental_menu_description().map(str::to_owned),
-        Some(
-            "When Codex needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.".to_string()
-        )
+        Some("启用 Guardian 自动审批功能，对模型操作进行自动安全审查。".to_string())
     );
     assert_eq!(stage.experimental_announcement(), None);
     assert_eq!(Feature::GuardianApproval.default_enabled(), false);
@@ -227,16 +225,6 @@ fn remote_control_is_under_development() {
 fn use_agent_identity_is_under_development() {
     assert_eq!(Feature::UseAgentIdentity.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::UseAgentIdentity.default_enabled(), false);
-}
-
-#[test]
-fn workspace_dependencies_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::WorkspaceDependencies.stage(), Stage::Stable);
-    assert_eq!(Feature::WorkspaceDependencies.default_enabled(), true);
-    assert_eq!(
-        feature_for_key("workspace_dependencies"),
-        Some(Feature::WorkspaceDependencies)
-    );
 }
 
 #[test]

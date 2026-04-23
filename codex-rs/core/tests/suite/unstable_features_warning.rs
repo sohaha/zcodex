@@ -57,7 +57,7 @@ async fn emits_warning_when_unstable_features_enabled_via_config() {
         panic!("expected warning event");
     };
     assert!(message.contains("child_agents_md"));
-    assert!(message.contains("Under-development features enabled"));
+    assert!(message.contains("已启用开发中功能"));
     assert!(message.contains("suppress_unstable_features_warning = true"));
 }
 

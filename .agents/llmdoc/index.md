@@ -36,6 +36,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-attach-must-filter-latest-descendant-workers-before-live-reattach.md`：给 `/zteam attach` 接入 live reattach seam 时，不能绕开“当前 primary descendant + 每个 slot 只取最近线程”的候选筛选；候选选择与 live attach 是两个独立不变量。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-loaded-auto-restore-must-reuse-live-attach-seam.md`：loaded 自动恢复如果要把 worker 标成 `Live`，必须真实复用 live attach seam；`thread_loaded_list + thread_read` 只足以恢复状态，不足以宣称已附着。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-workbench-should-use-refreshable-bottom-pane-surface.md`：TUI 里的协作工作台若需要随着共享状态持续刷新，应直接落到 `BottomPaneView` 这类持续渲染 surface；普通 history scrollback 只适合事件记录，不适合动态工作台。
+- `.agents/llmdoc/memory/reflections/2026-04-23-experimental-feature-localization-must-follow-warning-and-toggle-chain.md`：实验功能/开发中功能汉化要沿 `features` 源头、CLI 输出、core 断言、TUI 提示和相关测试整链路检查，避免只改表层；同时先清掉会阻断验证的陈旧 feature 断言。
 - `.agents/llmdoc/memory/reflections/2026-04-23-fallback-route-warning-must-stay-out-of-model-visible-history.md`：给 fallback provider/model 补用户提示时，warning 只能留在可见事件层，不能写回模型可见 history；同时要先核对 `ModelRerouted` 是否已配套 `Warning`，避免 UI 双提示。
 - `.agents/llmdoc/memory/reflections/2026-04-23-ztldr-matchmode-value-repair-must-update-shared-schema-language.md`：`ztldr search` 的错值修复不能只补 parser；`matchMode` 的合法值说明要同步更新共享 description、`schemars` 字段描述和对外文档，否则不同入口会继续把旧词 `substring` 教给模型。
 - `.agents/llmdoc/memory/reflections/2026-04-23-federation-practicality-needs-workflow-productization.md`：评估 federation 实用性时要区分“旁路架构已成立”和“日常工作流已产品化”；当前实现更适合作为实验性多实例 IPC/编排底座，而不是普通用户的主协作入口。

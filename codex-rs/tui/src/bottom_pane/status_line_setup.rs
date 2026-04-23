@@ -64,10 +64,6 @@ pub(crate) enum StatusLineItem {
     GitBranch,
 
     /// Percentage of context window remaining.
-    #[strum(
-        to_string = "context-remaining",
-        serialize = "context-remaining-percent"
-    )]
     ContextRemaining,
 
     /// Percentage of context window used.
@@ -309,6 +305,11 @@ mod tests {
         assert_eq!(
             "context-remaining".parse::<StatusLineItem>(),
             Ok(StatusLineItem::ContextRemaining)
+        );
+        assert!(
+            "context-remaining-percent"
+                .parse::<StatusLineItem>()
+                .is_err()
         );
         assert_eq!(
             StatusLineItem::ContextRemaining.to_string(),

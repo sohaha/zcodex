@@ -1404,7 +1404,7 @@ fn maybe_print_under_development_feature_warning(
 
     let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
     eprintln!(
-        "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
+        "已启用开发中功能：{feature}。开发中功能尚未完成，行为可能不稳定。如需关闭此警告，请在 {} 中设置 `suppress_unstable_features_warning = true`。",
         config_path.display()
     );
 }
