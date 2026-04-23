@@ -1,21 +1,28 @@
+use codex_app_server_protocol::FederationThreadStartParams;
 use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::InterAgentCommunication;
-use codex_protocol::protocol::SubAgentSource;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+mod recovery;
 mod view;
+mod worker_source;
 
+pub(crate) use recovery::RecoveredWorker;
+pub(crate) use recovery::WorkerConnection;
+pub(crate) use recovery::latest_local_threads_for_primary;
+pub(crate) use recovery::recover_local_worker;
 pub(crate) use view::WORKBENCH_VIEW_ID;
 pub(crate) use view::WorkbenchView;
+pub(crate) use worker_source::FederationAdapter;
+pub(crate) use worker_source::WorkerSource;
 
 pub(crate) const MODE_NAME: &str = "ZTeam";
 pub(crate) const COMMAND_NAME: &str = "/zteam";
@@ -65,20 +72,6 @@ impl WorkerSlot {
     fn canonical_task_name(self) -> String {
         format!("/root/{}", self.task_name())
     }
-
-    fn matches_thread(self, thread: &Thread) -> bool {
-        match &thread.source {
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                agent_path: Some(agent_path),
-                ..
-            }) if agent_path.to_string() == self.canonical_task_name() => true,
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                agent_role: Some(agent_role),
-                ..
-            }) if agent_role == self.role_name() => true,
-            _ => false,
-        }
-    }
 }
 
 impl fmt::Display for WorkerSlot {
@@ -91,6 +84,7 @@ impl fmt::Display for WorkerSlot {
 pub(crate) enum Command {
     Start,
     Status,
+    Attach,
     Dispatch {
         worker: WorkerSlot,
         message: String,
@@ -125,6 +119,12 @@ impl Command {
                     return Err(usage().to_string());
                 }
                 Ok(Self::Status)
+            }
+            "attach" => {
+                if parts.next().is_some() {
+                    return Err(usage().to_string());
+                }
+                Ok(Self::Attach)
             }
             "relay" => {
                 let Some((_, rest)) = trimmed.split_once(char::is_whitespace) else {
@@ -186,14 +186,15 @@ struct SharedState {
     backend: WorkerState,
     activity: VecDeque<ActivityEntry>,
     recent_results: VecDeque<ResultEntry>,
+    federation_adapter: Option<FederationAdapter>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct WorkerState {
-    thread_id: Option<ThreadId>,
+    connection: WorkerConnection,
+    source: WorkerSource,
     last_dispatched_task: Option<String>,
     last_result: Option<String>,
-    closed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,6 +215,7 @@ struct Snapshot {
     backend: WorkerState,
     activity: Vec<ActivityEntry>,
     recent_results: Vec<ResultEntry>,
+    federation_adapter: Option<FederationAdapter>,
 }
 
 impl State {
@@ -231,7 +233,54 @@ impl State {
     }
 
     pub(crate) fn worker_thread_id(&self, worker: WorkerSlot) -> Option<ThreadId> {
-        self.read_state().worker(worker).thread_id
+        self.read_state().worker(worker).connection.live_thread_id()
+    }
+
+    pub(crate) fn restore_worker(&mut self, recovered: RecoveredWorker) -> bool {
+        let mut state = self.write_state();
+        state.start_requested = true;
+        let worker_state = state.worker_mut(recovered.slot);
+        let next_state = WorkerState {
+            connection: recovered.connection.clone(),
+            source: recovered.source,
+            last_dispatched_task: recovered.last_dispatched_task,
+            last_result: recovered.last_result,
+        };
+        if *worker_state == next_state {
+            return false;
+        }
+        *worker_state = next_state;
+        let restore_summary = match &worker_state.connection {
+            WorkerConnection::Pending => {
+                format!(
+                    "已恢复 {recovered_slot} worker 的最近协作记录，等待注册。",
+                    recovered_slot = recovered.slot
+                )
+            }
+            WorkerConnection::Live(thread_id) => format!(
+                "已恢复 {worker} worker，并重新附着到 {thread_id}。",
+                worker = recovered.slot
+            ),
+            WorkerConnection::ReattachRequired(thread_id) => format!(
+                "已恢复 {worker} worker 的最近状态；线程 {thread_id} 当前未附着，可运行 `/zteam attach` 再附着。",
+                worker = recovered.slot
+            ),
+        };
+        push_activity(&mut state.activity, restore_summary);
+        true
+    }
+
+    pub(crate) fn configure_federation_adapter(
+        &mut self,
+        params: Option<FederationThreadStartParams>,
+    ) -> bool {
+        let mut state = self.write_state();
+        let next_adapter = params.map(FederationAdapter::from_thread_start_params);
+        if state.federation_adapter == next_adapter {
+            return false;
+        }
+        state.federation_adapter = next_adapter;
+        true
     }
 
     pub(crate) fn build_root_dispatch(
@@ -274,7 +323,9 @@ impl State {
     pub(crate) fn record_dispatch(&mut self, worker: WorkerSlot, message: &str) -> bool {
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
-        worker_state.closed = false;
+        if let Some(thread_id) = worker_state.connection.known_thread_id() {
+            worker_state.connection = WorkerConnection::Live(thread_id);
+        }
         worker_state.last_dispatched_task = Some(message.to_string());
         push_activity(
             &mut state.activity,
@@ -286,7 +337,9 @@ impl State {
     pub(crate) fn record_relay(&mut self, from: WorkerSlot, to: WorkerSlot, message: &str) -> bool {
         let mut state = self.write_state();
         let target_state = state.worker_mut(to);
-        target_state.closed = false;
+        if let Some(thread_id) = target_state.connection.known_thread_id() {
+            target_state.connection = WorkerConnection::Live(thread_id);
+        }
         target_state.last_dispatched_task = Some(message.to_string());
         push_activity(
             &mut state.activity,
@@ -328,20 +381,43 @@ impl State {
         } else {
             lines.push("尚未请求创建 worker；先运行 `/zteam start`。".to_string());
         }
+        if let Some(adapter) = &state.federation_adapter {
+            lines.push(format!("外部 adapter：{}", adapter.summary()));
+        }
         lines.push(worker_status_line(WorkerSlot::Frontend, &state.frontend));
         lines.push(worker_status_line(WorkerSlot::Backend, &state.backend));
         lines.join("\n")
     }
 
     pub(crate) fn missing_worker_message(&self, worker: WorkerSlot) -> String {
-        format!(
-            "{} worker 尚未注册。先运行 `/zteam start`，并等待主线程创建 `{}`。",
-            worker.display_name(),
-            worker.canonical_task_name()
-        )
+        match &self.read_state().worker(worker).connection {
+            WorkerConnection::Pending => format!(
+                "{} worker 尚未注册。先运行 `/zteam start`，并等待主线程创建 `{}`。",
+                worker.display_name(),
+                worker.canonical_task_name()
+            ),
+            WorkerConnection::Live(_) => format!(
+                "{} worker 当前已附着；如果仍然分派失败，请重新运行 `/zteam status` 检查状态。",
+                worker.display_name()
+            ),
+            WorkerConnection::ReattachRequired(thread_id) => format!(
+                "{} worker 最近的线程 `{thread_id}` 当前未附着。先运行 `/zteam attach` 尝试再附着，或用 `/zteam start` 重建 worker。",
+                worker.display_name()
+            ),
+        }
     }
 
     pub(crate) fn missing_relay_message(&self, from: WorkerSlot, to: WorkerSlot) -> String {
+        let state = self.read_state();
+        let from_connection = &state.worker(from).connection;
+        let to_connection = &state.worker(to).connection;
+        let needs_attach = matches!(from_connection, WorkerConnection::ReattachRequired(_))
+            || matches!(to_connection, WorkerConnection::ReattachRequired(_));
+        if needs_attach {
+            return format!(
+                "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的 worker，或用 `/zteam start` 重新创建。"
+            );
+        }
         format!(
             "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam start`，并确认两个 worker 都已注册。"
         )
@@ -355,23 +431,24 @@ impl State {
             backend: state.backend.clone(),
             activity: state.activity.iter().cloned().collect(),
             recent_results: state.recent_results.iter().cloned().collect(),
+            federation_adapter: state.federation_adapter.clone(),
         }
     }
 
     fn observe_thread_started(&mut self, thread_id: ThreadId, thread: &Thread) -> bool {
         let Some(worker) = WorkerSlot::ALL
             .into_iter()
-            .find(|worker| worker.matches_thread(thread))
+            .find(|worker| worker_source::local_thread_matches_slot(*worker, thread))
         else {
             return false;
         };
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
-        if worker_state.thread_id == Some(thread_id) && !worker_state.closed {
+        if worker_state.connection == WorkerConnection::Live(thread_id) {
             return false;
         }
-        worker_state.thread_id = Some(thread_id);
-        worker_state.closed = false;
+        worker_state.connection = WorkerConnection::Live(thread_id);
+        worker_state.source = WorkerSource::LocalThreadSpawn;
         push_activity(
             &mut state.activity,
             format!(
@@ -399,7 +476,7 @@ impl State {
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
         worker_state.last_result = Some(text.clone());
-        worker_state.closed = false;
+        worker_state.source = WorkerSource::LocalThreadSpawn;
         push_result(&mut state.recent_results, worker, preview(text));
         true
     }
@@ -414,11 +491,12 @@ impl State {
         };
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
-        worker_state.thread_id = None;
-        worker_state.closed = true;
+        worker_state.connection = WorkerConnection::ReattachRequired(thread_id);
         push_activity(
             &mut state.activity,
-            format!("{worker} worker 已关闭，等待重新创建。"),
+            format!(
+                "{worker} worker 已关闭，可运行 `/zteam attach` 再附着或 `/zteam start` 重建。"
+            ),
         );
         true
     }
@@ -436,10 +514,10 @@ impl State {
 
 impl SharedState {
     fn worker_slot_for_thread(&self, thread_id: ThreadId) -> Option<WorkerSlot> {
-        if self.frontend.thread_id == Some(thread_id) {
+        if self.frontend.connection.known_thread_id() == Some(thread_id) {
             return Some(WorkerSlot::Frontend);
         }
-        if self.backend.thread_id == Some(thread_id) {
+        if self.backend.connection.known_thread_id() == Some(thread_id) {
             return Some(WorkerSlot::Backend);
         }
         None
@@ -487,7 +565,7 @@ pub(crate) fn disabled_hint() -> &'static str {
 }
 
 pub(crate) fn usage() -> &'static str {
-    "用法：/zteam start | /zteam status | /zteam frontend <任务> | /zteam backend <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
+    "用法：/zteam start | /zteam status | /zteam attach | /zteam frontend <任务> | /zteam backend <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
 }
 
 pub(crate) fn start_prompt() -> String {
@@ -510,10 +588,12 @@ fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
 
 #[cfg(test)]
 fn worker_status_line(worker: WorkerSlot, state: &WorkerState) -> String {
-    let state_text = match (state.thread_id, state.closed) {
-        (Some(thread_id), _) => format!("已注册 ({thread_id})"),
-        (None, true) => "已关闭".to_string(),
-        (None, false) => "未注册".to_string(),
+    let state_text = match &state.connection {
+        WorkerConnection::Pending => "未注册".to_string(),
+        WorkerConnection::Live(thread_id) => format!("已附着 ({thread_id})"),
+        WorkerConnection::ReattachRequired(thread_id) => {
+            format!("待再附着 ({thread_id})")
+        }
     };
     let task_text = state
         .last_dispatched_task
@@ -526,9 +606,10 @@ fn worker_status_line(worker: WorkerSlot, state: &WorkerState) -> String {
         .map(preview)
         .unwrap_or_else(|| "无".to_string());
     format!(
-        "- {}：{}；最近任务：{}；最近结果：{}",
+        "- {}：{}；来源：{}；最近任务：{}；最近结果：{}",
         worker.display_name(),
         state_text,
+        state.source.label(),
         task_text,
         result_text
     )
@@ -550,11 +631,13 @@ mod tests {
     use codex_app_server_protocol::ItemCompletedNotification;
     use codex_app_server_protocol::ItemStartedNotification;
     use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::SessionSource;
     use codex_app_server_protocol::ThreadClosedNotification;
     use codex_app_server_protocol::ThreadStartedNotification;
     use codex_app_server_protocol::ThreadStatus;
 
     use codex_protocol::models::MessagePhase;
+    use codex_protocol::protocol::SubAgentSource;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
@@ -590,9 +673,10 @@ mod tests {
     }
 
     #[test]
-    fn command_parser_supports_start_dispatch_relay_and_status() {
+    fn command_parser_supports_start_dispatch_relay_status_and_attach() {
         assert_eq!(Command::parse("start"), Ok(Command::Start));
         assert_eq!(Command::parse("status"), Ok(Command::Status));
+        assert_eq!(Command::parse("attach"), Ok(Command::Attach));
         assert_eq!(
             Command::parse("frontend 修复导航栏"),
             Ok(Command::Dispatch {
@@ -623,6 +707,7 @@ mod tests {
         assert_eq!(Command::parse(""), Err(usage().to_string()));
         assert_eq!(Command::parse("start extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("status extra"), Err(usage().to_string()));
+        assert_eq!(Command::parse("attach extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("frontend"), Err(usage().to_string()));
         assert_eq!(Command::parse("relay frontend"), Err(usage().to_string()));
         assert_eq!(
@@ -718,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_worker_clears_dispatch_target() {
+    fn closing_worker_marks_thread_for_reattach() {
         let frontend_id =
             ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
         let mut state = State::default();
@@ -737,7 +822,12 @@ mod tests {
         );
 
         assert_eq!(state.worker_thread_id(WorkerSlot::Frontend), None);
-        assert!(state.status_message().contains("已关闭"));
+        assert!(state.status_message().contains("待再附着"));
+        assert!(
+            state
+                .missing_worker_message(WorkerSlot::Frontend)
+                .contains("/zteam attach")
+        );
     }
 
     #[test]
@@ -815,5 +905,51 @@ mod tests {
         );
 
         assert!(state.status_message().contains("最近结果：无"));
+    }
+
+    #[test]
+    fn restore_worker_records_reattach_required_state() {
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        let mut state = State::default();
+
+        let changed = state.restore_worker(RecoveredWorker {
+            slot: WorkerSlot::Frontend,
+            connection: WorkerConnection::ReattachRequired(frontend_id),
+            source: WorkerSource::LocalThreadSpawn,
+            last_dispatched_task: Some("修复导航栏布局".to_string()),
+            last_result: Some("已补上移动端断点。".to_string()),
+        });
+
+        assert!(changed);
+        let status = state.status_message();
+        assert!(status.contains("待再附着"));
+        assert!(status.contains("修复导航栏布局"));
+        assert!(status.contains("已补上移动端断点"));
+        assert!(
+            state
+                .missing_worker_message(WorkerSlot::Frontend)
+                .contains("/zteam attach")
+        );
+    }
+
+    #[test]
+    fn configure_federation_adapter_surfaces_summary() {
+        let mut state = State::default();
+
+        let changed = state.configure_federation_adapter(Some(FederationThreadStartParams {
+            instance_id: None,
+            name: "zteam".to_string(),
+            role: Some("worker".to_string()),
+            scope: Some("workspace".to_string()),
+            state_root: Some("/tmp/federation".to_string()),
+            lease_ttl_secs: Some(30),
+        }));
+
+        assert!(changed);
+        let status = state.status_message();
+        assert!(status.contains("外部 adapter"));
+        assert!(status.contains("zteam-frontend"));
+        assert!(status.contains("zteam-backend"));
     }
 }

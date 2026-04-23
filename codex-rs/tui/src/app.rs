@@ -101,10 +101,15 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SkillsListParams;
 use codex_app_server_protocol::SkillsListResponse;
+use codex_app_server_protocol::SortDirection;
+use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadMemoryMode;
 use codex_app_server_protocol::ThreadRollbackResponse;
+use codex_app_server_protocol::ThreadSortKey;
+use codex_app_server_protocol::ThreadSourceKind;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError as AppServerTurnError;
@@ -2043,6 +2048,8 @@ impl App {
         app_server: &mut AppServerSession,
         command: zteam::Command,
     ) -> Result<()> {
+        self.chat_widget
+            .configure_zteam_federation_adapter(app_server.federation().cloned());
         match command {
             zteam::Command::Start => {
                 let config = self.chat_widget.config_ref().clone();
@@ -2071,6 +2078,24 @@ impl App {
             }
             zteam::Command::Status => {
                 self.chat_widget.open_zteam_workbench();
+            }
+            zteam::Command::Attach => {
+                let restored = self
+                    .restore_zteam_workers_from_thread_list(app_server)
+                    .await?;
+                self.chat_widget.open_zteam_workbench();
+                if restored == 0 {
+                    self.chat_widget.add_info_message(
+                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/backend worker。"
+                            .to_string(),
+                        /*hint*/ None,
+                    );
+                } else {
+                    self.chat_widget.add_info_message(
+                        format!("已同步 {restored} 个 ZTeam worker 的最近状态。"),
+                        /*hint*/ None,
+                    );
+                }
             }
             zteam::Command::Dispatch { worker, message } => {
                 let Some((thread_id, communication)) = self
@@ -3709,9 +3734,12 @@ impl App {
             initial_user_message,
         );
         self.replace_chat_widget(ChatWidget::new_with_app_event(init));
+        self.chat_widget
+            .configure_zteam_federation_adapter(app_server.federation().cloned());
         self.enqueue_primary_thread_session(started.session, started.turns)
             .await?;
         self.backfill_loaded_subagent_threads(app_server).await;
+        self.restore_loaded_zteam_workers(app_server).await;
         Ok(())
     }
 
@@ -3782,6 +3810,142 @@ impl App {
         }
 
         !had_read_error
+    }
+
+    async fn thread_for_zteam_recovery(
+        &mut self,
+        app_server: &mut AppServerSession,
+        thread_id: ThreadId,
+    ) -> Result<Thread> {
+        match app_server
+            .thread_read(thread_id, /*include_turns*/ true)
+            .await
+        {
+            Ok(thread) => Ok(thread),
+            Err(err) if Self::can_fallback_from_include_turns_error(&err) => {
+                app_server
+                    .thread_read(thread_id, /*include_turns*/ false)
+                    .await
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn restore_zteam_workers_from_threads(&mut self, threads: Vec<Thread>) -> usize {
+        let Some(primary_thread_id) = self.primary_thread_id else {
+            return 0;
+        };
+
+        let mut restored = 0;
+        for thread in zteam::latest_local_threads_for_primary(threads, primary_thread_id) {
+            if let Some(recovered) = zteam::recover_local_worker(&thread) {
+                self.chat_widget.restore_zteam_worker(recovered);
+                restored += 1;
+            }
+        }
+        restored
+    }
+
+    async fn restore_loaded_zteam_workers(&mut self, app_server: &mut AppServerSession) -> usize {
+        let Some(primary_thread_id) = self.primary_thread_id else {
+            return 0;
+        };
+
+        let loaded_thread_ids = match app_server
+            .thread_loaded_list(ThreadLoadedListParams {
+                cursor: None,
+                limit: None,
+            })
+            .await
+        {
+            Ok(response) => response.data,
+            Err(err) => {
+                tracing::warn!(%err, "failed to list loaded threads for zteam recovery");
+                return 0;
+            }
+        };
+
+        let mut threads = Vec::new();
+        for thread_id in loaded_thread_ids {
+            let Ok(thread_id) = ThreadId::from_string(&thread_id) else {
+                tracing::warn!("ignoring loaded thread with invalid id during zteam recovery");
+                continue;
+            };
+
+            if thread_id == primary_thread_id {
+                continue;
+            }
+
+            match self.thread_for_zteam_recovery(app_server, thread_id).await {
+                Ok(thread) => threads.push(thread),
+                Err(err) => {
+                    tracing::warn!(
+                        thread_id = %thread_id,
+                        %err,
+                        "failed to read loaded thread during zteam recovery"
+                    );
+                }
+            }
+        }
+
+        self.restore_zteam_workers_from_threads(threads)
+    }
+
+    async fn restore_zteam_workers_from_thread_list(
+        &mut self,
+        app_server: &mut AppServerSession,
+    ) -> Result<usize> {
+        let Some(primary_thread_id) = self.primary_thread_id else {
+            return Ok(0);
+        };
+
+        let mut cursor = None;
+        let mut threads = Vec::new();
+        loop {
+            let response = app_server
+                .thread_list(ThreadListParams {
+                    cursor: cursor.clone(),
+                    limit: Some(100),
+                    sort_key: Some(ThreadSortKey::UpdatedAt),
+                    sort_direction: Some(SortDirection::Desc),
+                    model_providers: None,
+                    source_kinds: Some(vec![ThreadSourceKind::SubAgentThreadSpawn]),
+                    archived: Some(false),
+                    cwd: None,
+                    search_term: None,
+                })
+                .await?;
+
+            for thread in response.data {
+                let Ok(thread_id) = ThreadId::from_string(&thread.id) else {
+                    tracing::warn!("ignoring thread/list row with invalid id during zteam attach");
+                    continue;
+                };
+
+                if thread_id == primary_thread_id {
+                    continue;
+                }
+
+                match self.thread_for_zteam_recovery(app_server, thread_id).await {
+                    Ok(thread) => threads.push(thread),
+                    Err(err) => {
+                        tracing::warn!(
+                            thread_id = %thread_id,
+                            %err,
+                            "failed to read thread/list candidate during zteam attach; falling back to list metadata"
+                        );
+                        threads.push(thread);
+                    }
+                }
+            }
+
+            cursor = response.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        Ok(self.restore_zteam_workers_from_threads(threads))
     }
 
     /// Returns the adjacent thread id for keyboard navigation, backfilling from the server if the

@@ -196,6 +196,10 @@ impl AppServerSession {
         self
     }
 
+    pub(crate) fn federation(&self) -> Option<&FederationThreadStartParams> {
+        self.federation.as_ref()
+    }
+
     pub(crate) fn is_remote(&self) -> bool {
         matches!(self.client, AppServerClient::Remote(_))
     }

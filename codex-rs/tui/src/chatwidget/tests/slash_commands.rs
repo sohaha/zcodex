@@ -502,6 +502,19 @@ async fn zteam_start_inline_command_requests_app_event() {
 }
 
 #[tokio::test]
+async fn zteam_attach_inline_command_requests_app_event() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Zteam, "attach".to_string(), Vec::new());
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Attach))
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
 async fn zteam_frontend_inline_command_requests_task_dispatch() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -551,6 +564,53 @@ async fn zteam_inline_command_rejects_invalid_subcommand() {
     assert!(
         rendered.contains("用法：/zteam start"),
         "expected zteam usage error, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
+async fn zteam_workbench_shows_reattach_required_workers_and_adapter_summary() {
+    use codex_app_server_protocol::FederationThreadStartParams;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let frontend_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+    let backend_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Zteam);
+    chat.configure_zteam_federation_adapter(Some(FederationThreadStartParams {
+        instance_id: None,
+        name: "zteam".to_string(),
+        role: Some("worker".to_string()),
+        scope: Some("workspace".to_string()),
+        state_root: Some("/tmp/federation".to_string()),
+        lease_ttl_secs: Some(30),
+    }));
+    chat.restore_zteam_worker(crate::zteam::RecoveredWorker {
+        slot: crate::zteam::WorkerSlot::Frontend,
+        connection: crate::zteam::WorkerConnection::ReattachRequired(frontend_id),
+        source: crate::zteam::WorkerSource::LocalThreadSpawn,
+        last_dispatched_task: Some("修复导航栏布局".to_string()),
+        last_result: Some("前端阶段结果：等待重新附着。".to_string()),
+    });
+    chat.restore_zteam_worker(crate::zteam::RecoveredWorker {
+        slot: crate::zteam::WorkerSlot::Backend,
+        connection: crate::zteam::WorkerConnection::ReattachRequired(backend_id),
+        source: crate::zteam::WorkerSource::LocalThreadSpawn,
+        last_dispatched_task: Some("对齐接口字段".to_string()),
+        last_result: Some("后端阶段结果：等待重新附着。".to_string()),
+    });
+
+    let height = chat.desired_height(/*width*/ 100);
+    let mut terminal = Terminal::new(TestBackend::new(100, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw reattach zteam workbench");
+    assert_chatwidget_snapshot!(
+        "zteam_workbench_reattach_required_view",
+        normalized_backend_snapshot(terminal.backend())
     );
 }
 

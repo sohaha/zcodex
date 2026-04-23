@@ -50,6 +50,14 @@ impl WorkbenchView {
             format!("整体状态：{}", overview_status(&snapshot)),
             "",
         );
+        if let Some(adapter) = &snapshot.federation_adapter {
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!("外部 adapter：{}", adapter.summary()),
+                "",
+            );
+        }
         if let Some(blocked) = blocking_note(&snapshot) {
             push_wrapped(&mut lines, inner_width, format!("阻塞提示：{blocked}"), "");
         }
@@ -212,6 +220,9 @@ impl Renderable for WorkbenchView {
                 "/zteam start".cyan(),
                 " 创建 worker".dim(),
                 " · ".dim(),
+                "/zteam attach".cyan(),
+                " 再附着".dim(),
+                " · ".dim(),
                 "/zteam frontend <任务>".cyan(),
                 " / ".dim(),
                 "/zteam backend <任务>".cyan(),
@@ -231,16 +242,28 @@ fn worker_panel_lines(
     inner_width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let registration = match (worker.thread_id, worker.closed) {
-        (Some(thread_id), _) => format!("已注册 · {} · {thread_id}", slot.canonical_task_name()),
-        (None, true) => format!("已关闭 · {}", slot.canonical_task_name()),
-        (None, false) => format!("等待注册 · {}", slot.canonical_task_name()),
+    let registration = match &worker.connection {
+        super::WorkerConnection::Pending => {
+            format!("等待注册 · {}", slot.canonical_task_name())
+        }
+        super::WorkerConnection::Live(thread_id) => {
+            format!("已附着 · {} · {thread_id}", slot.canonical_task_name())
+        }
+        super::WorkerConnection::ReattachRequired(thread_id) => {
+            format!("待再附着 · {} · {thread_id}", slot.canonical_task_name())
+        }
     };
     push_wrapped(
         &mut lines,
         inner_width,
         format!("{slot}：{registration}"),
         "  ",
+    );
+    push_wrapped(
+        &mut lines,
+        inner_width,
+        format!("  来源：{}", worker.source.label()),
+        "    ",
     );
     push_wrapped(
         &mut lines,
@@ -276,17 +299,17 @@ fn overview_status(snapshot: &Snapshot) -> String {
         return "尚未启动。先运行 `/zteam start` 创建 frontend/backend worker。".to_string();
     }
 
+    let reattach = reattach_workers(snapshot);
+    if !reattach.is_empty() {
+        return format!(
+            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的 worker 连接。",
+            worker_list(&reattach)
+        );
+    }
+
     let missing = missing_workers(snapshot);
     if !missing.is_empty() {
         return format!("已请求创建 worker，等待 {} 注册。", worker_list(&missing));
-    }
-
-    let closed = closed_workers(snapshot);
-    if !closed.is_empty() {
-        return format!(
-            "{} 已关闭。重新运行 `/zteam start` 以恢复协作。",
-            worker_list(&closed)
-        );
     }
 
     "frontend/backend worker 已就绪，可继续分派任务或转发消息。".to_string()
@@ -305,11 +328,11 @@ fn blocking_note(snapshot: &Snapshot) -> Option<String> {
         ));
     }
 
-    let closed = closed_workers(snapshot);
-    if !closed.is_empty() {
+    let reattach = reattach_workers(snapshot);
+    if !reattach.is_empty() {
         return Some(format!(
-            "{} 已退出；后续分派会失败，直到重新创建 worker。",
-            worker_list(&closed)
+            "{} 的最近线程当前未附着；先运行 `/zteam attach` 尝试重新附着，必要时再用 `/zteam start` 重建 worker。",
+            worker_list(&reattach)
         ));
     }
 
@@ -318,21 +341,33 @@ fn blocking_note(snapshot: &Snapshot) -> Option<String> {
 
 fn missing_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
     let mut workers = Vec::new();
-    if snapshot.frontend.thread_id.is_none() && !snapshot.frontend.closed {
+    if matches!(
+        snapshot.frontend.connection,
+        super::WorkerConnection::Pending
+    ) {
         workers.push(WorkerSlot::Frontend);
     }
-    if snapshot.backend.thread_id.is_none() && !snapshot.backend.closed {
+    if matches!(
+        snapshot.backend.connection,
+        super::WorkerConnection::Pending
+    ) {
         workers.push(WorkerSlot::Backend);
     }
     workers
 }
 
-fn closed_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
+fn reattach_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
     let mut workers = Vec::new();
-    if snapshot.frontend.closed {
+    if matches!(
+        snapshot.frontend.connection,
+        super::WorkerConnection::ReattachRequired(_)
+    ) {
         workers.push(WorkerSlot::Frontend);
     }
-    if snapshot.backend.closed {
+    if matches!(
+        snapshot.backend.connection,
+        super::WorkerConnection::ReattachRequired(_)
+    ) {
         workers.push(WorkerSlot::Backend);
     }
     workers

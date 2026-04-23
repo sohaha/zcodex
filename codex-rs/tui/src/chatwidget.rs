@@ -9660,6 +9660,23 @@ impl ChatWidget {
         }
     }
 
+    pub(crate) fn restore_zteam_worker(&mut self, recovered: zteam::RecoveredWorker) {
+        let changed = self.zteam_state.restore_worker(recovered);
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn configure_zteam_federation_adapter(
+        &mut self,
+        params: Option<codex_app_server_protocol::FederationThreadStartParams>,
+    ) {
+        let changed = self.zteam_state.configure_federation_adapter(params);
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
+    }
+
     pub(crate) fn zteam_build_root_dispatch(
         &self,
         worker: zteam::WorkerSlot,
