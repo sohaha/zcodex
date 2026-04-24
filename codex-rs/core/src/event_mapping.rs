@@ -85,8 +85,12 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
                 {
                     continue;
                 }
+                let text = InterAgentCommunication::sanitize_visible_text(text);
+                if text.trim().is_empty() {
+                    continue;
+                }
                 content.push(UserInput::Text {
-                    text: text.clone(),
+                    text,
                     // Model input content does not carry UI element ranges.
                     text_elements: Vec::new(),
                 });
@@ -102,7 +106,7 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
         }
     }
 
-    Some(UserMessageItem::new(&content))
+    (!content.is_empty()).then(|| UserMessageItem::new(&content))
 }
 
 fn parse_agent_message(
@@ -114,7 +118,11 @@ fn parse_agent_message(
     for content_item in message.iter() {
         match content_item {
             ContentItem::InputText { text } | ContentItem::OutputText { text } => {
-                content.push(AgentMessageContent::Text { text: text.clone() });
+                let text = InterAgentCommunication::sanitize_visible_text(text);
+                if text.trim().is_empty() {
+                    continue;
+                }
+                content.push(AgentMessageContent::Text { text });
             }
             _ => {
                 warn!(
@@ -145,12 +153,10 @@ pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {
             "user" => parse_visible_hook_prompt_message(id.as_ref(), content)
                 .map(TurnItem::HookPrompt)
                 .or_else(|| parse_user_message(content).map(TurnItem::UserMessage)),
-            "assistant" if InterAgentCommunication::from_message_content(content).is_some() => None,
-            "assistant" => Some(TurnItem::AgentMessage(parse_agent_message(
-                id.as_ref(),
-                content,
-                phase.clone(),
-            ))),
+            "assistant" => {
+                let agent_message = parse_agent_message(id.as_ref(), content, phase.clone());
+                (!agent_message.content.is_empty()).then_some(TurnItem::AgentMessage(agent_message))
+            }
             "system" => None,
             _ => None,
         },

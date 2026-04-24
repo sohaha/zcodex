@@ -124,9 +124,9 @@ impl Command {
             "start" => {
                 let goal = trimmed
                     .split_once(char::is_whitespace)
-                    .map(|(_, goal)| goal.trim())
-                    .filter(|goal| !goal.is_empty())
-                    .map(std::string::ToString::to_string);
+                    .map(|(_, goal)| sanitize_mission_goal(goal.trim()))
+                    .transpose()?
+                    .flatten();
                 Ok(Self::Start { goal })
             }
             "status" => {
@@ -328,6 +328,7 @@ pub(crate) enum AutopilotWorkItem {
 
 impl State {
     pub(crate) fn mark_start_requested_for_goal(&mut self, goal: Option<&str>) -> bool {
+        let sanitized_goal = goal.and_then(|goal| sanitize_mission_goal(goal).ok().flatten());
         let mut state = self.write_state();
         let changed = !state.start_requested
             || WorkerSlot::ALL.into_iter().any(|worker| {
@@ -336,7 +337,8 @@ impl State {
                     || worker_state.last_dispatched_task.is_some()
                     || worker_state.last_result.is_some()
             })
-            || state.mission.as_ref().map(|mission| mission.goal.as_str()) != goal;
+            || state.mission.as_ref().map(|mission| mission.goal.as_str())
+                != sanitized_goal.as_deref();
         if !changed {
             return false;
         }
@@ -344,9 +346,7 @@ impl State {
         for worker in WorkerSlot::ALL {
             *state.worker_mut(worker) = WorkerState::default();
         }
-        state.mission = goal
-            .filter(|goal| !goal.trim().is_empty())
-            .map(plan_mission);
+        state.mission = sanitized_goal.as_deref().map(plan_mission);
         reset_autopilot_for_new_mission(&mut state);
         push_activity(
             &mut state.activity,
@@ -1021,6 +1021,18 @@ impl SharedState {
             WorkerSlot::Backend => &mut self.backend,
         }
     }
+}
+
+fn sanitize_mission_goal(goal: &str) -> Result<Option<String>, String> {
+    let sanitized = InterAgentCommunication::sanitize_visible_text(goal);
+    let sanitized = sanitized.trim();
+    if sanitized.is_empty() {
+        if goal.trim().is_empty() {
+            return Ok(None);
+        }
+        return Err("`/zteam start <目标>` 中包含的内容在净化内部协作消息后为空；请直接输入面向任务的目标。".to_string());
+    }
+    Ok(Some(sanitized.to_string()))
 }
 
 fn push_activity(activity: &mut VecDeque<ActivityEntry>, summary: String) {
@@ -2167,6 +2179,14 @@ mod tests {
                 goal: Some("修复设置页移动端体验".to_string()),
             })
         );
+        assert_eq!(
+            Command::parse(
+                "start 修复登录体验 <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+            ),
+            Ok(Command::Start {
+                goal: Some("修复登录体验".to_string()),
+            })
+        );
         assert_eq!(Command::parse("status"), Ok(Command::Status));
         assert_eq!(Command::parse("attach"), Ok(Command::Attach));
         assert_eq!(
@@ -2202,6 +2222,12 @@ mod tests {
         assert_eq!(Command::parse("frontend"), Err(usage().to_string()));
         assert_eq!(Command::parse("relay frontend"), Err(usage().to_string()));
         assert_eq!(
+            Command::parse(
+                "start <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+            ),
+            Err("`/zteam start <目标>` 中包含的内容在净化内部协作消息后为空；请直接输入面向任务的目标。".to_string())
+        );
+        assert_eq!(
             Command::parse("relay frontend backend"),
             Err(usage().to_string())
         );
@@ -2223,6 +2249,19 @@ mod tests {
         assert_eq!(mission.frontend_role.as_deref(), Some("负责 UI/交互侧推进"));
         assert_eq!(mission.backend_role.as_deref(), Some("负责接口/数据侧推进"));
         assert_eq!(mission.acceptance_checks.len(), 3);
+    }
+
+    #[test]
+    fn start_requested_goal_is_sanitized_before_mission_creation() {
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some(
+            "修复设置页保存链路 <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+        )));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.goal, "修复设置页保存链路");
     }
 
     #[test]

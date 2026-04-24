@@ -162,6 +162,45 @@ fn skips_serialized_inter_agent_communication() {
 }
 
 #[test]
+fn skips_hidden_subagent_notification_user_message() {
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                .to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+
+    assert!(parse_turn_item(&item).is_none());
+}
+
+#[test]
+fn strips_hidden_subagent_notification_fragment_from_user_message() {
+    let item = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "继续处理登录问题 <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                .to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+
+    let turn_item = parse_turn_item(&item).expect("expected visible user message");
+    let TurnItem::UserMessage(user) = turn_item else {
+        panic!("expected TurnItem::UserMessage");
+    };
+    let [UserInput::Text { text, .. }] = user.content.as_slice() else {
+        panic!("expected single visible user text input");
+    };
+    assert_eq!(text, "继续处理登录问题 ");
+}
+
+#[test]
 fn skips_unnamed_image_label_text() {
     let image_url = "data:image/png;base64,abc".to_string();
     let label = codex_protocol::models::image_open_tag_text();

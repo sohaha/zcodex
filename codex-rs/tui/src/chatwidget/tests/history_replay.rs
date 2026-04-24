@@ -109,6 +109,22 @@ async fn completed_inter_agent_envelope_message_is_hidden() {
 }
 
 #[tokio::test]
+async fn task_complete_last_agent_message_hides_subagent_notification() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_task_complete(
+        Some(
+            "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                .to_string(),
+        ),
+        /*from_replay*/ true,
+    );
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_eq!(chat.last_agent_markdown, None);
+}
+
+#[tokio::test]
 async fn replayed_subagent_notification_user_message_is_hidden() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -118,6 +134,47 @@ async fn replayed_subagent_notification_user_message_is_hidden() {
             message:
                 "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
                     .to_string(),
+            images: None,
+            text_elements: Vec::new(),
+            local_images: Vec::new(),
+        }),
+    });
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+}
+
+#[tokio::test]
+async fn replayed_user_message_strips_hidden_subagent_notification_fragment() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_codex_event_replay(Event {
+        id: "turn-1".into(),
+        msg: EventMsg::UserMessage(UserMessageEvent {
+            message: "继续排查 <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                .to_string(),
+            images: None,
+            text_elements: Vec::new(),
+            local_images: Vec::new(),
+        }),
+    });
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1);
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(rendered.contains("继续排查"));
+    assert!(!rendered.contains("<subagent_notification>"));
+}
+
+#[tokio::test]
+async fn replayed_inter_agent_envelope_user_message_is_hidden() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_codex_event_replay(Event {
+        id: "turn-1".into(),
+        msg: EventMsg::UserMessage(UserMessageEvent {
+            message: inter_agent_envelope(
+                "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>",
+            ),
             images: None,
             text_elements: Vec::new(),
             local_images: Vec::new(),

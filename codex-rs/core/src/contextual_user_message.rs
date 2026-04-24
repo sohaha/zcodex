@@ -6,13 +6,13 @@ use codex_protocol::items::parse_hook_prompt_fragment;
 use codex_protocol::models::ContentItem;
 use codex_protocol::protocol::ENVIRONMENT_CONTEXT_CLOSE_TAG;
 use codex_protocol::protocol::ENVIRONMENT_CONTEXT_OPEN_TAG;
+pub(crate) use codex_protocol::protocol::SUBAGENT_NOTIFICATION_CLOSE_TAG;
+pub(crate) use codex_protocol::protocol::SUBAGENT_NOTIFICATION_OPEN_TAG;
 
 pub(crate) const USER_SHELL_COMMAND_OPEN_TAG: &str = "<user_shell_command>";
 pub(crate) const USER_SHELL_COMMAND_CLOSE_TAG: &str = "</user_shell_command>";
 pub(crate) const TURN_ABORTED_OPEN_TAG: &str = "<turn_aborted>";
 pub(crate) const TURN_ABORTED_CLOSE_TAG: &str = "</turn_aborted>";
-pub(crate) const SUBAGENT_NOTIFICATION_OPEN_TAG: &str = "<subagent_notification>";
-pub(crate) const SUBAGENT_NOTIFICATION_CLOSE_TAG: &str = "</subagent_notification>";
 
 pub(crate) const ENVIRONMENT_CONTEXT_FRAGMENT: ContextualUserFragmentDefinition =
     ContextualUserFragmentDefinition::new(

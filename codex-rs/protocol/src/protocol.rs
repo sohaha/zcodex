@@ -98,6 +98,8 @@ pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
 pub const PLUGINS_INSTRUCTIONS_CLOSE_TAG: &str = "</plugins_instructions>";
 pub const COLLABORATION_MODE_OPEN_TAG: &str = "<collaboration_mode>";
 pub const COLLABORATION_MODE_CLOSE_TAG: &str = "</collaboration_mode>";
+pub const SUBAGENT_NOTIFICATION_OPEN_TAG: &str = "<subagent_notification>";
+pub const SUBAGENT_NOTIFICATION_CLOSE_TAG: &str = "</subagent_notification>";
 pub const REALTIME_CONVERSATION_OPEN_TAG: &str = "<realtime_conversation>";
 pub const REALTIME_CONVERSATION_CLOSE_TAG: &str = "</realtime_conversation>";
 pub const USER_MESSAGE_BEGIN: &str = "## My request for Codex:";
@@ -761,6 +763,132 @@ impl InterAgentCommunication {
             }
             _ => None,
         }
+    }
+
+    pub fn is_hidden_message_text(text: &str) -> bool {
+        Self::is_hidden_envelope_text(text) || is_hidden_subagent_notification_text(text)
+    }
+
+    pub fn is_hidden_envelope_text(text: &str) -> bool {
+        Self::from_message_content(&[ContentItem::OutputText {
+            text: text.to_string(),
+        }])
+        .is_some()
+    }
+
+    pub fn sanitize_visible_text(text: &str) -> String {
+        if Self::is_hidden_envelope_text(text) {
+            return String::new();
+        }
+        strip_hidden_subagent_notification_fragments(text)
+    }
+}
+
+pub fn is_hidden_subagent_notification_text(text: &str) -> bool {
+    is_wrapped_tag_case_insensitive(
+        text,
+        SUBAGENT_NOTIFICATION_OPEN_TAG,
+        SUBAGENT_NOTIFICATION_CLOSE_TAG,
+    )
+}
+
+fn is_wrapped_tag_case_insensitive(text: &str, open_tag: &str, close_tag: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.len() < open_tag.len() + close_tag.len() {
+        return false;
+    }
+
+    trimmed
+        .get(..open_tag.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(open_tag))
+        && trimmed
+            .get(trimmed.len() - close_tag.len()..)
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(close_tag))
+}
+
+fn strip_hidden_subagent_notification_fragments(text: &str) -> String {
+    strip_tagged_fragments_case_insensitive(
+        text,
+        SUBAGENT_NOTIFICATION_OPEN_TAG,
+        SUBAGENT_NOTIFICATION_CLOSE_TAG,
+    )
+}
+
+fn strip_tagged_fragments_case_insensitive(text: &str, open_tag: &str, close_tag: &str) -> String {
+    let lowered = text.to_ascii_lowercase();
+    let open_tag = open_tag.to_ascii_lowercase();
+    let close_tag = close_tag.to_ascii_lowercase();
+    let mut cursor = 0usize;
+    let mut output = String::with_capacity(text.len());
+
+    while let Some(relative_open) = lowered[cursor..].find(&open_tag) {
+        let open_start = cursor + relative_open;
+        let content_start = open_start + open_tag.len();
+        let Some(relative_close) = lowered[content_start..].find(&close_tag) else {
+            output.push_str(&text[cursor..]);
+            return output;
+        };
+        let close_end = content_start + relative_close + close_tag.len();
+        output.push_str(&text[cursor..open_start]);
+        cursor = close_end;
+    }
+
+    output.push_str(&text[cursor..]);
+    output
+}
+
+#[cfg(test)]
+mod inter_agent_visibility_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn hidden_subagent_notification_match_is_case_insensitive() {
+        assert!(is_hidden_subagent_notification_text(
+            "<SUBAGENT_NOTIFICATION>{}</subagent_notification>",
+        ));
+    }
+
+    #[test]
+    fn hidden_envelope_text_is_recognized() {
+        let communication = InterAgentCommunication::new(
+            AgentPath::root(),
+            AgentPath::try_from("/root/worker").expect("agent path"),
+            Vec::new(),
+            "done".to_string(),
+            /*trigger_turn*/ false,
+        );
+        let serialized = serde_json::to_string(&communication).expect("serialize envelope");
+
+        assert!(InterAgentCommunication::is_hidden_envelope_text(
+            &serialized
+        ));
+        assert!(InterAgentCommunication::is_hidden_message_text(&serialized));
+        assert_eq!(
+            InterAgentCommunication::sanitize_visible_text(&serialized),
+            ""
+        );
+    }
+
+    #[test]
+    fn hidden_subagent_notification_text_is_sanitized_away() {
+        let text = concat!(
+            "before ",
+            "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>",
+            " after"
+        );
+
+        assert_eq!(
+            InterAgentCommunication::sanitize_visible_text(text),
+            "before  after"
+        );
+    }
+
+    #[test]
+    fn visible_text_is_preserved() {
+        let text = "normal user-visible message";
+        assert_eq!(InterAgentCommunication::sanitize_visible_text(text), text);
+        assert!(!InterAgentCommunication::is_hidden_message_text(text));
     }
 }
 

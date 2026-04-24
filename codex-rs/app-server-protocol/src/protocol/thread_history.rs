@@ -21,7 +21,6 @@ use crate::protocol::v2::TurnStatus;
 use crate::protocol::v2::UserInput;
 use crate::protocol::v2::WebSearchAction;
 use codex_protocol::items::parse_hook_prompt_message;
-use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
@@ -265,7 +264,8 @@ impl ThreadHistoryBuilder {
     }
 
     fn handle_user_message(&mut self, payload: &UserMessageEvent) {
-        if is_hidden_subagent_notification_text(&payload.message) {
+        let sanitized_message = InterAgentCommunication::sanitize_visible_text(&payload.message);
+        if sanitized_message.trim().is_empty() {
             return;
         }
 
@@ -283,7 +283,9 @@ impl ThreadHistoryBuilder {
             .take()
             .unwrap_or_else(|| self.new_turn(/*id*/ None));
         let id = self.next_item_id();
-        let content = self.build_user_inputs(payload);
+        let mut payload = payload.clone();
+        payload.message = sanitized_message;
+        let content = self.build_user_inputs(&payload);
         turn.items.push(ThreadItem::UserMessage { id, content });
         self.current_turn = Some(turn);
     }
@@ -294,7 +296,8 @@ impl ThreadHistoryBuilder {
         phase: Option<MessagePhase>,
         memory_citation: Option<crate::protocol::v2::MemoryCitation>,
     ) {
-        if text.is_empty() || is_inter_agent_envelope_text(&text) {
+        let text = InterAgentCommunication::sanitize_visible_text(&text);
+        if text.trim().is_empty() {
             return;
         }
 
@@ -1186,30 +1189,6 @@ impl From<&PendingTurn> for Turn {
             duration_ms: value.duration_ms,
         }
     }
-}
-
-fn is_inter_agent_envelope_text(text: &str) -> bool {
-    InterAgentCommunication::from_message_content(&[ContentItem::OutputText {
-        text: text.to_string(),
-    }])
-    .is_some()
-}
-
-fn is_hidden_subagent_notification_text(text: &str) -> bool {
-    const OPEN_TAG: &str = "<subagent_notification>";
-    const CLOSE_TAG: &str = "</subagent_notification>";
-
-    let trimmed = text.trim();
-    if trimmed.len() < OPEN_TAG.len() + CLOSE_TAG.len() {
-        return false;
-    }
-
-    trimmed
-        .get(..OPEN_TAG.len())
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(OPEN_TAG))
-        && trimmed
-            .get(trimmed.len() - CLOSE_TAG.len()..)
-            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(CLOSE_TAG))
 }
 
 #[cfg(test)]
@@ -2691,6 +2670,29 @@ mod tests {
                 local_images: Vec::new(),
             },
         ))]);
+
+        assert!(turns.is_empty());
+    }
+
+    #[test]
+    fn skips_inter_agent_envelope_user_messages() {
+        let envelope = serde_json::to_string(&InterAgentCommunication::new(
+            AgentPath::try_from("/root/runtime_persistence_audit").expect("valid author path"),
+            AgentPath::try_from("/root").expect("valid recipient path"),
+            Vec::new(),
+            "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                .into(),
+            /*trigger_turn*/ false,
+        ))
+        .expect("serialize mailbox envelope");
+        let turns = build_turns_from_rollout_items(&[RolloutItem::EventMsg(
+            EventMsg::UserMessage(UserMessageEvent {
+                message: envelope,
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            }),
+        )]);
 
         assert!(turns.is_empty());
     }

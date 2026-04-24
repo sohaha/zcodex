@@ -64,10 +64,11 @@ pub(crate) fn image_generation_artifact_path(
 
 fn strip_hidden_assistant_markup(text: &str, plan_mode: bool) -> String {
     let (without_citations, _) = strip_citations(text);
+    let visible_text = InterAgentCommunication::sanitize_visible_text(&without_citations);
     if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
+        strip_proposed_plan_blocks(&visible_text)
     } else {
-        without_citations
+        visible_text
     }
 }
 
@@ -79,10 +80,11 @@ fn strip_hidden_assistant_markup_and_parse_memory_citation(
     Option<codex_protocol::memory_citation::MemoryCitation>,
 ) {
     let (without_citations, citations) = strip_citations(text);
+    let visible_text = InterAgentCommunication::sanitize_visible_text(&without_citations);
     let visible_text = if plan_mode {
-        strip_proposed_plan_blocks(&without_citations)
+        strip_proposed_plan_blocks(&visible_text)
     } else {
-        without_citations
+        visible_text
     };
     (visible_text, parse_memory_citation(citations))
 }
@@ -426,12 +428,6 @@ pub(crate) fn last_assistant_message_from_item(
     item: &ResponseItem,
     plan_mode: bool,
 ) -> Option<String> {
-    if let ResponseItem::Message { role, content, .. } = item
-        && role == "assistant"
-        && InterAgentCommunication::from_message_content(content).is_some()
-    {
-        return None;
-    }
     if let Some(combined) = raw_assistant_output_text_from_item(item) {
         if combined.is_empty() {
             return None;

@@ -200,6 +200,30 @@ fn last_assistant_message_from_item_returns_none_for_inter_agent_envelope() {
 }
 
 #[test]
+fn last_assistant_message_from_item_returns_none_for_hidden_subagent_notification() {
+    let item = assistant_output_text(
+        "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>",
+    );
+
+    assert_eq!(
+        last_assistant_message_from_item(&item, /*plan_mode*/ false),
+        None
+    );
+}
+
+#[test]
+fn last_assistant_message_from_item_strips_hidden_subagent_notification_fragment() {
+    let item = assistant_output_text(
+        "先汇总结论 <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>",
+    );
+
+    assert_eq!(
+        last_assistant_message_from_item(&item, /*plan_mode*/ false),
+        Some("先汇总结论 ".to_string())
+    );
+}
+
+#[test]
 fn completed_item_defers_mailbox_delivery_for_unknown_phase_messages() {
     let item = assistant_output_text("final answer");
 

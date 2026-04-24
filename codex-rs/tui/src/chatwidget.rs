@@ -1969,38 +1969,26 @@ impl ChatWidget {
         }
     }
 
-    fn is_hidden_inter_agent_envelope_text(message: &str) -> bool {
-        codex_protocol::protocol::InterAgentCommunication::from_message_content(&[
-            codex_protocol::models::ContentItem::OutputText {
-                text: message.to_string(),
-            },
-        ])
-        .is_some()
-    }
-
-    fn is_hidden_subagent_notification_text(message: &str) -> bool {
-        const OPEN_TAG: &str = "<subagent_notification>";
-        const CLOSE_TAG: &str = "</subagent_notification>";
-
-        let trimmed = message.trim();
-        if trimmed.len() < OPEN_TAG.len() + CLOSE_TAG.len() {
-            return false;
+    fn sanitized_message_text(message: &str) -> Option<String> {
+        let sanitized =
+            codex_protocol::protocol::InterAgentCommunication::sanitize_visible_text(message);
+        if sanitized.trim().is_empty()
+            && codex_protocol::protocol::InterAgentCommunication::is_hidden_message_text(message)
+        {
+            return None;
         }
-
-        trimmed
-            .get(..OPEN_TAG.len())
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(OPEN_TAG))
-            && trimmed
-                .get(trimmed.len() - CLOSE_TAG.len()..)
-                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(CLOSE_TAG))
+        Some(sanitized)
     }
 
     /// Record or update the raw markdown for the current agent turn.
     fn record_agent_markdown(&mut self, message: &str) {
-        if message.is_empty() || Self::is_hidden_inter_agent_envelope_text(message) {
+        let Some(message) = Self::sanitized_message_text(message) else {
+            return;
+        };
+        if message.is_empty() {
             return;
         }
-        self.last_agent_markdown = Some(message.to_string());
+        self.last_agent_markdown = Some(message);
         self.saw_copy_source_this_turn = true;
     }
 
@@ -2239,11 +2227,12 @@ impl ChatWidget {
     }
 
     fn on_agent_message(&mut self, message: String) {
-        if Self::is_hidden_inter_agent_envelope_text(&message) {
-            self.finalize_completed_assistant_message(/*message*/ None);
-            return;
-        }
-        self.finalize_completed_assistant_message(Some(&message));
+        let visible_message = Self::sanitized_message_text(&message);
+        self.finalize_completed_assistant_message(
+            visible_message
+                .as_deref()
+                .filter(|message| !message.is_empty()),
+        );
     }
 
     fn on_context_compacted(&mut self) {
@@ -2405,11 +2394,15 @@ impl ChatWidget {
 
     fn on_task_complete(&mut self, last_agent_message: Option<String>, from_replay: bool) {
         self.submit_pending_steers_after_interrupt = false;
+        let visible_last_agent_message = last_agent_message
+            .as_deref()
+            .and_then(Self::sanitized_message_text)
+            .filter(|message| !message.is_empty());
         // Use `last_agent_message` from the turn-complete notification as the copy
         // source only when no earlier item-level event (AgentMessageItem, plan
         // commit, review output) already recorded markdown for this turn. This
         // prevents the final summary from overwriting a more specific source.
-        if let Some(message) = last_agent_message
+        if let Some(message) = visible_last_agent_message
             .as_ref()
             .filter(|message| !message.is_empty())
             && !self.saw_copy_source_this_turn
@@ -2418,10 +2411,8 @@ impl ChatWidget {
         }
         // For desktop notifications: prefer the notification payload, fall back to
         // the item-level copy source if present, otherwise send an empty string.
-        let notification_response = last_agent_message
-            .as_ref()
+        let notification_response = visible_last_agent_message
             .filter(|message| !message.is_empty())
-            .cloned()
             .or_else(|| {
                 if self.saw_copy_source_this_turn {
                     self.last_agent_markdown.clone()
@@ -4294,7 +4285,8 @@ impl ChatWidget {
                 AgentMessageContent::Text { text } => message.push_str(text),
             }
         }
-        if Self::is_hidden_inter_agent_envelope_text(&message) {
+        let visible_message = Self::sanitized_message_text(&message);
+        if visible_message.as_ref().is_none_or(String::is_empty) {
             self.finalize_completed_assistant_message(/*message*/ None);
             self.pending_status_indicator_restore = match item.phase {
                 Some(MessagePhase::FinalAnswer) | None => false,
@@ -4303,11 +4295,11 @@ impl ChatWidget {
             self.maybe_restore_status_indicator_after_stream_idle();
             return;
         }
-        self.finalize_completed_assistant_message(
-            (!message.is_empty()).then_some(message.as_str()),
-        );
-        if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None) && !message.is_empty() {
-            self.record_agent_markdown(&message);
+        self.finalize_completed_assistant_message(visible_message.as_deref());
+        if matches!(item.phase, Some(MessagePhase::FinalAnswer) | None)
+            && let Some(message) = visible_message.as_deref()
+        {
+            self.record_agent_markdown(message);
         }
         self.pending_status_indicator_restore = match item.phase {
             // Models that don't support preambles only output AgentMessageItems on turn completion.
@@ -7159,9 +7151,11 @@ impl ChatWidget {
     }
 
     fn on_user_message_event(&mut self, event: UserMessageEvent) {
-        if Self::is_hidden_subagent_notification_text(&event.message) {
+        let mut event = event;
+        let Some(message) = Self::sanitized_message_text(&event.message) else {
             return;
-        }
+        };
+        event.message = message;
         self.last_rendered_user_message_event =
             Some(Self::rendered_user_message_event_from_event(&event));
         let remote_image_urls = event.images.unwrap_or_default();
