@@ -232,6 +232,32 @@ impl Snapshot {
             WorkerSlot::Backend => &self.backend,
         }
     }
+
+    fn live_workers(&self) -> Vec<WorkerSlot> {
+        WorkerSlot::ALL
+            .into_iter()
+            .filter(|worker| matches!(self.worker(*worker).connection, WorkerConnection::Live(_)))
+            .collect()
+    }
+
+    fn pending_workers(&self) -> Vec<WorkerSlot> {
+        WorkerSlot::ALL
+            .into_iter()
+            .filter(|worker| matches!(self.worker(*worker).connection, WorkerConnection::Pending))
+            .collect()
+    }
+
+    fn reattach_workers(&self) -> Vec<WorkerSlot> {
+        WorkerSlot::ALL
+            .into_iter()
+            .filter(|worker| {
+                matches!(
+                    self.worker(*worker).connection,
+                    WorkerConnection::ReattachRequired(_)
+                )
+            })
+            .collect()
+    }
 }
 
 impl State {
@@ -254,7 +280,7 @@ impl State {
         push_activity(
             &mut state.activity,
             format!(
-                "主线程已请求创建 {} worker。等待 spawn 事件注册。",
+                "主线程已提交创建 {} worker 的启动指令。等待 spawn 事件注册；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`。",
                 default_worker_task_list()
             ),
         );
@@ -402,32 +428,26 @@ impl State {
 
     #[cfg(test)]
     pub(crate) fn status_message(&self) -> String {
-        let state = self.read_state();
+        let snapshot = self.snapshot();
         let mut lines = Vec::new();
         lines.push(format!("{MODE_NAME} 状态："));
-        if state.start_requested {
-            lines.push(format!(
-                "已请求创建 {} worker。",
-                default_worker_task_list()
-            ));
-        } else {
-            lines.push("尚未请求创建 worker；先运行 `/zteam start`。".to_string());
-        }
-        if let Some(adapter) = &state.federation_adapter {
+        lines.push(status_summary(&snapshot));
+        if let Some(adapter) = &snapshot.federation_adapter {
             lines.push(format!("外部 adapter：{}", adapter.summary()));
         }
         for worker in WorkerSlot::ALL {
-            lines.push(worker_status_line(worker, state.worker(worker)));
+            lines.push(worker_status_line(worker, snapshot.worker(worker)));
         }
         lines.join("\n")
     }
 
     pub(crate) fn missing_worker_message(&self, worker: WorkerSlot) -> String {
-        match &self.read_state().worker(worker).connection {
+        let snapshot = self.snapshot();
+        match &snapshot.worker(worker).connection {
             WorkerConnection::Pending => format!(
-                "{} worker 尚未注册。先运行 `/zteam start`，并等待主线程创建 `{}`。",
+                "{} worker 尚未注册。{}",
                 worker.display_name(),
-                worker.canonical_task_name()
+                pending_worker_guidance(&snapshot, worker)
             ),
             WorkerConnection::Live(_) => format!(
                 "{} worker 当前已附着；如果仍然分派失败，请重新运行 `/zteam status` 检查状态。",
@@ -441,14 +461,28 @@ impl State {
     }
 
     pub(crate) fn missing_relay_message(&self, from: WorkerSlot, to: WorkerSlot) -> String {
-        let state = self.read_state();
-        let from_connection = &state.worker(from).connection;
-        let to_connection = &state.worker(to).connection;
+        let snapshot = self.snapshot();
+        let from_connection = &snapshot.worker(from).connection;
+        let to_connection = &snapshot.worker(to).connection;
         let needs_attach = matches!(from_connection, WorkerConnection::ReattachRequired(_))
             || matches!(to_connection, WorkerConnection::ReattachRequired(_));
         if needs_attach {
             return format!(
                 "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的 worker，或用 `/zteam start` 重新创建。"
+            );
+        }
+        let pending = snapshot.pending_workers();
+        if !pending.is_empty() {
+            let registered = snapshot.live_workers();
+            if registered.is_empty() {
+                return format!(
+                    "无法在 {from} 和 {to} 之间中转消息。当前还没有任何 worker 完成注册；先等待 `/zteam start` 的创建结果，必要时重新运行 `/zteam start`。"
+                );
+            }
+            return format!(
+                "无法在 {from} 和 {to} 之间中转消息。当前仅 {} 已注册，仍缺 {}；先运行 `/zteam status` 检查进度，必要时重新运行 `/zteam start`。",
+                worker_list(&registered),
+                worker_list(&pending)
             );
         }
         format!(
@@ -482,6 +516,14 @@ impl State {
         }
         worker_state.connection = WorkerConnection::Live(thread_id);
         worker_state.source = WorkerSource::LocalThreadSpawn;
+        let pending = WorkerSlot::ALL
+            .into_iter()
+            .filter(|slot| matches!(state.worker(*slot).connection, WorkerConnection::Pending))
+            .collect::<Vec<_>>();
+        let live = WorkerSlot::ALL
+            .into_iter()
+            .filter(|slot| matches!(state.worker(*slot).connection, WorkerConnection::Live(_)))
+            .collect::<Vec<_>>();
         push_activity(
             &mut state.activity,
             format!(
@@ -489,6 +531,24 @@ impl State {
                 worker.canonical_task_name()
             ),
         );
+        if pending.is_empty() {
+            push_activity(
+                &mut state.activity,
+                format!(
+                    "{} worker 已全部注册，可开始分派任务或中转消息。",
+                    worker_task_list(&WorkerSlot::ALL)
+                ),
+            );
+        } else if !live.is_empty() {
+            push_activity(
+                &mut state.activity,
+                format!(
+                    "当前已收到 {}，仍等待 {} 注册。",
+                    worker_list(&live),
+                    worker_list(&pending)
+                ),
+            );
+        }
         true
     }
 
@@ -585,6 +645,72 @@ fn push_result(results: &mut VecDeque<ResultEntry>, worker: WorkerSlot, summary:
     }
 }
 
+fn status_summary(snapshot: &Snapshot) -> String {
+    format!("状态摘要：{}", startup_summary(snapshot))
+}
+
+fn startup_summary(snapshot: &Snapshot) -> String {
+    if !snapshot.start_requested {
+        return "尚未启动；先运行 `/zteam start`。".to_string();
+    }
+
+    let reattach = snapshot.reattach_workers();
+    if !reattach.is_empty() {
+        return format!(
+            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的 worker 连接。",
+            worker_list(&reattach)
+        );
+    }
+
+    let pending = snapshot.pending_workers();
+    if !pending.is_empty() {
+        let live = snapshot.live_workers();
+        if live.is_empty() {
+            return format!(
+                "已提交创建请求，等待 {} 注册；若长时间无变化，请检查主线程是否真正创建了 worker。",
+                worker_list(&pending)
+            );
+        }
+        return format!(
+            "当前已收到 {}，仍等待 {} 注册；若长时间无变化，请检查主线程是否只创建了一部分 worker。",
+            worker_list(&live),
+            worker_list(&pending)
+        );
+    }
+
+    format!(
+        "{} worker 已就绪，可继续分派任务或转发消息。",
+        worker_task_list(&WorkerSlot::ALL)
+    )
+}
+
+fn pending_worker_guidance(snapshot: &Snapshot, worker: WorkerSlot) -> String {
+    let live = snapshot.live_workers();
+    if live.is_empty() {
+        return format!(
+            "当前还没有任何 worker 完成注册。先等待主线程创建 `{}`；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`，必要时重新运行 `/zteam start`。",
+            worker.canonical_task_name()
+        );
+    }
+
+    let other_live = live
+        .into_iter()
+        .filter(|registered| *registered != worker)
+        .collect::<Vec<_>>();
+    if other_live.is_empty() {
+        return format!(
+            "当前还在等待主线程创建 `{}`；可先运行 `/zteam status` 检查进度，若长时间无变化则重新运行 `/zteam start`。",
+            worker.canonical_task_name()
+        );
+    }
+
+    format!(
+        "当前仅 {} 已注册，仍在等待 `{}`；若长时间无变化，说明主线程可能只创建了一部分 worker。先运行 `/zteam status` 检查，再决定是否重新运行 `/zteam start`。",
+        worker_list(&other_live),
+        worker.canonical_task_name()
+    )
+}
+
 impl WorkerSlot {
     const ALL: [Self; 2] = [Self::Frontend, Self::Backend];
 }
@@ -616,6 +742,22 @@ fn default_worker_task_list() -> String {
     WorkerSlot::ALL
         .into_iter()
         .map(WorkerSlot::task_name)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn worker_list(workers: &[WorkerSlot]) -> String {
+    workers
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("、")
+}
+
+fn worker_task_list(workers: &[WorkerSlot]) -> String {
+    workers
+        .iter()
+        .map(|worker| worker.task_name())
         .collect::<Vec<_>>()
         .join("/")
 }

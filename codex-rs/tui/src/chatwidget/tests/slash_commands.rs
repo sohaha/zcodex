@@ -403,7 +403,11 @@ fn zteam_test_thread(
                 .expect("valid thread id"),
             depth: 1,
             parent_model: None,
-            agent_path: None,
+            agent_path: Some(
+                format!("/root/{}", slot.task_name())
+                    .parse()
+                    .expect("valid agent path"),
+            ),
             agent_nickname: Some(slot.display_name().to_string()),
             agent_role: Some(slot.role_name().to_string()),
         }),
@@ -484,6 +488,37 @@ async fn zteam_workbench_updates_with_worker_activity() {
         .expect("draw active zteam workbench");
     assert_chatwidget_snapshot!(
         "zteam_workbench_active_view",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
+async fn zteam_workbench_surfaces_partial_registration_guidance() {
+    use codex_app_server_protocol::ServerNotification;
+    use codex_app_server_protocol::ThreadStartedNotification;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let frontend_id =
+        ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Zteam);
+    chat.mark_zteam_start_requested();
+    chat.observe_zteam_thread_notification(
+        frontend_id,
+        &ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: zteam_test_thread(frontend_id, crate::zteam::WorkerSlot::Frontend),
+        }),
+    );
+
+    let height = chat.desired_height(/*width*/ 100);
+    let mut terminal = Terminal::new(TestBackend::new(100, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw partial zteam workbench");
+    assert_chatwidget_snapshot!(
+        "zteam_workbench_partial_registration_view",
         normalized_backend_snapshot(terminal.backend())
     );
 }

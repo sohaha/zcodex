@@ -202,13 +202,17 @@ impl Renderable for WorkbenchView {
             Paragraph::new(Line::from(vec![
                 "Esc 关闭".dim(),
                 " · ".dim(),
+                "/zteam status".cyan(),
+                " 查看状态".dim(),
+                " · ".dim(),
                 "/zteam start".cyan(),
                 " 创建 worker".dim(),
                 " · ".dim(),
                 "/zteam attach".cyan(),
                 " 再附着".dim(),
                 " · ".dim(),
-                "/zteam <worker> <任务>".cyan(),
+                "/zteam relay".cyan(),
+                " 协作中转".dim(),
             ]))
             .render(hint_area, buf);
         }
@@ -281,26 +285,37 @@ fn overview_status(snapshot: &Snapshot) -> String {
     if !snapshot.start_requested {
         return format!(
             "尚未启动。先运行 `/zteam start` 创建 {} worker。",
-            worker_task_list(&WorkerSlot::ALL)
+            super::worker_task_list(&WorkerSlot::ALL)
         );
     }
 
-    let reattach = reattach_workers(snapshot);
+    let reattach = snapshot.reattach_workers();
     if !reattach.is_empty() {
         return format!(
             "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的 worker 连接。",
-            worker_list(&reattach)
+            super::worker_list(&reattach)
         );
     }
 
-    let missing = missing_workers(snapshot);
-    if !missing.is_empty() {
-        return format!("已请求创建 worker，等待 {} 注册。", worker_list(&missing));
+    let pending = snapshot.pending_workers();
+    if !pending.is_empty() {
+        let live = snapshot.live_workers();
+        if live.is_empty() {
+            return format!(
+                "已提交创建请求，等待 {} 注册。",
+                super::worker_list(&pending)
+            );
+        }
+        return format!(
+            "已收到 {}，仍等待 {} 注册。",
+            super::worker_list(&live),
+            super::worker_list(&pending)
+        );
     }
 
     format!(
         "{} worker 已就绪，可继续分派任务或转发消息。",
-        worker_task_list(&WorkerSlot::ALL)
+        super::worker_task_list(&WorkerSlot::ALL)
     )
 }
 
@@ -309,63 +324,30 @@ fn blocking_note(snapshot: &Snapshot) -> Option<String> {
         return Some("当前还没有可分派目标；工作台只会显示空态。".to_string());
     }
 
-    let missing = missing_workers(snapshot);
-    if !missing.is_empty() {
+    let pending = snapshot.pending_workers();
+    if !pending.is_empty() {
+        let live = snapshot.live_workers();
+        if live.is_empty() {
+            return Some(
+                "主线程尚未回流任何 worker 注册事件；若长时间无变化，说明主线程可能没有真正创建 worker。先检查主线程是否执行了 `spawn_agent`，必要时重新运行 `/zteam start`。".to_string(),
+            );
+        }
         return Some(format!(
-            "主线程尚未收到 {} 的 spawn 回执；root -> worker 与 worker -> worker 路由暂不可用。",
-            worker_list(&missing)
+            "当前仅 {} 已注册，仍缺 {}；root -> worker 与 worker -> worker 路由暂不可用。若长时间无变化，说明主线程可能只创建了一部分 worker。",
+            super::worker_list(&live),
+            super::worker_list(&pending)
         ));
     }
 
-    let reattach = reattach_workers(snapshot);
+    let reattach = snapshot.reattach_workers();
     if !reattach.is_empty() {
         return Some(format!(
             "{} 的最近线程当前未附着；先运行 `/zteam attach` 尝试重新附着，必要时再用 `/zteam start` 重建 worker。",
-            worker_list(&reattach)
+            super::worker_list(&reattach)
         ));
     }
 
     None
-}
-
-fn missing_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
-    WorkerSlot::ALL
-        .into_iter()
-        .filter(|worker| {
-            matches!(
-                snapshot.worker(*worker).connection,
-                super::WorkerConnection::Pending
-            )
-        })
-        .collect()
-}
-
-fn reattach_workers(snapshot: &Snapshot) -> Vec<WorkerSlot> {
-    WorkerSlot::ALL
-        .into_iter()
-        .filter(|worker| {
-            matches!(
-                snapshot.worker(*worker).connection,
-                super::WorkerConnection::ReattachRequired(_)
-            )
-        })
-        .collect()
-}
-
-fn worker_list(workers: &[WorkerSlot]) -> String {
-    workers
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("、")
-}
-
-fn worker_task_list(workers: &[WorkerSlot]) -> String {
-    workers
-        .iter()
-        .map(|worker| worker.task_name())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 fn push_wrapped(lines: &mut Vec<Line<'static>>, width: usize, text: String, indent: &str) {

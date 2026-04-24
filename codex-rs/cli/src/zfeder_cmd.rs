@@ -401,7 +401,10 @@ async fn execute_peers(
     .await
 }
 
-async fn execute_send(client: &FederationClient, args: &SendArgs) -> Result<FederationDaemonResponse> {
+async fn execute_send(
+    client: &FederationClient,
+    args: &SendArgs,
+) -> Result<FederationDaemonResponse> {
     let created_at = args.created_at.unwrap_or_else(unix_now);
     let expires_at = created_at
         .checked_add(i64::from(args.expires_in_secs))
@@ -433,7 +436,10 @@ async fn execute_inbox(
     .await
 }
 
-async fn execute_ack(client: &FederationClient, args: &AckArgs) -> Result<FederationDaemonResponse> {
+async fn execute_ack(
+    client: &FederationClient,
+    args: &AckArgs,
+) -> Result<FederationDaemonResponse> {
     send_checked(
         client,
         FederationDaemonCommand::WriteAck {

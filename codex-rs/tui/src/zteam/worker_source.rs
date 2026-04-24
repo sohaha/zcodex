@@ -62,8 +62,11 @@ pub(crate) fn local_thread_matches_slot(slot: WorkerSlot, thread: &Thread) -> bo
             agent_nickname: Some(agent_nickname),
             agent_role: Some(agent_role),
             ..
+        // Legacy threads may lack canonical agent_path metadata. Only fall back to
+        // exact display/task-name matches so ordinary descendants are not
+        // accidentally absorbed into a ZTeam slot.
         }) if agent_role == slot.role_name()
-            && slot_matches_agent_nickname(slot, agent_nickname) =>
+            && slot_matches_legacy_agent_nickname(slot, agent_nickname) =>
         {
             true
         }
@@ -71,21 +74,9 @@ pub(crate) fn local_thread_matches_slot(slot: WorkerSlot, thread: &Thread) -> bo
     }
 }
 
-fn slot_matches_agent_nickname(slot: WorkerSlot, agent_nickname: &str) -> bool {
+fn slot_matches_legacy_agent_nickname(slot: WorkerSlot, agent_nickname: &str) -> bool {
     let nickname = agent_nickname.trim();
-    nickname == slot.display_name()
-        || nickname.eq_ignore_ascii_case(slot.task_name())
-        || matches!(
-            slot,
-            WorkerSlot::Frontend
-                if nickname == "前端"
-                    || nickname.eq_ignore_ascii_case("android")
-                    || nickname.eq_ignore_ascii_case("android frontend")
-        )
-        || matches!(
-            slot,
-            WorkerSlot::Backend if nickname == "后端" || nickname.eq_ignore_ascii_case("server")
-        )
+    nickname == slot.display_name() || nickname.eq_ignore_ascii_case(slot.task_name())
 }
 
 fn federation_worker_config(
@@ -98,5 +89,90 @@ fn federation_worker_config(
         scope: params.scope.clone(),
         state_root: params.state_root.clone(),
         lease_ttl_secs: params.lease_ttl_secs,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkerSlot;
+    use super::local_thread_matches_slot;
+    use codex_app_server_protocol::SessionSource;
+    use codex_app_server_protocol::Thread;
+    use codex_app_server_protocol::ThreadStatus;
+    use codex_protocol::ThreadId;
+    use codex_protocol::protocol::SubAgentSource;
+    use codex_utils_absolute_path::test_support::PathBufExt;
+    use codex_utils_absolute_path::test_support::test_path_buf;
+    use pretty_assertions::assert_eq;
+
+    fn thread_with_spawn_metadata(
+        slot: WorkerSlot,
+        agent_path: Option<&str>,
+        agent_nickname: &str,
+        agent_role: &str,
+    ) -> Thread {
+        Thread {
+            id: ThreadId::new().to_string(),
+            forked_from_id: None,
+            preview: String::new(),
+            ephemeral: false,
+            model_provider: "openai".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            status: ThreadStatus::Idle,
+            path: None,
+            cwd: test_path_buf("/tmp").abs(),
+            cli_version: "0.0.0".to_string(),
+            source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: ThreadId::new(),
+                depth: 1,
+                parent_model: None,
+                agent_path: agent_path.map(|value| value.parse().expect("valid agent path")),
+                agent_nickname: Some(agent_nickname.to_string()),
+                agent_role: Some(agent_role.to_string()),
+            }),
+            agent_nickname: Some(agent_nickname.to_string()),
+            agent_role: Some(agent_role.to_string()),
+            git_info: None,
+            name: Some(slot.display_name().to_string()),
+            turns: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn local_thread_matches_slot_accepts_canonical_agent_path() {
+        let thread = thread_with_spawn_metadata(
+            WorkerSlot::Frontend,
+            Some("/root/frontend"),
+            "其他名字",
+            "other-role",
+        );
+
+        assert!(local_thread_matches_slot(WorkerSlot::Frontend, &thread));
+    }
+
+    #[test]
+    fn local_thread_matches_slot_only_uses_exact_legacy_nickname_matches() {
+        let exact_legacy = thread_with_spawn_metadata(
+            WorkerSlot::Backend,
+            None,
+            "backend",
+            WorkerSlot::Backend.role_name(),
+        );
+        let loose_legacy = thread_with_spawn_metadata(
+            WorkerSlot::Backend,
+            None,
+            "server",
+            WorkerSlot::Backend.role_name(),
+        );
+
+        assert!(local_thread_matches_slot(
+            WorkerSlot::Backend,
+            &exact_legacy
+        ));
+        assert_eq!(
+            local_thread_matches_slot(WorkerSlot::Backend, &loose_legacy),
+            false
+        );
     }
 }
