@@ -230,12 +230,12 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         full_auto,
         dangerously_bypass_approvals_and_sandbox,
         cwd,
-        federation_enable,
-        federation_name,
-        federation_role,
-        federation_scope,
-        federation_state_root,
-        federation_instance_id,
+        zfeder_enable,
+        zfeder_name,
+        zfeder_role,
+        zfeder_scope,
+        zfeder_state_root,
+        zfeder_instance_id,
         skip_git_repo_check,
         add_dir,
         ephemeral,
@@ -364,12 +364,12 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     } else {
         None // No OSS mode enabled
     };
-    let federation = federation_enable.then(|| FederationThreadStartParams {
-        instance_id: federation_instance_id,
-        name: federation_name.unwrap_or_else(|| "codex-exec".to_string()),
-        role: federation_role,
-        scope: federation_scope,
-        state_root: federation_state_root.map(|path| path.to_string_lossy().to_string()),
+    let federation = zfeder_enable.then(|| FederationThreadStartParams {
+        instance_id: zfeder_instance_id,
+        name: zfeder_name.unwrap_or_else(|| "codex-exec".to_string()),
+        role: zfeder_role,
+        scope: zfeder_scope,
+        state_root: zfeder_state_root.map(|path| path.to_string_lossy().to_string()),
         lease_ttl_secs: None,
     });
 

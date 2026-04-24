@@ -152,51 +152,51 @@ pub struct Cli {
 
     /// 启用 federation 启动桥接。
     #[arg(
-        long = "federation-enable",
+        long = "zfeder-enable",
         default_value_t = false,
         help = "启用 federation 启动桥接。"
     )]
-    pub federation_enable: bool,
+    pub zfeder_enable: bool,
 
     /// 启用 federation 时向其他实例暴露的名称。
     #[arg(
-        long = "federation-name",
+        long = "zfeder-name",
         value_name = "NAME",
         help = "启用 federation 时向其他实例暴露的名称。"
     )]
-    pub federation_name: Option<String>,
+    pub zfeder_name: Option<String>,
 
     /// 启用 federation 时向其他实例暴露的角色标签。
     #[arg(
-        long = "federation-role",
+        long = "zfeder-role",
         value_name = "ROLE",
         help = "启用 federation 时向其他实例暴露的角色标签。"
     )]
-    pub federation_role: Option<String>,
+    pub zfeder_role: Option<String>,
 
     /// 启用 federation 时向其他实例暴露的任务 scope。
     #[arg(
-        long = "federation-scope",
+        long = "zfeder-scope",
         value_name = "SCOPE",
         help = "启用 federation 时向其他实例暴露的任务 scope。"
     )]
-    pub federation_scope: Option<String>,
+    pub zfeder_scope: Option<String>,
 
     /// 覆盖 federation state root，默认使用 `<CODEX_HOME>/federation`。
     #[arg(
-        long = "federation-state-root",
+        long = "zfeder-state-root",
         value_name = "PATH",
         help = "覆盖 federation state root，默认使用 `<CODEX_HOME>/federation`。"
     )]
-    pub federation_state_root: Option<PathBuf>,
+    pub zfeder_state_root: Option<PathBuf>,
 
     /// 覆盖 federation 实例 id。
     #[arg(
-        long = "federation-instance-id",
+        long = "zfeder-instance-id",
         value_name = "UUID",
         help = "覆盖 federation 实例 id。"
     )]
-    pub federation_instance_id: Option<String>,
+    pub zfeder_instance_id: Option<String>,
 
     /// 启用实时网络搜索。启用后，原生 Responses `web_search` 工具可供模型使用（无需每次调用批准）。
     #[arg(

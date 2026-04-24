@@ -1,11 +1,11 @@
-# Federation Team Collaboration Architecture Review
+# ZTeam / Federation Architecture Deep Review
 
 CHARTER_CHECK:
-- Clarification level: MEDIUM
+- Clarification level: LOW
 - Task domain: architecture
-- Must NOT do: 不把 federated peer 硬塞进 `/root` agent tree；不修改现有 core/app-server 代码；不把 UI/产品交互细节误当成协议层设计
-- Success criteria: 明确当前架构问题；比较至少两种可行演进方案；给出推荐方案并说明实现成本、运维成本、团队复杂度、未来变更成本与验证步骤
-- Assumptions: 目标是让不同 Codex 实例中的前端/后端 agent 持续协作，而不仅是一次性 task dispatch；现阶段以本机/同工作区 federation daemon 为主；保留现有 app-server `thread/start` bridge seam
+- Must NOT do: 不改源码；不把 UI 细节误判为协议问题；不建议继续膨胀 `codex-core`
+- Success criteria: 明确当前 zteam/tui/federation 的架构问题；比较至少两种不同方案；给出推荐、风险、验证步骤；结果写入规定产物
+- Assumptions: 当前任务是只读架构审查与结果落盘，不做实现与测试扩张
 
 ## Status
 
@@ -13,184 +13,134 @@ recommended
 
 ## Architecture Problem
 
-当前 federation 已经是一个“跨实例投递 TextTask / 回收 TextResult”的旁路 IPC 底座，但它还不是“团队协作模式”：
+当前 ZTeam 已经形成“本地 TUI 团队模式 + federation bridge 预留”的雏形，但控制面和边界还不够稳定。核心问题不是 UI 是否能展示 team，而是：
 
-- federation 协议只有 `TextTask` / `TextResult` 两种 payload，没有持续会话、上下文同步、阶段状态、共享工件或事件订阅语义。
-- app-server bridge 只在 fresh `thread/start` 上注册 peer，然后在本地线程空闲时轮询 inbox，把 `TextTask` 转成普通 `Op::UserTurn`，完成后再把最后一条 assistant 文本包回 `TextResult`。
-- multi-agent / root tree 则是另一套更强语义：它依赖 `/root` 为树根、`AgentPath` 表示父子命名空间、`SessionSource::SubAgent(ThreadSpawn { parent_thread_id, depth, agent_path, ... })` 表示谱系、`InterAgentCommunication` 表示树内 mailbox。
+**如何把 ZTeam 从 prompt 驱动的体验功能，收敛成 TUI 内部可恢复、可识别、可扩展的确定性协作控制面，同时为 federation 预留真正可执行的 worker source seam。**
 
-因此真正的架构问题不是“怎样把 federation 接进 multi-agent”，而是：
+## Findings
 
-**怎样在不污染现有 root tree 语义的前提下，为跨实例 peer 增加持续协作与上下文同步能力。**
+### 1. 高: `start` 仍是 prompt 驱动，不是确定性控制面
 
-## Current Evidence
+- 证据：
+  - `codex-rs/tui/src/app.rs:2057`
+  - `codex-rs/tui/src/zteam.rs:604`
+- 现状：
+  - `/zteam start` 只是提交一段自然语言 prompt，依赖模型自己调用 `spawn_agent` 并生成固定 worker。
+- 风险：
+  - 上游模型行为、系统 prompt 或工具调用偏移会直接破坏 worker roster、一致性恢复和后续自动 attach。
+- 架构含义：
+  - 这不是“实现还没收尾”，而是控制面真相源仍在模型输出里，代码只能事后猜测结果。
 
-- federation 的 thread seam 明确挂在 app-server `thread/start`，不是 core subagent tree：
-  - `FederationThreadStartParams` 是 `ThreadStartParams.federation` 的一个可选字段，见 `app-server-protocol/src/protocol/v2.rs`。
-  - bridge 在 `thread/start` 成功建线程后启动，见 `app-server/src/codex_message_processor.rs`。
-- bridge 当前只做 task/result 桥接：
-  - 注册 peer、心跳、轮询 inbox，见 `app-server/src/federation_bridge.rs`。
-  - 只挑 `EnvelopePayload::TextTask`，把它 submit 成普通本地 `Op::UserTurn`，完成后发 `TextResult`，见同文件。
-- federation 协议刻意保持独立身份空间：
-  - `EnvelopePayload` 只有 `TextTask` / `TextResult`，身份用 `InstanceId`，见 `federation-protocol/src/envelope.rs`。
-- root tree 语义是另一套约束：
-  - `InterAgentCommunication` 的 author/recipient 都是 `AgentPath`，见 `protocol/src/protocol.rs`。
-  - `SessionSource::SubAgent(ThreadSpawn { parent_thread_id, depth, agent_path, ... })` 绑定父子谱系，见 `protocol/src/protocol.rs`。
-  - `AgentRegistry` 会显式注册 `/root`，`list_agents()` 也把 `/root` 当树根暴露出来，见 `core/src/agent/registry.rs` 与 `core/src/agent/control.rs`。
-  - multi-agent v2 明确禁止把 task 指派给 root，并按 `AgentPath` 解析 target，见 `core/src/tools/handlers/multi_agents_v2/message_tool.rs`。
+### 2. 中: worker 身份识别仍依赖启发式 fallback
+
+- 证据：
+  - `codex-rs/tui/src/zteam/worker_source.rs:55`
+  - `codex-rs/tui/src/zteam/worker_source.rs:74`
+- 现状：
+  - 优先匹配 canonical `agent_path`，失败后回退到 `agent_role + nickname` 推断。
+- 风险：
+  - 同一 primary 下的普通 descendant thread 可能被误识别成 ZTeam worker，污染恢复、attach 和 workbench 状态。
+- 架构含义：
+  - 领域身份没有单一真相源，恢复逻辑被迫做“猜测式归类”。
+
+### 3. 中: federation adapter 目前只是展示态摘要，不是真正 adapter seam
+
+- 证据：
+  - `codex-rs/tui/src/zteam.rs:302`
+  - `codex-rs/tui/src/zteam/worker_source.rs:38`
+- 现状：
+  - `SharedState` 里只缓存 `FederationAdapter` 摘要；`WorkerSource::FederationBridge(...)` 仍未真正接线。
+- 风险：
+  - 后续切 federation-backed worker 时，现有 seam 不能承接 start、dispatch、recovery、status 等行为。
+- 架构含义：
+  - 现在的 adapter 更像 UI state，而不是 transport/source abstraction。
+
+### 4. 中: ZTeam 领域逻辑仍散落在 `app.rs`、`chatwidget.rs`、`zteam.rs`
+
+- 证据：
+  - `codex-rs/tui/src/app.rs:3957`
+  - `codex-rs/tui/src/app.rs:4043`
+  - `codex-rs/tui/src/zteam.rs:184`
+  - `codex-rs/tui/src/chatwidget.rs:9685`
+- 现状：
+  - 恢复/attach 在 `app.rs`，状态容器在 `zteam.rs`，UI 包装在 `chatwidget.rs`。
+- 风险：
+  - 后续如果继续叠加 team lifecycle、resume 或 federation source，TUI orchestration 耦合会继续升高。
+- 架构含义：
+  - 当前 `zteam` 更像状态盒子而非完整 coordinator，边界还不够厚。
 
 ## Options
 
-### Option A: 直接把 federated peer 映射成 `/root/...` 远端子代理
+### Option A: 维持 prompt 驱动 + 薄状态模块
 
-做法：
+- 做法：
+  - 继续用 `/zteam start` prompt 触发模型生成 worker。
+  - 继续依赖现有恢复筛选与启发式识别。
+  - federation 先只保留摘要态和后续接线位。
+- 实现成本：低
+- 运维成本：中到高
+- 团队复杂度：中
+- 未来变更成本：高
+- 优点：
+  - 改动最小，能延续当前体验。
+  - 对现有 TUI 流程冲击最小。
+- 缺点：
+  - 控制面不确定性继续存在。
+  - 身份漂移和恢复误吸附风险不会消失。
+  - federation seam 仍是假接口，未来扩展时需要二次重构。
 
-- 给每个远端实例分配一个 `AgentPath`，例如 `/root/frontend`、`/root/backend`。
-- 复用 `InterAgentCommunication`、`SessionSource::SubAgent`、`list_agents`、环境上下文展示等现有能力，把远端 peer 伪装成 root tree 中的 live child。
+### Option B: 在 `tui/src/zteam/` 内提炼确定性 coordinator / control plane，并把 worker source 做成真正抽象
 
-优点：
-
-- UI/TUI/app-server 现有多代理视图可以较快复用。
-- 本地调用方可以继续用 `send_message` / `followup_task` / 相对路径引用。
-
-缺点：
-
-- 语义错误。`AgentPath` 代表单个 root session 内的树状命名空间，不代表跨实例 peer 身份。
-- 会把“发现到一个远端实例”误写成“它是当前 root 的子线程”，污染 `parent_thread_id`、`depth`、analytics、agent limits、环境上下文与恢复逻辑。
-- `InterAgentCommunication` 当前是树内 mailbox 文本信封；历史上旁路 reducer 没过滤它时，会把内部 JSON 泄露到用户 thread history。把 federation 再塞进去会放大这类污染面。
-- reconnect / resume / peer lease 过期时，很难定义 `/root/...` 上的生命周期：它不是 thread manager 直接拥有的 live thread。
-
-成本评估：
-
+- 做法：
+  - 把 worker 创建、注册、恢复、attach 收敛到显式 coordinator。
+  - 由代码生成固定的 worker spawn 请求或专用启动入口，不再依赖自由文本 prompt 当真相源。
+  - 把 canonical metadata 作为 worker 身份主真相源；昵称/角色启发式仅保留迁移兜底。
+  - 把 federation source 提升成可执行的 `WorkerSource`/transport seam，统一 start、dispatch、recovery、status。
 - 实现成本：中
-- 运维成本：高
-- 团队复杂度：高
-- 未来变更成本：很高
-
-结论：
-
-不推荐。它表面复用最多，实际上把两个不同身份域强行折叠，会持续污染 root tree 语义。
-
-### Option B: 保持 federation 为独立身份域，在 app-server 上新增“协作会话层”
-
-做法：
-
-- 保持 `InstanceId` / `InstanceCard` / `Envelope` 与 `/root` tree 分离。
-- 在 app-server v2 增加显式的 federated collaboration surface，而不是复用 subagent surface。
-- 本地 thread 仍是普通线程；federated peer 作为“外部协作成员”挂到 thread 或新建的 collaboration session 上。
-- federation transport 升级为结构化协作 envelope，例如：
-  - `TaskAssign`
-  - `TaskUpdate`
-  - `ContextDelta`
-  - `ArtifactShare`
-  - `TaskResult`
-  - `Presence/Typing/Heartbeat`
-- app-server 负责把这些事件投影成 thread-scoped 可观察状态，而不是伪造 `SessionSource::SubAgent`。
-
-优点：
-
-- 和现有 seam 一致：继续从 `thread/start` 或 thread-scoped API 进入，不碰 root tree。
-- 身份清晰：本地 subagent 还是本地 subagent，federated peer 是 federated peer。
-- 便于前端/后端 agent 持续通信，因为可以把“共享上下文”做成显式 state，而不是反复压成 prompt 文本。
-- 可以先保留当前 `TextTask/TextResult` 作为兼容最小子集，再逐步加 richer envelope。
-
-缺点：
-
-- 需要新增协议类型、状态 reducer、订阅/恢复逻辑。
-- 现有多代理 UI 不能直接照搬，需要区分 local team 与 federated team。
-
-成本评估：
-
-- 实现成本：高
 - 运维成本：中
 - 团队复杂度：中
-- 未来变更成本：中
-
-结论：
-
-推荐作为跨实例“团队协作模式”的主线方案。
-
-### Option C: 只产品化现有 multi-agent，本地团队协作走 root tree，federation 继续只做一次性 IPC
-
-做法：
-
-- 如果团队成员都运行在同一个 Codex 进程/线程树里，就继续用现有 `spawn_agent` / `send_message` / `followup_task`。
-- federation 不扩协议，只保留脚本化 `TextTask` / `TextResult`。
-
-优点：
-
-- 最省事，完全顺着当前 root tree 设计。
-- 本地团队协作体验最快能做起来。
-
-缺点：
-
-- 不满足“不同实例间持续协作”目标。
-- 会把真正的跨实例需求长期推迟到另一条系统里，最终还是要补 Option B。
-
-成本评估：
-
-- 实现成本：低
-- 运维成本：低
-- 团队复杂度：低
-- 未来变更成本：中
-
-结论：
-
-适合作为短期本地产品化路线，不是 federation 升级成团队协作模式的最终答案。
+- 未来变更成本：低到中
+- 优点：
+  - 恢复链路与启动链路共享同一套真相源。
+  - 本地 ZTeam 与未来 federation-backed worker 可以复用同一抽象边界。
+  - 不需要把新公共语义塞进 `codex-core`。
+- 缺点：
+  - 需要重整 `app.rs` / `zteam.rs` / `chatwidget.rs` 的职责分布。
+  - 需要定义更稳定的 worker metadata 和 coordinator 生命周期。
 
 ## Recommendation Summary
 
-推荐 **Option B**，并且分两层推进：
+推荐 **Option B**。
 
-1. **身份与编排层**
-   - 保留 `federation-protocol` 独立身份域。
-   - 新增 `FederatedCollaborationSession` 或 thread-scoped federation state，成员键用 `InstanceId`，不要生成 `/root/...` 伪路径。
-   - 明确区分：
-     - local subagents：root tree 内、`AgentPath` 驱动
-     - federated peers：外部协作成员、`InstanceId` 驱动
+原因：
 
-2. **数据与事件层**
-   - 继续让 app-server 成为外部客户端的主入口。
-   - 不再把长期上下文同步塞进 `TextTask` 文本里，而是定义结构化 envelope + app-server 通知：
-     - shared brief / summary delta
-     - task ownership / status
-     - artifact references
-     - result streaming 或 incremental updates
-   - 如果需要高保真 turn/item 级同步，优先在 app-server 层做 thread-scoped订阅/投影，再决定 federation transport 是否承载全文或只承载索引/摘要。
+- 当前最大风险来自“不确定控制面”，不是 UI 缺一块按钮。
+- 恢复链路已经基本选对方向，值得继续把 `loaded auto-recovery -> candidate filtering -> live attach` 这条链收敛到确定性 coordinator，而不是继续让启动端保持 prompt 驱动。
+- 这条路能在 `tui` 内完成主重构，不需要把 ZTeam 语义下沉到 `codex-core`，符合仓库长期约束。
 
-## Why This Is The Lightest Sufficient Architecture
+## Tradeoffs
 
-- 它复用了已经成立的 seam：`thread/start` bridge 和 app-server 事件流，而不是去撬 core 的 thread tree 基础语义。
-- 它满足“持续通信、同步上下文、协作推进”的目标，因为共享状态被提升成一等对象，而不是继续堆低层 message passing。
-- 它避免了最危险的耦合：不把 peer 注册、租约失活、daemon mailbox 这些外部生命周期假装成 root tree child thread 生命周期。
+- 相比维持现状，推荐方案会增加一次边界重整成本，但换来更低的长期演进摩擦。
+- 相比直接把 federation 做进当前 UI state，推荐方案先补控制面，再补 transport，有利于避免“先接线、后返工”。
+- 相比把更多逻辑继续塞进 `app.rs`，coordinator 方案会引入新的内部抽象，但它解决的是已经出现的职责扩散，而不是抽象炫技。
 
-## Main Risks
+## Risks
 
-- 协议膨胀风险：如果一次性把所有协作状态都塞进 federation envelope，协议会过重。
-- 双通道一致性风险：若 federation transport 与 app-server thread state 各自存一份真相，容易漂移。
-- 恢复语义风险：当前 bridge 只覆盖 fresh `thread/start`，若要支持长期协作，必须定义 resume/reconnect 如何恢复 peer roster 与 pending work。
-- 可见性风险：任何新的内部 envelope 若被旁路 reducer 当普通 assistant message 渲染，会再次出现内部 JSON 泄露问题。
+- 如果 canonical worker metadata 设计不稳，可能出现一次迁移期兼容成本。
+- 如果 coordinator 与现有 attach/recovery seam 拆分不当，可能引入 TUI 生命周期回归。
+- 如果 federation source 抽象过早泛化，可能做成“接口很多但只实现一种 source”的空壳。
 
 ## Validation Steps
 
-1. 先写一份 federated collaboration state diagram，明确：
-   - peer 注册/失活
-   - session attach/detach
-   - task assign/update/result
-   - reconnect/resume
-2. 用 app-server v2 schema 先定义最小结构化事件集，而不是先改 core root tree。
-3. 做一个端到端样例：
-   - 前端 agent 建立 thread
-   - 绑定两个 federated peers
-   - 下发任务
-   - 接收增量更新
-   - 汇总结果回主 thread
-4. 单独验证这些边界：
-   - peer lease 过期不会污染 `/root` agent list
-   - thread/read / history 不会出现内部 envelope JSON
-   - resume 后 federated collaboration session 的 roster 与未完成任务可恢复
+1. 先把 `start -> register -> recover -> attach` 的状态机画清楚，确认哪些状态属于 TUI、哪些属于 worker source。
+2. 定义 worker 身份主真相源，验证能覆盖：
+   - fresh start
+   - loaded auto-recovery
+   - thread-list attach
+3. 用本地模式先证明 coordinator 抽象成立，再把 federation 接到同一 source seam，而不是反过来。
+4. 验证 `latest_local_threads_for_primary(...)` 过滤和 live attach seam 在新边界下仍保持单一入口。
 
 ## Artifacts Created
 
 - `.agents/results/result-architecture.md`
-- `.agents/results/architecture/federation-team-collaboration.md`
+- `.agents/results/architecture/2026-04-24-zteam-architecture-deep-review.md`

@@ -688,18 +688,18 @@ fn latest_session_cwd_filter<'a>(
 }
 
 fn federation_params_from_cli(cli: &Cli) -> Option<FederationThreadStartParams> {
-    cli.federation_enable.then(|| FederationThreadStartParams {
-        instance_id: cli.federation_instance_id.clone(),
+    cli.zfeder_enable.then(|| FederationThreadStartParams {
+        instance_id: cli.zfeder_instance_id.clone(),
         name: cli
-            .federation_name
+            .zfeder_name
             .clone()
             .unwrap_or_else(|| "codex".to_string()),
-        role: cli.federation_role.clone(),
-        scope: cli.federation_scope.clone(),
+        role: cli.zfeder_role.clone(),
+        scope: cli.zfeder_scope.clone(),
         state_root: cli
-            .federation_state_root
+            .zfeder_state_root
             .as_ref()
-            .map(|path| path.to_string_lossy().to_string()),
+            .map(|path: &PathBuf| path.to_string_lossy().to_string()),
         lease_ttl_secs: None,
     })
 }

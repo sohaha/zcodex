@@ -1257,7 +1257,7 @@ impl Session {
                         &turn_context,
                         EventMsg::Warning(WarningEvent {
                             message: format!(
-                                "⚠ 此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。"
+                                "此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。"
                             ),
                         }),
                     )

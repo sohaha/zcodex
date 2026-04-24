@@ -29,15 +29,15 @@ use serde::Serialize;
 use tokio::process::Command;
 
 #[derive(Debug, Parser)]
-pub struct FederationCli {
+pub struct ZfederCli {
     #[command(subcommand)]
-    pub subcommand: FederationSubcommand,
+    pub subcommand: ZfederSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum FederationSubcommand {
-    /// 启动、探测或停止本地 federation daemon。
-    Daemon(FederationDaemonCli),
+pub enum ZfederSubcommand {
+    /// 启动、探测或停止本地 zfeder daemon。
+    Daemon(ZfederDaemonCli),
 
     /// 注册一个 federation 实例。
     Register(RegisterArgs),
@@ -60,13 +60,13 @@ pub enum FederationSubcommand {
 }
 
 #[derive(Debug, Parser)]
-pub struct FederationDaemonCli {
+pub struct ZfederDaemonCli {
     #[command(subcommand)]
-    subcommand: FederationDaemonSubcommand,
+    subcommand: ZfederDaemonSubcommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum FederationDaemonSubcommand {
+enum ZfederDaemonSubcommand {
     Start(DaemonControlArgs),
     Ping(DaemonControlArgs),
     Stop(DaemonControlArgs),
@@ -84,7 +84,7 @@ struct DaemonControlArgs {
 #[derive(Debug, Parser, Clone)]
 pub struct RegisterArgs {
     #[command(flatten)]
-    target: FederationTargetArgs,
+    target: ZfederTargetArgs,
 
     #[arg(long = "instance-id", value_name = "UUID")]
     instance_id: Option<String>,
@@ -117,7 +117,7 @@ pub struct RegisterArgs {
 #[derive(Debug, Parser, Clone)]
 pub struct PeersArgs {
     #[command(flatten)]
-    target: FederationTargetArgs,
+    target: ZfederTargetArgs,
 
     #[arg(long = "requester", value_name = "UUID")]
     requester: Option<String>,
@@ -129,7 +129,7 @@ pub struct PeersArgs {
 #[derive(Debug, Parser, Clone)]
 pub struct SendArgs {
     #[command(flatten)]
-    target: FederationTargetArgs,
+    target: ZfederTargetArgs,
 
     #[arg(long = "envelope-id", value_name = "UUID")]
     envelope_id: Option<String>,
@@ -153,7 +153,7 @@ pub struct SendArgs {
 #[derive(Debug, Parser, Clone)]
 pub struct InboxArgs {
     #[command(flatten)]
-    target: FederationTargetArgs,
+    target: ZfederTargetArgs,
 
     #[arg(long = "recipient", value_name = "UUID")]
     recipient: String,
@@ -165,7 +165,7 @@ pub struct InboxArgs {
 #[derive(Debug, Parser, Clone)]
 pub struct AckArgs {
     #[command(flatten)]
-    target: FederationTargetArgs,
+    target: ZfederTargetArgs,
 
     #[arg(long = "recipient", value_name = "UUID")]
     recipient: String,
@@ -190,7 +190,7 @@ pub struct InternalDaemonArgs {
 }
 
 #[derive(Debug, Parser, Clone)]
-struct FederationTargetArgs {
+struct ZfederTargetArgs {
     #[arg(long = "state-root", value_name = "PATH")]
     state_root: Option<PathBuf>,
 
@@ -206,26 +206,26 @@ enum AckStateArg {
     Expired,
 }
 
-impl FederationCli {
+impl ZfederCli {
     pub async fn run(self) -> Result<()> {
         match self.subcommand {
-            FederationSubcommand::Daemon(cli) => cli.run().await,
-            FederationSubcommand::Register(args) => run_register_command(args).await,
-            FederationSubcommand::Peers(args) => run_peers_command(args).await,
-            FederationSubcommand::Send(args) => run_send_command(args).await,
-            FederationSubcommand::Inbox(args) => run_inbox_command(args).await,
-            FederationSubcommand::Ack(args) => run_ack_command(args).await,
-            FederationSubcommand::InternalDaemon(args) => run_internal_daemon(args).await,
+            ZfederSubcommand::Daemon(cli) => cli.run().await,
+            ZfederSubcommand::Register(args) => run_register_command(args).await,
+            ZfederSubcommand::Peers(args) => run_peers_command(args).await,
+            ZfederSubcommand::Send(args) => run_send_command(args).await,
+            ZfederSubcommand::Inbox(args) => run_inbox_command(args).await,
+            ZfederSubcommand::Ack(args) => run_ack_command(args).await,
+            ZfederSubcommand::InternalDaemon(args) => run_internal_daemon(args).await,
         }
     }
 }
 
-impl FederationDaemonCli {
+impl ZfederDaemonCli {
     async fn run(self) -> Result<()> {
         match self.subcommand {
-            FederationDaemonSubcommand::Start(args) => run_daemon_start_command(args).await,
-            FederationDaemonSubcommand::Ping(args) => run_daemon_ping_command(args).await,
-            FederationDaemonSubcommand::Stop(args) => run_daemon_stop_command(args).await,
+            ZfederDaemonSubcommand::Start(args) => run_daemon_start_command(args).await,
+            ZfederDaemonSubcommand::Ping(args) => run_daemon_ping_command(args).await,
+            ZfederDaemonSubcommand::Stop(args) => run_daemon_stop_command(args).await,
         }
     }
 }
@@ -401,10 +401,7 @@ async fn execute_peers(
     .await
 }
 
-async fn execute_send(
-    client: &FederationClient,
-    args: &SendArgs,
-) -> Result<FederationDaemonResponse> {
+async fn execute_send(client: &FederationClient, args: &SendArgs) -> Result<FederationDaemonResponse> {
     let created_at = args.created_at.unwrap_or_else(unix_now);
     let expires_at = created_at
         .checked_add(i64::from(args.expires_in_secs))
@@ -436,10 +433,7 @@ async fn execute_inbox(
     .await
 }
 
-async fn execute_ack(
-    client: &FederationClient,
-    args: &AckArgs,
-) -> Result<FederationDaemonResponse> {
+async fn execute_ack(client: &FederationClient, args: &AckArgs) -> Result<FederationDaemonResponse> {
     send_checked(
         client,
         FederationDaemonCommand::WriteAck {
@@ -491,7 +485,7 @@ async fn ensure_daemon_running(client: &FederationClient, launcher: &Path) -> Re
 
     let mut command = Command::new(launcher);
     command
-        .arg("federation")
+        .arg("zfeder")
         .arg("internal-daemon")
         .arg("--state-root")
         .arg(client.state_root())
@@ -500,7 +494,7 @@ async fn ensure_daemon_running(client: &FederationClient, launcher: &Path) -> Re
         .stderr(Stdio::null());
     command
         .spawn()
-        .with_context(|| format!("启动 federation daemon: {}", launcher.display()))?;
+        .with_context(|| format!("启动 zfeder daemon: {}", launcher.display()))?;
 
     for _ in 0..100 {
         if client.ping().await.is_ok() {
@@ -510,7 +504,7 @@ async fn ensure_daemon_running(client: &FederationClient, launcher: &Path) -> Re
     }
 
     Err(anyhow::Error::msg(format!(
-        "federation daemon 未在预期时间内启动: {}",
+        "zfeder daemon 未在预期时间内启动: {}",
         client.endpoint_path().display()
     )))
 }
@@ -687,11 +681,11 @@ mod tests {
     use tempfile::TempDir;
 
     use super::AckArgs;
-    use super::FederationCli;
     use super::InboxArgs;
     use super::PeersArgs;
     use super::RegisterArgs;
     use super::SendArgs;
+    use super::ZfederCli;
     use super::execute_ack;
     use super::execute_inbox;
     use super::execute_peers;
@@ -700,7 +694,7 @@ mod tests {
 
     #[test]
     fn federation_register_cli_parses_required_fields() {
-        let cli = FederationCli::try_parse_from([
+        let cli = ZfederCli::try_parse_from([
             "federation",
             "register",
             "--name",
@@ -710,7 +704,7 @@ mod tests {
         ])
         .expect("cli should parse");
 
-        let super::FederationSubcommand::Register(RegisterArgs { name, role, .. }) = cli.subcommand
+        let super::ZfederSubcommand::Register(RegisterArgs { name, role, .. }) = cli.subcommand
         else {
             panic!("expected register subcommand");
         };
