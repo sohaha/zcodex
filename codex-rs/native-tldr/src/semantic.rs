@@ -386,7 +386,7 @@ impl SemanticIndexer {
     ) -> Result<SemanticIndex> {
         let matcher = self.build_ignore_matcher(project_root)?;
         let mut files = Vec::new();
-        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        collect_source_files(project_root, extensions_for(language), &mut files, &matcher)?;
         let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
         if let Some(index) =
             semantic_cache::load_index(project_root, &self.config, language, &source_fingerprint)?
@@ -407,7 +407,7 @@ impl SemanticIndexer {
     ) -> Result<SemanticIndex> {
         let matcher = self.build_ignore_matcher(project_root)?;
         let mut files = Vec::new();
-        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        collect_source_files(project_root, extensions_for(language), &mut files, &matcher)?;
         let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
         self.build_index_from_files(project_root, language, files, source_fingerprint)
     }
@@ -419,7 +419,7 @@ impl SemanticIndexer {
     ) -> Result<String> {
         let matcher = self.build_ignore_matcher(project_root)?;
         let mut files = Vec::new();
-        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        collect_source_files(project_root, extensions_for(language), &mut files, &matcher)?;
         semantic_cache::source_fingerprint(project_root, &files)
     }
 
@@ -480,7 +480,12 @@ impl SemanticIndexer {
         for language in &languages {
             let matcher = self.build_ignore_matcher(project_root)?;
             let mut files = Vec::new();
-            collect_source_files(project_root, extension_for(*language), &mut files, &matcher)?;
+            collect_source_files(
+                project_root,
+                extensions_for(*language),
+                &mut files,
+                &matcher,
+            )?;
             let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
             let index = self.build_index_from_files(
                 project_root,
@@ -518,7 +523,7 @@ impl SemanticIndexer {
         let mut languages = Vec::new();
         for language in registry.supported_languages() {
             let mut files = Vec::new();
-            collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+            collect_source_files(project_root, extensions_for(language), &mut files, &matcher)?;
             if !files.is_empty() {
                 languages.push(language);
             }
@@ -560,7 +565,12 @@ impl SemanticIndexer {
         let mut indexed_units = 0;
         for language in languages {
             let mut files = Vec::new();
-            collect_source_files(project_root, extension_for(*language), &mut files, &matcher)?;
+            collect_source_files(
+                project_root,
+                extensions_for(*language),
+                &mut files,
+                &matcher,
+            )?;
             let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
             let index = self.build_index_from_files(
                 project_root,
@@ -737,7 +747,7 @@ fn collect_embedding_units(
 
 fn collect_source_files(
     root: &Path,
-    extension: &str,
+    extensions: &[&str],
     files: &mut Vec<PathBuf>,
     matcher: &Gitignore,
 ) -> Result<()> {
@@ -756,14 +766,16 @@ fn collect_source_files(
             if matched.is_ignore() && !matched.is_whitelist() {
                 continue;
             }
-            collect_source_files(&path, extension, files, matcher)?;
+            collect_source_files(&path, extensions, files, matcher)?;
             continue;
         }
         let matched = matcher.matched(&path, false);
         if matched.is_ignore() && !matched.is_whitelist() {
             continue;
         }
-        if path.extension().and_then(|value| value.to_str()) == Some(extension) {
+        if let Some(extension) = path.extension().and_then(|value| value.to_str())
+            && extensions.iter().any(|candidate| candidate == &extension)
+        {
             files.push(path);
         }
     }
@@ -1255,24 +1267,24 @@ fn dot_product(left: &[f32], right: &[f32]) -> f32 {
     left.iter().zip(right.iter()).map(|(a, b)| a * b).sum()
 }
 
-fn extension_for(language: SupportedLanguage) -> &'static str {
+fn extensions_for(language: SupportedLanguage) -> &'static [&'static str] {
     match language {
-        SupportedLanguage::C => "c",
-        SupportedLanguage::Cpp => "cpp",
-        SupportedLanguage::CSharp => "cs",
-        SupportedLanguage::Java => "java",
-        SupportedLanguage::Kotlin => "kt",
-        SupportedLanguage::Rust => "rs",
-        SupportedLanguage::TypeScript => "ts",
-        SupportedLanguage::JavaScript => "js",
-        SupportedLanguage::Lua => "lua",
-        SupportedLanguage::Luau => "luau",
-        SupportedLanguage::Python => "py",
-        SupportedLanguage::Go => "go",
-        SupportedLanguage::Php => "php",
-        SupportedLanguage::Ruby => "rb",
-        SupportedLanguage::Swift => "swift",
-        SupportedLanguage::Zig => "zig",
+        SupportedLanguage::C => &["c"],
+        SupportedLanguage::Cpp => &["cpp"],
+        SupportedLanguage::CSharp => &["cs"],
+        SupportedLanguage::Java => &["java"],
+        SupportedLanguage::Kotlin => &["kt"],
+        SupportedLanguage::Rust => &["rs"],
+        SupportedLanguage::TypeScript => &["ts", "tsx"],
+        SupportedLanguage::JavaScript => &["js", "jsx", "mjs", "cjs"],
+        SupportedLanguage::Lua => &["lua"],
+        SupportedLanguage::Luau => &["luau"],
+        SupportedLanguage::Python => &["py"],
+        SupportedLanguage::Go => &["go"],
+        SupportedLanguage::Php => &["php"],
+        SupportedLanguage::Ruby => &["rb"],
+        SupportedLanguage::Swift => &["swift"],
+        SupportedLanguage::Zig => &["zig"],
     }
 }
 
@@ -1297,6 +1309,7 @@ mod tests {
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -1441,6 +1454,46 @@ mod tests {
 
         assert!(report.is_completed());
         assert_eq!(report.indexed_files, 1);
+    }
+
+    #[test]
+    fn semantic_typescript_index_includes_tsx_files() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("App.tsx"),
+            "export function App() {\n  return <main>ok</main>;\n}\n",
+        )
+        .expect("tsx fixture should write");
+
+        let index = SemanticIndexer::new(SemanticConfig::default().with_enabled(true))
+            .build_index(tempdir.path(), SupportedLanguage::TypeScript)
+            .expect("typescript index should build");
+
+        assert_eq!(index.indexed_files, 1);
+        let paths: BTreeSet<_> = index.units.iter().map(|unit| unit.path.clone()).collect();
+        assert_eq!(paths, BTreeSet::from([PathBuf::from("src/App.tsx")]));
+    }
+
+    #[test]
+    fn semantic_javascript_index_includes_jsx_files() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("App.jsx"),
+            "export function App() {\n  return <main>ok</main>;\n}\n",
+        )
+        .expect("jsx fixture should write");
+
+        let index = SemanticIndexer::new(SemanticConfig::default().with_enabled(true))
+            .build_index(tempdir.path(), SupportedLanguage::JavaScript)
+            .expect("javascript index should build");
+
+        assert_eq!(index.indexed_files, 1);
+        let paths: BTreeSet<_> = index.units.iter().map(|unit| unit.path.clone()).collect();
+        assert_eq!(paths, BTreeSet::from([PathBuf::from("src/App.jsx")]));
     }
 
     #[test]
