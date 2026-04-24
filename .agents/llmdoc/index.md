@@ -25,8 +25,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-23` 计算，覆盖 `2026-04-21` 至 `2026-04-23`。
+- 时间窗按当前日期 `2026-04-24` 计算，覆盖 `2026-04-22` 至 `2026-04-24`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-24-subagent-notification-visibility-must-cover-user-legacy-and-tui-entrypoints.md`：内部协作消息的不可见边界不能只过滤 assistant envelope；还要覆盖 legacy user `<subagent_notification>` 文本，以及 TUI 的 history replay、completed message 和 user event 渲染入口。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-should-be-tui-first-and-treat-federation-as-local-adapter.md`：当 federation 被明确为本地特性且仓库需要长期同步 upstream 时，优先把产品化能力收敛为 `tui` 内局部 `z*` 模式，先复用现有 local multi-agent 做工作流闭环，再把 federation 作为 adapter 接入。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-recovery-should-split-loaded-auto-restore-from-thread-list-attach.md`：ZTeam 恢复要区分“loaded-list 自动恢复 live worker”和“thread-list 手动 attach 最近状态”，并把 federation 保持为本地 adapter seam，而不是借恢复需求扩协议或身份域。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-worker-routing-should-bind-fixed-task-names-to-thread-notifications.md`：当 TUI 要把现有 multi-agent runtime 产品化成工作台时，优先用固定 canonical task name 绑定 worker 身份，用 `ThreadStarted/ItemCompleted` 等线程通知回流状态，并直接复用 `Op::InterAgentCommunication` 做 root/worker/worker 间路由，而不是先扩 app-server 公共 RPC。
