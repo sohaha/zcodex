@@ -179,6 +179,26 @@ fn mission_lines(snapshot: &Snapshot, inner_width: usize) -> Vec<Line<'static>> 
                 format!("整体状态：{}", overview_status(snapshot)),
                 "  ",
             );
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!(
+                    "Autopilot：pending={} · waiting_on={} · manual_override={} · repair={}",
+                    snapshot
+                        .autopilot
+                        .pending_auto_action
+                        .map(auto_action_label)
+                        .unwrap_or("none"),
+                    snapshot.autopilot.waiting_on.summary(),
+                    if snapshot.autopilot.manual_override_active {
+                        "active"
+                    } else {
+                        "none"
+                    },
+                    snapshot.autopilot.repair_attempts.summary()
+                ),
+                "  ",
+            );
             if let Some(adapter) = &snapshot.federation_adapter {
                 push_wrapped(
                     &mut lines,
@@ -199,6 +219,26 @@ fn mission_lines(snapshot: &Snapshot, inner_width: usize) -> Vec<Line<'static>> 
                 &mut lines,
                 inner_width,
                 format!("整体状态：{}", overview_status(snapshot)),
+                "  ",
+            );
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!(
+                    "Autopilot：pending={} · waiting_on={} · manual_override={} · repair={}",
+                    snapshot
+                        .autopilot
+                        .pending_auto_action
+                        .map(auto_action_label)
+                        .unwrap_or("none"),
+                    snapshot.autopilot.waiting_on.summary(),
+                    if snapshot.autopilot.manual_override_active {
+                        "active"
+                    } else {
+                        "none"
+                    },
+                    snapshot.autopilot.repair_attempts.summary()
+                ),
                 "  ",
             );
         }
@@ -326,6 +366,19 @@ fn validation_lines(snapshot: &Snapshot, inner_width: usize) -> Vec<Line<'static
                 ),
                 "  ",
             );
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!(
+                    "最近自动动作：{}",
+                    snapshot
+                        .autopilot
+                        .last_auto_action_result
+                        .as_deref()
+                        .unwrap_or("尚无自动动作结果。")
+                ),
+                "  ",
+            );
         }
         None => {
             push_wrapped(
@@ -337,6 +390,19 @@ fn validation_lines(snapshot: &Snapshot, inner_width: usize) -> Vec<Line<'static
             if let Some(blocked) = blocking_note(snapshot) {
                 push_wrapped(&mut lines, inner_width, format!("阻塞：{blocked}"), "  ");
             }
+            push_wrapped(
+                &mut lines,
+                inner_width,
+                format!(
+                    "最近自动动作：{}",
+                    snapshot
+                        .autopilot
+                        .last_auto_action_result
+                        .as_deref()
+                        .unwrap_or("尚无自动动作结果。")
+                ),
+                "  ",
+            );
         }
     }
 
@@ -409,6 +475,17 @@ fn mission_assignment(mission: Option<&super::Mission>, worker: WorkerSlot) -> O
         (Some(mission), WorkerSlot::Frontend) => mission.frontend_assignment.as_deref(),
         (Some(mission), WorkerSlot::Backend) => mission.backend_assignment.as_deref(),
         (None, _) => None,
+    }
+}
+
+fn auto_action_label(action: super::AutoAction) -> &'static str {
+    match action {
+        super::AutoAction::BootstrapWorkers => "bootstrap_workers",
+        super::AutoAction::PlanCycle => "plan_cycle",
+        super::AutoAction::DispatchCycle => "dispatch_cycle",
+        super::AutoAction::SummarizeResults => "summarize_results",
+        super::AutoAction::RepairWorkers => "repair_workers",
+        super::AutoAction::CompleteMission => "complete_mission",
     }
 }
 

@@ -2011,6 +2011,96 @@ impl App {
         self.submit_thread_op(app_server, thread_id, op).await
     }
 
+    async fn submit_active_thread_text_turn(
+        &mut self,
+        app_server: &mut AppServerSession,
+        text: String,
+    ) -> Result<()> {
+        let Some(thread_id) = self.active_thread_id else {
+            self.chat_widget
+                .add_error_message("No active thread is available.".to_string());
+            return Ok(());
+        };
+        self.submit_thread_text_turn(app_server, thread_id, text)
+            .await
+    }
+
+    async fn submit_thread_text_turn(
+        &mut self,
+        app_server: &mut AppServerSession,
+        thread_id: ThreadId,
+        text: String,
+    ) -> Result<()> {
+        let config = self.chat_widget.config_ref().clone();
+        self.submit_thread_op(
+            app_server,
+            thread_id,
+            AppCommand::user_turn(
+                vec![UserInput::Text {
+                    text,
+                    text_elements: Vec::new(),
+                }],
+                config.cwd.to_path_buf(),
+                config.permissions.approval_policy.value(),
+                config.permissions.sandbox_policy.get().clone(),
+                self.chat_widget.current_model().to_string(),
+                self.chat_widget.current_reasoning_effort(),
+                /*summary*/ None,
+                Some(self.chat_widget.current_service_tier()),
+                /*final_output_json_schema*/ None,
+                /*collaboration_mode*/ None,
+                config.personality,
+            ),
+        )
+        .await
+    }
+
+    fn zteam_root_thread_id(&self) -> Option<ThreadId> {
+        self.primary_thread_id.or(self.active_thread_id)
+    }
+
+    async fn submit_zteam_root_text_turn(
+        &mut self,
+        app_server: &mut AppServerSession,
+        text: String,
+    ) -> Result<()> {
+        let Some(thread_id) = self.zteam_root_thread_id() else {
+            self.chat_widget
+                .add_error_message("No root thread is available for ZTeam autopilot.".to_string());
+            return Ok(());
+        };
+        self.submit_thread_text_turn(app_server, thread_id, text)
+            .await
+    }
+
+    fn schedule_zteam_autopilot_tick(&self) {
+        self.app_event_tx.send(AppEvent::ZteamAutopilotTick);
+    }
+
+    async fn drive_zteam_autopilot(&mut self, app_server: &mut AppServerSession) -> Result<()> {
+        if self.chat_widget.is_agent_turn_running() {
+            return Ok(());
+        }
+        for _ in 0..4 {
+            let Some(work_item) = self.chat_widget.take_zteam_autopilot_work_item() else {
+                break;
+            };
+            match work_item {
+                zteam::AutopilotWorkItem::AttachFirstRepair(_) => {
+                    self.restore_zteam_workers_from_thread_list(app_server)
+                        .await?;
+                    self.chat_widget.finish_zteam_attach_first_repair();
+                    continue;
+                }
+                zteam::AutopilotWorkItem::RootPrompt { prompt, .. } => {
+                    self.submit_zteam_root_text_turn(app_server, prompt).await?;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn submit_thread_op(
         &mut self,
         app_server: &mut AppServerSession,
@@ -2055,25 +2145,9 @@ impl App {
             .configure_zteam_federation_adapter(app_server.federation().cloned());
         match command {
             zteam::Command::Start { goal } => {
-                let config = self.chat_widget.config_ref().clone();
-                self.submit_active_thread_op(
+                self.submit_active_thread_text_turn(
                     app_server,
-                    AppCommand::user_turn(
-                        vec![UserInput::Text {
-                            text: zteam::start_prompt(goal.as_deref()),
-                            text_elements: Vec::new(),
-                        }],
-                        config.cwd.to_path_buf(),
-                        config.permissions.approval_policy.value(),
-                        config.permissions.sandbox_policy.get().clone(),
-                        self.chat_widget.current_model().to_string(),
-                        self.chat_widget.current_reasoning_effort(),
-                        /*summary*/ None,
-                        Some(self.chat_widget.current_service_tier()),
-                        /*final_output_json_schema*/ None,
-                        /*collaboration_mode*/ None,
-                        config.personality,
-                    ),
+                    zteam::start_prompt(goal.as_deref()),
                 )
                 .await?;
                 self.chat_widget
@@ -2871,8 +2945,15 @@ impl App {
         thread_id: ThreadId,
         notification: ServerNotification,
     ) -> Result<()> {
-        self.chat_widget
-            .observe_zteam_thread_notification(thread_id, &notification);
+        let is_primary_thread = self.primary_thread_id == Some(thread_id);
+        self.chat_widget.observe_zteam_thread_notification(
+            thread_id,
+            is_primary_thread,
+            &notification,
+        );
+        if Self::zteam_autopilot_relevant_notification(&notification) {
+            self.schedule_zteam_autopilot_tick();
+        }
         let inferred_session = self
             .infer_session_for_thread_notification(thread_id, &notification)
             .await;
@@ -5064,6 +5145,9 @@ impl App {
             AppEvent::ZteamCommand(command) => {
                 self.handle_zteam_command(app_server, command).await?;
             }
+            AppEvent::ZteamAutopilotTick => {
+                self.drive_zteam_autopilot(app_server).await?;
+            }
             AppEvent::SubmitThreadOp { thread_id, op } => {
                 self.submit_thread_op(app_server, thread_id, op.into())
                     .await?;
@@ -6496,6 +6580,7 @@ impl App {
             ThreadBufferedEvent::Notification(notification) => {
                 self.chat_widget
                     .handle_server_notification(notification, /*replay_kind*/ None);
+                self.schedule_zteam_autopilot_tick();
             }
             ThreadBufferedEvent::Request(request) => {
                 if self
@@ -6533,6 +6618,16 @@ impl App {
                 self.handle_feedback_thread_event(event);
             }
         }
+    }
+
+    fn zteam_autopilot_relevant_notification(notification: &ServerNotification) -> bool {
+        matches!(
+            notification,
+            ServerNotification::ThreadStarted(_)
+                | ServerNotification::ThreadClosed(_)
+                | ServerNotification::ItemCompleted(_)
+                | ServerNotification::TurnCompleted(_)
+        )
     }
 
     /// Handles an event emitted by the currently active thread.
@@ -9601,6 +9696,23 @@ guardian_approval = true
         app.active_thread_id = Some(agent_thread_id);
         app.refresh_pending_thread_approvals().await;
         assert!(app.chat_widget.pending_thread_approvals().is_empty());
+    }
+
+    #[tokio::test]
+    async fn zteam_root_thread_prefers_primary_over_active_worker() {
+        let mut app = make_test_app().await;
+        let main_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000011").expect("valid thread");
+        let agent_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000022").expect("valid thread");
+
+        app.primary_thread_id = Some(main_thread_id);
+        app.active_thread_id = Some(agent_thread_id);
+
+        assert_eq!(app.zteam_root_thread_id(), Some(main_thread_id));
+
+        app.primary_thread_id = None;
+        assert_eq!(app.zteam_root_thread_id(), Some(agent_thread_id));
     }
 
     #[tokio::test]

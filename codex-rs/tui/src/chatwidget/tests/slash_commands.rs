@@ -438,12 +438,14 @@ async fn zteam_workbench_updates_with_worker_activity() {
     chat.mark_zteam_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"));
     chat.observe_zteam_thread_notification(
         frontend_id,
+        /*is_primary_thread*/ false,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: zteam_test_thread(frontend_id, crate::zteam::WorkerSlot::Frontend),
         }),
     );
     chat.observe_zteam_thread_notification(
         backend_id,
+        /*is_primary_thread*/ false,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: zteam_test_thread(backend_id, crate::zteam::WorkerSlot::Backend),
         }),
@@ -456,6 +458,7 @@ async fn zteam_workbench_updates_with_worker_activity() {
     );
     chat.observe_zteam_thread_notification(
         frontend_id,
+        /*is_primary_thread*/ false,
         &ServerNotification::ItemCompleted(ItemCompletedNotification {
             item: codex_app_server_protocol::ThreadItem::AgentMessage {
                 id: "msg-1".to_string(),
@@ -469,6 +472,7 @@ async fn zteam_workbench_updates_with_worker_activity() {
     );
     chat.observe_zteam_thread_notification(
         backend_id,
+        /*is_primary_thread*/ false,
         &ServerNotification::ItemCompleted(ItemCompletedNotification {
             item: codex_app_server_protocol::ThreadItem::AgentMessage {
                 id: "msg-2".to_string(),
@@ -507,6 +511,7 @@ async fn zteam_workbench_surfaces_partial_registration_guidance() {
     chat.mark_zteam_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"));
     chat.observe_zteam_thread_notification(
         frontend_id,
+        /*is_primary_thread*/ false,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: zteam_test_thread(frontend_id, crate::zteam::WorkerSlot::Frontend),
         }),

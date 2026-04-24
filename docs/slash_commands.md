@@ -34,6 +34,7 @@ Codex CLI 的斜杠命令总览见官方文档：
 - `/zteam start <目标>`
   推荐主路径。向主线程提交一条带目标的启动指令，要求后续通过 `spawn_agent` 创建两个长期 worker，并围绕这个目标组织第一轮协作。
   当前版本仍复用固定双 worker runtime，但用户应该优先把它理解成“以目标启动 ZTeam”，而不是“先开两个槽位再自己调度”。
+  进入 mission 后，`Mission Autopilot` 会自动推进 `bootstrap_workers`、`plan_cycle`、`dispatch_cycle`、`summarize_results`，并在 worker 掉线时优先进入 attach-first repair。
 - `/zteam start`
   兼容入口。只提交 worker 启动指令，不带 mission 目标。
   固定约束是：
@@ -71,9 +72,10 @@ Codex CLI 的斜杠命令总览见官方文档：
 工作台会稳定显示五类核心信息：
 
 - `Mission`：目标、模式、阶段、cycle、整体状态
+- `Mission` 还会带出 autopilot 的 `pending_auto_action`、`waiting_on`、`manual_override` 和 repair attempts
 - `Acceptance`：当前验收项是否已满足、待验证或受阻
 - `Worker Assignments`：每个 worker 的连接状态、当前职责、当前分派、最近结果
-- `Validation`：当前验证结论、阻塞原因、下一步建议、最近阶段结果
+- `Validation`：当前验证结论、阻塞原因、下一步建议、最近阶段结果，以及最近一次 auto action 的结果
 - `Activity`：主线程分派、worker 之间 relay、注册事件、恢复事件
 
 常见状态含义：
@@ -86,6 +88,12 @@ Codex CLI 的斜杠命令总览见官方文档：
   找到了最近线程，但当前没有 live 连接；通常先用 `/zteam attach`。Mission Board 会把这种状态明确显示为恢复态 / blocked，而不是误报成 live。
 - `已附着`
   当前 worker 已连接，可直接分派任务或继续 relay。
+- `pending=plan_cycle / dispatch_cycle / summarize_results / repair_workers`
+  表示 autopilot 已经发起对应自动动作，正在等待 root turn 完成。
+- `waiting_on=workers:... / results:... / repair:...`
+  表示 autopilot 当前在等哪些 worker 注册、哪些结果回流，或哪些 worker 先完成 repair。
+- `manual_override=active`
+  表示当前 cycle 已被 `/zteam frontend ...`、`/zteam backend ...` 或 `/zteam relay ...` 手动打断接管；autopilot 会等这一轮结果回流后再决定是否恢复自动推进。
 
 ### 实际使用案例
 
@@ -102,6 +110,7 @@ Codex CLI 的斜杠命令总览见官方文档：
 - 要求主线程创建两个长期 worker
 - 把这次目标作为当前 ZTeam 启动上下文带给主线程
 - 让后续协作从“围绕目标展开”而不是“先手动记住两个 slot”
+- 在 root turn 空闲时自动继续规划、派工、结果归纳和必要 repair，而不是停在等待你手动 `/zteam frontend ...`
 
 #### 案例 2：前后端拆分并行推进
 
@@ -147,6 +156,7 @@ Codex CLI 的斜杠命令总览见官方文档：
 ```
 
 不带 `<目标>` 的 `/zteam start` 仍可用，但它现在只是兼容入口；推荐优先重新用带目标的形式启动新一轮协作。
+如果工作台显示 `waiting_on=repair:...`，说明 autopilot 已经进入 attach-first repair：它会先尝试自动 attach，只有 attach 仍失败时才会自动请求 root 重建缺失 worker。
 
 ### 实用建议
 

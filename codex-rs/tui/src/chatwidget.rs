@@ -9685,11 +9685,12 @@ impl ChatWidget {
     pub(crate) fn observe_zteam_thread_notification(
         &mut self,
         thread_id: ThreadId,
+        is_primary_thread: bool,
         notification: &codex_app_server_protocol::ServerNotification,
     ) {
-        let changed = self
-            .zteam_state
-            .observe_notification(thread_id, notification);
+        let changed =
+            self.zteam_state
+                .observe_notification(thread_id, is_primary_thread, notification);
         if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
             self.request_redraw();
         }
@@ -9765,6 +9766,25 @@ impl ChatWidget {
         to: zteam::WorkerSlot,
     ) -> String {
         self.zteam_state.missing_relay_message(from, to)
+    }
+
+    pub(crate) fn take_zteam_autopilot_work_item(&mut self) -> Option<zteam::AutopilotWorkItem> {
+        let work_item = self.zteam_state.take_autopilot_work_item();
+        if work_item.is_some() && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
+        work_item
+    }
+
+    pub(crate) fn finish_zteam_attach_first_repair(&mut self) {
+        let changed = self.zteam_state.finish_attach_first_repair();
+        if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
+            self.request_redraw();
+        }
+    }
+
+    pub(crate) fn is_agent_turn_running(&self) -> bool {
+        self.agent_turn_running
     }
 
     pub(crate) fn open_zteam_entry(&mut self) {

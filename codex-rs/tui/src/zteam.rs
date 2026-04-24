@@ -11,10 +11,14 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+mod autopilot;
 mod recovery;
 mod view;
 mod worker_source;
 
+pub(crate) use autopilot::AutoAction;
+pub(crate) use autopilot::AutopilotState;
+pub(crate) use autopilot::WaitingOn;
 pub(crate) use recovery::RecoveredWorker;
 pub(crate) use recovery::WorkerConnection;
 pub(crate) use recovery::latest_local_threads_for_primary;
@@ -196,6 +200,7 @@ struct SharedState {
     frontend: WorkerState,
     backend: WorkerState,
     mission: Option<Mission>,
+    autopilot: AutopilotState,
     activity: VecDeque<ActivityEntry>,
     recent_results: VecDeque<ResultEntry>,
     federation_adapter: Option<FederationAdapter>,
@@ -274,6 +279,7 @@ struct Snapshot {
     frontend: WorkerState,
     backend: WorkerState,
     mission: Option<Mission>,
+    autopilot: AutopilotState,
     activity: Vec<ActivityEntry>,
     recent_results: Vec<ResultEntry>,
     federation_adapter: Option<FederationAdapter>,
@@ -314,6 +320,12 @@ impl Snapshot {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AutopilotWorkItem {
+    AttachFirstRepair(Vec<WorkerSlot>),
+    RootPrompt { action: AutoAction, prompt: String },
+}
+
 impl State {
     pub(crate) fn mark_start_requested_for_goal(&mut self, goal: Option<&str>) -> bool {
         let mut state = self.write_state();
@@ -335,6 +347,7 @@ impl State {
         state.mission = goal
             .filter(|goal| !goal.trim().is_empty())
             .map(plan_mission);
+        reset_autopilot_for_new_mission(&mut state);
         push_activity(
             &mut state.activity,
             "主线程已提交创建默认协作者的启动指令。等待 spawn 事件注册；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`。".to_string(),
@@ -379,6 +392,7 @@ impl State {
             let frontend = state.frontend.clone();
             let backend = state.backend.clone();
             state.mission = Some(plan_recovery_mission(&frontend, &backend));
+            reset_autopilot_for_recovery(&mut state);
             true
         } else {
             false
@@ -462,6 +476,148 @@ impl State {
         Some((to_thread_id, communication))
     }
 
+    pub(crate) fn take_autopilot_work_item(&mut self) -> Option<AutopilotWorkItem> {
+        let mut state = self.write_state();
+        if state.autopilot.pending_auto_action.is_some() {
+            return None;
+        }
+        let Some(mission) = state.mission.clone() else {
+            state.autopilot.waiting_on = WaitingOn::Idle;
+            state.autopilot.queued_auto_action = None;
+            return None;
+        };
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        let required_workers = mission.required_workers(&frontend, &backend);
+        let repair_targets =
+            current_repair_targets(&mission, &frontend, &backend, &state.autopilot);
+        if !repair_targets.is_empty() {
+            if !state.autopilot.attach_attempted {
+                state.autopilot.attach_attempted = true;
+                state.autopilot.waiting_on = WaitingOn::Repair(repair_targets.clone());
+                state.autopilot.last_auto_action_result = Some(format!(
+                    "自动 repair 已进入 attach-first 恢复：{}。",
+                    worker_list(&repair_targets)
+                ));
+                return Some(AutopilotWorkItem::AttachFirstRepair(repair_targets));
+            }
+            if repair_targets.iter().all(|worker| {
+                state.autopilot.repair_attempts.count(*worker) < autopilot::MAX_REPAIR_ATTEMPTS
+            }) {
+                let prompt = autopilot::repair_workers_prompt(
+                    &mission,
+                    state.autopilot.current_cycle,
+                    &repair_targets,
+                    &state.autopilot.repair_attempts,
+                );
+                mark_root_action_submitted(&mut state, AutoAction::RepairWorkers, &repair_targets);
+                return Some(AutopilotWorkItem::RootPrompt {
+                    action: AutoAction::RepairWorkers,
+                    prompt,
+                });
+            }
+            let repair_summary = state.autopilot.repair_attempts.summary();
+            mark_autopilot_blocked(
+                &mut state,
+                format!(
+                    "自动 repair 已达到上限：{repair_summary}。请人工决定是否继续 `/zteam attach` 或重新 `/zteam start <goal>`。"
+                ),
+            );
+            return None;
+        }
+        if state.autopilot.manual_override_active
+            && !required_workers_have_results(&mission, &frontend, &backend)
+        {
+            state.autopilot.waiting_on = WaitingOn::Results(required_workers);
+            return None;
+        }
+
+        let next_action =
+            state.autopilot.queued_auto_action.take().or_else(|| {
+                infer_next_auto_action(&mission, &frontend, &backend, &state.autopilot)
+            });
+        let Some(action) = next_action else {
+            sync_autopilot_waiting_on_from_state(&mut state, &frontend, &backend);
+            return None;
+        };
+        let prompt = match action {
+            AutoAction::PlanCycle => autopilot::plan_cycle_prompt(
+                &mission,
+                state.autopilot.current_cycle,
+                &required_workers,
+                state.autopilot.manual_override_active,
+            ),
+            AutoAction::DispatchCycle => autopilot::dispatch_cycle_prompt(
+                &mission,
+                state.autopilot.current_cycle,
+                &required_workers,
+                state.autopilot.manual_override_active,
+            ),
+            AutoAction::SummarizeResults => {
+                let results = required_workers
+                    .iter()
+                    .filter_map(|worker| {
+                        worker_state_for(*worker, &frontend, &backend)
+                            .last_result
+                            .as_deref()
+                            .map(|result| autopilot::result_preview(*worker, result))
+                    })
+                    .collect::<Vec<_>>();
+                autopilot::summarize_results_prompt(
+                    &mission,
+                    state.autopilot.current_cycle,
+                    &required_workers,
+                    &results,
+                    state.autopilot.manual_override_active,
+                )
+            }
+            AutoAction::CompleteMission => {
+                autopilot::complete_mission_prompt(&mission, state.autopilot.current_cycle)
+            }
+            AutoAction::BootstrapWorkers | AutoAction::RepairWorkers => return None,
+        };
+        mark_root_action_submitted(&mut state, action, &required_workers);
+        Some(AutopilotWorkItem::RootPrompt { action, prompt })
+    }
+
+    pub(crate) fn finish_attach_first_repair(&mut self) -> bool {
+        let mut state = self.write_state();
+        let Some(mission) = state.mission.clone() else {
+            return false;
+        };
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        let repair_targets =
+            current_repair_targets(&mission, &frontend, &backend, &state.autopilot);
+        if repair_targets.is_empty() {
+            state.autopilot.attach_attempted = false;
+            state.autopilot.waiting_on = WaitingOn::Idle;
+            state.autopilot.queued_auto_action = Some(if state.autopilot.cycle_planned {
+                AutoAction::DispatchCycle
+            } else {
+                AutoAction::PlanCycle
+            });
+            state.autopilot.last_auto_action_result = Some(
+                "attach-first repair 已恢复需要参与的 worker，准备继续当前 cycle。".to_string(),
+            );
+            if let Some(mission_state) = state.mission.as_mut() {
+                mission_state.phase = MissionPhase::Planning;
+                mission_state.blocker = None;
+                mission_state.validation_summary = Some(
+                    "attach-first repair 已恢复需要参与的 worker，可继续自动协作。".to_string(),
+                );
+                mission_state.next_action = Some("准备重新规划并派发当前 cycle。".to_string());
+            }
+            return true;
+        }
+        state.autopilot.waiting_on = WaitingOn::Repair(repair_targets.clone());
+        state.autopilot.last_auto_action_result = Some(format!(
+            "attach-first repair 未完全恢复，仍缺 {}。",
+            worker_list(&repair_targets)
+        ));
+        true
+    }
+
     pub(crate) fn record_dispatch(&mut self, worker: WorkerSlot, message: &str) -> bool {
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
@@ -486,6 +642,16 @@ impl State {
                 Some("等待本轮手动分派结果回流，再决定是否回到 mission 主流程。".to_string());
             sync_acceptance_checks(mission, &frontend, &backend);
         }
+        state.autopilot.manual_override_active = true;
+        state.autopilot.pending_auto_action = None;
+        state.autopilot.queued_auto_action = None;
+        state.autopilot.cycle_planned = false;
+        state.autopilot.cycle_dispatched = true;
+        state.autopilot.waiting_on = WaitingOn::Results(vec![worker]);
+        state.autopilot.last_auto_action_result = Some(format!(
+            "手动 override 已接管当前 cycle：{}。",
+            preview(message)
+        ));
         push_activity(
             &mut state.activity,
             format!("主线程 -> {worker}：{}", preview(message)),
@@ -518,6 +684,16 @@ impl State {
             );
             sync_acceptance_checks(mission, &frontend, &backend);
         }
+        state.autopilot.manual_override_active = true;
+        state.autopilot.pending_auto_action = None;
+        state.autopilot.queued_auto_action = None;
+        state.autopilot.cycle_planned = false;
+        state.autopilot.cycle_dispatched = true;
+        state.autopilot.waiting_on = WaitingOn::Results(vec![to]);
+        state.autopilot.last_auto_action_result = Some(format!(
+            "手动 relay override 已接管当前 cycle：{}。",
+            preview(message)
+        ));
         push_activity(
             &mut state.activity,
             format!("{from} -> {to}：{}", preview(message)),
@@ -528,14 +704,18 @@ impl State {
     pub(crate) fn observe_notification(
         &mut self,
         thread_id: ThreadId,
+        is_primary_thread: bool,
         notification: &ServerNotification,
     ) -> bool {
         match notification {
             ServerNotification::ThreadStarted(notification) => {
                 self.observe_thread_started(thread_id, &notification.thread)
             }
+            ServerNotification::TurnCompleted(_) => {
+                self.observe_turn_completed(thread_id, is_primary_thread)
+            }
             ServerNotification::ItemCompleted(notification) => {
-                self.observe_completed_item(thread_id, &notification.item)
+                self.observe_completed_item(thread_id, is_primary_thread, &notification.item)
             }
             ServerNotification::ThreadClosed(notification) => {
                 if notification.thread_id == thread_id.to_string() {
@@ -625,6 +805,7 @@ impl State {
             frontend: state.frontend.clone(),
             backend: state.backend.clone(),
             mission: state.mission.clone(),
+            autopilot: state.autopilot.clone(),
             activity: state.activity.iter().cloned().collect(),
             recent_results: state.recent_results.iter().cloned().collect(),
             federation_adapter: state.federation_adapter.clone(),
@@ -664,6 +845,7 @@ impl State {
         if let Some(mission) = state.mission.as_mut() {
             sync_mission_phase(mission, &frontend, &backend);
         }
+        sync_autopilot_waiting_on_from_state(&mut state, &frontend, &backend);
         if pending.is_empty() {
             push_activity(
                 &mut state.activity,
@@ -685,7 +867,30 @@ impl State {
         true
     }
 
-    fn observe_completed_item(&mut self, thread_id: ThreadId, item: &ThreadItem) -> bool {
+    fn observe_completed_item(
+        &mut self,
+        thread_id: ThreadId,
+        is_primary_thread: bool,
+        item: &ThreadItem,
+    ) -> bool {
+        let ThreadItem::AgentMessage { text, phase, .. } = item else {
+            return false;
+        };
+        if text.trim().is_empty() || *phase == Some(MessagePhase::Commentary) {
+            return false;
+        }
+        if is_primary_thread {
+            let state = self.read_state();
+            if state.autopilot.pending_auto_action.is_some() {
+                drop(state);
+                let mut state = self.write_state();
+                if let Some(result) = autopilot::parse_result_marker(text) {
+                    state.autopilot.parsed_result = Some(result);
+                    return true;
+                }
+                return false;
+            }
+        }
         let worker = {
             let state = self.read_state();
             let Some(worker) = state.worker_slot_for_thread(thread_id) else {
@@ -693,12 +898,6 @@ impl State {
             };
             worker
         };
-        let ThreadItem::AgentMessage { text, phase, .. } = item else {
-            return false;
-        };
-        if text.trim().is_empty() || *phase == Some(MessagePhase::Commentary) {
-            return false;
-        }
         let mut state = self.write_state();
         {
             let worker_state = state.worker_mut(worker);
@@ -715,6 +914,8 @@ impl State {
                 );
                 mission.next_action = Some("检查阶段结果并决定下一轮分派或收口".to_string());
                 sync_acceptance_checks(mission, &frontend, &backend);
+                state.autopilot.waiting_on =
+                    WaitingOn::Results(mission.required_workers(&frontend, &backend));
             } else {
                 sync_mission_phase(mission, &frontend, &backend);
                 if mission.mode == MissionMode::SerialHandoff
@@ -733,8 +934,20 @@ impl State {
                 }
             }
         }
+        sync_autopilot_waiting_on_from_state(&mut state, &frontend, &backend);
         push_result(&mut state.recent_results, worker, preview(text));
         true
+    }
+
+    fn observe_turn_completed(&mut self, thread_id: ThreadId, is_primary_thread: bool) -> bool {
+        if !is_primary_thread {
+            return false;
+        }
+        let mut state = self.write_state();
+        if state.worker_slot_for_thread(thread_id).is_some() {
+            return false;
+        }
+        finalize_root_auto_action(&mut state)
     }
 
     fn observe_thread_closed(&mut self, thread_id: ThreadId) -> bool {
@@ -755,6 +968,12 @@ impl State {
             ));
             mission.next_action = Some("先恢复 worker 连接，再继续当前 mission。".to_string());
         }
+        state.autopilot.attach_attempted = false;
+        state.autopilot.waiting_on = WaitingOn::Repair(vec![worker]);
+        state.autopilot.queued_auto_action = None;
+        state.autopilot.last_auto_action_result = Some(format!(
+            "检测到 {worker} 断开，准备进入 attach-first repair。"
+        ));
         let restart_command = if state.mission.is_some() {
             "`/zteam start <goal>`"
         } else {
@@ -1455,6 +1674,404 @@ fn worker_state_for<'a>(
     }
 }
 
+fn mission_assignment_value(mission: &Mission, worker: WorkerSlot) -> Option<&str> {
+    match worker {
+        WorkerSlot::Frontend => mission.frontend_assignment.as_deref(),
+        WorkerSlot::Backend => mission.backend_assignment.as_deref(),
+    }
+}
+
+fn reset_autopilot_for_new_mission(state: &mut SharedState) {
+    state.autopilot = AutopilotState {
+        current_cycle: state.mission.as_ref().map_or(1, |mission| mission.cycle),
+        pending_auto_action: Some(AutoAction::BootstrapWorkers),
+        waiting_on: WaitingOn::RootTurn,
+        last_auto_action_result: Some(
+            "已触发自动 bootstrap，等待主线程创建默认 worker。".to_string(),
+        ),
+        ..AutopilotState::default()
+    };
+}
+
+fn reset_autopilot_for_recovery(state: &mut SharedState) {
+    state.autopilot = AutopilotState {
+        current_cycle: state.mission.as_ref().map_or(1, |mission| mission.cycle),
+        last_auto_action_result: Some(
+            "已恢复 mission 上下文，准备按当前状态决定是否自动续跑。".to_string(),
+        ),
+        ..AutopilotState::default()
+    };
+}
+
+fn infer_next_auto_action(
+    mission: &Mission,
+    frontend: &WorkerState,
+    backend: &WorkerState,
+    autopilot: &AutopilotState,
+) -> Option<AutoAction> {
+    if mission.phase == MissionPhase::Completed {
+        return None;
+    }
+    let required_workers = mission.required_workers(frontend, backend);
+    if required_workers.is_empty() {
+        return None;
+    }
+    if autopilot.cycle_dispatched && required_workers_have_results(mission, frontend, backend) {
+        return Some(AutoAction::SummarizeResults);
+    }
+    let all_live = required_workers.iter().all(|worker| {
+        matches!(
+            worker_state_for(*worker, frontend, backend).connection,
+            WorkerConnection::Live(_)
+        )
+    });
+    if !all_live {
+        return None;
+    }
+    if !autopilot.cycle_planned {
+        return Some(AutoAction::PlanCycle);
+    }
+    if !autopilot.cycle_dispatched {
+        return Some(AutoAction::DispatchCycle);
+    }
+    None
+}
+
+fn sync_autopilot_waiting_on_from_state(
+    state: &mut SharedState,
+    frontend: &WorkerState,
+    backend: &WorkerState,
+) {
+    let Some(mission) = state.mission.as_ref() else {
+        state.autopilot.waiting_on = WaitingOn::Idle;
+        return;
+    };
+    if state.autopilot.pending_auto_action.is_some() {
+        state.autopilot.waiting_on = WaitingOn::RootTurn;
+        return;
+    }
+    let repair_targets = current_repair_targets(mission, frontend, backend, &state.autopilot);
+    if !repair_targets.is_empty() {
+        state.autopilot.waiting_on = WaitingOn::Repair(repair_targets);
+        return;
+    }
+    let required_workers = mission.required_workers(frontend, backend);
+    if required_workers.is_empty() {
+        state.autopilot.waiting_on = WaitingOn::Idle;
+        return;
+    }
+    if state.autopilot.cycle_dispatched {
+        if required_workers_have_results(mission, frontend, backend) {
+            state.autopilot.waiting_on = WaitingOn::Idle;
+        } else {
+            state.autopilot.waiting_on = WaitingOn::Results(required_workers);
+        }
+        return;
+    }
+    let missing_live = required_workers
+        .into_iter()
+        .filter(|worker| {
+            !matches!(
+                worker_state_for(*worker, frontend, backend).connection,
+                WorkerConnection::Live(_)
+            )
+        })
+        .collect::<Vec<_>>();
+    if missing_live.is_empty() {
+        state.autopilot.waiting_on = WaitingOn::Idle;
+    } else {
+        state.autopilot.waiting_on = WaitingOn::Workers(missing_live);
+    }
+}
+
+fn current_repair_targets(
+    mission: &Mission,
+    frontend: &WorkerState,
+    backend: &WorkerState,
+    autopilot: &AutopilotState,
+) -> Vec<WorkerSlot> {
+    let requested = match &autopilot.waiting_on {
+        WaitingOn::Repair(workers) if !workers.is_empty() => workers.clone(),
+        _ => mission.required_workers(frontend, backend),
+    };
+    requested
+        .into_iter()
+        .filter(|worker| {
+            !matches!(
+                worker_state_for(*worker, frontend, backend).connection,
+                WorkerConnection::Live(_)
+            )
+        })
+        .collect()
+}
+
+fn mark_root_action_submitted(
+    state: &mut SharedState,
+    action: AutoAction,
+    target_workers: &[WorkerSlot],
+) {
+    let current_cycle = state.autopilot.current_cycle;
+    let assignment_updates = if action == AutoAction::DispatchCycle {
+        state
+            .mission
+            .as_ref()
+            .map(|mission| {
+                target_workers
+                    .iter()
+                    .filter_map(|worker| {
+                        mission_assignment_value(mission, *worker)
+                            .map(|assignment| (*worker, assignment.to_string()))
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    state.autopilot.pending_auto_action = Some(action);
+    state.autopilot.parsed_result = None;
+    state.autopilot.queued_auto_action = None;
+    state.autopilot.waiting_on = WaitingOn::RootTurn;
+    state.autopilot.last_auto_action_result = Some(format!("已触发自动动作：{}。", action.label()));
+    for (worker, assignment) in assignment_updates {
+        let worker_state = state.worker_mut(worker);
+        worker_state.last_result = None;
+        worker_state.last_dispatched_task = Some(assignment);
+    }
+    if let Some(mission) = state.mission.as_mut() {
+        match action {
+            AutoAction::PlanCycle => {
+                mission.phase = MissionPhase::Planning;
+                mission.blocker = None;
+                mission.validation_summary =
+                    Some(format!("autopilot 正在规划第 {current_cycle} 轮协作。"));
+                mission.next_action = Some("等待主线程完成本轮自动规划。".to_string());
+            }
+            AutoAction::DispatchCycle => {
+                mission.phase = MissionPhase::Executing;
+                mission.blocker = None;
+                mission.validation_summary =
+                    Some(format!("autopilot 正在发起第 {current_cycle} 轮自动派工。"));
+                mission.next_action = Some("等待 worker 回流本轮结果。".to_string());
+            }
+            AutoAction::SummarizeResults => {
+                mission.phase = MissionPhase::Validating;
+                mission.validation_summary =
+                    Some(format!("autopilot 正在归纳第 {current_cycle} 轮结果。"));
+                mission.next_action = Some("等待主线程给出继续、repair 或完成判定。".to_string());
+            }
+            AutoAction::RepairWorkers => {
+                for worker in target_workers {
+                    state.autopilot.repair_attempts.increment(*worker);
+                }
+                mission.phase = MissionPhase::Bootstrapping;
+                mission.blocker = None;
+                mission.validation_summary =
+                    Some("autopilot 正在自动重建缺失 worker。".to_string());
+                mission.next_action = Some("等待缺失 worker 重新注册。".to_string());
+            }
+            AutoAction::CompleteMission => {
+                mission.phase = MissionPhase::Completed;
+                mission.blocker = None;
+                mission.next_action = Some("等待主线程输出最终收口摘要。".to_string());
+            }
+            AutoAction::BootstrapWorkers => {}
+        }
+    }
+}
+
+fn mark_autopilot_blocked(state: &mut SharedState, summary: String) {
+    state.autopilot.pending_auto_action = None;
+    state.autopilot.queued_auto_action = None;
+    state.autopilot.waiting_on = WaitingOn::Idle;
+    state.autopilot.last_auto_action_result = Some(summary.clone());
+    if let Some(mission) = state.mission.as_mut() {
+        mission.phase = MissionPhase::Blocked;
+        mission.blocker = Some(summary.clone());
+        mission.validation_summary = Some(summary);
+        mission.next_action = Some("等待人工决定后续动作。".to_string());
+    }
+}
+
+fn finalize_root_auto_action(state: &mut SharedState) -> bool {
+    let Some(action) = state.autopilot.pending_auto_action.take() else {
+        return false;
+    };
+    let frontend = state.frontend.clone();
+    let backend = state.backend.clone();
+    let Some(_) = state.mission.clone() else {
+        state.autopilot.waiting_on = WaitingOn::Idle;
+        return true;
+    };
+    let parsed = state.autopilot.parsed_result.take();
+    match action {
+        AutoAction::BootstrapWorkers => {
+            state.autopilot.last_auto_action_result = Some(
+                parsed
+                    .as_ref()
+                    .map(|result| result.summary.clone())
+                    .unwrap_or_else(|| "主线程已完成默认 worker bootstrap。".to_string()),
+            );
+            sync_autopilot_waiting_on_from_state(state, &frontend, &backend);
+        }
+        AutoAction::PlanCycle => {
+            state.autopilot.cycle_planned = true;
+            state.autopilot.cycle_dispatched = false;
+            state.autopilot.queued_auto_action = Some(AutoAction::DispatchCycle);
+            state.autopilot.last_auto_action_result = Some(
+                parsed
+                    .as_ref()
+                    .map(|result| result.summary.clone())
+                    .unwrap_or_else(|| {
+                        format!("第 {} 轮自动规划已完成。", state.autopilot.current_cycle)
+                    }),
+            );
+            if let Some(mission_state) = state.mission.as_mut() {
+                mission_state.phase = MissionPhase::Planning;
+                mission_state.validation_summary = state.autopilot.last_auto_action_result.clone();
+                mission_state.next_action = Some("准备自动派发当前 cycle。".to_string());
+            }
+            state.autopilot.waiting_on = WaitingOn::Idle;
+        }
+        AutoAction::DispatchCycle => {
+            state.autopilot.cycle_dispatched = true;
+            state.autopilot.last_auto_action_result = Some(
+                parsed
+                    .as_ref()
+                    .map(|result| result.summary.clone())
+                    .unwrap_or_else(|| {
+                        format!("第 {} 轮自动派工已发出。", state.autopilot.current_cycle)
+                    }),
+            );
+            if let Some(mission_state) = state.mission.as_mut() {
+                mission_state.phase = MissionPhase::Executing;
+                mission_state.validation_summary = state.autopilot.last_auto_action_result.clone();
+                mission_state.next_action =
+                    Some("等待需要参与的 worker 回流阶段结果。".to_string());
+            }
+            sync_autopilot_waiting_on_from_state(state, &frontend, &backend);
+        }
+        AutoAction::SummarizeResults => {
+            let Some(result) = parsed else {
+                mark_autopilot_blocked(
+                    state,
+                    "自动归纳结果缺少可解析的 autopilot 标记，已进入 blocked。".to_string(),
+                );
+                return true;
+            };
+            apply_summary_result(state, result);
+        }
+        AutoAction::RepairWorkers => {
+            state.autopilot.attach_attempted = false;
+            state.autopilot.last_auto_action_result = Some(
+                parsed
+                    .as_ref()
+                    .map(|result| result.summary.clone())
+                    .unwrap_or_else(|| {
+                        "自动 repair 指令已发出，等待缺失 worker 重新注册。".to_string()
+                    }),
+            );
+            sync_autopilot_waiting_on_from_state(state, &frontend, &backend);
+            if let Some(mission_state) = state.mission.as_mut() {
+                mission_state.phase = MissionPhase::Bootstrapping;
+                mission_state.validation_summary = state.autopilot.last_auto_action_result.clone();
+                mission_state.next_action = Some("等待缺失 worker 重新注册。".to_string());
+            }
+        }
+        AutoAction::CompleteMission => {
+            state.autopilot.waiting_on = WaitingOn::Idle;
+            state.autopilot.manual_override_active = false;
+            state.autopilot.cycle_planned = false;
+            state.autopilot.cycle_dispatched = false;
+            state.autopilot.last_auto_action_result = Some(
+                parsed
+                    .as_ref()
+                    .map(|result| result.summary.clone())
+                    .unwrap_or_else(|| "mission 已自动收口。".to_string()),
+            );
+            if let Some(mission_state) = state.mission.as_mut() {
+                mission_state.phase = MissionPhase::Completed;
+                mission_state.blocker = None;
+                mission_state.validation_summary = state.autopilot.last_auto_action_result.clone();
+                mission_state.next_action = Some("mission 已完成。".to_string());
+                sync_acceptance_checks(mission_state, &frontend, &backend);
+            }
+        }
+    }
+    true
+}
+
+fn apply_summary_result(state: &mut SharedState, result: autopilot::ParsedAutopilotResult) {
+    state.autopilot.last_auto_action_result = Some(result.summary.clone());
+    match result.status.as_str() {
+        "continue" => {
+            state.autopilot.manual_override_active = false;
+            state.autopilot.current_cycle = result.cycle.max(state.autopilot.current_cycle + 1);
+            state.autopilot.cycle_planned = false;
+            state.autopilot.cycle_dispatched = false;
+            state.autopilot.attach_attempted = false;
+            state.autopilot.waiting_on = WaitingOn::Idle;
+            state.autopilot.queued_auto_action = Some(AutoAction::PlanCycle);
+            if let Some(mission) = state.mission.as_mut() {
+                mission.phase = MissionPhase::Planning;
+                mission.blocker = None;
+                mission.cycle = state.autopilot.current_cycle;
+                mission.validation_summary = Some(result.summary);
+                mission.next_action = Some(format!(
+                    "准备自动规划第 {} 轮协作。",
+                    state.autopilot.current_cycle
+                ));
+            }
+        }
+        "complete" => {
+            state.autopilot.manual_override_active = false;
+            state.autopilot.waiting_on = WaitingOn::Idle;
+            state.autopilot.queued_auto_action = Some(AutoAction::CompleteMission);
+            if let Some(mission) = state.mission.as_mut() {
+                mission.phase = MissionPhase::Validating;
+                mission.blocker = None;
+                mission.validation_summary = Some(result.summary);
+                mission.next_action = Some("准备自动收口当前 mission。".to_string());
+            }
+        }
+        "repair" => {
+            state.autopilot.manual_override_active = false;
+            state.autopilot.attach_attempted = false;
+            let frontend = state.frontend.clone();
+            let backend = state.backend.clone();
+            let targets = if result.waiting_on.is_empty() {
+                state
+                    .mission
+                    .as_ref()
+                    .map(|mission| mission.required_workers(&frontend, &backend))
+                    .filter(|workers| !workers.is_empty())
+                    .unwrap_or_else(|| WorkerSlot::ALL.to_vec())
+            } else {
+                result.waiting_on
+            };
+            state.autopilot.waiting_on = WaitingOn::Repair(targets.clone());
+            if let Some(mission) = state.mission.as_mut() {
+                mission.phase = MissionPhase::Blocked;
+                mission.blocker = Some(format!("主线程要求先 repair：{}", worker_list(&targets)));
+                mission.validation_summary = Some(result.summary);
+                mission.next_action = Some(format!(
+                    "先恢复 {}，再继续当前 mission。",
+                    worker_list(&targets)
+                ));
+            }
+        }
+        "blocked" => {
+            mark_autopilot_blocked(state, result.summary);
+        }
+        _ => {
+            mark_autopilot_blocked(
+                state,
+                format!("自动归纳结果返回了未知状态 `{}`。", result.status),
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 fn worker_status_line(worker: WorkerSlot, state: &WorkerState) -> String {
     let state_text = match &state.connection {
@@ -1669,7 +2286,11 @@ mod tests {
         let notification = ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: test_thread(backend_id, WorkerSlot::Backend),
         });
-        assert!(state.observe_notification(backend_id, &notification));
+        assert!(state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &notification,
+        ));
 
         let snapshot = state.snapshot();
         let mission = snapshot.mission.expect("mission should exist");
@@ -1690,7 +2311,11 @@ mod tests {
         let backend_started = ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: test_thread(backend_id, WorkerSlot::Backend),
         });
-        assert!(state.observe_notification(backend_id, &backend_started));
+        assert!(state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &backend_started,
+        ));
         state.record_dispatch(WorkerSlot::Backend, "先产出接口契约");
 
         let backend_done = ServerNotification::ItemCompleted(ItemCompletedNotification {
@@ -1703,7 +2328,11 @@ mod tests {
             thread_id: backend_id.to_string(),
             turn_id: "turn-handoff-backend".to_string(),
         });
-        assert!(state.observe_notification(backend_id, &backend_done));
+        assert!(state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &backend_done,
+        ));
 
         let snapshot = state.snapshot();
         let mission = snapshot.mission.expect("mission should exist");
@@ -1729,8 +2358,16 @@ mod tests {
         let backend_started = ServerNotification::ThreadStarted(ThreadStartedNotification {
             thread: test_thread(backend_id, WorkerSlot::Backend),
         });
-        assert!(state.observe_notification(frontend_id, &frontend_started));
-        assert!(state.observe_notification(backend_id, &backend_started));
+        assert!(state.observe_notification(
+            frontend_id,
+            /*is_primary_thread*/ false,
+            &frontend_started,
+        ));
+        assert!(state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &backend_started,
+        ));
         state.record_dispatch(WorkerSlot::Frontend, "推进前端任务");
         state.record_dispatch(WorkerSlot::Backend, "推进后端任务");
 
@@ -1754,8 +2391,16 @@ mod tests {
             thread_id: backend_id.to_string(),
             turn_id: "turn-backend-done".to_string(),
         });
-        assert!(state.observe_notification(frontend_id, &frontend_done));
-        assert!(state.observe_notification(backend_id, &backend_done));
+        assert!(state.observe_notification(
+            frontend_id,
+            /*is_primary_thread*/ false,
+            &frontend_done,
+        ));
+        assert!(state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &backend_done,
+        ));
 
         let snapshot = state.snapshot();
         let mission = snapshot.mission.expect("mission should exist");
@@ -1776,12 +2421,14 @@ mod tests {
 
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(frontend_id, WorkerSlot::Frontend),
             }),
         );
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(backend_id, WorkerSlot::Backend),
             }),
@@ -1791,6 +2438,7 @@ mod tests {
 
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ItemCompleted(ItemCompletedNotification {
                 item: ThreadItem::AgentMessage {
                     id: "msg-1".to_string(),
@@ -1804,6 +2452,7 @@ mod tests {
         );
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ItemCompleted(ItemCompletedNotification {
                 item: ThreadItem::AgentMessage {
                     id: "msg-2".to_string(),
@@ -1836,6 +2485,7 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(frontend_id, WorkerSlot::Frontend),
             }),
@@ -1858,6 +2508,7 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(frontend_id, WorkerSlot::Frontend),
             }),
@@ -1865,6 +2516,7 @@ mod tests {
 
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadClosed(ThreadClosedNotification {
                 thread_id: frontend_id.to_string(),
             }),
@@ -1886,12 +2538,14 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(frontend_id, WorkerSlot::Frontend),
             }),
         );
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ItemCompleted(ItemCompletedNotification {
                 item: ThreadItem::AgentMessage {
                     id: "msg-1".to_string(),
@@ -1914,6 +2568,7 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(backend_id, WorkerSlot::Backend),
             }),
@@ -1937,12 +2592,14 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(backend_id, WorkerSlot::Backend),
             }),
         );
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ItemStarted(ItemStartedNotification {
                 item: ThreadItem::UserMessage {
                     id: "user-1".to_string(),
@@ -2027,6 +2684,7 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             backend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(backend_id, WorkerSlot::Backend),
             }),
@@ -2057,6 +2715,316 @@ mod tests {
                 .as_deref()
                 .is_some_and(|next_action| next_action.contains("mission 主流程"))
         );
+    }
+
+    #[test]
+    fn autopilot_bootstrap_finishes_with_plan_then_dispatch() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500")));
+        {
+            let mut guard = state.write_state();
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected plan_cycle autopilot prompt");
+        };
+        assert_eq!(action, AutoAction::PlanCycle);
+        {
+            let mut guard = state.write_state();
+            guard.autopilot.parsed_result = Some(autopilot::ParsedAutopilotResult {
+                action: AutoAction::PlanCycle,
+                status: "planned".to_string(),
+                cycle: 1,
+                waiting_on: vec![WorkerSlot::Backend],
+                summary: "后端 solo 方案已规划".to_string(),
+            });
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected dispatch_cycle autopilot prompt");
+        };
+        assert_eq!(action, AutoAction::DispatchCycle);
+    }
+
+    #[test]
+    fn autopilot_summarize_continue_advances_cycle() {
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(
+            state.mark_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"))
+        );
+        {
+            let mut guard = state.write_state();
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+        state.observe_notification(
+            frontend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(frontend_id, WorkerSlot::Frontend),
+            }),
+        );
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected plan_cycle prompt");
+        };
+        assert_eq!(action, AutoAction::PlanCycle);
+        {
+            let mut guard = state.write_state();
+            guard.autopilot.parsed_result = Some(autopilot::ParsedAutopilotResult {
+                action: AutoAction::PlanCycle,
+                status: "planned".to_string(),
+                cycle: 1,
+                waiting_on: vec![WorkerSlot::Frontend, WorkerSlot::Backend],
+                summary: "第 1 轮并行计划已确认".to_string(),
+            });
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected dispatch_cycle prompt");
+        };
+        assert_eq!(action, AutoAction::DispatchCycle);
+        {
+            let mut guard = state.write_state();
+            guard.autopilot.parsed_result = Some(autopilot::ParsedAutopilotResult {
+                action: AutoAction::DispatchCycle,
+                status: "scheduled".to_string(),
+                cycle: 1,
+                waiting_on: vec![WorkerSlot::Frontend, WorkerSlot::Backend],
+                summary: "第 1 轮并行派工已发出".to_string(),
+            });
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+
+        state.observe_notification(
+            frontend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ItemCompleted(ItemCompletedNotification {
+                item: ThreadItem::AgentMessage {
+                    id: "msg-front".to_string(),
+                    text: "前端阶段结果已回流".to_string(),
+                    phase: Some(MessagePhase::FinalAnswer),
+                    memory_citation: None,
+                },
+                thread_id: frontend_id.to_string(),
+                turn_id: "turn-front".to_string(),
+            }),
+        );
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ItemCompleted(ItemCompletedNotification {
+                item: ThreadItem::AgentMessage {
+                    id: "msg-back".to_string(),
+                    text: "后端阶段结果已回流".to_string(),
+                    phase: Some(MessagePhase::FinalAnswer),
+                    memory_citation: None,
+                },
+                thread_id: backend_id.to_string(),
+                turn_id: "turn-back".to_string(),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected summarize_results prompt");
+        };
+        assert_eq!(action, AutoAction::SummarizeResults);
+        {
+            let mut guard = state.write_state();
+            guard.autopilot.parsed_result = Some(autopilot::ParsedAutopilotResult {
+                action: AutoAction::SummarizeResults,
+                status: "continue".to_string(),
+                cycle: 2,
+                waiting_on: vec![WorkerSlot::Frontend, WorkerSlot::Backend],
+                summary: "需要进入第 2 轮补齐联调和收口".to_string(),
+            });
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+
+        let snapshot = state.snapshot();
+        assert_eq!(snapshot.autopilot.current_cycle, 2);
+        assert_eq!(
+            snapshot.mission.as_ref().map(|mission| mission.cycle),
+            Some(2)
+        );
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected next cycle plan prompt");
+        };
+        assert_eq!(action, AutoAction::PlanCycle);
+    }
+
+    #[test]
+    fn autopilot_repair_prefers_attach_first() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500")));
+        {
+            let mut guard = state.write_state();
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadClosed(ThreadClosedNotification {
+                thread_id: backend_id.to_string(),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::AttachFirstRepair(workers)) = state.take_autopilot_work_item()
+        else {
+            panic!("expected attach-first repair work item");
+        };
+        assert_eq!(workers, vec![WorkerSlot::Backend]);
+    }
+
+    #[test]
+    fn attach_first_repair_replans_when_cycle_was_not_planned_yet() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500")));
+        {
+            let mut guard = state.write_state();
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadClosed(ThreadClosedNotification {
+                thread_id: backend_id.to_string(),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::AttachFirstRepair(_)) = state.take_autopilot_work_item() else {
+            panic!("expected attach-first repair work item");
+        };
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+        assert!(state.finish_attach_first_repair());
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected plan_cycle after attach-first repair");
+        };
+        assert_eq!(action, AutoAction::PlanCycle);
+    }
+
+    #[test]
+    fn autopilot_ignores_non_primary_root_events() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let primary_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000001").expect("valid thread");
+        let unrelated_thread_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000099").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500")));
+        {
+            let mut guard = state.write_state();
+            assert!(finalize_root_auto_action(&mut guard));
+        }
+        state.observe_notification(
+            backend_id,
+            /*is_primary_thread*/ false,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected plan_cycle autopilot prompt");
+        };
+        assert_eq!(action, AutoAction::PlanCycle);
+
+        let marker_message = format!(
+            "{}|action=plan_cycle|status=planned|cycle=1|waiting_on=backend|summary=忽略这条非主线程结果",
+            autopilot::AUTOPILOT_RESULT_MARKER
+        );
+        let marker_item = ThreadItem::AgentMessage {
+            id: "msg-root".to_string(),
+            text: marker_message,
+            phase: Some(MessagePhase::FinalAnswer),
+            memory_citation: None,
+        };
+
+        assert!(!state.observe_completed_item(
+            unrelated_thread_id,
+            /*is_primary_thread*/ false,
+            &marker_item,
+        ));
+        assert!(!state.observe_turn_completed(unrelated_thread_id, /*is_primary_thread*/ false,));
+        assert!(state.take_autopilot_work_item().is_none());
+        assert_eq!(
+            state.read_state().autopilot.pending_auto_action,
+            Some(AutoAction::PlanCycle)
+        );
+
+        assert!(state.observe_completed_item(
+            primary_thread_id,
+            /*is_primary_thread*/ true,
+            &marker_item,
+        ));
+        assert!(state.observe_turn_completed(primary_thread_id, /*is_primary_thread*/ true));
+
+        let Some(AutopilotWorkItem::RootPrompt { action, .. }) = state.take_autopilot_work_item()
+        else {
+            panic!("expected dispatch_cycle after primary root completion");
+        };
+        assert_eq!(action, AutoAction::DispatchCycle);
     }
 
     #[test]
@@ -2096,6 +3064,7 @@ mod tests {
         let mut state = State::default();
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ThreadStarted(ThreadStartedNotification {
                 thread: test_thread(frontend_id, WorkerSlot::Frontend),
             }),
@@ -2103,6 +3072,7 @@ mod tests {
         state.record_dispatch(WorkerSlot::Frontend, "修复导航栏布局");
         state.observe_notification(
             frontend_id,
+            /*is_primary_thread*/ false,
             &ServerNotification::ItemCompleted(ItemCompletedNotification {
                 item: ThreadItem::AgentMessage {
                     id: "msg-1".to_string(),

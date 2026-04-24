@@ -13,7 +13,7 @@
 
 其中：
 
-- `/zteam start <goal>` 负责建立本轮 mission brief，并驱动 Mission Board。
+- `/zteam start <goal>` 负责建立本轮 mission brief，并启动 `Mission Autopilot` 驱动 Mission Board。
 - `/zteam start` 只保留为不带目标的兼容启动入口。
 - 旧手动命令不会绕开 mission 状态；它们必须被收口为 manual override 语义。
 
@@ -26,6 +26,12 @@
   - `Validation`
   - `Activity`
 - `goal`、`mode`、`phase`、assignment、acceptance、validation、blocker、`next_action` 是 mission 层真相源。
+- `Mission Autopilot` 也是稳定产品面的一部分，至少要让用户看见：
+  - 当前 `cycle`
+  - `pending_auto_action`
+  - `waiting_on`
+  - 最近一次自动动作结果
+  - `repair` / `manual_override` 状态
 
 ## 恢复与降级约束
 
@@ -33,6 +39,14 @@
 - 若没有历史 mission 但恢复到了 worker 状态，应自动合成 recovery mission。
 - 若没有 mission 却使用旧手动命令，应自动合成 manual override mission。
 - 若已有 mission 再触发旧手动命令，应在现有 mission 中显式记录 manual override，而不是静默覆盖。
+
+## Autopilot 约束
+
+- 自动推进只负责决定“下一步什么时候触发”，不在 TUI 里硬编码业务拆分；具体 cycle 规划、分派、归纳和验证仍通过 root agent follow-up turn 完成。
+- root 级 autopilot 动作必须锚定 primary thread；不能因为当前用户停在某个 worker thread，就把 root follow-up 误投到该 worker 线程。
+- `manual override` 只能中断当前自动动作，不能压住 `repair`；worker 缺失或掉线时，系统仍应优先进入 attach-first repair。
+- attach-first repair 成功后，后续动作必须按当前 cycle 真实状态恢复：需要重新规划时回到 `plan_cycle`，仍可继续当前轮时再进入 `dispatch_cycle`。
+- repair 默认面向当前 mission 明确缺失的 required workers，不应在缺少 `waiting_on` 细节时无差别重建 `ALL`。
 
 ## 明确不做
 

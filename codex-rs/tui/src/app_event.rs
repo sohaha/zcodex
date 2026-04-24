@@ -104,6 +104,9 @@ pub(crate) enum AppEvent {
     /// Execute a ZTeam collaboration command.
     ZteamCommand(ZteamCommand),
 
+    /// Re-evaluate whether ZTeam Mission Autopilot can advance.
+    ZteamAutopilotTick,
+
     /// Submit an op to the specified thread, regardless of current focus.
     SubmitThreadOp {
         thread_id: ThreadId,

@@ -1,0 +1,62 @@
+plan = ".agents/plan/2026-04-24-zteam-mission-autopilot.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "让 Mission Autopilot 在 mission 启动后自动完成 bootstrapping 与首轮派工"
+scope = """
+在固定 `frontend/backend` 双 worker runtime 底座上引入 `Mission Autopilot` 的共享状态与自动动作契约，
+把 `/zteam start <goal>` 之后的 bootstrapping、worker 注册等待、cycle 规划和首轮 dispatch 收口为自动推进链路。
+包含 autopilot state、auto action 类型、waiting condition、幂等触发点，以及 root follow-up prompt 的最小契约；
+不在本 issue 中完成结果验证、worker repair，也不负责最终的 Mission Board 扩展展示。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam.rs", "path:codex-rs/tui/src/app.rs", "path:codex-rs/tui/src/zteam/**", "path:codex-rs/tui/src/chatwidget/tests/**"]
+depends_on = []
+done_when = "用户执行 `/zteam start <goal>` 后，系统会在无需手动 `/zteam frontend ...`、`/zteam backend ...` 或 relay 的情况下自动完成 worker bootstrapping、等待固定 worker 就绪、规划当前 cycle，并向 root 发起首轮自动派工；共享状态中可明确看出当前 cycle、waiting_on 与 pending_auto_action"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。测试需覆盖 `/zteam start <goal>` 后的自动 bootstrapping、worker 注册推进与首轮 dispatch 触发"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "failed"
+notes = "已完成 autopilot 共享状态、auto action 契约、root tick 驱动与首轮 bootstrapping/plan/dispatch。定向验证通过：`cd codex-rs && cargo test -p codex-tui zteam`（52/52）。spec/code 自审通过。项目级回归尝试 `cd codex-rs && cargo nextest run -p codex-tui` 时，被无关基线 snapshot 漂移阻断：`history_cell::tests::session_info_availability_nux_tooltip_snapshot` 期望 `v0.0.0`，实际为 `v1.0.0`。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "补齐 Autopilot 的自动验证、attach-first repair 与手动 override 收口"
+scope = """
+让 autopilot 在 worker 阶段结果回流后自动进入 summarize/validate，并在 worker 缺失、关闭或未 live attach 时进入 attach-first 的 repair 流程。
+包含 `summarize_results`、`repair_workers`、`complete_mission` 等自动动作，有限重建次数、blocked 条件、live-only attach 约束，以及手动 `/zteam frontend|backend|relay` 对当前 autopilot cycle 的 interrupting override 语义；
+不在本 issue 中负责最终的 workbench 信息架构、slash help 文案和 snapshot 审阅收口。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam.rs", "path:codex-rs/tui/src/zteam/recovery.rs", "path:codex-rs/tui/src/app.rs", "path:codex-rs/tui/src/zteam/**", "path:codex-rs/tui/src/chatwidget/tests/**"]
+depends_on = ["a1"]
+done_when = "当 worker 结果回流时，autopilot 会自动归纳并判断 mission 是否继续、完成或阻塞；当 worker 缺失或关闭时会先自动 attach/恢复，必要时按固定 canonical task name 有限重建；用户手动 dispatch/relay 时会显式中断当前 auto action 并记录 `manual_override_active`，不会与 autopilot 并行造成双主路径"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。测试需覆盖结果回流后的自动验证、attach-first repair、有限重建与 manual override 打断语义"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "failed"
+notes = "已完成 summarize/complete/repair/attach-first/manual override 收口，并补了两个关键修正：1) root autopilot prompt 明确回发 primary thread，避免用户停在 worker 线程时误投；2) manual override 不再压住 repair，attach-first 成功后会按当前 cycle 状态决定重 plan 还是重 dispatch。定向验证通过：`cd codex-rs && cargo test -p codex-tui zteam`（52/52）。项目级回归同样被无关 `history_cell` snapshot 漂移阻断。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "把 Mission Autopilot 的状态、阻塞与人工接管语义完整暴露到工作台和文档"
+scope = """
+扩展 Mission Board、slash help 和文档，使 autopilot 的当前 cycle、waiting on、pending auto action、last auto action result、repair 状态和 manual override 标记对用户稳定可见。
+包含 `codex-rs/tui/src/zteam/view.rs` 及相关 workbench 渲染、必要测试与 snapshot 更新，以及 `docs/slash_commands.md` 中对自动推进、repair、override 与 `/zteam attach` 交互边界的说明；
+不负责新增公共协议、额外 worker 或独立 mission 持久化。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam/view.rs", "path:codex-rs/tui/src/chatwidget/tests/**", "path:codex-rs/tui/src/**/snapshots/**", "path:docs/slash_commands.md"]
+depends_on = ["a2"]
+done_when = "用户仅查看 ZTeam workbench 和 slash 命令文档，就能理解 mission 是否正在自动推进、当前在等谁、最近一次 auto action 做了什么、何时进入 repair 或 blocked、以及手动 override 如何打断并接管当前 cycle，且所有用户可见变化都有对应 snapshot 覆盖"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。完成后使用 `cd codex-rs && cargo insta pending-snapshots -p codex-tui` 审阅预期的 snapshot 变化，并手动回读 `docs/slash_commands.md` 确认 autopilot、repair 与 override 说明一致"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "failed"
+notes = "已完成 Mission Board autopilot 展示、slash 文档说明和相关 snapshot 更新；workbench 现可见 `pending_auto_action`、`waiting_on`、`manual_override`、repair attempts 与最近自动动作结果。定向验证通过：`cd codex-rs && cargo test -p codex-tui zteam`；文档与 4 个 zteam workbench snapshot 已人工审阅。项目级回归仍被无关 `history_cell::tests::session_info_availability_nux_tooltip_snapshot` 基线漂移阻断。"
