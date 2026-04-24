@@ -2054,13 +2054,13 @@ impl App {
         self.chat_widget
             .configure_zteam_federation_adapter(app_server.federation().cloned());
         match command {
-            zteam::Command::Start => {
+            zteam::Command::Start { goal } => {
                 let config = self.chat_widget.config_ref().clone();
                 self.submit_active_thread_op(
                     app_server,
                     AppCommand::user_turn(
                         vec![UserInput::Text {
-                            text: zteam::start_prompt(),
+                            text: zteam::start_prompt(goal.as_deref()),
                             text_elements: Vec::new(),
                         }],
                         config.cwd.to_path_buf(),
@@ -2076,7 +2076,8 @@ impl App {
                     ),
                 )
                 .await?;
-                self.chat_widget.mark_zteam_start_requested();
+                self.chat_widget
+                    .mark_zteam_start_requested_for_goal(goal.as_deref());
                 self.chat_widget.open_zteam_workbench();
             }
             zteam::Command::Status => {
@@ -2089,7 +2090,7 @@ impl App {
                 self.chat_widget.open_zteam_workbench();
                 if outcome.restored == 0 {
                     self.chat_widget.add_info_message(
-                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start` 创建新的 frontend/backend worker。"
+                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start <goal>` 重新建立本轮 mission，或用兼容入口 `/zteam start` 只创建 frontend/backend worker。"
                             .to_string(),
                         /*hint*/ None,
                     );
@@ -2104,7 +2105,7 @@ impl App {
                 } else if outcome.live_attached == 0 {
                     self.chat_widget.add_info_message(
                         format!(
-                            "已恢复 {restored} 个 ZTeam worker 的最近状态；暂未重新附着 live 会话。",
+                            "已恢复 {restored} 个 ZTeam worker 的最近状态；暂未重新附着 live 会话。Mission Board 会按恢复态展示当前上下文。",
                             restored = outcome.restored
                         ),
                         /*hint*/ None,
@@ -2112,7 +2113,7 @@ impl App {
                 } else {
                     self.chat_widget.add_info_message(
                         format!(
-                            "已恢复 {restored} 个 ZTeam worker，其中 {live} 个已重新附着。",
+                            "已恢复 {restored} 个 ZTeam worker，其中 {live} 个已重新附着；未 live 的部分会在 Mission Board 中以恢复态标记。",
                             restored = outcome.restored,
                             live = outcome.live_attached
                         ),

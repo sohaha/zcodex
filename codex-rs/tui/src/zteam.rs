@@ -82,7 +82,9 @@ impl fmt::Display for WorkerSlot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
-    Start,
+    Start {
+        goal: Option<String>,
+    },
     Status,
     Attach,
     Dispatch {
@@ -116,10 +118,12 @@ impl Command {
         };
         match head.to_ascii_lowercase().as_str() {
             "start" => {
-                if parts.next().is_some() {
-                    return Err(usage().to_string());
-                }
-                Ok(Self::Start)
+                let goal = trimmed
+                    .split_once(char::is_whitespace)
+                    .map(|(_, goal)| goal.trim())
+                    .filter(|goal| !goal.is_empty())
+                    .map(std::string::ToString::to_string);
+                Ok(Self::Start { goal })
             }
             "status" => {
                 if parts.next().is_some() {
@@ -191,6 +195,7 @@ struct SharedState {
     start_requested: bool,
     frontend: WorkerState,
     backend: WorkerState,
+    mission: Option<Mission>,
     activity: VecDeque<ActivityEntry>,
     recent_results: VecDeque<ResultEntry>,
     federation_adapter: Option<FederationAdapter>,
@@ -216,10 +221,59 @@ struct ResultEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct Mission {
+    goal: String,
+    mode: MissionMode,
+    phase: MissionPhase,
+    acceptance_checks: Vec<AcceptanceCheck>,
+    frontend_role: Option<String>,
+    backend_role: Option<String>,
+    frontend_assignment: Option<String>,
+    backend_assignment: Option<String>,
+    validation_summary: Option<String>,
+    blocker: Option<String>,
+    next_action: Option<String>,
+    cycle: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MissionMode {
+    Solo(WorkerSlot),
+    Parallel,
+    SerialHandoff,
+    Blocked,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MissionPhase {
+    Idle,
+    Bootstrapping,
+    Planning,
+    Executing,
+    Validating,
+    Blocked,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AcceptanceCheck {
+    summary: String,
+    status: AcceptanceStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AcceptanceStatus {
+    Pending,
+    Met,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Snapshot {
     start_requested: bool,
     frontend: WorkerState,
     backend: WorkerState,
+    mission: Option<Mission>,
     activity: Vec<ActivityEntry>,
     recent_results: Vec<ResultEntry>,
     federation_adapter: Option<FederationAdapter>,
@@ -261,7 +315,7 @@ impl Snapshot {
 }
 
 impl State {
-    pub(crate) fn mark_start_requested(&mut self) -> bool {
+    pub(crate) fn mark_start_requested_for_goal(&mut self, goal: Option<&str>) -> bool {
         let mut state = self.write_state();
         let changed = !state.start_requested
             || WorkerSlot::ALL.into_iter().any(|worker| {
@@ -269,7 +323,8 @@ impl State {
                 !matches!(worker_state.connection, WorkerConnection::Pending)
                     || worker_state.last_dispatched_task.is_some()
                     || worker_state.last_result.is_some()
-            });
+            })
+            || state.mission.as_ref().map(|mission| mission.goal.as_str()) != goal;
         if !changed {
             return false;
         }
@@ -277,6 +332,9 @@ impl State {
         for worker in WorkerSlot::ALL {
             *state.worker_mut(worker) = WorkerState::default();
         }
+        state.mission = goal
+            .filter(|goal| !goal.trim().is_empty())
+            .map(plan_mission);
         push_activity(
             &mut state.activity,
             format!(
@@ -284,6 +342,22 @@ impl State {
                 default_worker_task_list()
             ),
         );
+        if let Some((goal, mode_label, next_action)) = state.mission.as_ref().map(|mission| {
+            (
+                preview(&mission.goal),
+                mission.mode.label(),
+                mission
+                    .next_action
+                    .as_deref()
+                    .unwrap_or("等待 worker 进入协作上下文")
+                    .to_string(),
+            )
+        }) {
+            push_activity(
+                &mut state.activity,
+                format!("当前 mission：{goal}。模式：{mode_label}；下一步：{next_action}。"),
+            );
+        }
         true
     }
 
@@ -294,18 +368,34 @@ impl State {
     pub(crate) fn restore_worker(&mut self, recovered: RecoveredWorker) -> bool {
         let mut state = self.write_state();
         state.start_requested = true;
-        let worker_state = state.worker_mut(recovered.slot);
         let next_state = WorkerState {
             connection: recovered.connection.clone(),
             source: recovered.source,
             last_dispatched_task: recovered.last_dispatched_task,
             last_result: recovered.last_result,
         };
-        if *worker_state == next_state {
+        if *state.worker(recovered.slot) == next_state {
             return false;
         }
-        *worker_state = next_state;
-        let restore_summary = match &worker_state.connection {
+        *state.worker_mut(recovered.slot) = next_state;
+        let synthesized_recovery_mission = if state.mission.is_none() {
+            let frontend = state.frontend.clone();
+            let backend = state.backend.clone();
+            state.mission = Some(plan_recovery_mission(&frontend, &backend));
+            true
+        } else {
+            false
+        };
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        if let Some(mission) = state.mission.as_mut() {
+            if synthesized_recovery_mission {
+                apply_recovery_state(mission, &frontend, &backend);
+            } else {
+                sync_mission_phase(mission, &frontend, &backend);
+            }
+        }
+        let restore_summary = match &recovered.connection {
             WorkerConnection::Pending => {
                 format!(
                     "已恢复 {recovered_slot} worker 的最近协作记录，等待注册。",
@@ -382,6 +472,23 @@ impl State {
             worker_state.connection = WorkerConnection::Live(thread_id);
         }
         worker_state.last_dispatched_task = Some(message.to_string());
+        if state.mission.is_none() {
+            state.mission = Some(plan_manual_override_mission(worker, message));
+        }
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        if let Some(mission) = state.mission.as_mut() {
+            mission.phase = MissionPhase::Executing;
+            mission.blocker = None;
+            mission.validation_summary = Some(
+                "当前由旧命令触发手动 override；本轮结果回流后需重新判断是否继续沿 mission 主路径推进。"
+                    .to_string(),
+            );
+            mission.assignment_mut(worker).replace(preview(message));
+            mission.next_action =
+                Some("等待本轮手动分派结果回流，再决定是否回到 mission 主流程。".to_string());
+            sync_acceptance_checks(mission, &frontend, &backend);
+        }
         push_activity(
             &mut state.activity,
             format!("主线程 -> {worker}：{}", preview(message)),
@@ -396,6 +503,24 @@ impl State {
             target_state.connection = WorkerConnection::Live(thread_id);
         }
         target_state.last_dispatched_task = Some(message.to_string());
+        if state.mission.is_none() {
+            state.mission = Some(plan_manual_relay_mission(from, to, message));
+        }
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        if let Some(mission) = state.mission.as_mut() {
+            mission.phase = MissionPhase::Executing;
+            mission.blocker = None;
+            mission.validation_summary = Some(
+                "当前由旧命令触发手动 override；请在 relay 结果回流后确认是否回到 mission 主路径。"
+                    .to_string(),
+            );
+            mission.assignment_mut(to).replace(preview(message));
+            mission.next_action = Some(
+                "等待 relay 目标 worker 回流结果，再确认是否恢复 mission 主流程。".to_string(),
+            );
+            sync_acceptance_checks(mission, &frontend, &backend);
+        }
         push_activity(
             &mut state.activity,
             format!("{from} -> {to}：{}", preview(message)),
@@ -454,8 +579,9 @@ impl State {
                 worker.display_name()
             ),
             WorkerConnection::ReattachRequired(thread_id) => format!(
-                "{} worker 最近的线程 `{thread_id}` 当前未附着。先运行 `/zteam attach` 尝试再附着，或用 `/zteam start` 重建 worker。",
-                worker.display_name()
+                "{} worker 最近的线程 `{thread_id}` 当前未附着。先运行 `/zteam attach` 尝试再附着，或用 {} 重建 worker。",
+                worker.display_name(),
+                recommended_restart_command(&snapshot)
             ),
         }
     }
@@ -468,7 +594,8 @@ impl State {
             || matches!(to_connection, WorkerConnection::ReattachRequired(_));
         if needs_attach {
             return format!(
-                "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的 worker，或用 `/zteam start` 重新创建。"
+                "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的 worker，或用 {} 重新创建。",
+                recommended_restart_command(&snapshot)
             );
         }
         let pending = snapshot.pending_workers();
@@ -476,17 +603,21 @@ impl State {
             let registered = snapshot.live_workers();
             if registered.is_empty() {
                 return format!(
-                    "无法在 {from} 和 {to} 之间中转消息。当前还没有任何 worker 完成注册；先等待 `/zteam start` 的创建结果，必要时重新运行 `/zteam start`。"
+                    "无法在 {from} 和 {to} 之间中转消息。当前还没有任何 worker 完成注册；先等待 {} 的创建结果，必要时重新运行 {}。",
+                    recommended_restart_command(&snapshot),
+                    recommended_restart_command(&snapshot)
                 );
             }
             return format!(
-                "无法在 {from} 和 {to} 之间中转消息。当前仅 {} 已注册，仍缺 {}；先运行 `/zteam status` 检查进度，必要时重新运行 `/zteam start`。",
+                "无法在 {from} 和 {to} 之间中转消息。当前仅 {} 已注册，仍缺 {}；先运行 `/zteam status` 检查进度，必要时重新运行 {}。",
                 worker_list(&registered),
-                worker_list(&pending)
+                worker_list(&pending),
+                recommended_restart_command(&snapshot)
             );
         }
         format!(
-            "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam start`，并确认两个 worker 都已注册。"
+            "无法在 {from} 和 {to} 之间中转消息。先运行 {}，并确认两个 worker 都已注册。",
+            recommended_restart_command(&snapshot)
         )
     }
 
@@ -496,6 +627,7 @@ impl State {
             start_requested: state.start_requested,
             frontend: state.frontend.clone(),
             backend: state.backend.clone(),
+            mission: state.mission.clone(),
             activity: state.activity.iter().cloned().collect(),
             recent_results: state.recent_results.iter().cloned().collect(),
             federation_adapter: state.federation_adapter.clone(),
@@ -510,12 +642,14 @@ impl State {
             return false;
         };
         let mut state = self.write_state();
-        let worker_state = state.worker_mut(worker);
-        if worker_state.connection == WorkerConnection::Live(thread_id) {
-            return false;
+        {
+            let worker_state = state.worker_mut(worker);
+            if worker_state.connection == WorkerConnection::Live(thread_id) {
+                return false;
+            }
+            worker_state.connection = WorkerConnection::Live(thread_id);
+            worker_state.source = WorkerSource::LocalThreadSpawn;
         }
-        worker_state.connection = WorkerConnection::Live(thread_id);
-        worker_state.source = WorkerSource::LocalThreadSpawn;
         let pending = WorkerSlot::ALL
             .into_iter()
             .filter(|slot| matches!(state.worker(*slot).connection, WorkerConnection::Pending))
@@ -531,6 +665,11 @@ impl State {
                 worker.canonical_task_name()
             ),
         );
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        if let Some(mission) = state.mission.as_mut() {
+            sync_mission_phase(mission, &frontend, &backend);
+        }
         if pending.is_empty() {
             push_activity(
                 &mut state.activity,
@@ -567,9 +706,39 @@ impl State {
             return false;
         }
         let mut state = self.write_state();
-        let worker_state = state.worker_mut(worker);
-        worker_state.last_result = Some(text.clone());
-        worker_state.source = WorkerSource::LocalThreadSpawn;
+        {
+            let worker_state = state.worker_mut(worker);
+            worker_state.last_result = Some(text.clone());
+            worker_state.source = WorkerSource::LocalThreadSpawn;
+        }
+        let frontend = state.frontend.clone();
+        let backend = state.backend.clone();
+        if let Some(mission) = state.mission.as_mut() {
+            if required_workers_have_results(mission, &frontend, &backend) {
+                mission.phase = MissionPhase::Validating;
+                mission.validation_summary = Some(
+                    "已收到当前需要参与的 worker 阶段结果，等待主线程归纳验证结论。".to_string(),
+                );
+                mission.next_action = Some("检查阶段结果并决定下一轮分派或收口".to_string());
+                sync_acceptance_checks(mission, &frontend, &backend);
+            } else {
+                sync_mission_phase(mission, &frontend, &backend);
+                if mission.mode == MissionMode::SerialHandoff
+                    && worker == WorkerSlot::Backend
+                    && backend
+                        .last_result
+                        .as_deref()
+                        .is_some_and(|result| !result.trim().is_empty())
+                    && frontend
+                        .last_result
+                        .as_deref()
+                        .is_none_or(|result| result.trim().is_empty())
+                {
+                    mission.next_action =
+                        Some("后端阶段结果已就绪，可分派前端接手实现与联调".to_string());
+                }
+            }
+        }
         push_result(&mut state.recent_results, worker, preview(text));
         true
     }
@@ -585,10 +754,22 @@ impl State {
         let mut state = self.write_state();
         let worker_state = state.worker_mut(worker);
         worker_state.connection = WorkerConnection::ReattachRequired(thread_id);
+        if let Some(mission) = state.mission.as_mut() {
+            mission.phase = MissionPhase::Blocked;
+            mission.blocker = Some(format!(
+                "{worker} 最近线程已关闭，需 `/zteam attach` 或重新启动协作。"
+            ));
+            mission.next_action = Some("先恢复 worker 连接，再继续当前 mission。".to_string());
+        }
+        let restart_command = if state.mission.is_some() {
+            "`/zteam start <goal>`"
+        } else {
+            "`/zteam start`"
+        };
         push_activity(
             &mut state.activity,
             format!(
-                "{worker} worker 已关闭，可运行 `/zteam attach` 再附着或 `/zteam start` 重建。"
+                "{worker} worker 已关闭，可运行 `/zteam attach` 再附着或 {restart_command} 重建。"
             ),
         );
         true
@@ -645,10 +826,12 @@ fn push_result(results: &mut VecDeque<ResultEntry>, worker: WorkerSlot, summary:
     }
 }
 
+#[cfg(test)]
 fn status_summary(snapshot: &Snapshot) -> String {
     format!("状态摘要：{}", startup_summary(snapshot))
 }
 
+#[cfg(test)]
 fn startup_summary(snapshot: &Snapshot) -> String {
     if !snapshot.start_requested {
         return "尚未启动；先运行 `/zteam start`。".to_string();
@@ -685,11 +868,12 @@ fn startup_summary(snapshot: &Snapshot) -> String {
 }
 
 fn pending_worker_guidance(snapshot: &Snapshot, worker: WorkerSlot) -> String {
+    let restart_command = recommended_restart_command(snapshot);
     let live = snapshot.live_workers();
     if live.is_empty() {
         return format!(
-            "当前还没有任何 worker 完成注册。先等待主线程创建 `{}`；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`，必要时重新运行 `/zteam start`。",
-            worker.canonical_task_name()
+            "当前还没有任何 worker 完成注册。先等待主线程创建 `{}`；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`，必要时重新运行 {restart_command}。",
+            worker.canonical_task_name(),
         );
     }
 
@@ -699,16 +883,24 @@ fn pending_worker_guidance(snapshot: &Snapshot, worker: WorkerSlot) -> String {
         .collect::<Vec<_>>();
     if other_live.is_empty() {
         return format!(
-            "当前还在等待主线程创建 `{}`；可先运行 `/zteam status` 检查进度，若长时间无变化则重新运行 `/zteam start`。",
-            worker.canonical_task_name()
+            "当前还在等待主线程创建 `{}`；可先运行 `/zteam status` 检查进度，若长时间无变化则重新运行 {restart_command}。",
+            worker.canonical_task_name(),
         );
     }
 
     format!(
-        "当前仅 {} 已注册，仍在等待 `{}`；若长时间无变化，说明主线程可能只创建了一部分 worker。先运行 `/zteam status` 检查，再决定是否重新运行 `/zteam start`。",
+        "当前仅 {} 已注册，仍在等待 `{}`；若长时间无变化，说明主线程可能只创建了一部分 worker。先运行 `/zteam status` 检查，再决定是否重新运行 {restart_command}。",
         worker_list(&other_live),
         worker.canonical_task_name()
     )
+}
+
+fn recommended_restart_command(snapshot: &Snapshot) -> &'static str {
+    if snapshot.mission.is_some() {
+        "`/zteam start <goal>`"
+    } else {
+        "`/zteam start`"
+    }
 }
 
 impl WorkerSlot {
@@ -724,18 +916,31 @@ pub(crate) fn disabled_hint() -> &'static str {
 }
 
 pub(crate) fn usage() -> &'static str {
-    "用法：/zteam start | /zteam status | /zteam attach | /zteam <frontend|backend> <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
+    "用法：/zteam start <目标> | /zteam start | /zteam status | /zteam attach | /zteam <frontend|backend> <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
 }
 
-pub(crate) fn start_prompt() -> String {
-    concat!(
-        "进入 ZTeam 本地协作模式。立即使用 `spawn_agent` 创建两个长期 worker：\n",
-        "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
-        "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
-        "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
-        "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
-    )
-    .to_string()
+pub(crate) fn start_prompt(goal: Option<&str>) -> String {
+    match goal {
+        Some(goal) => format!(
+            concat!(
+                "进入 ZTeam Mission 模式。当前目标：`{goal}`。\n",
+                "立即使用 `spawn_agent` 创建两个长期 worker：\n",
+                "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
+                "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
+                "对两个 worker 都说明：它们是长期协作者，主线程负责围绕当前目标拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
+                "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name，并补一句你准备如何围绕当前目标组织第一轮协作。除非我下一条消息明确要求实现，否则不要开始业务修改。"
+            ),
+            goal = goal
+        ),
+        None => concat!(
+            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n",
+            "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
+            "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
+            "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
+            "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
+        )
+        .to_string(),
+    }
 }
 
 fn default_worker_task_list() -> String {
@@ -766,6 +971,503 @@ fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
     match AgentPath::root().resolve(worker.task_name()) {
         Ok(path) => path,
         Err(err) => unreachable!("zteam worker task name should always resolve: {err}"),
+    }
+}
+
+impl Mission {
+    fn assignment_mut(&mut self, worker: WorkerSlot) -> &mut Option<String> {
+        match worker {
+            WorkerSlot::Frontend => &mut self.frontend_assignment,
+            WorkerSlot::Backend => &mut self.backend_assignment,
+        }
+    }
+
+    fn required_workers(&self, frontend: &WorkerState, backend: &WorkerState) -> Vec<WorkerSlot> {
+        match self.mode {
+            MissionMode::Solo(worker) => vec![worker],
+            MissionMode::Parallel => WorkerSlot::ALL.to_vec(),
+            MissionMode::SerialHandoff => {
+                if backend
+                    .last_result
+                    .as_deref()
+                    .is_some_and(|result| !result.trim().is_empty())
+                    && frontend
+                        .last_result
+                        .as_deref()
+                        .is_none_or(|result| result.trim().is_empty())
+                {
+                    vec![WorkerSlot::Frontend]
+                } else {
+                    vec![WorkerSlot::Backend]
+                }
+            }
+            MissionMode::Blocked => Vec::new(),
+        }
+    }
+}
+
+impl MissionMode {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Solo(WorkerSlot::Frontend) => "solo-frontend",
+            Self::Solo(WorkerSlot::Backend) => "solo-backend",
+            Self::Parallel => "parallel",
+            Self::SerialHandoff => "serial-handoff",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+fn plan_mission(goal: &str) -> Mission {
+    let goal = goal.trim().to_string();
+    let mode = infer_mission_mode(&goal);
+    let (frontend_role, backend_role, frontend_assignment, backend_assignment, next_action) =
+        mission_assignments(&goal, &mode);
+    let blocker = match mode {
+        MissionMode::Blocked => Some("目标过于模糊，暂时无法规划可执行的协作路径。".to_string()),
+        _ => None,
+    };
+    let phase = match mode {
+        MissionMode::Blocked => MissionPhase::Blocked,
+        _ => MissionPhase::Bootstrapping,
+    };
+    Mission {
+        goal,
+        mode,
+        phase,
+        acceptance_checks: vec![
+            AcceptanceCheck {
+                summary: "目标已拆成可执行的协作分工".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "主线程已形成验证结论或下一轮动作".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+        ],
+        frontend_role,
+        backend_role,
+        frontend_assignment,
+        backend_assignment,
+        validation_summary: None,
+        blocker,
+        next_action: Some(next_action),
+        cycle: 1,
+    }
+}
+
+fn infer_mission_mode(goal: &str) -> MissionMode {
+    let goal_lower = goal.to_ascii_lowercase();
+    if goal.chars().count() <= 6
+        || contains_any(
+            goal,
+            &[
+                "看看",
+                "分析一下",
+                "讨论一下",
+                "聊聊",
+                "帮我想想",
+                "怎么弄",
+                "优化什么",
+            ],
+        )
+    {
+        return MissionMode::Blocked;
+    }
+    let frontend_like = contains_any(
+        goal,
+        &[
+            "前端",
+            "页面",
+            "布局",
+            "交互",
+            "移动端",
+            "组件",
+            "样式",
+            "导航",
+            "表单",
+            "ui",
+        ],
+    );
+    let backend_like = contains_any(
+        goal,
+        &[
+            "后端",
+            "接口",
+            "服务",
+            "数据库",
+            "登录",
+            "token",
+            "schema",
+            "错误码",
+            "api",
+            "sql",
+        ],
+    );
+    if contains_any(goal, &["先", "再", "联调", "对齐", "契约", "字段"]) {
+        return MissionMode::SerialHandoff;
+    }
+    match (frontend_like, backend_like) {
+        (true, true) => MissionMode::Parallel,
+        (true, false) => MissionMode::Solo(WorkerSlot::Frontend),
+        (false, true) => MissionMode::Solo(WorkerSlot::Backend),
+        (false, false)
+            if goal_lower.contains("同时") || goal.contains("并") || goal.contains("以及") =>
+        {
+            MissionMode::Parallel
+        }
+        _ => MissionMode::Parallel,
+    }
+}
+
+fn mission_assignments(
+    goal: &str,
+    mode: &MissionMode,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+) {
+    match mode {
+        MissionMode::Solo(WorkerSlot::Frontend) => (
+            Some("主导 UI/交互侧推进".to_string()),
+            Some("待命并准备接收后续协助".to_string()),
+            Some(format!("围绕当前目标推进前端侧工作：{goal}")),
+            None,
+            "等待前端 worker 进入协作上下文，再决定是否需要后端协助".to_string(),
+        ),
+        MissionMode::Solo(WorkerSlot::Backend) => (
+            Some("待命并准备接收后续协助".to_string()),
+            Some("主导服务/数据侧推进".to_string()),
+            None,
+            Some(format!("围绕当前目标推进后端侧工作：{goal}")),
+            "等待后端 worker 进入协作上下文，再决定是否需要前端协助".to_string(),
+        ),
+        MissionMode::Parallel => (
+            Some("负责 UI/交互侧推进".to_string()),
+            Some("负责接口/数据侧推进".to_string()),
+            Some(format!("拆解并推进前端侧工作：{goal}")),
+            Some(format!("拆解并推进后端侧工作：{goal}")),
+            "等待两个 worker 都进入协作上下文，再开始首轮并行分派".to_string(),
+        ),
+        MissionMode::SerialHandoff => (
+            Some("在契约稳定后承接 UI/交互落地".to_string()),
+            Some("先稳定接口/字段/约束，再交接给前端".to_string()),
+            Some(format!("等待后端先产出可消费的协作结果：{goal}")),
+            Some(format!("先整理服务侧契约与约束：{goal}")),
+            "先让后端明确契约，再决定前端接手时机".to_string(),
+        ),
+        MissionMode::Blocked => (
+            None,
+            None,
+            None,
+            None,
+            "当前 mission 缺少可执行路径，等待主线程重新组织".to_string(),
+        ),
+    }
+}
+
+fn contains_any(goal: &str, keywords: &[&str]) -> bool {
+    keywords.iter().any(|keyword| goal.contains(keyword))
+}
+
+fn plan_manual_override_mission(worker: WorkerSlot, message: &str) -> Mission {
+    let mode = MissionMode::Solo(worker);
+    let goal = format!("手动分派：{}", preview(message));
+    let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
+        mission_assignments(message, &mode);
+    let mut mission = Mission {
+        goal,
+        mode,
+        phase: MissionPhase::Executing,
+        acceptance_checks: vec![
+            AcceptanceCheck {
+                summary: "目标已拆成可执行的协作分工".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "主线程已形成验证结论或下一轮动作".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+        ],
+        frontend_role,
+        backend_role,
+        frontend_assignment,
+        backend_assignment,
+        validation_summary: Some(
+            "当前由旧命令触发手动 override；本轮结果回流后需重新判断是否继续沿 mission 主路径推进。"
+                .to_string(),
+        ),
+        blocker: None,
+        next_action: Some("等待本轮手动分派结果回流，再决定是否回到 mission 主流程。".to_string()),
+        cycle: 1,
+    };
+    mission.assignment_mut(worker).replace(preview(message));
+    mission
+}
+
+fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str) -> Mission {
+    let goal = format!("手动协作同步：{}", preview(message));
+    let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
+        mission_assignments(&goal, &MissionMode::Parallel);
+    let mut mission = Mission {
+        goal,
+        mode: MissionMode::Parallel,
+        phase: MissionPhase::Executing,
+        acceptance_checks: vec![
+            AcceptanceCheck {
+                summary: "目标已拆成可执行的协作分工".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "主线程已形成验证结论或下一轮动作".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+        ],
+        frontend_role,
+        backend_role,
+        frontend_assignment,
+        backend_assignment,
+        validation_summary: Some(
+            "当前由旧命令触发手动 override；请在 relay 结果回流后确认是否回到 mission 主路径。"
+                .to_string(),
+        ),
+        blocker: None,
+        next_action: Some(
+            "等待 relay 目标 worker 回流结果，再确认是否恢复 mission 主流程。".to_string(),
+        ),
+        cycle: 1,
+    };
+    mission.assignment_mut(to).replace(preview(message));
+    mission.assignment_mut(from).get_or_insert_with(|| {
+        format!(
+            "向 {} 转发协作事实：{}",
+            to.display_name(),
+            preview(message)
+        )
+    });
+    mission
+}
+
+fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState) -> Mission {
+    let mode = match (
+        worker_has_recovery_context(frontend),
+        worker_has_recovery_context(backend),
+    ) {
+        (true, true) => MissionMode::Parallel,
+        (true, false) => MissionMode::Solo(WorkerSlot::Frontend),
+        (false, true) => MissionMode::Solo(WorkerSlot::Backend),
+        (false, false) => MissionMode::Blocked,
+    };
+    let goal = recovery_goal(frontend, backend);
+    let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
+        mission_assignments(&goal, &mode);
+    Mission {
+        goal,
+        mode,
+        phase: MissionPhase::Bootstrapping,
+        acceptance_checks: vec![
+            AcceptanceCheck {
+                summary: "目标已拆成可执行的协作分工".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+            AcceptanceCheck {
+                summary: "主线程已形成验证结论或下一轮动作".to_string(),
+                status: AcceptanceStatus::Pending,
+            },
+        ],
+        frontend_role,
+        backend_role,
+        frontend_assignment: frontend
+            .last_dispatched_task
+            .as_deref()
+            .map(preview)
+            .or(frontend_assignment),
+        backend_assignment: backend
+            .last_dispatched_task
+            .as_deref()
+            .map(preview)
+            .or(backend_assignment),
+        validation_summary: None,
+        blocker: None,
+        next_action: None,
+        cycle: 1,
+    }
+}
+
+fn apply_recovery_state(mission: &mut Mission, frontend: &WorkerState, backend: &WorkerState) {
+    if let Some(task) = frontend.last_dispatched_task.as_deref() {
+        mission.frontend_assignment = Some(preview(task));
+    }
+    if let Some(task) = backend.last_dispatched_task.as_deref() {
+        mission.backend_assignment = Some(preview(task));
+    }
+
+    let required = mission.required_workers(frontend, backend);
+    if required.is_empty() {
+        mission.phase = MissionPhase::Blocked;
+        mission.blocker = Some(
+            "当前只恢复到零散历史记录，尚不足以重建可执行 mission。重新运行 `/zteam start <goal>`。"
+                .to_string(),
+        );
+        mission.validation_summary = Some("恢复链路未能还原可执行的 mission brief。".to_string());
+        mission.next_action = Some("用新的 `<goal>` 重新启动 mission。".to_string());
+        sync_acceptance_checks(mission, frontend, backend);
+        return;
+    }
+
+    let missing_live = required
+        .iter()
+        .copied()
+        .filter(|worker| {
+            !matches!(
+                worker_state_for(*worker, frontend, backend).connection,
+                WorkerConnection::Live(_)
+            )
+        })
+        .collect::<Vec<_>>();
+    if !missing_live.is_empty() {
+        mission.phase = MissionPhase::Blocked;
+        mission.blocker = Some(format!(
+            "当前只恢复到历史上下文；{} 尚未 live 附着，需 `/zteam attach` 或重新运行 `/zteam start <goal>` 明确继续策略。",
+            worker_list(&missing_live)
+        ));
+        mission.validation_summary = Some(
+            "Mission Board 当前展示的是恢复态上下文，不保证与上次 brief 完全一致。".to_string(),
+        );
+        mission.next_action =
+            Some("先恢复需要参与的 worker，或用新的 `<goal>` 重启 mission。".to_string());
+        sync_acceptance_checks(mission, frontend, backend);
+        return;
+    }
+
+    mission.blocker = None;
+    if required_workers_have_results(mission, frontend, backend) {
+        mission.phase = MissionPhase::Validating;
+        mission.validation_summary =
+            Some("已恢复最近一次协作结果；请先确认这些结果仍对应当前目标。".to_string());
+        mission.next_action =
+            Some("确认恢复结果是否仍有效，再决定继续分派还是重启 mission。".to_string());
+    } else {
+        mission.phase = MissionPhase::Planning;
+        mission.validation_summary =
+            Some("已恢复最近一次协作上下文；当前 brief 来自历史任务摘要。".to_string());
+        mission.next_action = Some("先确认恢复的任务边界，再继续分派或重启 mission。".to_string());
+    }
+    sync_acceptance_checks(mission, frontend, backend);
+}
+
+fn worker_has_recovery_context(worker: &WorkerState) -> bool {
+    worker.connection.known_thread_id().is_some()
+        || worker.last_dispatched_task.is_some()
+        || worker.last_result.is_some()
+}
+
+fn recovery_goal(frontend: &WorkerState, backend: &WorkerState) -> String {
+    let frontend_task = frontend.last_dispatched_task.as_deref().map(preview);
+    let backend_task = backend.last_dispatched_task.as_deref().map(preview);
+    match (frontend_task, backend_task) {
+        (Some(frontend_task), Some(backend_task)) => {
+            format!("恢复最近一次 ZTeam 协作：{frontend_task} / {backend_task}")
+        }
+        (Some(frontend_task), None) => format!("恢复最近一次 ZTeam 协作：{frontend_task}"),
+        (None, Some(backend_task)) => format!("恢复最近一次 ZTeam 协作：{backend_task}"),
+        (None, None) => "恢复最近一次 ZTeam 协作上下文".to_string(),
+    }
+}
+
+fn sync_mission_phase(mission: &mut Mission, frontend: &WorkerState, backend: &WorkerState) {
+    if matches!(
+        mission.phase,
+        MissionPhase::Blocked | MissionPhase::Validating | MissionPhase::Completed
+    ) {
+        sync_acceptance_checks(mission, frontend, backend);
+        return;
+    }
+    let required = mission.required_workers(frontend, backend);
+    if required.is_empty() {
+        mission.phase = MissionPhase::Blocked;
+        mission.blocker = Some("当前 mission 没有可执行 worker。".to_string());
+        mission.next_action = Some("重新整理目标或重建协作上下文".to_string());
+        sync_acceptance_checks(mission, frontend, backend);
+        return;
+    }
+    let all_live = required.iter().all(|worker| {
+        matches!(
+            worker_state_for(*worker, frontend, backend).connection,
+            WorkerConnection::Live(_)
+        )
+    });
+    if all_live {
+        mission.phase = MissionPhase::Planning;
+        mission.next_action = Some("按当前 mission 分工开始首轮任务分派".to_string());
+    } else {
+        mission.phase = MissionPhase::Bootstrapping;
+        mission.next_action = Some("等待需要参与的 worker 进入协作上下文".to_string());
+    }
+    sync_acceptance_checks(mission, frontend, backend);
+}
+
+fn required_workers_have_results(
+    mission: &Mission,
+    frontend: &WorkerState,
+    backend: &WorkerState,
+) -> bool {
+    mission
+        .required_workers(frontend, backend)
+        .iter()
+        .all(|worker| {
+            worker_state_for(*worker, frontend, backend)
+                .last_result
+                .as_deref()
+                .is_some_and(|result| !result.trim().is_empty())
+        })
+}
+
+fn sync_acceptance_checks(mission: &mut Mission, frontend: &WorkerState, backend: &WorkerState) {
+    let has_assignments =
+        mission.frontend_assignment.is_some() || mission.backend_assignment.is_some();
+    let has_results = required_workers_have_results(mission, frontend, backend);
+    let has_validation = mission.validation_summary.is_some() || mission.blocker.is_some();
+    for (index, check) in mission.acceptance_checks.iter_mut().enumerate() {
+        check.status = match index {
+            0 if has_assignments => AcceptanceStatus::Met,
+            0 => AcceptanceStatus::Failed,
+            1 if has_results => AcceptanceStatus::Met,
+            1 if mission.blocker.is_some() => AcceptanceStatus::Failed,
+            1 => AcceptanceStatus::Pending,
+            2 if has_validation => AcceptanceStatus::Met,
+            _ => AcceptanceStatus::Pending,
+        };
+    }
+}
+
+fn worker_state_for<'a>(
+    worker: WorkerSlot,
+    frontend: &'a WorkerState,
+    backend: &'a WorkerState,
+) -> &'a WorkerState {
+    match worker {
+        WorkerSlot::Frontend => frontend,
+        WorkerSlot::Backend => backend,
     }
 }
 
@@ -857,7 +1559,13 @@ mod tests {
 
     #[test]
     fn command_parser_supports_start_dispatch_relay_status_and_attach() {
-        assert_eq!(Command::parse("start"), Ok(Command::Start));
+        assert_eq!(Command::parse("start"), Ok(Command::Start { goal: None }));
+        assert_eq!(
+            Command::parse("start 修复设置页移动端体验"),
+            Ok(Command::Start {
+                goal: Some("修复设置页移动端体验".to_string()),
+            })
+        );
         assert_eq!(Command::parse("status"), Ok(Command::Status));
         assert_eq!(Command::parse("attach"), Ok(Command::Attach));
         assert_eq!(
@@ -888,7 +1596,6 @@ mod tests {
     #[test]
     fn command_parser_rejects_invalid_forms() {
         assert_eq!(Command::parse(""), Err(usage().to_string()));
-        assert_eq!(Command::parse("start extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("status extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("attach extra"), Err(usage().to_string()));
         assert_eq!(Command::parse("frontend"), Err(usage().to_string()));
@@ -898,6 +1605,181 @@ mod tests {
             Err(usage().to_string())
         );
         assert_eq!(Command::parse("unknown test"), Err(usage().to_string()));
+    }
+
+    #[test]
+    fn start_with_full_stack_goal_plans_parallel_mission() {
+        let mut state = State::default();
+
+        assert!(
+            state.mark_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"))
+        );
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::Parallel);
+        assert_eq!(mission.phase, MissionPhase::Bootstrapping);
+        assert_eq!(mission.frontend_role.as_deref(), Some("负责 UI/交互侧推进"));
+        assert_eq!(mission.backend_role.as_deref(), Some("负责接口/数据侧推进"));
+        assert_eq!(mission.acceptance_checks.len(), 3);
+    }
+
+    #[test]
+    fn start_with_backend_goal_prefers_backend_solo() {
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500")));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::Solo(WorkerSlot::Backend));
+        assert_eq!(
+            mission.backend_assignment.as_deref(),
+            Some("围绕当前目标推进后端侧工作：排查登录接口在 token 过期时返回 500")
+        );
+        assert_eq!(mission.frontend_assignment, None);
+    }
+
+    #[test]
+    fn start_with_handoff_goal_prefers_serial_handoff() {
+        let mut state = State::default();
+
+        assert!(
+            state.mark_start_requested_for_goal(Some(
+                "先稳定资料编辑接口字段，再交给前端完成表单联调"
+            ))
+        );
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::SerialHandoff);
+        assert_eq!(
+            mission.backend_assignment.as_deref(),
+            Some("先整理服务侧契约与约束：先稳定资料编辑接口字段，再交给前端完成表单联调")
+        );
+    }
+
+    #[test]
+    fn vague_goal_starts_blocked_mission() {
+        let mut state = State::default();
+
+        assert!(state.mark_start_requested_for_goal(Some("先看看")));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::Blocked);
+        assert_eq!(mission.phase, MissionPhase::Blocked);
+        assert_eq!(
+            mission.blocker.as_deref(),
+            Some("目标过于模糊，暂时无法规划可执行的协作路径。")
+        );
+    }
+
+    #[test]
+    fn worker_registration_moves_required_mission_to_planning() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+        state.mark_start_requested_for_goal(Some("排查登录接口在 token 过期时返回 500"));
+
+        let notification = ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: test_thread(backend_id, WorkerSlot::Backend),
+        });
+        assert!(state.observe_notification(backend_id, &notification));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.phase, MissionPhase::Planning);
+        assert_eq!(
+            mission.next_action.as_deref(),
+            Some("按当前 mission 分工开始首轮任务分派")
+        );
+    }
+
+    #[test]
+    fn serial_handoff_backend_result_switches_next_required_worker() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+        state.mark_start_requested_for_goal(Some("先稳定资料编辑接口字段，再交给前端完成表单联调"));
+
+        let backend_started = ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: test_thread(backend_id, WorkerSlot::Backend),
+        });
+        assert!(state.observe_notification(backend_id, &backend_started));
+        state.record_dispatch(WorkerSlot::Backend, "先产出接口契约");
+
+        let backend_done = ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: ThreadItem::AgentMessage {
+                id: "msg-handoff-backend".to_string(),
+                text: "后端阶段结果已回流".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: backend_id.to_string(),
+            turn_id: "turn-handoff-backend".to_string(),
+        });
+        assert!(state.observe_notification(backend_id, &backend_done));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.phase, MissionPhase::Bootstrapping);
+        assert_eq!(
+            mission.next_action.as_deref(),
+            Some("后端阶段结果已就绪，可分派前端接手实现与联调")
+        );
+    }
+
+    #[test]
+    fn completed_results_move_mission_to_validating() {
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+        state.mark_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"));
+
+        let frontend_started = ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: test_thread(frontend_id, WorkerSlot::Frontend),
+        });
+        let backend_started = ServerNotification::ThreadStarted(ThreadStartedNotification {
+            thread: test_thread(backend_id, WorkerSlot::Backend),
+        });
+        assert!(state.observe_notification(frontend_id, &frontend_started));
+        assert!(state.observe_notification(backend_id, &backend_started));
+        state.record_dispatch(WorkerSlot::Frontend, "推进前端任务");
+        state.record_dispatch(WorkerSlot::Backend, "推进后端任务");
+
+        let frontend_done = ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: ThreadItem::AgentMessage {
+                id: "msg-frontend-done".to_string(),
+                text: "前端阶段结果已回流".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: frontend_id.to_string(),
+            turn_id: "turn-frontend-done".to_string(),
+        });
+        let backend_done = ServerNotification::ItemCompleted(ItemCompletedNotification {
+            item: ThreadItem::AgentMessage {
+                id: "msg-backend-done".to_string(),
+                text: "后端阶段结果已回流".to_string(),
+                phase: Some(MessagePhase::FinalAnswer),
+                memory_citation: None,
+            },
+            thread_id: backend_id.to_string(),
+            turn_id: "turn-backend-done".to_string(),
+        });
+        assert!(state.observe_notification(frontend_id, &frontend_done));
+        assert!(state.observe_notification(backend_id, &backend_done));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.phase, MissionPhase::Validating);
+        assert_eq!(
+            mission.validation_summary.as_deref(),
+            Some("已收到当前需要参与的 worker 阶段结果，等待主线程归纳验证结论。")
+        );
     }
 
     #[test]
@@ -1117,6 +1999,83 @@ mod tests {
     }
 
     #[test]
+    fn restore_worker_without_existing_mission_creates_recovery_mission() {
+        let frontend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000010").expect("valid thread");
+        let mut state = State::default();
+
+        assert!(state.restore_worker(RecoveredWorker {
+            slot: WorkerSlot::Frontend,
+            connection: WorkerConnection::ReattachRequired(frontend_id),
+            source: WorkerSource::LocalThreadSpawn,
+            last_dispatched_task: Some("修复导航栏布局".to_string()),
+            last_result: Some("已补上移动端断点。".to_string()),
+        }));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::Solo(WorkerSlot::Frontend));
+        assert_eq!(mission.phase, MissionPhase::Blocked);
+        assert_eq!(
+            mission.frontend_assignment.as_deref(),
+            Some("修复导航栏布局")
+        );
+        assert!(
+            mission
+                .blocker
+                .as_deref()
+                .is_some_and(|blocker| blocker.contains("/zteam attach"))
+        );
+        assert!(
+            mission
+                .validation_summary
+                .as_deref()
+                .is_some_and(|summary| {
+                    summary.contains("恢复态上下文") || summary.contains("历史")
+                })
+        );
+    }
+
+    #[test]
+    fn manual_dispatch_without_goal_creates_override_mission() {
+        let backend_id =
+            ThreadId::from_string("00000000-0000-0000-0000-000000000020").expect("valid thread");
+        let mut state = State::default();
+        state.observe_notification(
+            backend_id,
+            &ServerNotification::ThreadStarted(ThreadStartedNotification {
+                thread: test_thread(backend_id, WorkerSlot::Backend),
+            }),
+        );
+
+        assert!(state.record_dispatch(
+            WorkerSlot::Backend,
+            "排查登录接口为什么在 token 过期时返回 500"
+        ));
+
+        let snapshot = state.snapshot();
+        let mission = snapshot.mission.expect("mission should exist");
+        assert_eq!(mission.mode, MissionMode::Solo(WorkerSlot::Backend));
+        assert_eq!(mission.phase, MissionPhase::Executing);
+        assert_eq!(
+            mission.backend_assignment.as_deref(),
+            Some("排查登录接口为什么在 token 过期时返回 500")
+        );
+        assert!(
+            mission
+                .validation_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("手动 override"))
+        );
+        assert!(
+            mission
+                .next_action
+                .as_deref()
+                .is_some_and(|next_action| next_action.contains("mission 主流程"))
+        );
+    }
+
+    #[test]
     fn configure_federation_adapter_surfaces_summary() {
         let mut state = State::default();
 
@@ -1172,7 +2131,7 @@ mod tests {
             }),
         );
 
-        assert!(state.mark_start_requested());
+        assert!(state.mark_start_requested_for_goal(None));
         assert_eq!(state.worker_thread_id(WorkerSlot::Frontend), None);
         let status = state.status_message();
         assert!(status.contains("Android 前端：未注册"));

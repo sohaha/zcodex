@@ -1,0 +1,81 @@
+plan = ".agents/plan/2026-04-24-zteam-mission-v2.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "将 ZTeam 主路径切换为 goal-driven 的 Mission 命令面"
+scope = """
+把 `ZTeam` 的主产品语义从“固定前后端双 worker 控制台”切换为“mission-first 的本地协作模式”。
+包含 `/zteam start <goal>` 主路径、slash command/help/文档/空态文案更新，以及旧 `/zteam start`、`/zteam frontend|backend|relay` 的兼容与降级说明；
+不在本 issue 中实现 mission 状态机、planner、Workbench V2 渲染或恢复语义重构。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/slash_command.rs", "path:codex-rs/tui/src/bottom_pane/**", "path:docs/slash_commands.md", "path:docs/config.md"]
+depends_on = []
+done_when = "用户可见的 ZTeam 主入口已切换为 `/zteam start <goal>`，帮助文案与命令提示不再把 frontend/backend 双 worker 当成默认产品模型，旧命令仍可兼容但被明确标记为高级手动干预路径"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。同时手动回读 `docs/slash_commands.md` 与 `docs/config.md`，确认主路径与兼容说明一致"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-24：a1 完成。已将 `Command::Start` 改为支持 `goal: Option<String>`，把 `/zteam start <目标>` 切到新的推荐主路径，同时保留不带目标的 `/zteam start` 作为兼容入口；`slash_command` 描述、`docs/slash_commands.md`、`docs/config.md` 和相关测试已同步更新，手动 `frontend/backend/relay` 现统一标注为高级手动干预路径。spec-reviewer（主代理本地）= PASS：范围仍限于命令面与文档，没有提前引入 a2 的 mission 状态机或 a3 的 workbench 改造。code-reviewer（主代理本地）= PASS：调用点已全部跟上 `Start { goal }` 新形态，未发现兼容性回归。验证通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo test -p codex-tui zteam`。before_fanout 回归通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui`。补充：最初直接使用 `cargo test` 会被当前环境的 `sccache + CARGO_INCREMENTAL` 组合阻断，已通过显式 `CARGO_INCREMENTAL=0` 规避。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "引入 Mission 状态模型与 root planner 语义"
+scope = """
+在现有 `ZTeam` 共享状态之上引入 mission 对象、phase、mode、assignment、acceptance checks、validation summary、blocker 与 next action 等字段，并让 root 在收到 `<goal>` 后能够生成本轮 mission brief。
+包含 `solo`、`parallel`、`serial_handoff`、`blocked` 四种模式及其状态迁移规则；
+不在本 issue 中完成 Workbench V2 的最终渲染，也不新增公共协议、第三个 verifier worker 或独立持久化。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam.rs", "path:codex-rs/tui/src/app.rs", "path:codex-rs/tui/src/chatwidget/tests/**"]
+depends_on = ["a1"]
+done_when = "ZTeam 内部已存在可驱动执行的 mission 状态模型，root 能基于 `/zteam start <goal>` 生成明确的模式、阶段、assignment 与 acceptance checks，并允许单 worker 降级而不是强制双 worker 同时参与"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。测试需覆盖 `solo`、`parallel`、`serial_handoff` 至少三类 planner 决策与 phase 转移"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-24：a2 完成。已在 `codex-rs/tui/src/zteam.rs` 上引入 mission 状态模型：`Mission`、`MissionMode`、`MissionPhase`、`AcceptanceCheck`、`AcceptanceStatus`，并把共享状态与 snapshot 扩展为 mission-first 语义。`mark_start_requested_for_goal` 现在会基于 `<goal>` 规划 mission brief；planner 已覆盖 `solo`、`parallel`、`serial_handoff`、`blocked` 四类模式，其中 `serial_handoff` 会按阶段只要求当前需要参与的单个 worker，避免强制双 worker 同时在线。`restore_worker`、`observe_thread_started`、`record_dispatch`、`record_relay`、`observe_completed_item`、`observe_thread_closed` 已同步 phase / assignment / validation / blocker / next_action，并让 acceptance check 随状态转移更新。补充测试：parallel、backend solo、serial handoff、blocked 四类 planner 决策，以及 required worker 注册、handoff 切换、阶段结果进入 validating。spec-reviewer（主代理本地）= PASS：本轮只落在状态模型和 planner 语义，没有提前实现 a3 的 Mission Board 渲染，也没有扩公共协议。code-reviewer（主代理本地）= PASS：已修复 mission 借用冲突，`serial_handoff` 不再错误要求双 worker 同时参与，失效测试 helper 已被真实 `ItemCompletedNotification` 初始化替代。验证通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo test -p codex-tui zteam`；`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui zteam`。before_fanout 回归通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui`。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "把 ZTeam 工作台升级为 Mission Board 与验证回环"
+scope = """
+将现有 ZTeam workbench 从“slot 状态/任务/消息/结果面板”升级为 mission-first 的信息架构，至少包含 Mission、Acceptance、Worker Assignments、Validation、Activity 五个区域，并把当前阶段、阻塞原因与下一步建议稳定呈现出来。
+包含必要的 UI 文案、状态映射与 snapshot 更新；
+不负责 attach/recovery 降级收口，也不引入新的终端日志面板或额外 worker。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam/view.rs", "path:codex-rs/tui/src/chatwidget.rs", "path:codex-rs/tui/src/**/snapshots/**", "path:codex-rs/tui/src/chatwidget/tests/**"]
+depends_on = ["a2"]
+done_when = "用户在 ZTeam workbench 中看到的主视图已从连接状态面板切换为 Mission Board，能够直接理解目标、阶段、职责、验收项、验证结论、阻塞和下一步建议，且对应的用户可见变化具有 snapshot 覆盖"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。完成后使用 `cd codex-rs && cargo insta pending-snapshots -p codex-tui` 审阅并接受有意的 snapshot 变更"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-24：a3 完成。已将 `codex-rs/tui/src/zteam/view.rs` 的 workbench 改为 mission-first 的 Mission Board，稳定呈现 `Mission`、`Acceptance`、`Worker Assignments`、`Validation`、`Activity` 五个区域，并把 title/hint 一并切换到新的 `/zteam start <goal>` 主路径。补齐了真正的 goal 状态透传：`ChatWidget` 和 `App` 现在会把 `<goal>` 写入 zteam state，避免用户从真实命令路径进入后 workbench 仍显示空 mission。slash command workbench 测试已改为目标驱动场景，四个现有快照（empty/active/partial-registration/reattach-required）已更新并接受。spec-reviewer（主代理本地）= PASS：本轮聚焦信息架构与 snapshot，没有提前进入 a4 的 attach/override 语义收口。code-reviewer（主代理本地）= PASS：发现并修复了 `/zteam start <goal>` 只更新 prompt、未更新本地 zteam state 的断点，同时收短 hint 避免 workbench 底部提示被截断。验证通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo test -p codex-tui zteam`；`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui zteam`；`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo insta pending-snapshots`；`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo insta accept --snapshot \"tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_active_view.snap\" --snapshot \"tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_empty_view.snap\" --snapshot \"tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_partial_registration_view.snap\" --snapshot \"tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_reattach_required_view.snap\"`。after_done 回归通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui`。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "补齐 Mission V2 的恢复、降级与手动 override 收口"
+scope = """
+在保留现有 recovery 底座的前提下，为 Mission V2 明确 attach、部分恢复、单 worker 降级、未恢复 assignment 和旧手动命令 override 的行为。
+包含 `Blocked` / `Degraded` 规则、只在真实 live attach 成功时标记 Live 的约束、旧 `/zteam frontend|backend|relay` 与新 mission 状态模型的兼容收口，以及相关文档与提示更新；
+不重做 federation protocol，也不扩展成跨实例 Team 平台。
+"""
+touch_points = ["module:codex-tui", "path:codex-rs/tui/src/zteam/recovery.rs", "path:codex-rs/tui/src/zteam.rs", "path:codex-rs/tui/src/app.rs", "path:codex-rs/tui/src/chatwidget/tests/**", "path:docs/slash_commands.md"]
+depends_on = ["a2", "a3"]
+done_when = "重开 TUI、只恢复一个 worker、未恢复本轮 assignment 或使用旧手动命令时，ZTeam 都会给出与 Mission V2 一致的显式状态与提示；系统不会把历史状态恢复误报为 live attach 成功，也不会让旧命令绕开新的 mission 语义边界"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui zteam`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui zteam`。同时手动检查 `docs/slash_commands.md` 中 attach 与高级 override 的说明是否与实现一致"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tui`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-tui`"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-24：a4 完成。已把 attach、部分恢复、单 worker 降级和旧手动命令 override 收口到 Mission V2 语义。`record_dispatch` / `record_relay` 现在在无现存 mission 时会自动合成 manual override mission，有现存 mission 时会把旧命令行为显式标记为 manual override；`restore_worker` 在无现存 mission 时会自动合成 recovery mission，并按恢复态 / blocked 语义补出 blocker、validation_summary 和 next_action。`/zteam attach` 的 info message 已同步改成恢复态 / degraded 语义，`docs/slash_commands.md` 已补齐 attach 与高级 override 的一致说明。补充测试：`manual_dispatch_without_goal_creates_override_mission`、`restore_worker_without_existing_mission_creates_recovery_mission`。spec-reviewer（主代理本地）= PASS：本轮范围保持在恢复、降级和兼容命令收口，没有引入新协议、第三 worker 或独立持久化。code-reviewer（主代理本地）= PASS：manual override 与 recovery 都已并入 mission-first 状态面，不再让旧命令绕开新语义边界。验证通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo test -p codex-tui zteam`；`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui zteam`。after_done 回归通过：`cd /workspace/codex-rs && env -u RUSTC_WRAPPER CARGO_INCREMENTAL=0 cargo nextest run -p codex-tui`。"

@@ -435,7 +435,7 @@ async fn zteam_workbench_updates_with_worker_activity() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command(SlashCommand::Zteam);
-    chat.mark_zteam_start_requested();
+    chat.mark_zteam_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"));
     chat.observe_zteam_thread_notification(
         frontend_id,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
@@ -504,7 +504,7 @@ async fn zteam_workbench_surfaces_partial_registration_guidance() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command(SlashCommand::Zteam);
-    chat.mark_zteam_start_requested();
+    chat.mark_zteam_start_requested_for_goal(Some("重做设置页体验，覆盖移动端布局和保存接口"));
     chat.observe_zteam_thread_notification(
         frontend_id,
         &ServerNotification::ThreadStarted(ThreadStartedNotification {
@@ -531,7 +531,26 @@ async fn zteam_start_inline_command_requests_app_event() {
 
     assert_matches!(
         rx.try_recv(),
-        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Start))
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Start { goal }))
+            if goal.is_none()
+    );
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn zteam_start_with_goal_inline_command_requests_app_event() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Zteam,
+        "start 重构设置页协作流".to_string(),
+        Vec::new(),
+    );
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ZteamCommand(crate::zteam::Command::Start { goal }))
+            if goal == Some("重构设置页协作流".to_string())
     );
     assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
 }
@@ -654,6 +673,7 @@ async fn zteam_workbench_shows_reattach_required_workers_and_adapter_summary() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command(SlashCommand::Zteam);
+    chat.mark_zteam_start_requested_for_goal(Some("统一设置页协作流并补齐恢复语义"));
     chat.configure_zteam_federation_adapter(Some(FederationThreadStartParams {
         instance_id: None,
         name: "zteam".to_string(),

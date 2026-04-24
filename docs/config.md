@@ -71,19 +71,23 @@ zteam_enabled = false
 
 禁用后，`/zteam` 会从命令面板和斜杠命令解析中移除，因此 TUI 不会初始化本地 ZTeam 入口路径。
 
-启用时，`/zteam` 会打开本地工作台。当前 ZTeam 固定管理两个本地 worker：
+启用时，`/zteam` 会打开本地工作台。当前底层仍固定复用两个本地 worker：
 
 - `frontend`：前端协作者
 - `backend`：后端协作者
 
-相关命令的实际行为如下：
+当前推荐主路径是先给一个目标，再启动 ZTeam：
+
+- `/zteam start <目标>`：推荐主路径。向主线程提交一条带目标的启动指令，后续由主线程继续通过 `spawn_agent` 创建 `frontend/backend` 两个长期 worker，并围绕这个目标进入协作上下文
+
+其余相关命令的实际行为如下：
 
 - `/zteam`：打开工作台，只读查看当前状态
-- `/zteam start`：向主线程提交一条启动指令，由主线程继续通过 `spawn_agent` 创建 `frontend/backend` 两个长期 worker
+- `/zteam start`：兼容入口。只提交 worker 启动指令，不带 mission 目标
 - `/zteam status`：刷新并查看当前工作台状态
 - `/zteam attach`：恢复最近一次、且仍归属当前主线程的 worker 状态，并尽量重新附着 live 会话
-- `/zteam <frontend|backend> <任务>`：把一条任务分派给指定 worker
-- `/zteam relay <frontend|backend> <frontend|backend> <消息>`：让一个 worker 向另一个 worker 转发消息
+- `/zteam <frontend|backend> <任务>`：把一条任务分派给指定 worker；属于高级手动干预路径
+- `/zteam relay <frontend|backend> <frontend|backend> <消息>`：让一个 worker 向另一个 worker 转发消息；属于高级手动干预路径
 
 如果当前已经有任务在运行，TUI 只允许裸 `/zteam` 和 `/zteam status`；`start`、`attach`、任务分派和 `relay` 仍会被阻止，避免在运行中的主线程里插入新的协作动作。
 
@@ -97,7 +101,7 @@ zteam_enabled = false
 
 如果 TUI 线程是通过 `--federation-*` 选项启动的，ZTeam 工作台还会显示准备好的外部 adapter 摘要。这里仅是在既有 federation bridge 之上的本地 adapter 接缝；它不会为 ZTeam workers 引入一个独立的公共身份空间。
 
-更完整的命令用法和实际协作案例见 [Slash commands](./slash_commands.md#zteam)。
+更完整的命令用法、兼容说明和实际协作案例见 [Slash commands](./slash_commands.md#zteam)。
 
 ## ZTOK
 

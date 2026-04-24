@@ -82,7 +82,7 @@ impl SlashCommand {
             SlashCommand::Resume => "恢复已保存的聊天",
             SlashCommand::Clear => "清空终端并开始新的聊天",
             SlashCommand::Fork => "复制当前聊天",
-            SlashCommand::Zteam => "查看 ZTeam 状态并管理双 worker 协作",
+            SlashCommand::Zteam => "以目标启动 ZTeam mission 协作并查看状态",
             // SlashCommand::Undo => "ask Codex to undo a turn",
             SlashCommand::Quit | SlashCommand::Exit => "退出 Codex",
             SlashCommand::Copy => "将最新 Codex 输出复制到剪贴板",

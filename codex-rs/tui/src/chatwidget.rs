@@ -9695,8 +9695,8 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn mark_zteam_start_requested(&mut self) {
-        let changed = self.zteam_state.mark_start_requested();
+    pub(crate) fn mark_zteam_start_requested_for_goal(&mut self, goal: Option<&str>) {
+        let changed = self.zteam_state.mark_start_requested_for_goal(goal);
         if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
             self.request_redraw();
         }

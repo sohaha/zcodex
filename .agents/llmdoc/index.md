@@ -22,12 +22,14 @@
 - `.agents/llmdoc/guides/upstream-sync-preservation-rules.md`：同步 `openai/codex` 时区分本地分叉功能与 upstream 原生功能删除的判断顺序。
 - `.agents/llmdoc/guides/ztldr-prompt-optimization.md`：优化 `ztldr` 工具描述、路由提示与相关文档时的事实源、触点与最小验证闭环。
 - `.agents/llmdoc/reference/build-and-test-commands.md`：常用 `just`、`mise`、schema 和测试命令。
+- `.agents/llmdoc/memory/decisions/zteam-mission-v2-contract.md`：`ZTeam` 从双 worker 控制台切到 mission-first 产品契约后的稳定边界。
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
 - 时间窗按当前日期 `2026-04-24` 计算，覆盖 `2026-04-22` 至 `2026-04-24`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-24-zteam-docs-should-split-config-entry-from-command-workflow-and-real-cases.md`：`ZTeam` 这类 TUI 本地工作流不能只写配置开关；配置文档应保留入口与边界，命令文档应单独承担完整语法、运行中限制和真实协作案例。
+- `.agents/llmdoc/memory/reflections/2026-04-24-zteam-mission-v2-should-keep-goal-recovery-and-override-in-one-mission-surface.md`：`ZTeam Mission V2` 的主入口、恢复态和旧命令 override 都必须收口到同一个 Mission Board / mission state，而不是继续回到双 worker 控制台旁路。
 - `.agents/llmdoc/memory/reflections/2026-04-24-ztok-git-add-should-trust-global-args-and-test-command-shape.md`：修 `ztok git add` 这类 Git wrapper 时，应把仓库定位真相源收敛到 `global_args` 和默认继承 cwd，并用 `Command` 形状测试防止把冗余 `current_dir()` 误当成修复。
 - `.agents/llmdoc/memory/reflections/2026-04-24-subagent-notification-visibility-must-cover-user-legacy-and-tui-entrypoints.md`：内部协作消息的不可见边界不能只过滤 assistant envelope；还要覆盖 legacy user `<subagent_notification>` 文本，以及 TUI 的 history replay、completed message 和 user event 渲染入口。
 - `.agents/llmdoc/memory/reflections/2026-04-23-zteam-should-be-tui-first-and-treat-federation-as-local-adapter.md`：当 federation 被明确为本地特性且仓库需要长期同步 upstream 时，优先把产品化能力收敛为 `tui` 内局部 `z*` 模式，先复用现有 local multi-agent 做工作流闭环，再把 federation 作为 adapter 接入。
