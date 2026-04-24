@@ -5,11 +5,14 @@ use crate::api::SearchResponse;
 use crate::lang_support::SupportedLanguage;
 use anyhow::Context;
 use anyhow::Result;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde_json::Value;
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
@@ -24,8 +27,16 @@ pub(crate) fn search_project(
     project_root: &Path,
     request: SearchRequest,
 ) -> Result<SearchResponse> {
+    search_project_with_program(project_root, request, "rg")
+}
+
+fn search_project_with_program(
+    project_root: &Path,
+    request: SearchRequest,
+    ripgrep_program: &str,
+) -> Result<SearchResponse> {
     validate_regex_pattern(&request)?;
-    match search_project_with_ripgrep(project_root, &request) {
+    match search_project_with_ripgrep(project_root, &request, ripgrep_program) {
         Ok(response) => Ok(response),
         Err(error) if ripgrep_missing(&error) => search_project_with_walk(project_root, request),
         Err(error) => Err(error),
@@ -44,9 +55,15 @@ fn validate_regex_pattern(request: &SearchRequest) -> Result<()> {
 fn search_project_with_ripgrep(
     project_root: &Path,
     request: &SearchRequest,
+    ripgrep_program: &str,
 ) -> Result<SearchResponse> {
-    let indexed_files = count_indexed_files_with_ripgrep(project_root, request.language)?;
-    let (matches, truncated) = collect_matches_with_ripgrep(project_root, request)?;
+    // `rg --json` only emits begin/end events for matched files, so counting the full
+    // indexed set still requires a separate `rg --files` pass. Keep that pass streamed
+    // so large repositories do not buffer the entire file list into memory.
+    let indexed_files =
+        count_indexed_files_with_ripgrep(project_root, request.language, ripgrep_program)?;
+    let (matches, truncated) =
+        collect_matches_with_ripgrep(project_root, request, ripgrep_program)?;
     Ok(SearchResponse {
         pattern: request.pattern.clone(),
         match_mode: request.match_mode,
@@ -59,33 +76,57 @@ fn search_project_with_ripgrep(
 fn count_indexed_files_with_ripgrep(
     project_root: &Path,
     language: Option<SupportedLanguage>,
+    ripgrep_program: &str,
 ) -> Result<usize> {
-    let mut command = base_ripgrep_command(project_root);
+    let mut command = base_ripgrep_command(project_root, ripgrep_program);
     command.arg("--files").arg("--null");
     add_language_globs(&mut command, language);
     command.arg("--").arg(".");
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let output = command
-        .output()
+    let mut child = command
+        .spawn()
         .with_context(|| format!("run `rg --files` in {}", project_root.display()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .context("ripgrep file enumeration stdout should be piped")?;
+    let mut reader = BufReader::new(stdout);
+    let mut buffer = [0u8; 8192];
+    let mut indexed_files = 0usize;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .context("read ripgrep file enumeration stream")?;
+        if read == 0 {
+            break;
+        }
+        indexed_files += buffer[..read].iter().filter(|byte| **byte == b'\0').count();
+    }
+
+    let status = child
+        .wait()
+        .context("wait for ripgrep file enumeration process")?;
+    if !status.success() {
+        let stderr =
+            read_ripgrep_stderr(&mut child).context("read ripgrep file enumeration stderr")?;
         anyhow::bail!(
             "ripgrep file enumeration failed in {}: {stderr}",
             project_root.display()
         );
     }
 
-    Ok(output.stdout.split(|byte| *byte == b'\0').count() - 1)
+    Ok(indexed_files)
 }
 
 fn collect_matches_with_ripgrep(
     project_root: &Path,
     request: &SearchRequest,
+    ripgrep_program: &str,
 ) -> Result<(Vec<SearchMatch>, bool)> {
     let limit = request.max_results.max(1);
-    let mut command = base_ripgrep_command(project_root);
+    let mut command = base_ripgrep_command(project_root, ripgrep_program);
     command.arg("--json").arg("--line-number");
     add_language_globs(&mut command, request.language);
     match request.match_mode {
@@ -112,7 +153,7 @@ fn collect_matches_with_ripgrep(
         let reader = BufReader::new(stdout);
         for line in reader.lines() {
             let line = line.context("read ripgrep json line")?;
-            if let Some(search_match) = parse_ripgrep_match_line(&line)? {
+            if let Some(search_match) = parse_ripgrep_match_line(project_root, &line)? {
                 matches.push(search_match);
                 if matches.len() >= limit {
                     truncated = true;
@@ -132,25 +173,29 @@ fn collect_matches_with_ripgrep(
         return Ok((matches, false));
     }
 
-    let stderr = child
-        .stderr
-        .take()
-        .map(|stderr| {
-            let mut stderr = BufReader::new(stderr);
-            let mut output = String::new();
-            std::io::Read::read_to_string(&mut stderr, &mut output)?;
-            Ok::<String, std::io::Error>(output)
-        })
-        .transpose()
-        .context("read ripgrep stderr")?
-        .unwrap_or_default();
+    let stderr = read_ripgrep_stderr(&mut child).context("read ripgrep stderr")?;
     anyhow::bail!(
         "ripgrep search failed in {}: {stderr}",
         project_root.display()
     );
 }
 
-fn parse_ripgrep_match_line(line: &str) -> Result<Option<SearchMatch>> {
+fn read_ripgrep_stderr(child: &mut std::process::Child) -> Result<String> {
+    child
+        .stderr
+        .take()
+        .map(|stderr| {
+            let mut stderr = BufReader::new(stderr);
+            let mut output = String::new();
+            stderr.read_to_string(&mut output)?;
+            Ok::<String, std::io::Error>(output)
+        })
+        .transpose()
+        .map(std::option::Option::unwrap_or_default)
+        .map_err(Into::into)
+}
+
+fn parse_ripgrep_match_line(project_root: &Path, line: &str) -> Result<Option<SearchMatch>> {
     let payload: Value = serde_json::from_str(line).context("parse ripgrep json payload")?;
     if payload.get("type").and_then(Value::as_str) != Some("match") {
         return Ok(None);
@@ -159,33 +204,56 @@ fn parse_ripgrep_match_line(line: &str) -> Result<Option<SearchMatch>> {
     let data = payload
         .get("data")
         .context("ripgrep match payload missing data object")?;
-    let path = data
-        .get("path")
-        .and_then(json_text_field)
-        .context("ripgrep match payload missing path text")?;
+    let path = json_text_or_bytes(
+        data.get("path")
+            .context("ripgrep match payload missing path object")?,
+    )
+    .context("ripgrep match payload missing path text")?;
     let line_number = data
         .get("line_number")
         .and_then(Value::as_u64)
         .context("ripgrep match payload missing line_number")?;
-    let content = data
-        .get("lines")
-        .and_then(json_text_field)
-        .map(|text| text.trim().to_string())
-        .context("ripgrep match payload missing line text")?;
+    let content = json_text_or_bytes(
+        data.get("lines")
+            .context("ripgrep match payload missing line object")?,
+    )
+    .map(|text| text.trim().to_string())
+    .context("ripgrep match payload missing line text")?;
 
     Ok(Some(SearchMatch {
-        path: path.to_string(),
+        path: normalize_match_path(project_root, &path),
         line: line_number as usize,
         content,
     }))
 }
 
-fn json_text_field(value: &Value) -> Option<&str> {
-    value.get("text").and_then(Value::as_str)
+fn json_text_or_bytes(value: &Value) -> Result<String> {
+    if let Some(text) = value.get("text").and_then(Value::as_str) {
+        return Ok(text.to_string());
+    }
+
+    let bytes = value
+        .get("bytes")
+        .and_then(Value::as_str)
+        .context("missing text/bytes payload")?;
+    let decoded = BASE64_STANDARD
+        .decode(bytes)
+        .context("decode ripgrep bytes payload")?;
+    Ok(String::from_utf8_lossy(&decoded).into_owned())
 }
 
-fn base_ripgrep_command(project_root: &Path) -> Command {
-    let mut command = Command::new("rg");
+fn normalize_match_path(project_root: &Path, raw_path: &str) -> String {
+    let path = Path::new(raw_path);
+    let relative = if path.is_absolute() {
+        path.strip_prefix(project_root).unwrap_or(path)
+    } else {
+        path.strip_prefix(".").unwrap_or(path)
+    };
+    relative.display().to_string()
+}
+
+fn base_ripgrep_command(project_root: &Path, ripgrep_program: &str) -> Command {
+    let mut command = Command::new(ripgrep_program);
     command
         .current_dir(project_root)
         .arg("--hidden")
@@ -197,13 +265,7 @@ fn base_ripgrep_command(project_root: &Path) -> Command {
 }
 
 fn sanitize_invalid_ripgrep_config_path(command: &mut Command) {
-    let Some(path) = std::env::var_os("RIPGREP_CONFIG_PATH") else {
-        return;
-    };
-
-    if !path.is_empty() && !Path::new(&path).exists() {
-        command.env_remove("RIPGREP_CONFIG_PATH");
-    }
+    command.env_remove("RIPGREP_CONFIG_PATH");
 }
 
 fn add_language_globs(command: &mut Command, language: Option<SupportedLanguage>) {
@@ -317,14 +379,19 @@ fn matches_language(path: &Path, language: Option<SupportedLanguage>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::base_ripgrep_command;
     use super::language_globs;
     use super::search_project;
+    use super::search_project_with_program;
     use crate::api::SearchMatchMode;
     use crate::api::SearchRequest;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use std::collections::BTreeSet;
-    use std::process::Command;
+    #[cfg(unix)]
+    use std::ffi::OsString;
+    #[cfg(unix)]
+    use std::os::unix::ffi::OsStringExt;
     use tempfile::tempdir;
 
     #[test]
@@ -443,6 +510,121 @@ mod tests {
     }
 
     #[test]
+    fn search_project_normalizes_ripgrep_paths_to_repo_relative_form() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "needle\n")
+            .expect("fixture should write");
+
+        let response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "needle".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("search should succeed");
+
+        assert_eq!(response.matches[0].path, "src/lib.rs");
+    }
+
+    #[test]
+    fn search_project_decodes_non_utf8_line_payloads_without_failing() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            b"prefix \xFF needle\n".as_slice(),
+        )
+        .expect("fixture should write");
+
+        let response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "needle".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("search should succeed");
+
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].content, "prefix \u{FFFD} needle");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn search_project_decodes_non_utf8_path_payloads_without_failing() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        let filename = OsString::from_vec(b"bad\xff.rs".to_vec());
+        std::fs::write(tempdir.path().join("src").join(filename), "needle\n")
+            .expect("fixture should write");
+
+        let response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "needle".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("search should succeed");
+
+        assert_eq!(response.matches.len(), 1);
+        assert_eq!(response.matches[0].path, format!("src/bad\u{FFFD}.rs"));
+    }
+
+    #[test]
+    fn search_project_counts_indexed_files_even_when_only_some_files_match() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/a.rs"), "needle\n").expect("fixture should write");
+        std::fs::write(tempdir.path().join("src/b.rs"), "other\n").expect("fixture should write");
+
+        let response = search_project(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "needle".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+        )
+        .expect("search should succeed");
+
+        assert_eq!(response.indexed_files, 2);
+        assert_eq!(response.matches.len(), 1);
+    }
+
+    #[test]
+    fn search_project_falls_back_to_walk_when_ripgrep_is_missing() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "needle\n")
+            .expect("fixture should write");
+
+        let response = search_project_with_program(
+            tempdir.path(),
+            SearchRequest {
+                pattern: "needle".to_string(),
+                match_mode: SearchMatchMode::Literal,
+                language: Some(SupportedLanguage::Rust),
+                max_results: 10,
+            },
+            "rg-definitely-missing-for-test",
+        )
+        .expect("search should succeed via walker fallback");
+
+        assert_eq!(response.indexed_files, 1);
+        assert_eq!(response.matches[0].path, "src/lib.rs");
+    }
+
+    #[test]
     fn language_globs_cover_supported_languages_without_duplicates() {
         let unique_globs = language_globs(None)
             .iter()
@@ -458,15 +640,13 @@ mod tests {
     }
 
     #[test]
-    fn search_tests_assume_ripgrep_is_available() {
-        let available = Command::new("rg")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success());
+    fn base_ripgrep_command_always_ignores_external_ripgrep_config() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let command = base_ripgrep_command(tempdir.path(), "rg");
 
-        assert!(
-            available,
-            "ripgrep should be available in native-tldr tests"
-        );
+        let envs = command.get_envs().collect::<Vec<_>>();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].0.to_string_lossy(), "RIPGREP_CONFIG_PATH");
+        assert_eq!(envs[0].1, None);
     }
 }

@@ -2722,6 +2722,7 @@ name = "codex-native-tldr"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "codex-file-search",
  "codex-utils-cli",
  "fastembed",
