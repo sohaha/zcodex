@@ -59,7 +59,6 @@ use tokio::net::UnixStream;
 const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(1);
 const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
-const DAEMON_SEARCH_IO_TIMEOUT: Duration = Duration::from_secs(600);
 #[cfg(unix)]
 const UNIX_SOCKET_PATH_MAX_BYTES: usize = 103;
 #[cfg(unix)]
@@ -1565,9 +1564,9 @@ fn io_timeout_for_command(command: &TldrDaemonCommand) -> Duration {
         | TldrDaemonCommand::Analyze { .. }
         | TldrDaemonCommand::Imports { .. }
         | TldrDaemonCommand::Importers { .. }
+        | TldrDaemonCommand::Search { .. }
         | TldrDaemonCommand::Diagnostics { .. }
         | TldrDaemonCommand::Semantic { .. } => DAEMON_HEAVY_IO_TIMEOUT,
-        TldrDaemonCommand::Search { .. } => DAEMON_SEARCH_IO_TIMEOUT,
     }
 }
 
@@ -1707,7 +1706,6 @@ pub async fn query_daemon(
 mod tests {
     use super::DAEMON_HEAVY_IO_TIMEOUT;
     use super::DAEMON_IO_TIMEOUT;
-    use super::DAEMON_SEARCH_IO_TIMEOUT;
     use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
@@ -3195,17 +3193,6 @@ mod tests {
                 },
             }),
             DAEMON_HEAVY_IO_TIMEOUT
-        );
-        assert_eq!(
-            io_timeout_for_command(&TldrDaemonCommand::Search {
-                request: crate::api::SearchRequest {
-                    pattern: "search me".to_string(),
-                    match_mode: crate::api::SearchMatchMode::Literal,
-                    language: Some(crate::lang_support::SupportedLanguage::Rust),
-                    max_results: 100,
-                },
-            }),
-            DAEMON_SEARCH_IO_TIMEOUT
         );
     }
 }
