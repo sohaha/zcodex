@@ -779,22 +779,31 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     Ok(())
 }
 
-fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
-    let timer = tracking::TimedExecution::start();
-
+fn build_add_command(args: &[String], global_args: &[String]) -> Command {
     let mut cmd = git_cmd(global_args);
     cmd.arg("add");
 
-    // 所有参数直接透传给 git（例如 -A、-p、--all 等）
     if args.is_empty() {
         cmd.arg(".");
     } else {
-        for arg in args {
-            cmd.arg(arg);
-        }
+        cmd.args(args);
     }
 
-    let output = cmd.output().context("运行 git add 失败")?;
+    cmd
+}
+
+fn build_cached_diff_stat_command(global_args: &[String]) -> Command {
+    let mut cmd = git_cmd(global_args);
+    cmd.args(["diff", "--cached", "--stat", "--shortstat"]);
+    cmd
+}
+
+fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    let output = build_add_command(args, global_args)
+        .output()
+        .context("运行 git add 失败")?;
 
     if verbose > 0 {
         eprintln!("已执行 git add");
@@ -808,8 +817,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
 
     if output.status.success() {
         // 统计已添加内容
-        let status_output = git_cmd(global_args)
-            .args(["diff", "--cached", "--stat", "--shortstat"])
+        let status_output = build_cached_diff_stat_command(global_args)
             .output()
             .context("检查暂存文件失败")?;
 
@@ -1686,6 +1694,70 @@ mod tests {
         let cmd = git_cmd(&global_args);
         let args: Vec<_> = cmd.get_args().collect();
         assert_eq!(args, vec!["--no-pager", "--bare"]);
+    }
+
+    #[test]
+    fn test_build_add_command_defaults_to_dot_without_explicit_cwd() {
+        let cmd = build_add_command(&[], &[]);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args, vec!["add", "."]);
+        assert!(cmd.get_current_dir().is_none());
+    }
+
+    #[test]
+    fn test_build_add_command_preserves_global_args_without_explicit_cwd() {
+        let args = vec!["src/lib.rs".to_string(), "tests/git.rs".to_string()];
+        let global_args = vec![
+            "-C".to_string(),
+            "/tmp/repo".to_string(),
+            "--git-dir".to_string(),
+            "/tmp/repo/.git".to_string(),
+            "--work-tree".to_string(),
+            "/tmp/repo".to_string(),
+        ];
+        let cmd = build_add_command(&args, &global_args);
+        let cmd_args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(
+            cmd_args,
+            vec![
+                "-C",
+                "/tmp/repo",
+                "--git-dir",
+                "/tmp/repo/.git",
+                "--work-tree",
+                "/tmp/repo",
+                "add",
+                "src/lib.rs",
+                "tests/git.rs"
+            ]
+        );
+        assert!(cmd.get_current_dir().is_none());
+    }
+
+    #[test]
+    fn test_build_cached_diff_stat_command_preserves_global_args_without_explicit_cwd() {
+        let global_args = vec![
+            "-C".to_string(),
+            "/tmp/repo".to_string(),
+            "--work-tree".to_string(),
+            "/tmp/repo".to_string(),
+        ];
+        let cmd = build_cached_diff_stat_command(&global_args);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(
+            args,
+            vec![
+                "-C",
+                "/tmp/repo",
+                "--work-tree",
+                "/tmp/repo",
+                "diff",
+                "--cached",
+                "--stat",
+                "--shortstat"
+            ]
+        );
+        assert!(cmd.get_current_dir().is_none());
     }
 
     #[test]
