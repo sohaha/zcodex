@@ -1,6 +1,17 @@
 use super::*;
 use pretty_assertions::assert_eq;
 
+fn inter_agent_envelope(message: &str) -> String {
+    serde_json::to_string(&codex_protocol::protocol::InterAgentCommunication::new(
+        codex_protocol::AgentPath::root(),
+        codex_protocol::AgentPath::try_from("/root").expect("valid root path"),
+        Vec::new(),
+        message.to_string(),
+        /*trigger_turn*/ false,
+    ))
+    .expect("serialize mailbox envelope")
+}
+
 #[tokio::test]
 async fn resumed_initial_messages_render_history() {
     let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -63,6 +74,57 @@ async fn resumed_initial_messages_render_history() {
         text_blob.contains("assistant reply"),
         "expected replayed agent message",
     );
+}
+
+#[tokio::test]
+async fn thread_snapshot_replay_hides_inter_agent_envelope_messages() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_codex_event_replay(Event {
+        id: "turn-1".into(),
+        msg: EventMsg::AgentMessage(AgentMessageEvent {
+            message: inter_agent_envelope("hidden"),
+            phase: Some(MessagePhase::FinalAnswer),
+            memory_citation: None,
+        }),
+    });
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_eq!(chat.last_agent_markdown, None);
+}
+
+#[tokio::test]
+async fn completed_inter_agent_envelope_message_is_hidden() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    complete_assistant_message(
+        &mut chat,
+        "msg-envelope",
+        &inter_agent_envelope("hidden"),
+        Some(MessagePhase::FinalAnswer),
+    );
+
+    assert!(drain_insert_history(&mut rx).is_empty());
+    assert_eq!(chat.last_agent_markdown, None);
+}
+
+#[tokio::test]
+async fn replayed_subagent_notification_user_message_is_hidden() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.handle_codex_event_replay(Event {
+        id: "turn-1".into(),
+        msg: EventMsg::UserMessage(UserMessageEvent {
+            message:
+                "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                    .to_string(),
+            images: None,
+            text_elements: Vec::new(),
+            local_images: Vec::new(),
+        }),
+    });
+
+    assert!(drain_insert_history(&mut rx).is_empty());
 }
 
 #[tokio::test]

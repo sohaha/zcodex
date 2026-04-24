@@ -1969,9 +1969,35 @@ impl ChatWidget {
         }
     }
 
+    fn is_hidden_inter_agent_envelope_text(message: &str) -> bool {
+        codex_protocol::protocol::InterAgentCommunication::from_message_content(&[
+            codex_protocol::models::ContentItem::OutputText {
+                text: message.to_string(),
+            },
+        ])
+        .is_some()
+    }
+
+    fn is_hidden_subagent_notification_text(message: &str) -> bool {
+        const OPEN_TAG: &str = "<subagent_notification>";
+        const CLOSE_TAG: &str = "</subagent_notification>";
+
+        let trimmed = message.trim();
+        if trimmed.len() < OPEN_TAG.len() + CLOSE_TAG.len() {
+            return false;
+        }
+
+        trimmed
+            .get(..OPEN_TAG.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(OPEN_TAG))
+            && trimmed
+                .get(trimmed.len() - CLOSE_TAG.len()..)
+                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(CLOSE_TAG))
+    }
+
     /// Record or update the raw markdown for the current agent turn.
     fn record_agent_markdown(&mut self, message: &str) {
-        if message.is_empty() {
+        if message.is_empty() || Self::is_hidden_inter_agent_envelope_text(message) {
             return;
         }
         self.last_agent_markdown = Some(message.to_string());
@@ -2213,6 +2239,10 @@ impl ChatWidget {
     }
 
     fn on_agent_message(&mut self, message: String) {
+        if Self::is_hidden_inter_agent_envelope_text(&message) {
+            self.finalize_completed_assistant_message(/*message*/ None);
+            return;
+        }
         self.finalize_completed_assistant_message(Some(&message));
     }
 
@@ -4263,6 +4293,15 @@ impl ChatWidget {
             match content {
                 AgentMessageContent::Text { text } => message.push_str(text),
             }
+        }
+        if Self::is_hidden_inter_agent_envelope_text(&message) {
+            self.finalize_completed_assistant_message(/*message*/ None);
+            self.pending_status_indicator_restore = match item.phase {
+                Some(MessagePhase::FinalAnswer) | None => false,
+                Some(MessagePhase::Commentary) => true,
+            };
+            self.maybe_restore_status_indicator_after_stream_idle();
+            return;
         }
         self.finalize_completed_assistant_message(
             (!message.is_empty()).then_some(message.as_str()),
@@ -7120,6 +7159,9 @@ impl ChatWidget {
     }
 
     fn on_user_message_event(&mut self, event: UserMessageEvent) {
+        if Self::is_hidden_subagent_notification_text(&event.message) {
+            return;
+        }
         self.last_rendered_user_message_event =
             Some(Self::rendered_user_message_event_from_event(&event));
         let remote_image_urls = event.images.unwrap_or_default();

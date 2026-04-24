@@ -265,6 +265,10 @@ impl ThreadHistoryBuilder {
     }
 
     fn handle_user_message(&mut self, payload: &UserMessageEvent) {
+        if is_hidden_subagent_notification_text(&payload.message) {
+            return;
+        }
+
         // User messages should stay in explicitly opened turns. For backward
         // compatibility with older streams that did not open turns explicitly,
         // close any implicit/inactive turn and start a fresh one for this input.
@@ -1189,6 +1193,23 @@ fn is_inter_agent_envelope_text(text: &str) -> bool {
         text: text.to_string(),
     }])
     .is_some()
+}
+
+fn is_hidden_subagent_notification_text(text: &str) -> bool {
+    const OPEN_TAG: &str = "<subagent_notification>";
+    const CLOSE_TAG: &str = "</subagent_notification>";
+
+    let trimmed = text.trim();
+    if trimmed.len() < OPEN_TAG.len() + CLOSE_TAG.len() {
+        return false;
+    }
+
+    trimmed
+        .get(..OPEN_TAG.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(OPEN_TAG))
+        && trimmed
+            .get(trimmed.len() - CLOSE_TAG.len()..)
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(CLOSE_TAG))
 }
 
 #[cfg(test)]
@@ -2656,6 +2677,22 @@ mod tests {
                 }],
             }]
         );
+    }
+
+    #[test]
+    fn skips_hidden_subagent_notification_user_messages() {
+        let turns = build_turns_from_rollout_items(&[RolloutItem::EventMsg(EventMsg::UserMessage(
+            UserMessageEvent {
+                message:
+                    "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
+                        .into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+            },
+        ))]);
+
+        assert!(turns.is_empty());
     }
 
     #[test]

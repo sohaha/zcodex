@@ -36,6 +36,7 @@ use codex_protocol::AgentPath;
 use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InterAgentCommunication;
+use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use core_test_support::responses;
@@ -241,6 +242,79 @@ async fn thread_read_include_turns_skips_inter_agent_envelope_messages() -> Resu
     assert!(
         !serde_json::to_string(&thread)?.contains(&envelope),
         "thread/read payload should not leak mailbox envelope"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_read_include_turns_skips_subagent_notification_user_messages() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+
+    let preview = "Saved user message";
+    let conversation_id = create_fake_rollout_with_text_elements(
+        codex_home.path(),
+        "2025-01-05T12-00-00",
+        "2025-01-05T12:00:00Z",
+        preview,
+        vec![],
+        Some("mock_provider"),
+        /*git_info*/ None,
+    )?;
+    let rollout_path = rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
+    let notification = "<subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>";
+    append_event_msg(
+        rollout_path.as_path(),
+        "2025-01-05T12:00:01Z",
+        EventMsg::UserMessage(UserMessageEvent {
+            message: notification.to_string(),
+            images: None,
+            text_elements: Vec::new(),
+            local_images: Vec::new(),
+        }),
+    )?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let read_id = mcp
+        .send_thread_read_request(ThreadReadParams {
+            thread_id: conversation_id,
+            include_turns: true,
+        })
+        .await?;
+    let read_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(read_id)),
+    )
+    .await??;
+    let ThreadReadResponse { thread, .. } = to_response::<ThreadReadResponse>(read_resp)?;
+
+    assert_eq!(thread.turns.len(), 1);
+    let turn = &thread.turns[0];
+    assert_eq!(turn.status, TurnStatus::Completed);
+    assert_eq!(
+        turn.items.len(),
+        1,
+        "subagent notification should stay hidden"
+    );
+    match &turn.items[0] {
+        ThreadItem::UserMessage { content, .. } => {
+            assert_eq!(
+                content,
+                &vec![UserInput::Text {
+                    text: preview.to_string(),
+                    text_elements: Vec::new(),
+                }]
+            );
+        }
+        other => panic!("expected only user message item, got {other:?}"),
+    }
+    assert!(
+        !serde_json::to_string(&thread)?.contains(notification),
+        "thread/read payload should not leak subagent notification"
     );
 
     Ok(())
