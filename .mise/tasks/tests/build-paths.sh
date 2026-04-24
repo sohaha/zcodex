@@ -39,6 +39,9 @@ run_tests() {
   local broken_target
   local home_dir
   local local_bin_dir
+  local managed_node_bin_dir
+  local managed_node_js_dir
+  local system_path
   local original_path
   local original_home
   target_root="$(mktemp -d)"
@@ -51,14 +54,22 @@ run_tests() {
   broken_target="$target_root/missing/codex"
   home_dir="$target_root/home"
   local_bin_dir="$home_dir/.local/bin"
+  managed_node_bin_dir="$home_dir/.local/share/mise/installs/node/latest/bin"
+  managed_node_js_dir="$home_dir/.local/share/mise/installs/node/25.9.0/lib/node_modules/@sohaha/zcodex/bin"
+  system_path="/usr/bin:/bin"
   original_path="$PATH"
   original_home="${HOME:-}"
 
   mkdir -p "$installed_bin_dir"
   mkdir -p "$local_bin_dir"
+  mkdir -p "$managed_node_bin_dir"
+  mkdir -p "$managed_node_js_dir"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$built_codex_bin"
   chmod +x "$built_codex_bin"
   ln -s "$broken_target" "$installed_bin_dir/codex"
+  printf '#!/usr/bin/env node\nconsole.log(\"shim\")\n' >"$managed_node_js_dir/codex.js"
+  chmod +x "$managed_node_js_dir/codex.js"
+  ln -s "$managed_node_js_dir/codex.js" "$managed_node_bin_dir/codex"
 
   CARGO_TARGET_DIR="$target_root" \
     assert_eq \
@@ -116,7 +127,7 @@ run_tests() {
     "broken PATH symlink should be replaced with the built codex binary"
 
   export HOME="$home_dir"
-  export PATH="$local_bin_dir:$original_path"
+  export PATH="$local_bin_dir:$system_path"
 
   overwrite_installed_codex_if_present "$built_codex_bin"
 
@@ -128,6 +139,35 @@ run_tests() {
     "$local_bin_dir/codex" \
     "$(cat "$built_codex_bin")" \
     "missing installed codex should be installed into the preferred PATH dir"
+
+  export PATH="$managed_node_bin_dir:$installed_bin_dir:$system_path"
+  assert_eq \
+    "$installed_bin_dir/codex" \
+    "$(find_installed_codex_path)" \
+    "managed node shim should be skipped when a real codex exists later on PATH"
+
+  rm -f "$local_bin_dir/codex"
+  export PATH="$managed_node_bin_dir:$system_path"
+  assert_eq \
+    "$local_bin_dir/codex" \
+    "$(resolve_codex_install_target)" \
+    "managed node shim should not become the overwrite target when no real codex exists"
+
+  overwrite_installed_codex_if_present "$built_codex_bin"
+
+  if [ ! -x "$local_bin_dir/codex" ]; then
+    echo "assertion failed: managed node shim fallback should install into the normal user bin dir" >&2
+    exit 1
+  fi
+  assert_file_contains \
+    "$local_bin_dir/codex" \
+    "$(cat "$built_codex_bin")" \
+    "managed node shim fallback should install the built codex into the normal user bin dir"
+  assert_file_contains \
+    "$managed_node_js_dir/codex.js" \
+    '#!/usr/bin/env node
+console.log("shim")' \
+    "managed node shim target should stay untouched"
 
   export PATH="$original_path"
   export HOME="$original_home"

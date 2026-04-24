@@ -169,14 +169,8 @@ can_use_built_codex_for_rtk_build() {
 }
 
 find_installed_codex_path() {
-  local installed_codex
   local path_dir
-
-  installed_codex="$(command -v codex || true)"
-  if [ -n "$installed_codex" ]; then
-    printf '%s\n' "$installed_codex"
-    return 0
-  fi
+  local candidate
 
   IFS=':' read -r -a path_dirs <<< "${PATH:-}"
   for path_dir in "${path_dirs[@]}"; do
@@ -184,10 +178,67 @@ find_installed_codex_path() {
       path_dir="."
     fi
 
-    if [ -L "$path_dir/codex" ]; then
-      printf '%s\n' "$path_dir/codex"
-      return 0
+    candidate="$path_dir/codex"
+    if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+      continue
     fi
+
+    if codex_path_is_managed_node_shim "$candidate"; then
+      continue
+    fi
+
+    printf '%s\n' "$candidate"
+    return 0
+  done
+
+  return 1
+}
+
+codex_path_is_managed_node_shim() {
+  local candidate="$1"
+  local candidate_real="$candidate"
+
+  if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+    candidate_real="$(realpath "$candidate" 2>/dev/null || printf '%s\n' "$candidate")"
+  fi
+
+  case "$candidate" in
+    */lib/node_modules/@sohaha/zcodex/bin/codex.js)
+      return 0
+      ;;
+  esac
+
+  case "$candidate_real" in
+    */lib/node_modules/@sohaha/zcodex/bin/codex.js)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+find_writable_user_path_dir() {
+  local path_dir
+  local candidate
+  IFS=':' read -r -a path_dirs <<< "${PATH:-}"
+  for path_dir in "${path_dirs[@]}"; do
+    if [ -z "$path_dir" ]; then
+      path_dir="."
+    fi
+
+    case "$path_dir" in
+      "$HOME"/*)
+        candidate="$path_dir/codex"
+        if codex_path_is_managed_node_shim "$candidate"; then
+          continue
+        fi
+
+        if [ -d "$path_dir" ] && [ -w "$path_dir" ]; then
+          printf '%s\n' "$path_dir"
+          return 0
+        fi
+        ;;
+    esac
   done
 
   return 1
@@ -201,28 +252,6 @@ is_dir_on_path() {
       return 0
       ;;
   esac
-
-  return 1
-}
-
-find_writable_user_path_dir() {
-  local path_dir
-
-  IFS=':' read -r -a path_dirs <<< "${PATH:-}"
-  for path_dir in "${path_dirs[@]}"; do
-    if [ -z "$path_dir" ]; then
-      path_dir="."
-    fi
-
-    case "$path_dir" in
-      "$HOME"/*)
-        if [ -d "$path_dir" ] && [ -w "$path_dir" ]; then
-          printf '%s\n' "$path_dir"
-          return 0
-        fi
-        ;;
-    esac
-  done
 
   return 1
 }
