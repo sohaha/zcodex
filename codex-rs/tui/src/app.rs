@@ -2090,8 +2090,8 @@ impl App {
                 self.chat_widget.open_zteam_workbench();
                 if outcome.restored == 0 {
                     self.chat_widget.add_info_message(
-                        "未找到可恢复的 ZTeam worker；继续使用 `/zteam start <goal>` 重新建立本轮 mission，或用兼容入口 `/zteam start` 只创建 frontend/backend worker。"
-                            .to_string(),
+                        "未找到可恢复的 ZTeam 协作者；继续使用 `/zteam start <goal>` 重新建立本轮 mission，或用兼容入口 `/zteam start` 只创建默认协作者。"
+                              .to_string(),
                         /*hint*/ None,
                     );
                 } else if outcome.live_attached == outcome.restored {

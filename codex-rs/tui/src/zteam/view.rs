@@ -445,7 +445,7 @@ fn acceptance_status_label(status: super::AcceptanceStatus) -> &'static str {
 fn overview_status(snapshot: &Snapshot) -> String {
     if !snapshot.start_requested {
         return format!(
-            "尚未启动。先运行 `/zteam start` 创建 {} worker。",
+            "尚未启动。先运行 `/zteam start <goal>` 创建 {}。",
             super::worker_task_list(&WorkerSlot::ALL)
         );
     }
@@ -453,7 +453,7 @@ fn overview_status(snapshot: &Snapshot) -> String {
     let reattach = snapshot.reattach_workers();
     if !reattach.is_empty() {
         return format!(
-            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的 worker 连接。",
+            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的协作连接。",
             super::worker_list(&reattach)
         );
     }
@@ -475,7 +475,7 @@ fn overview_status(snapshot: &Snapshot) -> String {
     }
 
     format!(
-        "{} worker 已就绪，可继续分派任务或转发消息。",
+        "{} 已就绪，可继续分派任务或转发消息。",
         super::worker_task_list(&WorkerSlot::ALL)
     )
 }
@@ -508,7 +508,7 @@ fn blocking_note(snapshot: &Snapshot) -> Option<String> {
     let reattach = snapshot.reattach_workers();
     if !reattach.is_empty() {
         return Some(format!(
-            "{} 的最近线程当前未附着；先运行 `/zteam attach` 尝试重新附着，必要时再用 {restart_command} 重建 worker。",
+            "{} 的最近线程当前未附着；先运行 `/zteam attach` 尝试重新附着，必要时再用 {restart_command} 重建协作。",
             super::worker_list(&reattach),
         ));
     }

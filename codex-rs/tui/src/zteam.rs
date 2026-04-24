@@ -64,8 +64,8 @@ impl WorkerSlot {
 
     pub(crate) fn display_name(self) -> &'static str {
         match self {
-            Self::Frontend => "Android 前端",
-            Self::Backend => "后端",
+            Self::Frontend => "协作者 A",
+            Self::Backend => "协作者 B",
         }
     }
 
@@ -337,10 +337,7 @@ impl State {
             .map(plan_mission);
         push_activity(
             &mut state.activity,
-            format!(
-                "主线程已提交创建 {} worker 的启动指令。等待 spawn 事件注册；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`。",
-                default_worker_task_list()
-            ),
+            "主线程已提交创建默认协作者的启动指令。等待 spawn 事件注册；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`。".to_string(),
         );
         if let Some((goal, mode_label, next_action)) = state.mission.as_ref().map(|mission| {
             (
@@ -398,16 +395,16 @@ impl State {
         let restore_summary = match &recovered.connection {
             WorkerConnection::Pending => {
                 format!(
-                    "已恢复 {recovered_slot} worker 的最近协作记录，等待注册。",
+                    "已恢复 {recovered_slot} 的最近协作记录，等待注册。",
                     recovered_slot = recovered.slot
                 )
             }
             WorkerConnection::Live(thread_id) => format!(
-                "已恢复 {worker} worker，并重新附着到 {thread_id}。",
+                "已恢复 {worker}，并重新附着到 {thread_id}。",
                 worker = recovered.slot
             ),
             WorkerConnection::ReattachRequired(thread_id) => format!(
-                "已恢复 {worker} worker 的最近状态；线程 {thread_id} 当前未附着，可运行 `/zteam attach` 再附着。",
+                "已恢复 {worker} 的最近状态；线程 {thread_id} 当前未附着，可运行 `/zteam attach` 再附着。",
                 worker = recovered.slot
             ),
         };
@@ -570,16 +567,16 @@ impl State {
         let snapshot = self.snapshot();
         match &snapshot.worker(worker).connection {
             WorkerConnection::Pending => format!(
-                "{} worker 尚未注册。{}",
+                "{} 尚未注册。{}",
                 worker.display_name(),
                 pending_worker_guidance(&snapshot, worker)
             ),
             WorkerConnection::Live(_) => format!(
-                "{} worker 当前已附着；如果仍然分派失败，请重新运行 `/zteam status` 检查状态。",
+                "{} 当前已附着；如果仍然分派失败，请重新运行 `/zteam status` 检查状态。",
                 worker.display_name()
             ),
             WorkerConnection::ReattachRequired(thread_id) => format!(
-                "{} worker 最近的线程 `{thread_id}` 当前未附着。先运行 `/zteam attach` 尝试再附着，或用 {} 重建 worker。",
+                "{} 最近的线程 `{thread_id}` 当前未附着。先运行 `/zteam attach` 尝试再附着，或用 {} 重建协作。",
                 worker.display_name(),
                 recommended_restart_command(&snapshot)
             ),
@@ -594,7 +591,7 @@ impl State {
             || matches!(to_connection, WorkerConnection::ReattachRequired(_));
         if needs_attach {
             return format!(
-                "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的 worker，或用 {} 重新创建。",
+                "无法在 {from} 和 {to} 之间中转消息。先运行 `/zteam attach` 重新附着最近的协作者，或用 {} 重新创建。",
                 recommended_restart_command(&snapshot)
             );
         }
@@ -603,7 +600,7 @@ impl State {
             let registered = snapshot.live_workers();
             if registered.is_empty() {
                 return format!(
-                    "无法在 {from} 和 {to} 之间中转消息。当前还没有任何 worker 完成注册；先等待 {} 的创建结果，必要时重新运行 {}。",
+                    "无法在 {from} 和 {to} 之间中转消息。当前还没有任何协作者完成注册；先等待 {} 的创建结果，必要时重新运行 {}。",
                     recommended_restart_command(&snapshot),
                     recommended_restart_command(&snapshot)
                 );
@@ -616,7 +613,7 @@ impl State {
             );
         }
         format!(
-            "无法在 {from} 和 {to} 之间中转消息。先运行 {}，并确认两个 worker 都已注册。",
+            "无法在 {from} 和 {to} 之间中转消息。先运行 {}，并确认默认协作者都已注册。",
             recommended_restart_command(&snapshot)
         )
     }
@@ -660,10 +657,7 @@ impl State {
             .collect::<Vec<_>>();
         push_activity(
             &mut state.activity,
-            format!(
-                "{worker} worker 已注册到 `{}`。",
-                worker.canonical_task_name()
-            ),
+            format!("{worker} 已注册到 `{}`。", worker.canonical_task_name()),
         );
         let frontend = state.frontend.clone();
         let backend = state.backend.clone();
@@ -674,7 +668,7 @@ impl State {
             push_activity(
                 &mut state.activity,
                 format!(
-                    "{} worker 已全部注册，可开始分派任务或中转消息。",
+                    "{} 已全部注册，可开始分派任务或中转消息。",
                     worker_task_list(&WorkerSlot::ALL)
                 ),
             );
@@ -717,7 +711,7 @@ impl State {
             if required_workers_have_results(mission, &frontend, &backend) {
                 mission.phase = MissionPhase::Validating;
                 mission.validation_summary = Some(
-                    "已收到当前需要参与的 worker 阶段结果，等待主线程归纳验证结论。".to_string(),
+                    "已收到当前需要参与的协作者阶段结果，等待主线程归纳验证结论。".to_string(),
                 );
                 mission.next_action = Some("检查阶段结果并决定下一轮分派或收口".to_string());
                 sync_acceptance_checks(mission, &frontend, &backend);
@@ -768,9 +762,7 @@ impl State {
         };
         push_activity(
             &mut state.activity,
-            format!(
-                "{worker} worker 已关闭，可运行 `/zteam attach` 再附着或 {restart_command} 重建。"
-            ),
+            format!("{worker} 已关闭，可运行 `/zteam attach` 再附着或 {restart_command} 重建。"),
         );
         true
     }
@@ -834,13 +826,13 @@ fn status_summary(snapshot: &Snapshot) -> String {
 #[cfg(test)]
 fn startup_summary(snapshot: &Snapshot) -> String {
     if !snapshot.start_requested {
-        return "尚未启动；先运行 `/zteam start`。".to_string();
+        return "尚未启动；先运行 `/zteam start <目标>`。".to_string();
     }
 
     let reattach = snapshot.reattach_workers();
     if !reattach.is_empty() {
         return format!(
-            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的 worker 连接。",
+            "{} 需要再附着。运行 `/zteam attach` 尝试恢复最近的协作连接。",
             worker_list(&reattach)
         );
     }
@@ -862,7 +854,7 @@ fn startup_summary(snapshot: &Snapshot) -> String {
     }
 
     format!(
-        "{} worker 已就绪，可继续分派任务或转发消息。",
+        "{} 已就绪，可继续分派任务或转发消息。",
         worker_task_list(&WorkerSlot::ALL)
     )
 }
@@ -872,7 +864,7 @@ fn pending_worker_guidance(snapshot: &Snapshot, worker: WorkerSlot) -> String {
     let live = snapshot.live_workers();
     if live.is_empty() {
         return format!(
-            "当前还没有任何 worker 完成注册。先等待主线程创建 `{}`；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`，必要时重新运行 {restart_command}。",
+            "当前还没有任何协作者完成注册。先等待主线程创建 `{}`；若长时间无变化，请检查主线程是否真正调用了 `spawn_agent`，必要时重新运行 {restart_command}。",
             worker.canonical_task_name(),
         );
     }
@@ -889,7 +881,7 @@ fn pending_worker_guidance(snapshot: &Snapshot, worker: WorkerSlot) -> String {
     }
 
     format!(
-        "当前仅 {} 已注册，仍在等待 `{}`；若长时间无变化，说明主线程可能只创建了一部分 worker。先运行 `/zteam status` 检查，再决定是否重新运行 {restart_command}。",
+        "当前仅 {} 已注册，仍在等待 `{}`；若长时间无变化，说明主线程可能只创建了一部分协作者。先运行 `/zteam status` 检查，再决定是否重新运行 {restart_command}。",
         worker_list(&other_live),
         worker.canonical_task_name()
     )
@@ -943,14 +935,6 @@ pub(crate) fn start_prompt(goal: Option<&str>) -> String {
     }
 }
 
-fn default_worker_task_list() -> String {
-    WorkerSlot::ALL
-        .into_iter()
-        .map(WorkerSlot::task_name)
-        .collect::<Vec<_>>()
-        .join("/")
-}
-
 fn worker_list(workers: &[WorkerSlot]) -> String {
     workers
         .iter()
@@ -962,9 +946,9 @@ fn worker_list(workers: &[WorkerSlot]) -> String {
 fn worker_task_list(workers: &[WorkerSlot]) -> String {
     workers
         .iter()
-        .map(|worker| worker.task_name())
+        .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
-        .join("/")
+        .join("、")
 }
 
 fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
@@ -1041,7 +1025,7 @@ fn plan_mission(goal: &str) -> Mission {
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
-                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                summary: "需要参与的协作者已回流阶段结果".to_string(),
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
@@ -1140,21 +1124,21 @@ fn mission_assignments(
             Some("待命并准备接收后续协助".to_string()),
             Some(format!("围绕当前目标推进前端侧工作：{goal}")),
             None,
-            "等待前端 worker 进入协作上下文，再决定是否需要后端协助".to_string(),
+            "等待协作者 A 进入协作上下文，再决定是否需要服务侧协助".to_string(),
         ),
         MissionMode::Solo(WorkerSlot::Backend) => (
             Some("待命并准备接收后续协助".to_string()),
             Some("主导服务/数据侧推进".to_string()),
             None,
             Some(format!("围绕当前目标推进后端侧工作：{goal}")),
-            "等待后端 worker 进入协作上下文，再决定是否需要前端协助".to_string(),
+            "等待协作者 B 进入协作上下文，再决定是否需要 UI 侧协助".to_string(),
         ),
         MissionMode::Parallel => (
             Some("负责 UI/交互侧推进".to_string()),
             Some("负责接口/数据侧推进".to_string()),
             Some(format!("拆解并推进前端侧工作：{goal}")),
             Some(format!("拆解并推进后端侧工作：{goal}")),
-            "等待两个 worker 都进入协作上下文，再开始首轮并行分派".to_string(),
+            "等待两个协作者都进入协作上下文，再开始首轮并行分派".to_string(),
         ),
         MissionMode::SerialHandoff => (
             Some("在契约稳定后承接 UI/交互落地".to_string()),
@@ -1192,7 +1176,7 @@ fn plan_manual_override_mission(worker: WorkerSlot, message: &str) -> Mission {
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
-                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                summary: "需要参与的协作者已回流阶段结果".to_string(),
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
@@ -1230,7 +1214,7 @@ fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str) ->
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
-                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                summary: "需要参与的协作者已回流阶段结果".to_string(),
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
@@ -1248,7 +1232,7 @@ fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str) ->
         ),
         blocker: None,
         next_action: Some(
-            "等待 relay 目标 worker 回流结果，再确认是否恢复 mission 主流程。".to_string(),
+            "等待 relay 目标协作者回流结果，再确认是否恢复 mission 主流程。".to_string(),
         ),
         cycle: 1,
     };
@@ -1286,7 +1270,7 @@ fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState) -> Missi
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
-                summary: "需要参与的 worker 已回流阶段结果".to_string(),
+                summary: "需要参与的协作者已回流阶段结果".to_string(),
                 status: AcceptanceStatus::Pending,
             },
             AcceptanceCheck {
@@ -1421,7 +1405,7 @@ fn sync_mission_phase(mission: &mut Mission, frontend: &WorkerState, backend: &W
         mission.next_action = Some("按当前 mission 分工开始首轮任务分派".to_string());
     } else {
         mission.phase = MissionPhase::Bootstrapping;
-        mission.next_action = Some("等待需要参与的 worker 进入协作上下文".to_string());
+        mission.next_action = Some("等待需要参与的协作者进入协作上下文".to_string());
     }
     sync_acceptance_checks(mission, frontend, backend);
 }
@@ -1778,7 +1762,7 @@ mod tests {
         assert_eq!(mission.phase, MissionPhase::Validating);
         assert_eq!(
             mission.validation_summary.as_deref(),
-            Some("已收到当前需要参与的 worker 阶段结果，等待主线程归纳验证结论。")
+            Some("已收到当前需要参与的协作者阶段结果，等待主线程归纳验证结论。")
         );
     }
 
@@ -2134,7 +2118,7 @@ mod tests {
         assert!(state.mark_start_requested_for_goal(None));
         assert_eq!(state.worker_thread_id(WorkerSlot::Frontend), None);
         let status = state.status_message();
-        assert!(status.contains("Android 前端：未注册"));
+        assert!(status.contains("协作者 A：未注册"));
         assert!(status.contains("最近任务：无"));
         assert!(status.contains("最近结果：无"));
     }
