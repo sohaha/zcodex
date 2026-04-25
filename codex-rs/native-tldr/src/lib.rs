@@ -246,6 +246,17 @@ impl TldrEngine {
         ) {
             return analyze_project(&self.config.project_root, &self.config, request);
         }
+        if request.kind == AnalysisKind::Ast
+            && request.path.is_none()
+            && let Some(symbol) = request.symbol.as_deref()
+        {
+            let index = self.semantic_indexer().build_symbol_structure_index(
+                &self.config.project_root,
+                request.language,
+                symbol,
+            )?;
+            return analyze_project_with_index(&self.config.project_root, request, index);
+        }
         let index = self.load_or_build_analysis_index(request.language)?;
         analyze_project_with_index(&self.config.project_root, request, index)
     }
@@ -323,6 +334,8 @@ mod tests {
     use crate::semantic::SemanticConfig;
     use crate::semantic::SemanticEmbeddingConfig;
     use crate::semantic::SemanticSearchRequest;
+    use crate::semantic::reset_semantic_index_build_count;
+    use crate::semantic::semantic_index_build_count;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
     use std::path::PathBuf;
@@ -357,6 +370,57 @@ mod tests {
                 SupportedLanguage::TypeScript,
                 SupportedLanguage::Zig,
             ],
+        );
+    }
+
+    #[test]
+    fn structure_symbol_analysis_uses_targeted_index_without_full_cache_build() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        for index in 0..200 {
+            std::fs::write(
+                tempdir
+                    .path()
+                    .join("src")
+                    .join(format!("module_{index}.rs")),
+                format!("pub fn helper_{index}() {{}}\n"),
+            )
+            .expect("helper fixture should write");
+        }
+        std::fs::write(
+            tempdir.path().join("src").join("models.rs"),
+            "pub struct ModelsManager;\nimpl ModelsManager { pub fn refresh(&self) {} }\n",
+        )
+        .expect("models fixture should write");
+        reset_semantic_index_build_count();
+        let engine = TldrEngine::builder(tempdir.path().to_path_buf()).build();
+
+        let response = engine
+            .analyze(AnalysisRequest {
+                kind: AnalysisKind::Ast,
+                language: SupportedLanguage::Rust,
+                symbol: Some("ModelsManager".to_string()),
+                path: None,
+                line: None,
+                paths: Vec::new(),
+            })
+            .expect("targeted structure analysis should succeed");
+
+        assert_eq!(semantic_index_build_count(), 0);
+        let details = response.details.expect("details should exist");
+        assert_eq!(details.indexed_files, 201);
+        assert_eq!(details.total_symbols, 2);
+        assert!(
+            details
+                .units
+                .iter()
+                .any(|unit| unit.symbol.as_deref() == Some("ModelsManager"))
+        );
+        assert!(
+            details
+                .units
+                .iter()
+                .any(|unit| unit.symbol.as_deref() == Some("refresh"))
         );
     }
 

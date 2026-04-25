@@ -412,6 +412,46 @@ impl SemanticIndexer {
         self.build_index_from_files(project_root, language, files, source_fingerprint)
     }
 
+    pub(crate) fn build_symbol_structure_index(
+        &self,
+        project_root: &Path,
+        language: SupportedLanguage,
+        symbol: &str,
+    ) -> Result<SemanticIndex> {
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let mut files = Vec::new();
+        collect_source_files(project_root, extensions_for(language), &mut files, &matcher)?;
+        let indexed_files = files.len();
+        let needles = symbol_needles(symbol);
+        let mut units = Vec::new();
+
+        for path in &files {
+            let Ok(contents) = fs::read_to_string(path) else {
+                continue;
+            };
+            if !needles.iter().any(|needle| contents.contains(needle)) {
+                continue;
+            }
+            let relative_path = path
+                .strip_prefix(project_root)
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|_| path.clone());
+            units.extend(
+                extract_units(&relative_path, language, &contents)
+                    .with_context(|| format!("extract units from {}", relative_path.display()))?,
+            );
+        }
+
+        Ok(SemanticIndex {
+            language,
+            indexed_files,
+            units,
+            embedding_enabled: false,
+            embedding_dimensions: 0,
+            source_fingerprint: format!("targeted-structure:{language:?}:{symbol}"),
+        })
+    }
+
     pub(crate) fn current_source_fingerprint(
         &self,
         project_root: &Path,
@@ -780,6 +820,21 @@ fn collect_source_files(
         }
     }
     Ok(())
+}
+
+fn symbol_needles(symbol: &str) -> Vec<&str> {
+    let trimmed = symbol.trim();
+    let mut needles = Vec::new();
+    if !trimmed.is_empty() {
+        needles.push(trimmed);
+    }
+    if let Some(short_name) = trimmed.rsplit("::").next()
+        && !short_name.is_empty()
+        && !needles.contains(&short_name)
+    {
+        needles.push(short_name);
+    }
+    needles
 }
 
 fn extract_units(
