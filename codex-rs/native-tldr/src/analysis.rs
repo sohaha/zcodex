@@ -120,7 +120,10 @@ pub(crate) fn analyze_project_with_index(
 fn build_analysis_detail(input: AnalysisDetailInput<'_>) -> AnalysisDetail {
     const MAX_UNITS: usize = 20;
     const MAX_FILES: usize = 20;
+    const MAX_NODES: usize = 80;
     const MAX_EDGES: usize = 50;
+    const MAX_SYMBOL_INDEX_ENTRIES: usize = 50;
+    const MAX_UNIT_RELATIONSHIPS: usize = 50;
 
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_file: BTreeMap<String, BTreeMap<String, usize>> = BTreeMap::new();
@@ -250,11 +253,24 @@ fn build_analysis_detail(input: AnalysisDetailInput<'_>) -> AnalysisDetail {
         import_count += unit.imports.len();
     }
 
+    let nodes = node_by_id.into_values().collect::<Vec<_>>();
+    let truncated = input.units.len() > MAX_UNITS
+        || nodes.len() > MAX_NODES
+        || edges.len() > MAX_EDGES
+        || symbol_index.len() > MAX_SYMBOL_INDEX_ENTRIES
+        || input.units.iter().take(MAX_UNITS).any(|unit| {
+            unit.calls.len() > MAX_UNIT_RELATIONSHIPS
+                || unit.called_by.len() > MAX_UNIT_RELATIONSHIPS
+                || unit.references.len() > MAX_UNIT_RELATIONSHIPS
+                || unit.imports.len() > MAX_UNIT_RELATIONSHIPS
+                || unit.dependencies.len() > MAX_UNIT_RELATIONSHIPS
+        });
+
     AnalysisDetail {
         indexed_files: input.indexed_files,
         total_symbols: input.units.len(),
         symbol_query: input.symbol_query,
-        truncated: input.units.len() > MAX_UNITS,
+        truncated,
         change_paths: input
             .change_paths
             .iter()
@@ -284,10 +300,11 @@ fn build_analysis_detail(input: AnalysisDetailInput<'_>) -> AnalysisDetail {
                     .collect(),
             })
             .collect(),
-        nodes: node_by_id.into_values().collect(),
+        nodes: nodes.into_iter().take(MAX_NODES).collect(),
         edges: edges.into_iter().take(MAX_EDGES).collect(),
         symbol_index: symbol_index
             .into_iter()
+            .take(MAX_SYMBOL_INDEX_ENTRIES)
             .map(|(symbol, node_ids)| AnalysisSymbolIndexEntry {
                 symbol,
                 node_ids: node_ids.into_iter().collect(),
@@ -310,16 +327,20 @@ fn build_analysis_detail(input: AnalysisDetailInput<'_>) -> AnalysisDetail {
                 module_path: unit.module_path.clone(),
                 visibility: unit.visibility.clone(),
                 signature: unit.signature.clone(),
-                calls: unit.calls.clone(),
-                called_by: unit.called_by.clone(),
-                references: unit.references.clone(),
-                imports: unit.imports.clone(),
-                dependencies: unit.dependencies.clone(),
+                calls: limit_strings(&unit.calls, MAX_UNIT_RELATIONSHIPS),
+                called_by: limit_strings(&unit.called_by, MAX_UNIT_RELATIONSHIPS),
+                references: limit_strings(&unit.references, MAX_UNIT_RELATIONSHIPS),
+                imports: limit_strings(&unit.imports, MAX_UNIT_RELATIONSHIPS),
+                dependencies: limit_strings(&unit.dependencies, MAX_UNIT_RELATIONSHIPS),
                 cfg_summary: unit.cfg_summary.clone(),
                 dfg_summary: unit.dfg_summary.clone(),
             })
             .collect(),
     }
+}
+
+fn limit_strings(values: &[String], limit: usize) -> Vec<String> {
+    values.iter().take(limit).cloned().collect()
 }
 
 fn graph_node_name(unit: &EmbeddingUnit) -> Option<String> {
@@ -926,13 +947,17 @@ fn symbol_label(unit: &EmbeddingUnit) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use super::AnalysisDetailInput;
     use super::analyze_project;
+    use super::build_analysis_detail;
     use crate::TldrConfig;
     use crate::api::AnalysisKind;
     use crate::api::AnalysisRequest;
     use crate::api::AnalysisSliceTarget;
     use crate::lang_support::SupportedLanguage;
+    use crate::semantic::EmbeddingUnit;
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
@@ -1065,6 +1090,73 @@ mod tests {
             .filter(|edge| edge.kind == "calls" && edge.from == "login" && edge.to == "validate")
             .count();
         assert_eq!(call_edges, 1);
+    }
+
+    #[test]
+    fn analysis_detail_caps_high_fan_in_symbol_payloads() {
+        let callers = (0..120)
+            .map(|index| format!("caller_{index}"))
+            .collect::<Vec<_>>();
+        let imports = (0..120)
+            .map(|index| format!("use crate::module_{index};"))
+            .collect::<Vec<_>>();
+        let references = (0..120)
+            .map(|index| format!("Reference{index}"))
+            .collect::<Vec<_>>();
+        let dependencies = (0..120)
+            .map(|index| format!("dependency_{index}"))
+            .collect::<Vec<_>>();
+        let unit = EmbeddingUnit {
+            path: PathBuf::from("src/lib.rs"),
+            language: SupportedLanguage::Rust,
+            symbol: Some("target".to_string()),
+            qualified_symbol: Some("crate::target".to_string()),
+            symbol_aliases: Vec::new(),
+            kind: "function".to_string(),
+            owner_symbol: None,
+            owner_kind: None,
+            implemented_trait: None,
+            line: 1,
+            span_end_line: 1,
+            module_path: vec!["crate".to_string()],
+            visibility: None,
+            signature: Some("fn target()".to_string()),
+            docs: Vec::new(),
+            imports,
+            references,
+            code_preview: "fn target() {}".to_string(),
+            calls: Vec::new(),
+            called_by: callers,
+            dependencies,
+            cfg_summary: "branches=0, loops=0, returns=0, awaits=0, outgoing calls=0".to_string(),
+            dfg_summary: "params=0, locals=0, mutable bindings=0, assignments=0, references=0"
+                .to_string(),
+            embedding_vector: None,
+        };
+        let units = vec![&unit];
+
+        let details = build_analysis_detail(AnalysisDetailInput {
+            indexed_files: 1,
+            all_units: std::slice::from_ref(&unit),
+            units: &units,
+            symbol_query: Some("target".to_string()),
+            change_paths: &[],
+            path: None,
+            line: None,
+            include_slice: false,
+        });
+
+        assert_eq!(details.truncated, true);
+        assert_eq!(details.nodes.len(), 80);
+        assert_eq!(details.edges.len(), 50);
+        assert_eq!(details.overview.incoming_edges, 120);
+        assert_eq!(details.overview.import_count, 120);
+        assert_eq!(details.overview.reference_count, 120);
+        assert_eq!(details.units.len(), 1);
+        assert_eq!(details.units[0].called_by.len(), 50);
+        assert_eq!(details.units[0].imports.len(), 50);
+        assert_eq!(details.units[0].references.len(), 50);
+        assert_eq!(details.units[0].dependencies.len(), 50);
     }
 
     #[test]
