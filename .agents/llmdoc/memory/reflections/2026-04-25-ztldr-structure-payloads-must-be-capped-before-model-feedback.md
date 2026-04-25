@@ -16,3 +16,10 @@
 - 以后处理 `ztldr` “超时 / 结果太大 / 模型退回 raw read”类问题时，除了检查 daemon 状态和 tool description，还要检查结构化 payload 的字段级限幅。
 - 对 `AnalysisDetail` 这类模型可见结构化结果，必须同时限制集合数量和单项内部关系数量；只限制顶层 matches/units 不够。
 - 限幅后应把 `truncated` 标成 `true`，并用测试覆盖高 fan-in 符号，确保 overview 计数保留真实规模。
+
+## 后续补充
+
+- 用户继续反馈 `structure ModelsManager` 在约 75 秒后被中断，且没有产生可用结构结果或写操作。这说明问题不只在输出 payload，也在产出前的计算路径。
+- 根因是 `TldrEngine::analyze` 对 `structure + symbol` 仍先走 `load_or_build_analysis_index`，首轮冷查询会为整个 Rust workspace 构建/持久化 analysis index，再过滤单个符号。
+- 单符号 `structure` 不需要先构建全量索引。应走定向路径：遍历受 ignore 规则约束的源文件，用符号文本命中筛候选文件，只抽取候选文件的结构单元，再交给既有 `analyze_project_with_index` 过滤和渲染。
+- 今后判断 `ztldr structure` 超时时，要区分两类问题：已经产出但 payload 太大，或尚未产出前被全量索引构建卡住。两类都要有测试覆盖。
