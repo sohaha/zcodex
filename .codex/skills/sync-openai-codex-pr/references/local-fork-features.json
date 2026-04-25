@@ -336,9 +336,9 @@
     {
       "id": "buddy-surface",
       "kind": "local_surface",
-      "area": "codex-rs/tui + codex-rs/app-server",
-      "summary": "Buddy 交互面、配置落盘事件和 app-server 通知桥接仍然存在，不被 upstream TUI/app-server 改动吞掉。",
-      "better_when": "upstream 原生提供等效 buddy 能力且本地不再需要维护分叉实现，或者本地把 buddy 正式迁移到新模块并同步更新检查点。",
+      "area": "codex-rs/tui + codex-rs/core config + codex-rs/app-server",
+      "summary": "Buddy 交互面、配置落盘事件、app-server 通知桥接，以及混合本地预设/AI 反应策略必须继续存在。",
+      "better_when": "upstream 原生提供等效 buddy 能力，且同时覆盖可见交互、配置落盘、app-server 通知、reaction_strategy 配置、local preset fallback 与 AI cooldown/critical 场景语义；或者本地正式迁移到新模块并同步更新检查点。",
       "checks": [
         {
           "type": "regex",
@@ -384,6 +384,31 @@
           "type": "regex",
           "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
           "pattern": "EventMsg::BuddyReaction"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub struct BuddyReactionStrategy"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub critical_scenarios_use_ai: bool"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/buddy.rs",
+          "pattern": "struct LocalReactionLibrary"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/buddy.rs",
+          "pattern": "BuddyReactionMode::Hybrid"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub reaction_strategy: Option<BuddyReactionStrategy>"
         }
       ]
     },
@@ -481,11 +506,6 @@
         {
           "type": "regex",
           "path": "codex-rs/core/src/session/mod.rs",
-          "pattern": "已为此会话禁用 `js_repl`"
-        },
-        {
-          "type": "regex",
-          "path": "codex-rs/core/src/session/mod.rs",
           "pattern": "警告："
         },
         {
@@ -517,11 +537,6 @@
           "type": "regex",
           "path": "codex-rs/analytics/src/analytics_client_tests.rs",
           "pattern": "无法向审查轮次追加输入"
-        },
-        {
-          "type": "regex",
-          "path": "codex-rs/core/tests/suite/js_repl.rs",
-          "pattern": "已为此会话禁用 `js_repl`"
         },
         {
           "type": "regex",
@@ -753,6 +768,457 @@
           "type": "regex",
           "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
           "pattern": "async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests\\("
+        }
+      ]
+    },
+    {
+      "id": "zteam-mission-workflow",
+      "kind": "local_surface",
+      "area": "codex-rs/tui + codex-rs/config + codex-rs/features + docs",
+      "summary": "默认开启的 TUI `/zteam` 本地协作入口、mission-first 工作台、frontend/backend worker 编排、自动推进/repair、恢复语义和 federation adapter seam 必须继续存在。",
+      "better_when": "只有在 upstream 或本地新架构提供等效或更强的 TUI-first 多协作者 mission 工作流，且继续覆盖默认启用配置、slash command 入口、AppEvent/app loop bridge、Mission Board、autopilot repair、loaded-thread recovery、federation adapter seam、中文提示和快照回归锚点时，才允许迁移；迁移前必须先更新这里的路径与检查点。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub zteam_enabled: bool,"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "zteam_enabled: cfg\\.tui\\.as_ref\\(\\)\\.map\\(\\|t\\| t\\.zteam_enabled\\)\\.unwrap_or\\(true\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/features/src/lib.rs",
+          "pattern": "key: \"multi_agent_v2\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/features/src/lib.rs",
+          "pattern": "id: Feature::MultiAgentV2,[\\s\\S]*?default_enabled: true"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/lib.rs",
+          "pattern": "mod zteam;"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/slash_command.rs",
+          "pattern": "SlashCommand::Zteam"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/slash_command.rs",
+          "pattern": "以目标启动 ZTeam mission 协作并查看状态"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/bottom_pane/slash_commands.rs",
+          "pattern": "flags\\.zteam_enabled \\|\\| \\*cmd != SlashCommand::Zteam"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app_event.rs",
+          "pattern": "ZteamCommand\\(ZteamCommand\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "async fn handle_zteam_command\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "fn schedule_zteam_autopilot_tick\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/app.rs",
+          "pattern": "restore_loaded_zteam_workers\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/zteam.rs",
+          "pattern": "pub\\(crate\\) enum AutopilotWorkItem"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/zteam/recovery.rs",
+          "pattern": "latest_local_threads_for_primary"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/zteam/worker_source.rs",
+          "pattern": "pub\\(crate\\) struct FederationAdapter"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/zteam/view.rs",
+          "pattern": "\\{MODE_NAME\\} Mission Board"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/chatwidget/tests/slash_commands.rs",
+          "pattern": "zteam_workbench_active_view"
+        },
+        {
+          "type": "exists",
+          "path": "codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_active_view.snap"
+        },
+        {
+          "type": "exists",
+          "path": "codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_entry_disabled_notice.snap"
+        },
+        {
+          "type": "regex",
+          "path": "docs/slash_commands.md",
+          "pattern": "/zteam"
+        }
+      ]
+    },
+    {
+      "id": "inter-agent-visibility-filtering",
+      "kind": "local_behavior",
+      "area": "codex-rs/protocol + codex-rs/core + codex-rs/app-server-protocol + codex-rs/tui",
+      "summary": "智能体间通信 envelope 和隐藏 subagent notification 必须继续由 protocol 统一识别并在 core、app-server thread history、TUI replay 等可见文本链路中过滤。",
+      "better_when": "upstream 提供更统一的隐藏消息模型，并且 app-server thread/read、core event mapping、last assistant extraction、TUI history replay 都继续不泄露 inter-agent envelope 或隐藏 subagent notification。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/protocol/src/protocol.rs",
+          "pattern": "pub struct InterAgentCommunication"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/protocol/src/protocol.rs",
+          "pattern": "pub fn is_hidden_message_text"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/protocol/src/protocol.rs",
+          "pattern": "pub fn sanitize_visible_text"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/protocol/src/protocol.rs",
+          "pattern": "pub fn is_hidden_subagent_notification_text\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server-protocol/src/protocol/thread_history.rs",
+          "pattern": "InterAgentCommunication::sanitize_visible_text"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/event_mapping.rs",
+          "pattern": "InterAgentCommunication::sanitize_visible_text"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/stream_events_utils.rs",
+          "pattern": "InterAgentCommunication::sanitize_visible_text"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/tests/suite/v2/thread_read.rs",
+          "pattern": "thread_read_include_turns_skips_inter_agent_envelope_messages"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/tests/suite/v2/thread_read.rs",
+          "pattern": "thread_read_include_turns_skips_subagent_notification_agent_messages"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/event_mapping_tests.rs",
+          "pattern": "skips_serialized_inter_agent_communication"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/event_mapping_tests.rs",
+          "pattern": "skips_hidden_subagent_notification_user_message"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/chatwidget/tests/history_replay.rs",
+          "pattern": "thread_snapshot_replay_hides_inter_agent_envelope_messages"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/chatwidget/tests/history_replay.rs",
+          "pattern": "replayed_subagent_notification_user_message_is_hidden"
+        }
+      ]
+    },
+    {
+      "id": "subagent-runtime-config-preservation",
+      "kind": "local_behavior",
+      "area": "codex-rs/core config/session/tools",
+      "summary": "spawn/resume subagent 时继续保留运行时 provider、model、sandbox、developer instructions 等 live turn 状态；只有 turn cwd 确实命中启用的 project config layer 时才重载 project-scoped 配置。",
+      "better_when": "upstream 提供更清晰的 subagent config 构建机制，并同时保留运行时 provider/details、不误用禁用 project layer、且仍能在 turn cwd override 命中启用项目层时加载 project-scoped zmemory/profile/agent_roles。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+          "pattern": "pub\\(crate\\) async fn build_agent_shared_config"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+          "pattern": "load_config_layers_state"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+          "pattern": "has_enabled_project_layer"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+          "pattern": "ConfigLayerSource::Project"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+          "pattern": "reloaded_for_comparison != \\*live_config"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_tests.rs",
+          "pattern": "build_agent_spawn_config_preserves_runtime_provider_details"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_tests.rs",
+          "pattern": "build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_turn_cwd_override"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/multi_agents_tests.rs",
+          "pattern": "build_agent_spawn_config_preserves_active_profile_when_reloading_turn_cwd_override"
+        }
+      ]
+    },
+    {
+      "id": "native-tldr-daemon-first-runtime",
+      "kind": "local_behavior",
+      "area": "codex-rs/native-tldr + codex-rs/cli + codex-rs/core + codex-rs/mcp-server",
+      "summary": "`ztldr` 不只是 CLI/工具注册面；本地默认依赖 native-tldr daemon-first 生命周期、CLI/core/MCP 自动启动、daemon 状态动作和结构化失败回退。",
+      "better_when": "只有在 upstream 或本地新架构提供等效的 daemon-first 运行时，并继续覆盖 CLI、core tool handler、MCP tool handler、daemon action、自动启动禁用配置、结构化 daemon unavailable 错误与测试锚点时，才允许迁移；迁移前必须先更新这些检查到新入口。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/native-tldr/src/daemon.rs",
+          "pattern": "pub enum TldrDaemonCommand"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/native-tldr/src/tool_api.rs",
+          "pattern": "pub async fn query_daemon_with_hooks_detailed"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/native-tldr/src/tool_api.rs",
+          "pattern": "native-tldr daemon is unavailable for"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/tldr_cmd.rs",
+          "pattern": "TldrSubcommand::Daemon\\(cmd\\) =>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/tldr_cmd.rs",
+          "pattern": "query_daemon_with_hooks_detailed\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/tldr.rs",
+          "pattern": "run_tldr_tool_with_hooks"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/tldr.rs",
+          "pattern": "async fn ensure_daemon_running_detailed\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/handlers/tldr.rs",
+          "pattern": "native-tldr daemon is unavailable for"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/mcp-server/src/tldr_tool.rs",
+          "pattern": "async fn run_tldr_tool_with_mcp_hooks"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/mcp-server/src/tldr_tool.rs",
+          "pattern": "fn daemon_action_spec\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/mcp-server/src/tldr_tool.rs",
+          "pattern": "ensure_daemon_running_respects_disabled_auto_start_config"
+        }
+      ]
+    },
+    {
+      "id": "ztok-default-launcher-and-prompt-wiring",
+      "kind": "local_behavior",
+      "area": "codex-rs/arg0 + codex-rs/core session/tools + codex-rs/ztok",
+      "summary": "`ztok` 必须保持默认本地可用：启动时注入 PATH alias，developer 上下文要求使用 `codex ztok ...`，shell search rewrite 能识别 `ztok grep`，事件输出不能泄露绝对 launcher 路径。",
+      "better_when": "只有在新的本地 wrapper 或 upstream 等效机制同时覆盖 alias 注入、developer prompt、shell rewrite、事件脱敏和对应回归测试时，才允许替换；迁移前必须把新入口和测试锚点写回基线。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/arg0/src/lib.rs",
+          "pattern": "const ZTOK_ARG0: &str = \"ztok\";"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/arg0/src/lib.rs",
+          "pattern": "filename == ZTOK_ARG0"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/templates/compact/ztok.md",
+          "pattern": "Use `\\{\\{ logical_launcher_invocation \\}\\} ztok "
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/memories/prompts.rs",
+          "pattern": "static ZTOK_DEVELOPER_INSTRUCTIONS_TEMPLATE"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/memories/prompts.rs",
+          "pattern": "pub\\(crate\\) fn build_ztok_tool_developer_instructions\\("
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "developer_sections\\.push\\(build_ztok_tool_developer_instructions\\(\\)\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/memories/prompts_tests.rs",
+          "pattern": "build_ztok_tool_developer_instructions_renders_embedded_template"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/rewrite/shell_search_rewrite.rs",
+          "pattern": "head == \"ztok\" && next == \"grep\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/tools/events.rs",
+          "pattern": "shell_emitter_never_exposes_absolute_ztok_exec_path"
+        }
+      ]
+    },
+    {
+      "id": "ztok-behavior-mode",
+      "kind": "local_behavior",
+      "area": "codex-rs/config + codex-rs/core + codex-rs/cli + codex-rs/ztok",
+      "summary": "`ztok.behavior` 配置继续支持 enhanced/basic 行为模式，并从 Codex config 经 CLI runtime settings 传递到 ztok 压缩实现。",
+      "better_when": "upstream 或本地后续实现用等效配置机制替代 ztok behavior，但仍能选择 enhanced/basic 等价模式，并保证 Codex 配置到 ztok runtime 的传递链路不丢失。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub enum ZtokBehavior"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/types.rs",
+          "pattern": "pub behavior: Option<ZtokBehavior>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/types.rs",
+          "pattern": "pub behavior: ZtokBehavior"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/cli/src/main.rs",
+          "pattern": "config\\.ztok\\.behavior\\.as_str\\(\\)"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/ztok/src/settings.rs",
+          "pattern": "pub behavior: ZtokBehavior"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/ztok/src/behavior.rs",
+          "pattern": "pub\\(crate\\) enum ZtokBehavior"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/ztok/src/compression.rs",
+          "pattern": "compress_for_behavior"
+        }
+      ]
+    },
+    {
+      "id": "zmemory-governance-system-views-and-diagnostics",
+      "kind": "local_behavior",
+      "area": "codex-rs/zmemory + codex-rs/tools + codex-rs/core tests",
+      "summary": "`zmemory` 默认长期记忆能力必须保留系统视图、审计日志、trigger 管理、doctor 诊断和内容治理结果，而不只是保留基本 CRUD/tool schema。",
+      "better_when": "只有在新的 memory runtime 或 upstream 等效实现继续暴露 system://workspace 等系统视图、audit/manage-triggers/doctor 动作、content governance 诊断字段和 e2e 覆盖时，才允许迁移；迁移前必须更新这些检查到新实现。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/zmemory_tool.rs",
+          "pattern": "system://workspace"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/zmemory_tool.rs",
+          "pattern": "literal_str_prop\\(\"action\", \"manage-triggers\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/zmemory_tool.rs",
+          "pattern": "literal_str_prop\\(\"action\", \"audit\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tools/src/zmemory_tool.rs",
+          "pattern": "literal_str_prop\\(\"action\", \"doctor\""
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/zmemory/src/doctor.rs",
+          "pattern": "content_governance_conflicts"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/zmemory/src/service/tests.rs",
+          "pattern": "contentGovernanceIssueCount"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/zmemory/src/service/tests.rs",
+          "pattern": "content_governance_conflicts"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
+          "pattern": "zmemory_function_audit_exposes_recent_entries"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
+          "pattern": "read system://workspace: workspace view"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
+          "pattern": "structured_content\\[\"result\"\\]\\[\"governance\"\\]\\[\"status\"\\]"
         }
       ]
     }
