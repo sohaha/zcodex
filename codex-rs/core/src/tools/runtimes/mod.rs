@@ -6,13 +6,19 @@ small and focused and reuses the orchestrator for approvals + sandbox + retry.
 */
 use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
 use crate::path_utils;
+use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::tools::sandboxing::ToolError;
-use codex_protocol::models::PermissionProfile;
+#[cfg(target_os = "macos")]
+use codex_network_proxy::CODEX_PROXY_GIT_SSH_COMMAND_MARKER;
+use codex_network_proxy::PROXY_ACTIVE_ENV_KEY;
+use codex_network_proxy::PROXY_ENV_KEYS;
+#[cfg(target_os = "macos")]
+use codex_network_proxy::PROXY_GIT_SSH_COMMAND_ENV_KEY;
+use codex_protocol::models::AdditionalPermissionProfile;
 use codex_sandboxing::SandboxCommand;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
-use std::path::Path;
 
 pub(crate) mod apply_patch;
 pub(crate) mod shell;
@@ -24,7 +30,7 @@ pub(crate) fn build_sandbox_command(
     command: &[String],
     cwd: &AbsolutePathBuf,
     env: &HashMap<String, String>,
-    additional_permissions: Option<PermissionProfile>,
+    additional_permissions: Option<AdditionalPermissionProfile>,
 ) -> Result<SandboxCommand, ToolError> {
     let (program, args) = command
         .split_first()
@@ -36,6 +42,29 @@ pub(crate) fn build_sandbox_command(
         env: env.clone(),
         additional_permissions,
     })
+}
+
+pub(crate) fn exec_env_for_sandbox_permissions(
+    env: &HashMap<String, String>,
+    sandbox_permissions: SandboxPermissions,
+) -> HashMap<String, String> {
+    let mut env = env.clone();
+    if sandbox_permissions.requires_escalated_permissions()
+        && env.contains_key(PROXY_ACTIVE_ENV_KEY)
+    {
+        for key in PROXY_ENV_KEYS {
+            env.remove(*key);
+        }
+        // Only macOS injects a Codex-owned SSH wrapper for the managed SOCKS proxy.
+        #[cfg(target_os = "macos")]
+        if env
+            .get(PROXY_GIT_SSH_COMMAND_ENV_KEY)
+            .is_some_and(|command| command.starts_with(CODEX_PROXY_GIT_SSH_COMMAND_MARKER))
+        {
+            env.remove(PROXY_GIT_SSH_COMMAND_ENV_KEY);
+        }
+    }
+    env
 }
 
 /// POSIX-only helper: for commands produced by `Shell::derive_exec_args`
@@ -67,6 +96,19 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     if cfg!(windows) {
         return command.to_vec();
     }
+
+    let Some(snapshot) = session_shell.shell_snapshot() else {
+        return command.to_vec();
+    };
+
+    if !snapshot.path.exists() {
+        return command.to_vec();
+    }
+
+    if !path_utils::paths_match_after_normalization(snapshot.cwd.as_path(), cwd) {
+        return command.to_vec();
+    }
+
     if command.len() < 3 {
         return command.to_vec();
     }
@@ -76,9 +118,11 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         return command.to_vec();
     }
 
+    let snapshot_path = snapshot.path.to_string_lossy();
     let shell_path = session_shell.shell_path.to_string_lossy();
     let original_shell = shell_single_quote(&command[0]);
-    let original_script = &command[2];
+    let original_script = shell_single_quote(&command[2]);
+    let snapshot_path = shell_single_quote(snapshot_path.as_ref());
     let trailing_args = command[3..]
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
@@ -88,56 +132,78 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         override_env.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.clone());
     }
     let (override_captures, override_exports) = build_override_exports(&override_env);
-    let ripgrep_cleanup = invalid_ripgrep_config_unset();
-    let snapshot = session_shell.shell_snapshot();
-    if let Some(snapshot) = snapshot.as_ref() {
-        if !snapshot.path.exists() {
-            return command.to_vec();
-        }
+    let (proxy_captures, proxy_exports) = build_proxy_env_exports();
+    let override_captures = join_shell_blocks([override_captures, proxy_captures]);
+    let override_exports = join_shell_blocks([override_exports, proxy_exports]);
+    let rewritten_script = if override_exports.is_empty() {
+        format!(
+            "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+        )
+    } else {
+        format!(
+            "{override_captures}\n\nif . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+        )
+    };
 
-        if !path_utils::paths_match_after_normalization(snapshot.cwd.as_path(), cwd) {
-            return command.to_vec();
-        }
-    }
-
-    match snapshot {
-        Some(snapshot) => {
-            let snapshot_path = shell_single_quote(snapshot.path.to_string_lossy().as_ref());
-            let original_script = shell_single_quote(original_script);
-            let rewritten_script = if override_exports.is_empty() {
-                format!(
-                    "{ripgrep_cleanup}if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-                )
-            } else {
-                format!(
-                    "{override_captures}\n\n{ripgrep_cleanup}if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-                )
-            };
-
-            vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
-        }
-        None if override_exports.is_empty() && ripgrep_cleanup.is_empty() => command.to_vec(),
-        None => {
-            let restored_script =
-                format!("{ripgrep_cleanup}{override_exports}\n\n{original_script}");
-            let rewritten_script = format!(
-                "{override_captures}\n\nexec '{original_shell}' -lc '{}'{}",
-                shell_single_quote(&restored_script),
-                trailing_args
-            );
-
-            vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
-        }
-    }
+    vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
 }
 
 fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (String, String) {
     let mut keys = explicit_env_overrides
         .keys()
+        .map(String::as_str)
         .filter(|key| is_valid_shell_variable_name(key))
         .collect::<Vec<_>>();
     keys.sort_unstable();
 
+    build_override_exports_for_keys("__CODEX_SNAPSHOT_OVERRIDE", &keys)
+}
+
+fn build_proxy_env_exports() -> (String, String) {
+    let mut keys = PROXY_ENV_KEYS
+        .iter()
+        .copied()
+        .filter(|key| is_valid_shell_variable_name(key))
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys.dedup();
+
+    let (captures, restores) =
+        build_override_exports_for_keys("__CODEX_SNAPSHOT_PROXY_OVERRIDE", &keys);
+    let key = PROXY_ACTIVE_ENV_KEY;
+    let proxy_blocks = (
+        format!("{captures}\n__CODEX_SNAPSHOT_PROXY_ENV_SET=\"${{{key}+x}}\""),
+        format!(
+            "if [ -n \"$__CODEX_SNAPSHOT_PROXY_ENV_SET\" ] || [ -n \"${{{key}+x}}\" ]; then\n{restores}\nfi"
+        ),
+    );
+    let git_blocks = build_codex_proxy_git_ssh_command_exports();
+    (
+        join_shell_blocks([proxy_blocks.0, git_blocks.0]),
+        join_shell_blocks([proxy_blocks.1, git_blocks.1]),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn build_codex_proxy_git_ssh_command_exports() -> (String, String) {
+    let key = PROXY_GIT_SSH_COMMAND_ENV_KEY;
+    let marker_pattern = format!("{}\\ *", CODEX_PROXY_GIT_SSH_COMMAND_MARKER.trim_end());
+    (
+        format!(
+            "__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_SET=\"${{{key}+x}}\"\n__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND=\"${{{key}-}}\"\ncase \"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND\" in\n  {marker_pattern}) __CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_LIVE_MARKED=1 ;;\n  *) __CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_LIVE_MARKED= ;;\nesac"
+        ),
+        format!(
+            "case \"${{{key}-}}\" in\n  {marker_pattern}) __CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_AFTER_MARKED=1 ;;\n  *) __CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_AFTER_MARKED= ;;\nesac\nif [ -n \"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_LIVE_MARKED\" ]; then\n  if [ -z \"${{{key}+x}}\" ] || [ -n \"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_AFTER_MARKED\" ]; then\n    export {key}=\"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND\"\n  fi\nelif [ -n \"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_AFTER_MARKED\" ]; then\n  if [ -n \"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND_SET\" ]; then\n    export {key}=\"$__CODEX_SNAPSHOT_PROXY_GIT_SSH_COMMAND\"\n  else\n    unset {key}\n  fi\nfi"
+        ),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn build_codex_proxy_git_ssh_command_exports() -> (String, String) {
+    (String::new(), String::new())
+}
+
+fn build_override_exports_for_keys(variable_prefix: &str, keys: &[&str]) -> (String, String) {
     if keys.is_empty() {
         return (String::new(), String::new());
     }
@@ -146,9 +212,9 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
         .iter()
         .enumerate()
         .map(|(idx, key)| {
-            format!(
-                "export __CODEX_SNAPSHOT_OVERRIDE_SET_{idx}=\"${{{key}+x}}\"\nexport __CODEX_SNAPSHOT_OVERRIDE_{idx}=\"${{{key}-}}\""
-            )
+            let set_var = format!("{variable_prefix}_SET_{idx}");
+            let value_var = format!("{variable_prefix}_{idx}");
+            format!("{set_var}=\"${{{key}+x}}\"\n{value_var}=\"${{{key}-}}\"")
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -156,8 +222,10 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
         .iter()
         .enumerate()
         .map(|(idx, key)| {
+            let set_var = format!("{variable_prefix}_SET_{idx}");
+            let value_var = format!("{variable_prefix}_{idx}");
             format!(
-                "if [ -n \"${{__CODEX_SNAPSHOT_OVERRIDE_SET_{idx}}}\" ]; then export {key}=\"${{__CODEX_SNAPSHOT_OVERRIDE_{idx}}}\"; else unset {key}; fi\nunset __CODEX_SNAPSHOT_OVERRIDE_SET_{idx} __CODEX_SNAPSHOT_OVERRIDE_{idx}"
+                "if [ -n \"${{{set_var}}}\" ]; then export {key}=\"${{{value_var}}}\"; else unset {key}; fi"
             )
         })
         .collect::<Vec<_>>()
@@ -166,13 +234,12 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
     (captures, restores)
 }
 
-fn invalid_ripgrep_config_unset() -> &'static str {
-    match std::env::var_os("RIPGREP_CONFIG_PATH") {
-        Some(path) if !path.is_empty() && !Path::new(&path).exists() => {
-            "unset RIPGREP_CONFIG_PATH\n\n"
-        }
-        _ => "",
-    }
+fn join_shell_blocks(blocks: impl IntoIterator<Item = String>) -> String {
+    blocks
+        .into_iter()
+        .filter(|block| !block.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn is_valid_shell_variable_name(name: &str) -> bool {

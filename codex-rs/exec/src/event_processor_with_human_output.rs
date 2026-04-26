@@ -283,7 +283,16 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 self.render_item_completed(notification.item);
                 CodexStatus::Running
             }
-            ServerNotification::ModelRerouted(_) => CodexStatus::Running,
+            ServerNotification::ModelRerouted(notification) => {
+                eprintln!(
+                    "{} {} -> {}",
+                    "model rerouted:".style(self.yellow).style(self.bold),
+                    notification.from_model,
+                    notification.to_model
+                );
+                CodexStatus::Running
+            }
+            ServerNotification::ModelVerification(_) => CodexStatus::Running,
             ServerNotification::ThreadTokenUsageUpdated(notification) => {
                 self.last_total_token_usage = Some(notification.token_usage);
                 CodexStatus::Running
@@ -475,7 +484,6 @@ fn summarize_sandbox_policy(sandbox_policy: &SandboxPolicy) -> String {
             network_access,
             exclude_tmpdir_env_var,
             exclude_slash_tmp,
-            read_only_access: _,
         } => {
             let mut summary = "workspace-write".to_string();
             let mut writable_entries = vec!["workdir".to_string()];

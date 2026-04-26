@@ -1,11 +1,11 @@
 use crate::legacy_core::config::Config;
-use crate::legacy_core::read_session_meta_line;
 use crate::resume_picker::SessionSelection;
 use crate::resume_picker::SessionTarget;
 use codex_rollout::ZOFFSEC_CLEAN_DEFAULT_REPLACEMENT;
 use codex_rollout::ZoffsecCleanOptions;
 use codex_rollout::clean_zoffsec_rollout;
 use codex_rollout::find_thread_path_by_id_str;
+use codex_rollout::read_session_meta_line;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;

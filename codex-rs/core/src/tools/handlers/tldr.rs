@@ -883,9 +883,11 @@ mod tests {
         ToolInvocation {
             session,
             turn,
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::default())),
             call_id: "call-1".to_string(),
             tool_name: "ztldr".into(),
+            source: crate::tools::context::ToolCallSource::Direct,
             payload: ToolPayload::Function {
                 arguments: arguments.to_string(),
             },

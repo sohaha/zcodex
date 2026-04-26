@@ -3,117 +3,50 @@ use clap::FromArgMatches;
 use clap::Parser;
 use clap::ValueEnum;
 use codex_utils_cli::CliConfigOverrides;
+use codex_utils_cli::SharedCliOptions;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(version)]
+#[command(
+    version,
+    override_usage = "codex exec [OPTIONS] [PROMPT]\n       codex exec [OPTIONS] <COMMAND> [ARGS]"
+)]
 pub struct Cli {
-    /// 要执行的操作。若省略，则运行新的非交互会话。
+    /// Action to perform. If omitted, runs a new non-interactive session.
     #[command(subcommand)]
     pub command: Option<Command>,
 
-    /// 可选：附加到初始提示词的图片。
-    #[arg(
-        long = "image",
-        short = 'i',
-        value_name = "FILE",
-        value_delimiter = ',',
-        num_args = 1..
-    )]
-    pub images: Vec<PathBuf>,
+    #[clap(flatten)]
+    pub shared: ExecSharedCliOptions,
 
-    /// 智能体应使用的模型。
-    #[arg(long, short = 'm', global = true)]
-    pub model: Option<String>,
-
-    /// 使用本地开源模型提供方。
-    #[arg(long = "oss", default_value_t = false)]
-    pub oss: bool,
-
-    /// 指定使用哪个本地提供方（lmstudio 或 ollama）。
-    /// 若未与 --oss 一同指定，则使用配置默认值或显示选择界面。
-    #[arg(long = "local-provider")]
-    pub oss_provider: Option<String>,
-
-    /// 选择执行模型生成的命令时使用的沙箱策略。
-    #[arg(long = "sandbox", short = 's', value_enum)]
-    pub sandbox_mode: Option<codex_utils_cli::SandboxModeCliArg>,
-
-    /// 从 config.toml 中选择配置档以指定默认选项。
-    #[arg(long = "profile", short = 'p')]
-    pub config_profile: Option<String>,
-
-    /// 低阻力沙箱自动执行的便捷别名（-a on-request, --sandbox workspace-write）。
-    #[arg(long = "full-auto", default_value_t = false, global = true)]
-    pub full_auto: bool,
-
-    /// 跳过所有确认提示，并在无沙箱情况下执行命令。
-    /// 极度危险。仅适用于外部环境本身已提供沙箱保护的场景。
-    #[arg(
-        long = "dangerously-bypass-approvals-and-sandbox",
-        alias = "yolo",
-        default_value_t = false,
-        global = true,
-        conflicts_with = "full_auto"
-    )]
-    pub dangerously_bypass_approvals_and_sandbox: bool,
-
-    /// 指定智能体使用该目录作为工作根目录。
-    #[clap(long = "cd", short = 'C', value_name = "DIR")]
-    pub cwd: Option<PathBuf>,
-
-    /// Enable federation startup bridging.
-    #[arg(long = "zfeder-enable", default_value_t = false)]
-    pub zfeder_enable: bool,
-
-    /// Display name advertised to other federation peers.
-    #[arg(long = "zfeder-name", value_name = "NAME")]
-    pub zfeder_name: Option<String>,
-
-    /// Optional federation role label.
-    #[arg(long = "zfeder-role", value_name = "ROLE")]
-    pub zfeder_role: Option<String>,
-
-    /// Optional federation task scope label.
-    #[arg(long = "zfeder-scope", value_name = "SCOPE")]
-    pub zfeder_scope: Option<String>,
-
-    /// Override the federation state root. Defaults to `<CODEX_HOME>/federation`.
-    #[arg(long = "zfeder-state-root", value_name = "PATH")]
-    pub zfeder_state_root: Option<PathBuf>,
-
-    /// Override the federation instance id.
-    #[arg(long = "zfeder-instance-id", value_name = "UUID")]
-    pub zfeder_instance_id: Option<String>,
-
-    /// 允许在 Git 仓库之外运行 Codex。
+    /// Allow running Codex outside a Git repository.
     #[arg(long = "skip-git-repo-check", global = true, default_value_t = false)]
     pub skip_git_repo_check: bool,
 
-    /// 除主工作区外，额外允许写入的目录。
-    #[arg(long = "add-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
-    pub add_dir: Vec<PathBuf>,
-
-    /// 运行时不将会话文件持久化到磁盘。
+    /// Run without persisting session files to disk.
     #[arg(long = "ephemeral", global = true, default_value_t = false)]
     pub ephemeral: bool,
 
-    /// 描述模型最终响应结构的 JSON Schema 文件路径。
+    /// Do not load `$CODEX_HOME/config.toml`; auth still uses `CODEX_HOME`.
+    #[arg(long = "ignore-user-config", global = true, default_value_t = false)]
+    pub ignore_user_config: bool,
+
+    /// Do not load user or project execpolicy `.rules` files.
+    #[arg(long = "ignore-rules", global = true, default_value_t = false)]
+    pub ignore_rules: bool,
+
+    /// Path to a JSON Schema file describing the model's final response shape.
     #[arg(long = "output-schema", value_name = "FILE")]
     pub output_schema: Option<PathBuf>,
 
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 
-    /// 指定输出所使用的颜色设置。
+    /// Specifies color settings for use in the output.
     #[arg(long = "color", value_enum, default_value_t = Color::Auto)]
     pub color: Color,
 
-    /// 在 exec 模式下强制使用基于光标的进度更新。
-    #[arg(long = "progress-cursor", default_value_t = false)]
-    pub progress_cursor: bool,
-
-    /// 以 JSONL 格式将事件写入标准输出。
+    /// Print events to stdout as JSONL.
     #[arg(
         long = "json",
         alias = "experimental-json",
@@ -122,7 +55,7 @@ pub struct Cli {
     )]
     pub json: bool,
 
-    /// 指定用于写入智能体最后一条消息的文件。
+    /// Specifies file where the last message from the agent should be written.
     #[arg(
         long = "output-last-message",
         short = 'o',
@@ -131,17 +64,84 @@ pub struct Cli {
     )]
     pub last_message_file: Option<PathBuf>,
 
-    /// 智能体的初始指令。若未作为参数提供（或使用 `-`），则从标准输入读取。
+    /// Initial instructions for the agent. If not provided as an argument (or
+    /// if `-` is used), instructions are read from stdin. If stdin is piped and
+    /// a prompt is also provided, stdin is appended as a `<stdin>` block.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 }
 
+impl std::ops::Deref for Cli {
+    type Target = SharedCliOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shared.0
+    }
+}
+
+impl std::ops::DerefMut for Cli {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shared.0
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ExecSharedCliOptions(SharedCliOptions);
+
+impl ExecSharedCliOptions {
+    pub fn into_inner(self) -> SharedCliOptions {
+        self.0
+    }
+}
+
+impl std::ops::Deref for ExecSharedCliOptions {
+    type Target = SharedCliOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ExecSharedCliOptions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Args for ExecSharedCliOptions {
+    fn augment_args(cmd: clap::Command) -> clap::Command {
+        mark_exec_global_args(SharedCliOptions::augment_args(cmd))
+    }
+
+    fn augment_args_for_update(cmd: clap::Command) -> clap::Command {
+        mark_exec_global_args(SharedCliOptions::augment_args_for_update(cmd))
+    }
+}
+
+impl FromArgMatches for ExecSharedCliOptions {
+    fn from_arg_matches(matches: &clap::ArgMatches) -> Result<Self, clap::Error> {
+        SharedCliOptions::from_arg_matches(matches).map(Self)
+    }
+
+    fn update_from_arg_matches(&mut self, matches: &clap::ArgMatches) -> Result<(), clap::Error> {
+        self.0.update_from_arg_matches(matches)
+    }
+}
+
+fn mark_exec_global_args(cmd: clap::Command) -> clap::Command {
+    cmd.mut_arg("model", |arg| arg.global(true))
+        .mut_arg("full_auto", |arg| arg.global(true))
+        .mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
+            arg.global(true)
+        })
+}
+
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    /// 通过 ID 恢复先前的会话，或使用 --last 选择最近一次会话。
+    /// Resume a previous session by id or pick the most recent with --last.
     Resume(ResumeArgs),
 
-    /// 对当前仓库执行代码评审。
+    /// Run a code review against the current repository.
     Review(ReviewArgs),
 }
 
@@ -149,20 +149,20 @@ pub enum Command {
 struct ResumeArgsRaw {
     // Note: This is the direct clap shape. We reinterpret the positional when --last is set
     // so "codex resume --last <prompt>" treats the positional as a prompt, not a session id.
-    /// 会话 ID（UUID）或线程名。若能解析为 UUID，则优先按 UUID 处理。
-    /// 省略时可用 --last 选择最近一次记录的会话。
+    /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
+    /// If omitted, use --last to pick the most recent recorded session.
     #[arg(value_name = "SESSION_ID")]
     session_id: Option<String>,
 
-    /// 无需指定 ID，直接恢复最近一次记录的会话（最新）。
+    /// Resume the most recent recorded session (newest) without specifying an id.
     #[arg(long = "last", default_value_t = false)]
     last: bool,
 
-    /// 显示所有会话（关闭 cwd 过滤）。
+    /// Show all sessions (disables cwd filtering).
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
-    /// 可选：附加到恢复后发送提示词的图片。
+    /// Optional image(s) to attach to the prompt sent after resuming.
     #[arg(
         long = "image",
         short = 'i',
@@ -172,27 +172,27 @@ struct ResumeArgsRaw {
     )]
     images: Vec<PathBuf>,
 
-    /// 恢复会话后要发送的提示词。若使用 `-`，则从标准输入读取。
+    /// Prompt to send after resuming the session. If `-` is used, read from stdin.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     prompt: Option<String>,
 }
 
 #[derive(Debug)]
 pub struct ResumeArgs {
-    /// 会话 ID（UUID）或线程名。若能解析为 UUID，则优先按 UUID 处理。
-    /// 省略时可用 --last 选择最近一次记录的会话。
+    /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
+    /// If omitted, use --last to pick the most recent recorded session.
     pub session_id: Option<String>,
 
-    /// 无需指定 ID，直接恢复最近一次记录的会话（最新）。
+    /// Resume the most recent recorded session (newest) without specifying an id.
     pub last: bool,
 
-    /// 显示所有会话（关闭 cwd 过滤）。
+    /// Show all sessions (disables cwd filtering).
     pub all: bool,
 
-    /// 可选：附加到恢复后发送提示词的图片。
+    /// Optional image(s) to attach to the prompt sent after resuming.
     pub images: Vec<PathBuf>,
 
-    /// 恢复会话后要发送的提示词。若使用 `-`，则从标准输入读取。
+    /// Prompt to send after resuming the session. If `-` is used, read from stdin.
     pub prompt: Option<String>,
 }
 
@@ -238,7 +238,7 @@ impl FromArgMatches for ResumeArgs {
 
 #[derive(Parser, Debug)]
 pub struct ReviewArgs {
-    /// 评审已暂存、未暂存和未跟踪的变更。
+    /// Review staged, unstaged, and untracked changes.
     #[arg(
         long = "uncommitted",
         default_value_t = false,
@@ -246,7 +246,7 @@ pub struct ReviewArgs {
     )]
     pub uncommitted: bool,
 
-    /// 基于指定的基线分支评审变更。
+    /// Review changes against the given base branch.
     #[arg(
         long = "base",
         value_name = "BRANCH",
@@ -254,7 +254,7 @@ pub struct ReviewArgs {
     )]
     pub base: Option<String>,
 
-    /// 评审某个提交引入的变更。
+    /// Review the changes introduced by a commit.
     #[arg(
         long = "commit",
         value_name = "SHA",
@@ -262,11 +262,11 @@ pub struct ReviewArgs {
     )]
     pub commit: Option<String>,
 
-    /// 可选：在评审摘要中显示的提交标题。
+    /// Optional commit title to display in the review summary.
     #[arg(long = "title", value_name = "TITLE", requires = "commit")]
     pub commit_title: Option<String>,
 
-    /// 自定义评审说明。若使用 `-`，则从标准输入读取。
+    /// Custom review instructions. If `-` is used, read from stdin.
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 }

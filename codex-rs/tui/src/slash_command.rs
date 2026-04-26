@@ -32,8 +32,10 @@ pub enum SlashCommand {
     Compact,
     Zteam,
     Plan,
+    Goal,
     Collab,
     Agent,
+    Side,
     // Undo,
     Copy,
     Diff,
@@ -105,7 +107,9 @@ impl SlashCommand {
             SlashCommand::Realtime => "切换实时语音模式（实验性）",
             SlashCommand::Settings => "配置实时麦克风/扬声器",
             SlashCommand::Plan => "切换到计划模式",
+            SlashCommand::Goal => "设置、暂停或查看当前线程目标",
             SlashCommand::Collab => "更改协作模式（实验性）",
+            SlashCommand::Side => "启动或返回侧边对话",
             SlashCommand::Agent | SlashCommand::MultiAgents => "切换活跃的 Agent 线程",
             SlashCommand::Approvals => "选择 Codex 被允许执行的操作",
             SlashCommand::Permissions => "选择 Codex 被允许执行的操作",
@@ -135,11 +139,22 @@ impl SlashCommand {
             SlashCommand::Review
                 | SlashCommand::Rename
                 | SlashCommand::Plan
+                | SlashCommand::Goal
                 | SlashCommand::Fast
+                | SlashCommand::Mcp
+                | SlashCommand::Side
                 | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
                 | SlashCommand::Buddy
                 | SlashCommand::Zteam
+        )
+    }
+
+    /// Whether this command remains available inside an active side conversation.
+    pub fn available_in_side_conversation(self) -> bool {
+        matches!(
+            self,
+            SlashCommand::Copy | SlashCommand::Diff | SlashCommand::Mention | SlashCommand::Status
         )
     }
 
@@ -177,12 +192,14 @@ impl SlashCommand {
             | SlashCommand::DebugConfig
             | SlashCommand::Ps
             | SlashCommand::Stop
+            | SlashCommand::Goal
             | SlashCommand::Mcp
             | SlashCommand::Apps
             | SlashCommand::Plugins
             | SlashCommand::Feedback
             | SlashCommand::Quit
             | SlashCommand::Exit
+            | SlashCommand::Side
             | SlashCommand::Buddy => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,

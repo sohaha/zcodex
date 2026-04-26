@@ -214,6 +214,35 @@ just bazel-lock-update
 just bazel-lock-check
 ```
 
+## 7.5 上游删除反查 gate
+
+冲突全部清完后、进入 worktree `check` 前，必须确认没有把 upstream 已删除的原生功能意外复活：
+
+```bash
+deleted_still_present="/tmp/sync-openai-codex-pr-deleted-still-present-$ts.txt"
+: > "$deleted_still_present"
+if [ "$previous_sha" != "<none>" ]; then
+  git -C "$path" diff --name-status "$previous_sha..$openai_sha" --diff-filter=D |
+    awk '{print $2}' |
+    while read -r deleted_path; do
+      if git -C "$path" ls-files --error-unmatch "$deleted_path" >/dev/null 2>&1; then
+        echo "$deleted_path" >> "$deleted_still_present"
+      fi
+    done
+fi
+if [ -s "$deleted_still_present" ]; then
+  echo "upstream deleted paths still present in worktree:" >&2
+  cat "$deleted_still_present" >&2
+  exit 1
+fi
+```
+
+处理规则：
+
+- 如果路径属于 `local-fork-features.json` 已声明的本地长期特性，保留前必须确认 checks 覆盖入口、资源、测试和文档；必要时更新权威基线。
+- 如果路径未声明为本地特性，且是 upstream 原生功能删除/回滚，默认跟随 upstream 删除。
+- 如果想继续保留未声明路径，必须先停下让用户确认把它转为本地分叉特性，再补权威基线和测试锚点。
+
 ## 8. Worktree 审查门
 
 ```bash

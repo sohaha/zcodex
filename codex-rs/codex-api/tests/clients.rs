@@ -5,9 +5,9 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
-use codex_api::AnthropicClient;
+use codex_api::ApiError;
+use codex_api::AuthError;
 use codex_api::AuthProvider;
-use codex_api::ChatCompletionsClient;
 use codex_api::Compression;
 use codex_api::Provider;
 use codex_api::ResponsesApiRequest;
@@ -127,7 +127,6 @@ fn provider(name: &str) -> Provider {
     Provider {
         name: name.to_string(),
         base_url: "https://example.com/v1".to_string(),
-        wire_api: codex_api::provider::WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: codex_api::RetryConfig {
@@ -138,20 +137,6 @@ fn provider(name: &str) -> Provider {
             retry_transport: true,
         },
         stream_idle_timeout: Duration::from_millis(10),
-    }
-}
-
-fn anthropic_provider() -> Provider {
-    Provider {
-        wire_api: codex_api::provider::WireApi::Anthropic,
-        ..provider("anthropic")
-    }
-}
-
-fn chat_provider() -> Provider {
-    Provider {
-        wire_api: codex_api::provider::WireApi::Chat,
-        ..provider("openai")
     }
 }
 
@@ -178,6 +163,59 @@ impl FlakyTransport {
             .state
             .lock()
             .unwrap_or_else(|err| panic!("mutex poisoned: {err}"))
+    }
+}
+
+#[derive(Clone)]
+struct FailsOnceAuth {
+    attempts: Arc<Mutex<i64>>,
+    error: Arc<AuthError>,
+}
+
+impl FailsOnceAuth {
+    fn transient() -> Self {
+        Self {
+            attempts: Arc::new(Mutex::new(0)),
+            error: Arc::new(AuthError::Transient(
+                "sts temporarily unavailable".to_string(),
+            )),
+        }
+    }
+
+    fn build() -> Self {
+        Self {
+            attempts: Arc::new(Mutex::new(0)),
+            error: Arc::new(AuthError::Build("invalid auth configuration".to_string())),
+        }
+    }
+
+    fn attempts(&self) -> i64 {
+        *self
+            .attempts
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"))
+    }
+}
+
+#[async_trait]
+impl AuthProvider for FailsOnceAuth {
+    fn add_auth_headers(&self, _headers: &mut HeaderMap) {}
+
+    async fn apply_auth(&self, request: Request) -> Result<Request, AuthError> {
+        let mut attempts = self
+            .attempts
+            .lock()
+            .unwrap_or_else(|err| panic!("mutex poisoned: {err}"));
+        *attempts += 1;
+
+        if *attempts == 1 {
+            return match self.error.as_ref() {
+                AuthError::Build(message) => Err(AuthError::Build(message.clone())),
+                AuthError::Transient(message) => Err(AuthError::Transient(message.clone())),
+            };
+        }
+
+        Ok(request)
     }
 }
 
@@ -231,46 +269,6 @@ async fn responses_client_uses_responses_path() -> Result<()> {
 
     let requests = state.take_stream_requests();
     assert_path_ends_with(&requests, "/responses");
-    Ok(())
-}
-
-#[tokio::test]
-async fn chat_completions_client_uses_chat_completions_path() -> Result<()> {
-    let state = RecordingState::default();
-    let transport = RecordingTransport::new(state.clone());
-    let client = ChatCompletionsClient::new(transport, chat_provider(), Arc::new(NoAuth));
-
-    let request = ResponsesApiRequest {
-        model: "gpt-test".to_string(),
-        instructions: "system".to_string(),
-        input: vec![ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "hello".to_string(),
-            }],
-            end_turn: None,
-            phase: None,
-        }],
-        tools: Vec::new(),
-        tool_choice: "auto".to_string(),
-        parallel_tool_calls: false,
-        reasoning: None,
-        store: false,
-        stream: true,
-        include: Vec::new(),
-        service_tier: None,
-        prompt_cache_key: None,
-        text: None,
-        client_metadata: None,
-        max_output_tokens: None,
-    };
-    let _stream = client
-        .stream_request(request, ResponsesOptions::default())
-        .await?;
-
-    let requests = state.take_stream_requests();
-    assert_path_ends_with(&requests, "/chat/completions");
     Ok(())
 }
 
@@ -337,7 +335,6 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
-        max_output_tokens: None,
     };
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
 
@@ -351,6 +348,65 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         )
         .await?;
     assert_eq!(transport.attempts(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_retries_on_transient_auth_error() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let auth = FailsOnceAuth::transient();
+
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+
+    let client = ResponsesClient::new(transport, provider, Arc::new(auth.clone()));
+    let body = serde_json::json!({ "model": "gpt-test" });
+    let _stream = client
+        .stream(
+            body,
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await?;
+
+    assert_eq!(auth.attempts(), 2);
+    assert_eq!(state.take_stream_requests().len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_does_not_retry_auth_build_error() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let auth = FailsOnceAuth::build();
+
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+
+    let client = ResponsesClient::new(transport, provider, Arc::new(auth.clone()));
+    let body = serde_json::json!({ "model": "gpt-test" });
+    let result = client
+        .stream(
+            body,
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await;
+    let err = match result {
+        Ok(_) => panic!("auth build errors should fail without retry"),
+        Err(err) => err,
+    };
+
+    assert!(matches!(
+        err,
+        ApiError::Transport(TransportError::Build(message))
+            if message == "invalid auth configuration"
+    ));
+    assert_eq!(auth.attempts(), 1);
+    assert_eq!(state.take_stream_requests().len(), 0);
     Ok(())
 }
 
@@ -381,7 +437,6 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
-        max_output_tokens: None,
     };
 
     let mut extra_headers = HeaderMap::new();
@@ -429,78 +484,6 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         .and_then(|item| item.get("id"))
         .and_then(|id| id.as_str());
     assert_eq!(input_id, Some("msg_1"));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn anthropic_stream_request_preserves_session_headers() -> Result<()> {
-    let state = RecordingState::default();
-    let transport = RecordingTransport::new(state.clone());
-    let client = AnthropicClient::new(transport, anthropic_provider(), Arc::new(NoAuth));
-
-    let request = ResponsesApiRequest {
-        model: "claude-test".into(),
-        instructions: "Say hi".into(),
-        input: vec![ResponseItem::Message {
-            id: Some("msg_1".into()),
-            role: "user".into(),
-            content: vec![ContentItem::InputText { text: "hi".into() }],
-            end_turn: None,
-            phase: None,
-        }],
-        tools: Vec::new(),
-        tool_choice: "auto".into(),
-        parallel_tool_calls: false,
-        reasoning: None,
-        store: false,
-        stream: true,
-        include: Vec::new(),
-        service_tier: None,
-        prompt_cache_key: None,
-        text: None,
-        client_metadata: None,
-        max_output_tokens: None,
-    };
-
-    let _stream = client
-        .stream_request(
-            request,
-            ResponsesOptions {
-                conversation_id: Some("sess_123".into()),
-                session_source: Some(SessionSource::SubAgent(SubAgentSource::Review)),
-                extra_headers: HeaderMap::new(),
-                compression: Compression::None,
-                turn_state: None,
-            },
-        )
-        .await?;
-
-    let requests = state.take_stream_requests();
-    assert_eq!(requests.len(), 1);
-    let req = &requests[0];
-
-    assert_path_ends_with(&requests, "/messages");
-    assert_eq!(
-        req.headers.get("session_id").and_then(|v| v.to_str().ok()),
-        Some("sess_123")
-    );
-    assert_eq!(
-        req.headers
-            .get("x-openai-subagent")
-            .and_then(|v| v.to_str().ok()),
-        Some("review")
-    );
-    assert_eq!(
-        req.headers
-            .get("x-client-request-id")
-            .and_then(|v| v.to_str().ok()),
-        Some("sess_123")
-    );
-    assert!(
-        req.headers.get("x-codex-subagent").is_none(),
-        "anthropic requests should use the same subagent header name as responses"
-    );
 
     Ok(())
 }

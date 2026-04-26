@@ -1,4 +1,3 @@
-use crate::config::AutoTldrRoutingMode;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
@@ -16,6 +15,7 @@ use crate::tools::router::ToolCall;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolLanguage;
+use codex_tools::AutoTldrRoutingMode;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -180,7 +180,6 @@ fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
 #[cfg(test)]
 mod tests {
     use super::rewrite_grep_files_to_tldr;
-    use crate::config::AutoTldrRoutingMode;
     use crate::session::tests::make_session_and_context;
     use crate::tools::context::ToolPayload;
     use crate::tools::rewrite::AutoTldrContext;
@@ -203,6 +202,7 @@ mod tests {
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
     use codex_native_tldr::tool_api::TldrToolLanguage;
+    use codex_tools::AutoTldrRoutingMode;
     use pretty_assertions::assert_eq;
 
     #[tokio::test]

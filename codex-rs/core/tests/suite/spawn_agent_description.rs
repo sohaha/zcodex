@@ -4,6 +4,8 @@
 use anyhow::Result;
 use codex_features::Feature;
 use codex_login::CodexAuth;
+use codex_models_manager::manager::RefreshStrategy;
+use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
@@ -15,11 +17,15 @@ use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::default_input_modalities;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
+use core_test_support::responses::mount_models_once;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::test_codex;
 use serde_json::Value;
+use std::time::Duration;
+use std::time::Instant;
+use tokio::time::sleep;
 
 const SPAWN_AGENT_TOOL_NAME: &str = "spawn_agent";
 
@@ -79,45 +85,62 @@ fn test_model_info(
         auto_compact_token_limit: None,
         effective_context_window_percent: 95,
         experimental_supported_tools: Vec::new(),
-        skip_reasoning_popup: false,
+    }
+}
+
+async fn wait_for_model_available(manager: &SharedModelsManager, slug: &str) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let available_models = manager.list_models(RefreshStrategy::Online).await;
+        if available_models.iter().any(|model| model.model == slug) {
+            return;
+        }
+        if Instant::now() >= deadline {
+            panic!("timed out waiting for remote model {slug} to appear");
+        }
+        sleep(Duration::from_millis(25)).await;
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() -> Result<()> {
     let server = start_mock_server().await;
-    let model_catalog = ModelsResponse {
-        models: vec![
-            test_model_info(
-                "visible-model",
-                "Visible Model",
-                "Fast and capable",
-                ModelVisibility::List,
-                ReasoningEffort::Medium,
-                vec![
-                    ReasoningEffortPreset {
+    mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![
+                test_model_info(
+                    "visible-model",
+                    "Visible Model",
+                    "Fast and capable",
+                    ModelVisibility::List,
+                    ReasoningEffort::Medium,
+                    vec![
+                        ReasoningEffortPreset {
+                            effort: ReasoningEffort::Low,
+                            description: "Quick scan".to_string(),
+                        },
+                        ReasoningEffortPreset {
+                            effort: ReasoningEffort::High,
+                            description: "Deep dive".to_string(),
+                        },
+                    ],
+                ),
+                test_model_info(
+                    "hidden-model",
+                    "Hidden Model",
+                    "Should not be shown",
+                    ModelVisibility::Hide,
+                    ReasoningEffort::Low,
+                    vec![ReasoningEffortPreset {
                         effort: ReasoningEffort::Low,
-                        description: "Quick scan".to_string(),
-                    },
-                    ReasoningEffortPreset {
-                        effort: ReasoningEffort::High,
-                        description: "Deep dive".to_string(),
-                    },
-                ],
-            ),
-            test_model_info(
-                "hidden-model",
-                "Hidden Model",
-                "Should not be shown",
-                ModelVisibility::Hide,
-                ReasoningEffort::Low,
-                vec![ReasoningEffortPreset {
-                    effort: ReasoningEffort::Low,
-                    description: "Not visible".to_string(),
-                }],
-            ),
-        ],
-    };
+                        description: "Not visible".to_string(),
+                    }],
+                ),
+            ],
+        },
+    )
+    .await;
     let resp_mock = mount_sse_once(
         &server,
         sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
@@ -127,14 +150,14 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     let mut builder = test_codex()
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_model("visible-model")
-        .with_config(move |config| {
+        .with_config(|config| {
             config
                 .features
                 .enable(Feature::Collab)
                 .expect("test config should allow feature update");
-            config.model_catalog = Some(model_catalog);
         });
     let test = builder.build(&server).await?;
+    wait_for_model_available(&test.thread_manager.get_models_manager(), "visible-model").await;
 
     test.submit_turn("hello").await?;
 
@@ -145,6 +168,23 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
     assert!(
         description.contains("- Visible Model (`visible-model`): Fast and capable"),
         "expected visible model summary in spawn_agent description: {description:?}"
+    );
+    assert!(
+        description
+            .contains("Available model overrides (optional; inherited parent model is preferred):"),
+        "expected model choices to be framed as overrides in spawn_agent description: {description:?}"
+    );
+    assert!(
+        description.contains(
+            "Spawned agents inherit your current model by default. Omit `model` to use that preferred default; set `model` only when an explicit override is needed."
+        ),
+        "expected inherited-model guidance in spawn_agent description: {description:?}"
+    );
+    assert!(
+        description.contains(
+            "Do not set the `model` field unless the user explicitly asks for a different model or there is a clear task-specific reason."
+        ),
+        "expected model override usage guidance in spawn_agent description: {description:?}"
     );
     assert!(
         description.contains("Default reasoning effort: medium."),
@@ -175,6 +215,10 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
             "Agent-role guidance below only helps choose which agent to use after spawning is already authorized; it never authorizes spawning by itself."
         ),
         "expected agent-role clarification in spawn_agent description: {description:?}"
+    );
+    assert!(
+        !description.contains("A mini model can solve many tasks faster than the main model."),
+        "spawn_agent description should not encourage choosing a smaller model by default: {description:?}"
     );
 
     Ok(())

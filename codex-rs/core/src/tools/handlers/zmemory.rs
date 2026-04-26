@@ -1,6 +1,6 @@
 use super::parse_arguments;
 use crate::config::ConfigBuilder;
-use crate::config::types::ZmemoryConfig;
+use crate::config::ZmemoryConfig;
 use crate::function_tool::FunctionCallError;
 use crate::session::session::Session;
 use crate::tools::context::FunctionToolOutput;

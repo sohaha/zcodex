@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -13,20 +14,28 @@ use crate::agent::Mailbox;
 use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
-use crate::agent_identity::AgentIdentityManager;
-use crate::agent_identity::RegisteredAgentTask;
-use crate::apps::render_apps_section;
+use crate::build_available_skills;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
 use crate::config::ManagedFeatures;
 use crate::connectors;
+use crate::context::ApprovedCommandPrefixSaved;
+use crate::context::AppsInstructions;
+use crate::context::AvailablePluginsInstructions;
+use crate::context::AvailableSkillsInstructions;
+use crate::context::CollaborationModeInstructions;
+use crate::context::ContextualUserFragment;
+use crate::context::NetworkRuleSaved;
+use crate::context::PermissionsInstructions;
+use crate::context::PersonalitySpecInstructions;
 use crate::default_skill_metadata_budget;
+use crate::environment_selection::selected_primary_environment;
+use crate::environment_selection::validate_environment_selections;
 use crate::exec_policy::ExecPolicyManager;
 use crate::installation_id::resolve_installation_id;
 use crate::parse_turn_item;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::realtime_conversation::RealtimeConversationManager;
-use crate::render_skills_section;
 use crate::rollout::find_thread_name_by_id;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::skills::SkillRenderSideEffects;
@@ -38,7 +47,6 @@ use chrono::Local;
 use chrono::Utc;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::SubAgentThreadStartedInput;
-use codex_app_server_protocol::AuthMode;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_config::types::OAuthCredentialsStoreMode;
@@ -58,10 +66,8 @@ use codex_mcp::McpConnectionManager;
 use codex_mcp::McpRuntimeEnvironment;
 use codex_mcp::ToolInfo;
 use codex_mcp::codex_apps_tools_cache_key;
-#[cfg(test)]
-use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
+use codex_models_manager::manager::SharedModelsManager;
 use codex_network_proxy::NetworkProxy;
 use codex_network_proxy::NetworkProxyAuditMetadata;
 use codex_network_proxy::normalize_host;
@@ -70,6 +76,7 @@ use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::ThreadId;
 use codex_protocol::ToolName;
+use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
@@ -83,8 +90,10 @@ use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::mcp::CallToolResult;
+use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::models::format_allow_prefixes;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -102,6 +111,7 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnContextItem;
 use codex_protocol::protocol::TurnContextNetworkItem;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
@@ -111,11 +121,20 @@ use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::request_user_input::RequestUserInputArgs;
 use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_rmcp_client::ElicitationResponse;
-use codex_rollout::RolloutConfig;
 use codex_rollout::state_db;
+use codex_rollout_trace::AgentResultTracePayload;
+use codex_rollout_trace::ThreadStartedTraceMetadata;
+use codex_rollout_trace::ThreadTraceContext;
+use codex_sandboxing::policy_transforms::intersect_permission_profiles;
 use codex_shell_command::parse_command::parse_command;
 use codex_terminal_detection::user_agent;
+use codex_thread_store::CreateThreadParams;
+use codex_thread_store::LiveThread;
+use codex_thread_store::LiveThreadInitGuard;
 use codex_thread_store::LocalThreadStore;
+use codex_thread_store::ResumeThreadParams;
+use codex_thread_store::ThreadEventPersistenceMode;
+use codex_thread_store::ThreadStore;
 use codex_utils_output_truncation::TruncationPolicy;
 use futures::future::BoxFuture;
 use futures::future::Shared;
@@ -154,7 +173,6 @@ use crate::config::StartedNetworkProxy;
 use crate::config::resolve_web_search_mode_for_turn;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
-use crate::environment_context::EnvironmentContext;
 use crate::thread_rollout_truncation::initial_history_has_prior_user_turns;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::types::McpServerConfig;
@@ -180,7 +198,7 @@ use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
 use self::session::Session;
 use self::session::SessionConfiguration;
-use self::session::SessionSettingsUpdate;
+pub(crate) use self::session::SessionSettingsUpdate;
 #[cfg(test)]
 use self::turn::AssistantMessageStreamParsers;
 #[cfg(test)]
@@ -209,23 +227,23 @@ impl SteerInputError {
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
             Self::ExpectedTurnMismatch { expected, actual } => ErrorEvent {
-                message: format!("期望的活跃轮次 ID 为 `{expected}`，但实际是 `{actual}`"),
+                message: format!("期望的活跃轮次 ID 为 `{expected}`，但当前为 `{actual}`"),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
             Self::ActiveTurnNotSteerable { turn_kind } => {
                 let turn_kind_label = match turn_kind {
-                    NonSteerableTurnKind::Review => "审查",
-                    NonSteerableTurnKind::Compact => "压缩",
+                    NonSteerableTurnKind::Review => "review",
+                    NonSteerableTurnKind::Compact => "compact",
                 };
                 ErrorEvent {
-                    message: format!("无法向{turn_kind_label}轮次追加输入"),
+                    message: format!("cannot steer a {turn_kind_label} turn"),
                     codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                         turn_kind: *turn_kind,
                     }),
                 }
             }
             Self::EmptyInput => ErrorEvent {
-                message: "输入不能为空".to_string(),
+                message: "input must not be empty".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
         }
@@ -249,19 +267,14 @@ use crate::SkillLoadOutcome;
 use crate::SkillMetadata;
 use crate::SkillsManager;
 use crate::agents_md::AgentsMdManager;
+use crate::context::UserInstructions;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::guardian::GuardianReviewSessionManager;
-use crate::instructions::UserInstructions;
 use crate::mcp::McpManager;
 use crate::memories;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
 use crate::plugins::PluginsManager;
-use crate::plugins::render_plugins_section;
-use crate::rollout::RolloutRecorder;
-use crate::rollout::RolloutRecorderParams;
 use crate::rollout::map_session_init_error;
-use crate::rollout::metadata;
-use crate::rollout::policy::EventPersistenceMode;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
@@ -269,6 +282,7 @@ use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
+use crate::state::PendingRequestPermissions;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]
@@ -279,8 +293,6 @@ use crate::tasks::GhostSnapshotTask;
 use crate::tasks::ReviewTask;
 use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
-use crate::tools::js_repl::JsReplHandle;
-use crate::tools::js_repl::resolve_compatible_node;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
@@ -303,7 +315,6 @@ use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::ContentItem;
-use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -321,6 +332,8 @@ use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::ModelRerouteEvent;
 use codex_protocol::protocol::ModelRerouteReason;
+use codex_protocol::protocol::ModelVerification;
+use codex_protocol::protocol::ModelVerificationEvent;
 use codex_protocol::protocol::NetworkApprovalContext;
 use codex_protocol::protocol::NonSteerableTurnKind;
 use codex_protocol::protocol::Op;
@@ -365,8 +378,6 @@ pub struct Codex {
 
 pub(crate) type SessionLoopTermination = Shared<BoxFuture<'static, ()>>;
 
-pub(crate) const THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE: &str = "部分已启用的技能未包含在此会话的模型可见技能列表中。如需使用某个技能，请通过名称或路径显式引用它。";
-
 /// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`] and
 /// the unique session id.
 pub struct CodexSpawnOk {
@@ -377,7 +388,7 @@ pub struct CodexSpawnOk {
 pub(crate) struct CodexSpawnArgs {
     pub(crate) config: Config,
     pub(crate) auth_manager: Arc<AuthManager>,
-    pub(crate) models_manager: Arc<ModelsManager>,
+    pub(crate) models_manager: SharedModelsManager,
     pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) skills_manager: Arc<SkillsManager>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
@@ -391,9 +402,16 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) metrics_service_name: Option<String>,
     pub(crate) inherited_shell_snapshot: Option<Arc<ShellSnapshot>>,
     pub(crate) inherited_exec_policy: Option<Arc<ExecPolicyManager>>,
+    /// Parent rollout trace used only to derive fresh spawned child traces.
+    ///
+    /// Root sessions and non-thread-spawn subagents pass a disabled context;
+    /// `Session::new` creates the root trace itself when rollout tracing is enabled.
+    pub(crate) parent_rollout_thread_trace: ThreadTraceContext,
     pub(crate) user_shell_override: Option<shell::Shell>,
     pub(crate) parent_trace: Option<W3cTraceContext>,
+    pub(crate) environments: Vec<TurnEnvironmentSelection>,
     pub(crate) analytics_events_client: Option<AnalyticsEventsClient>,
+    pub(crate) thread_store: Arc<dyn ThreadStore>,
 }
 
 pub(crate) const INITIAL_SUBMIT_ID: &str = "";
@@ -409,7 +427,7 @@ impl Codex {
                 if codex_otel::context_from_w3c_trace_context(&trace).is_some() {
                     Some(trace)
                 } else {
-                    warn!("忽略无效的线程派生追踪载荷");
+                    warn!("ignoring invalid thread spawn trace carrier");
                     None
                 }
             }
@@ -446,16 +464,17 @@ impl Codex {
             inherited_shell_snapshot,
             user_shell_override,
             inherited_exec_policy,
+            parent_rollout_thread_trace,
             parent_trace: _,
+            environments,
             analytics_events_client,
+            thread_store,
         } = args;
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
-
-        let environment = environment_manager
-            .current()
-            .await
-            .map_err(|err| CodexErr::Fatal(format!("创建环境失败：{err}")))?;
+        validate_environment_selections(environment_manager.as_ref(), &environments)?;
+        let environment =
+            selected_primary_environment(environment_manager.as_ref(), &environments)?;
         let fs = environment
             .as_ref()
             .map(|environment| environment.get_filesystem());
@@ -465,7 +484,11 @@ impl Codex {
         let loaded_skills = skills_manager.skills_for_config(&skills_input, fs).await;
 
         for err in &loaded_skills.errors {
-            error!("加载技能 {} 失败：{}", err.path.display(), err.message);
+            error!(
+                "failed to load skill {}: {}",
+                err.path.display(),
+                err.message
+            );
         }
 
         if let SessionSource::SubAgent(SubAgentSource::ThreadSpawn { depth, .. }) = session_source
@@ -473,32 +496,6 @@ impl Codex {
         {
             let _ = config.features.disable(Feature::SpawnCsv);
             let _ = config.features.disable(Feature::Collab);
-        }
-
-        if config.features.enabled(Feature::JsRepl)
-            && let Err(err) = resolve_compatible_node(config.js_repl_node_path.as_deref()).await
-        {
-            let _ = config.features.disable(Feature::JsRepl);
-            let _ = config.features.disable(Feature::JsReplToolsOnly);
-            let message = if config.features.enabled(Feature::JsRepl) {
-                format!(
-                    "`js_repl` 仍保持启用，因为企业级要求将其固定开启，但配置的 Node 运行时不可用或版本不兼容。{err}"
-                )
-            } else {
-                format!("已为此会话禁用 `js_repl`，因为配置的 Node 运行时不可用或版本不兼容。{err}")
-            };
-            warn!("{message}");
-            config.startup_warnings.push(message);
-        }
-        if config.features.enabled(Feature::CodeMode)
-            && let Err(err) = resolve_compatible_node(config.js_repl_node_path.as_deref()).await
-        {
-            let message = format!(
-                "已为此会话禁用 `exec` 功能，因为配置的 Node 运行时不可用或版本不兼容。{err}"
-            );
-            warn!("{message}");
-            let _ = config.features.disable(Feature::CodeMode);
-            config.startup_warnings.push(message);
         }
 
         let user_instructions = AgentsMdManager::new(&config)
@@ -516,7 +513,7 @@ impl Codex {
             Arc::new(
                 ExecPolicyManager::load(&config.config_layer_stack)
                     .await
-                    .map_err(|err| CodexErr::Fatal(format!("加载规则失败：{err}")))?,
+                    .map_err(|err| CodexErr::Fatal(format!("failed to load rules: {err}")))?,
             )
         };
 
@@ -576,7 +573,6 @@ impl Codex {
         } else {
             dynamic_tools
         };
-
         // TODO (aibrahim): Consolidate config.model and config.model_reasoning_effort into config.collaboration_mode
         // to avoid extracting these fields separately and constructing CollaborationMode here.
         let collaboration_mode = CollaborationMode {
@@ -587,11 +583,20 @@ impl Codex {
                 developer_instructions: None,
             },
         };
+        let account_plan_type = auth_manager
+            .auth_cached()
+            .and_then(|auth| auth.account_plan_type());
+        let service_tier = get_service_tier(
+            config.service_tier,
+            config.notices.fast_default_opt_out.unwrap_or(false),
+            account_plan_type,
+            config.features.enabled(Feature::FastMode),
+        );
         let session_configuration = SessionConfiguration {
             provider: config.model_provider.clone(),
             collaboration_mode,
             model_reasoning_summary: config.model_reasoning_summary,
-            service_tier: config.service_tier,
+            service_tier,
             developer_instructions: config.developer_instructions.clone(),
             user_instructions,
             personality: config.personality,
@@ -606,6 +611,7 @@ impl Codex {
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
             thread_name: None,
+            environments,
             original_config_do_not_use: Arc::clone(&config),
             metrics_service_name,
             app_server_client_name: None,
@@ -636,12 +642,14 @@ impl Codex {
             mcp_manager.clone(),
             skills_watcher,
             agent_control,
-            environment,
+            environment_manager,
             analytics_events_client,
+            thread_store,
+            parent_rollout_thread_trace,
         )
         .await
         .map_err(|e| {
-            error!("创建会话失败：{e:#}");
+            error!("Failed to create session: {e:#}");
             map_session_init_error(&e, &config.codex_home)
         })?;
         let thread_id = session.conversation_id;
@@ -771,6 +779,27 @@ impl Codex {
     }
 }
 
+fn get_service_tier(
+    configured_service_tier: Option<ServiceTier>,
+    fast_default_opt_out: bool,
+    account_plan_type: Option<AccountPlanType>,
+    fast_mode_enabled: bool,
+) -> Option<ServiceTier> {
+    if configured_service_tier.is_some() || fast_default_opt_out || !fast_mode_enabled {
+        return configured_service_tier;
+    }
+
+    account_plan_type
+        .is_some_and(is_enterprise_default_service_tier_plan)
+        .then_some(ServiceTier::Fast)
+}
+
+fn is_enterprise_default_service_tier_plan(plan_type: AccountPlanType) -> bool {
+    plan_type == AccountPlanType::Enterprise
+        || plan_type.is_business_like()
+        || plan_type.is_team_like()
+}
+
 #[cfg(test)]
 pub(crate) fn completed_session_loop_termination() -> SessionLoopTermination {
     futures::future::ready(()).boxed().shared()
@@ -862,7 +891,7 @@ impl Session {
             .with_exec_policy_network_rules(exec_policy)
             .map_err(|err| {
                 tracing::warn!(
-                    "将 execpolicy 网络规则应用到托管代理失败；继续使用已配置的网络策略：{err}"
+                    "failed to apply execpolicy network rules to managed proxy; continuing with configured network policy: {err}"
                 );
                 err
             })
@@ -876,7 +905,7 @@ impl Session {
                 audit_metadata,
             )
             .await
-            .map_err(|err| anyhow::anyhow!("启动托管网络代理失败：{err}"))?;
+            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?;
         let session_network_proxy = {
             let proxy = network_proxy.proxy();
             SessionNetworkProxyRuntime {
@@ -891,7 +920,10 @@ impl Session {
         let Some(started_proxy) = self.services.network_proxy.as_ref() else {
             return;
         };
-        let _refresh_guard = self.managed_network_proxy_refresh_lock.lock().await;
+        let Ok(_refresh_guard) = self.managed_network_proxy_refresh_lock.acquire().await else {
+            error!("managed network proxy refresh semaphore closed");
+            return;
+        };
         let session_configuration = {
             let state = self.state.lock().await;
             state.session_configuration.clone()
@@ -905,24 +937,27 @@ impl Session {
             return;
         };
 
-        let spec =
-            match spec.recompute_for_sandbox_policy(session_configuration.sandbox_policy.get()) {
-                Ok(spec) => spec,
-                Err(err) => {
-                    warn!("因沙箱变更重建托管网络代理策略失败：{err}");
-                    return;
-                }
-            };
+        let spec = match spec
+            .recompute_for_sandbox_policy(session_configuration.sandbox_policy.get())
+        {
+            Ok(spec) => spec,
+            Err(err) => {
+                warn!("failed to rebuild managed network proxy policy for sandbox change: {err}");
+                return;
+            }
+        };
         let current_exec_policy = self.services.exec_policy.current();
         let spec = match spec.with_exec_policy_network_rules(current_exec_policy.as_ref()) {
             Ok(spec) => spec,
             Err(err) => {
-                warn!("刷新托管网络代理时应用 execpolicy 网络规则失败：{err}");
+                warn!(
+                    "failed to apply execpolicy network rules while refreshing managed network proxy: {err}"
+                );
                 spec
             }
         };
         if let Err(err) = spec.apply_to_started_proxy(started_proxy).await {
-            warn!("因沙箱变更刷新托管网络代理失败：{err}");
+            warn!("failed to refresh managed network proxy for sandbox change: {err}");
         }
     }
 
@@ -962,138 +997,6 @@ impl Session {
         });
     }
 
-    fn start_agent_identity_registration(self: &Arc<Self>) {
-        if !self.services.agent_identity_manager.is_enabled() {
-            return;
-        }
-
-        let weak_sess = Arc::downgrade(self);
-        let mut auth_state_rx = self.services.auth_manager.subscribe_auth_state();
-        tokio::spawn(async move {
-            loop {
-                let Some(sess) = weak_sess.upgrade() else {
-                    return;
-                };
-                match sess
-                    .services
-                    .agent_identity_manager
-                    .ensure_registered_identity()
-                    .await
-                {
-                    Ok(Some(_)) => return,
-                    Ok(None) => {
-                        drop(sess);
-                        if auth_state_rx.changed().await.is_err() {
-                            return;
-                        }
-                    }
-                    Err(error) => {
-                        sess.fail_agent_identity_registration(error).await;
-                        return;
-                    }
-                }
-            }
-        });
-    }
-
-    async fn fail_agent_identity_registration(self: &Arc<Self>, error: anyhow::Error) {
-        warn!(error = %error, "Agent 身份注册失败");
-        let message =
-            format!("Agent 身份注册失败（`features.use_agent_identity` 已启用）：{error}");
-        self.send_event_raw(Event {
-            id: self.next_internal_sub_id(),
-            msg: EventMsg::Error(ErrorEvent {
-                message,
-                codex_error_info: Some(CodexErrorInfo::Other),
-            }),
-        })
-        .await;
-    }
-
-    async fn cached_agent_task_for_current_binding(&self) -> Option<RegisteredAgentTask> {
-        let agent_task = {
-            let state = self.state.lock().await;
-            state.agent_task()
-        }?;
-
-        if self
-            .services
-            .agent_identity_manager
-            .task_matches_current_binding(&agent_task)
-            .await
-        {
-            debug!(
-                agent_runtime_id = %agent_task.agent_runtime_id,
-                task_id = %agent_task.task_id,
-                "reusing cached agent task"
-            );
-            return Some(agent_task);
-        }
-
-        debug!(
-            agent_runtime_id = %agent_task.agent_runtime_id,
-            task_id = %agent_task.task_id,
-            "discarding cached agent task because auth binding changed"
-        );
-        let mut state = self.state.lock().await;
-        if state.agent_task().as_ref() == Some(&agent_task) {
-            state.clear_agent_task();
-        }
-        None
-    }
-
-    async fn ensure_agent_task_registered(&self) -> anyhow::Result<Option<RegisteredAgentTask>> {
-        if let Some(agent_task) = self.cached_agent_task_for_current_binding().await {
-            return Ok(Some(agent_task));
-        }
-
-        for _ in 0..2 {
-            let Some(agent_task) = self.services.agent_identity_manager.register_task().await?
-            else {
-                return Ok(None);
-            };
-
-            if !self
-                .services
-                .agent_identity_manager
-                .task_matches_current_binding(&agent_task)
-                .await
-            {
-                debug!(
-                    agent_runtime_id = %agent_task.agent_runtime_id,
-                    task_id = %agent_task.task_id,
-                    "discarding newly registered agent task because auth binding changed"
-                );
-                continue;
-            }
-
-            {
-                let mut state = self.state.lock().await;
-                if let Some(existing_agent_task) = state.agent_task() {
-                    if existing_agent_task.has_same_binding(&agent_task) {
-                        return Ok(Some(existing_agent_task));
-                    }
-                    debug!(
-                        agent_runtime_id = %existing_agent_task.agent_runtime_id,
-                        task_id = %existing_agent_task.task_id,
-                        "replacing cached agent task because auth binding changed"
-                    );
-                }
-                state.set_agent_task(agent_task.clone());
-            }
-
-            info!(
-                thread_id = %self.conversation_id,
-                agent_runtime_id = %agent_task.agent_runtime_id,
-                task_id = %agent_task.task_id,
-                "registered agent task for thread"
-            );
-            return Ok(Some(agent_task));
-        }
-
-        Ok(None)
-    }
-
     pub(crate) fn get_tx_event(&self) -> Sender<Event> {
         self.tx_event.clone()
     }
@@ -1102,33 +1005,37 @@ impl Session {
         self.services.state_db.clone()
     }
 
+    pub(crate) fn live_thread_for_persistence(
+        &self,
+        operation: &str,
+    ) -> anyhow::Result<&LiveThread> {
+        self.live_thread()
+            .ok_or_else(|| anyhow::anyhow!("Session persistence is disabled; cannot {operation}."))
+    }
+
+    pub(crate) fn live_thread(&self) -> Option<&LiveThread> {
+        self.services.live_thread.as_ref()
+    }
+
     /// Flush rollout writes and return the final durability-barrier result.
     pub(crate) async fn flush_rollout(&self) -> std::io::Result<()> {
-        let recorder = {
-            let guard = self.services.rollout.lock().await;
-            guard.clone()
-        };
-        if let Some(recorder) = recorder {
-            recorder.flush().await
+        if let Some(live_thread) = self.live_thread() {
+            live_thread.flush().await.map_err(std::io::Error::other)
         } else {
             Ok(())
         }
     }
 
     pub(crate) async fn try_ensure_rollout_materialized(&self) -> std::io::Result<()> {
-        let recorder = {
-            let guard = self.services.rollout.lock().await;
-            guard.clone()
-        };
-        if let Some(rec) = recorder {
-            rec.persist().await?;
+        if let Some(live_thread) = self.live_thread() {
+            live_thread.persist().await.map_err(std::io::Error::other)?;
         }
         Ok(())
     }
 
     pub(crate) async fn ensure_rollout_materialized(&self) {
         if let Err(e) = self.try_ensure_rollout_materialized().await {
-            warn!("物化 rollout 记录器失败：{e}");
+            warn!("failed to materialize thread persistence: {e}");
         }
     }
 
@@ -1144,6 +1051,7 @@ impl Session {
             self,
             self.next_internal_sub_id(),
             Op::UserInput {
+                environments: None,
                 items: vec![UserInput::Text {
                     text,
                     text_elements: Vec::new(),
@@ -1252,12 +1160,13 @@ impl Session {
                     .map(|settings| settings.model.as_str())
                     .filter(|model| *model != curr)
                 {
-                    // warn!("resuming session with different model: previous={prev}, current={curr}");
+                    warn!("resuming session with different model: previous={prev}, current={curr}");
                     self.send_event(
                         &turn_context,
                         EventMsg::Warning(WarningEvent {
                             message: format!(
-                                "此会话使用模型 `{prev}` 录制，但当前恢复时使用的模型为 `{curr}`。"
+                                "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
+                         Consider switching back to `{prev}` as it may affect Codex performance."
                             ),
                         }),
                     )
@@ -1288,7 +1197,7 @@ impl Session {
                     state.set_token_info(Some(info));
                 }
 
-                // If persisting, persist all rollout items as-is (recorder filters)
+                // If persisting, persist all rollout items as-is (the store filters).
                 if !rollout_items.is_empty() {
                     self.persist_rollout_items(&rollout_items).await;
                 }
@@ -1384,7 +1293,7 @@ impl Session {
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
                 Err(err) => {
-                    warn!("会话设置更新被拒绝：{err}");
+                    warn!("rejected session settings update: {err}");
                     return Err(err);
                 }
             };
@@ -1417,6 +1326,14 @@ impl Session {
         }
 
         Ok(())
+    }
+
+    pub(crate) async fn validate_settings(
+        &self,
+        updates: &SessionSettingsUpdate,
+    ) -> ConstraintResult<()> {
+        let state = self.state.lock().await;
+        state.session_configuration.apply(updates).map(|_| ())
     }
 
     pub(crate) async fn set_session_startup_prewarm(
@@ -1458,7 +1375,7 @@ impl Session {
             Ok(contents) => match toml::from_str::<toml::Value>(&contents) {
                 Ok(config) => config,
                 Err(err) => {
-                    warn!("重新加载配置层时解析用户配置失败：{err}");
+                    warn!("failed to parse user config while reloading layer: {err}");
                     return;
                 }
             },
@@ -1466,7 +1383,7 @@ impl Session {
                 toml::Value::Table(Default::default())
             }
             Err(err) => {
-                warn!("重新加载配置层时读取用户配置失败：{err}");
+                warn!("failed to read user config while reloading layer: {err}");
                 return;
             }
         };
@@ -1496,40 +1413,25 @@ impl Session {
         };
         let shell = self.user_shell();
         let exec_policy = self.services.exec_policy.current();
-        let mut items = crate::context_manager::updates::build_settings_update_items(
+        crate::context_manager::updates::build_settings_update_items(
             reference_context_item,
             previous_turn_settings.as_ref(),
             current_context,
             shell.as_ref(),
             exec_policy.as_ref(),
             self.features.enabled(Feature::Personality),
-        );
-        let pending_zmemory_recall_note = {
-            let state = self.state.lock().await;
-            state.pending_zmemory_recall_note_for(current_context.sub_id.as_str())
-        };
-        if current_context.features.enabled(Feature::Zmemory)
-            && let Some(recall_note) = pending_zmemory_recall_note
-            && let Some(recall_item) =
-                crate::context_manager::updates::build_developer_update_item(vec![recall_note])
-        {
-            if items.first().is_some_and(|item| {
-                matches!(
-                    item,
-                    ResponseItem::Message { role, .. } if role == "developer"
-                )
-            }) {
-                items.insert(1, recall_item);
-            } else {
-                items.insert(0, recall_item);
-            }
-        }
-        items
+        )
     }
 
     /// Persist the event to rollout and send it to clients.
     pub(crate) async fn send_event(&self, turn_context: &TurnContext, msg: EventMsg) {
         let legacy_source = msg.clone();
+        self.services
+            .rollout_thread_trace
+            .record_codex_turn_event(&turn_context.sub_id, &legacy_source);
+        self.services
+            .rollout_thread_trace
+            .record_tool_call_event(turn_context.sub_id.clone(), &legacy_source);
         let event = Event {
             id: turn_context.sub_id.clone(),
             msg,
@@ -1582,13 +1484,19 @@ impl Session {
             return;
         }
 
-        self.forward_child_completion_to_parent(*parent_thread_id, child_agent_path, status)
-            .await;
+        self.forward_child_completion_to_parent(
+            turn_context,
+            *parent_thread_id,
+            child_agent_path,
+            status,
+        )
+        .await;
     }
 
     /// Sends the standard completion envelope from a spawned MultiAgentV2 child to its parent.
     async fn forward_child_completion_to_parent(
         &self,
+        turn_context: &TurnContext,
         parent_thread_id: ThreadId,
         child_agent_path: &codex_protocol::AgentPath,
         status: AgentStatus,
@@ -1602,6 +1510,13 @@ impl Session {
         };
 
         let message = format_subagent_notification_message(child_agent_path.as_str(), &status);
+        // `communication` owns the message. Keep a second copy only when the
+        // recorder will actually need it after parent delivery succeeds.
+        let trace_message = self
+            .services
+            .rollout_thread_trace
+            .is_enabled()
+            .then(|| message.clone());
         let communication = InterAgentCommunication::new(
             child_agent_path.clone(),
             parent_agent_path,
@@ -1615,7 +1530,21 @@ impl Session {
             .send_inter_agent_communication(parent_thread_id, communication)
             .await
         {
-            debug!("通知父线程 {parent_thread_id} 失败：{err}");
+            debug!("failed to notify parent thread {parent_thread_id}: {err}");
+            return;
+        }
+        if let Some(message) = trace_message {
+            self.services
+                .rollout_thread_trace
+                .record_agent_result_interaction(
+                    turn_context.sub_id.as_str(),
+                    parent_thread_id,
+                    &AgentResultTracePayload {
+                        child_agent_path: child_agent_path.as_str(),
+                        message: &message,
+                        status: &status,
+                    },
+                );
         }
     }
 
@@ -1629,7 +1558,7 @@ impl Session {
             return;
         }
         if let Err(err) = self.conversation.handoff_out(text).await {
-            debug!("将事件文本镜像到实时会话失败：{err}");
+            debug!("failed to mirror event text to realtime conversation: {err}");
         }
     }
 
@@ -1638,15 +1567,18 @@ impl Session {
             return;
         }
         if let Err(err) = self.conversation.handoff_complete().await {
-            debug!("完成实时切换输出收尾失败：{err}");
+            debug!("failed to finalize realtime handoff output: {err}");
         }
         self.conversation.clear_active_handoff().await;
     }
 
     pub(crate) async fn send_event_raw(&self, event: Event) {
-        // Persist the event into rollout (recorder filters as needed)
+        // Persist the event into rollout storage (the store filters as needed).
         let rollout_items = vec![RolloutItem::EventMsg(event.msg.clone())];
         self.persist_rollout_items(&rollout_items).await;
+        self.services
+            .rollout_thread_trace
+            .record_protocol_event(&event.msg);
         self.deliver_event_raw(event).await;
     }
 
@@ -1656,7 +1588,7 @@ impl Session {
             self.agent_status.send_replace(status);
         }
         if let Err(e) = self.tx_event.send(event).await {
-            debug!("事件通道已关闭，丢弃事件：{e}");
+            debug!("dropping event because channel is closed: {e}");
         }
     }
 
@@ -1736,11 +1668,12 @@ impl Session {
         amendment: &ExecPolicyAmendment,
     ) {
         let Some(prefixes) = format_allow_prefixes(vec![amendment.command.clone()]) else {
-            warn!("{sub_id} 的 execpolicy 修订没有命令前缀");
+            warn!("execpolicy amendment for {sub_id} had no command prefix");
             return;
         };
-        let text = format!("已保存获批命令前缀：\n{prefixes}");
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
+        let fragment = ApprovedCommandPrefixSaved::new(prefixes);
+        let text = fragment.render();
+        let message: ResponseItem = ContextualUserFragment::into(fragment);
 
         if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
             self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
@@ -1756,7 +1689,7 @@ impl Session {
             .await
             .is_err()
         {
-            warn!("找不到活跃轮次，无法为 {sub_id} 记录 execpolicy 修订消息");
+            warn!("no active turn found to record execpolicy amendment message for {sub_id}");
         }
     }
 
@@ -1765,7 +1698,11 @@ impl Session {
         amendment: &NetworkPolicyAmendment,
         network_approval_context: &NetworkApprovalContext,
     ) -> anyhow::Result<()> {
-        let _refresh_guard = self.managed_network_proxy_refresh_lock.lock().await;
+        let _refresh_guard = self
+            .managed_network_proxy_refresh_lock
+            .acquire()
+            .await
+            .map_err(|_| anyhow::anyhow!("managed network proxy refresh semaphore closed"))?;
         let host =
             Self::validated_network_policy_amendment_host(amendment, network_approval_context)?;
         let codex_home = self
@@ -1784,11 +1721,11 @@ impl Session {
                 NetworkPolicyRuleAction::Allow => proxy
                     .add_allowed_domain(&host)
                     .await
-                    .map_err(|err| anyhow::anyhow!("更新运行时允许列表失败：{err}"))?,
+                    .map_err(|err| anyhow::anyhow!("failed to update runtime allowlist: {err}"))?,
                 NetworkPolicyRuleAction::Deny => proxy
                     .add_denied_domain(&host)
                     .await
-                    .map_err(|err| anyhow::anyhow!("更新运行时拒绝列表失败：{err}"))?,
+                    .map_err(|err| anyhow::anyhow!("failed to update runtime denylist: {err}"))?,
             }
         }
 
@@ -1802,7 +1739,9 @@ impl Session {
                 Some(execpolicy_amendment.justification),
             )
             .await
-            .map_err(|err| anyhow::anyhow!("将网络策略修订持久化到 execpolicy 失败：{err}"))?;
+            .map_err(|err| {
+                anyhow::anyhow!("failed to persist network policy amendment to execpolicy: {err}")
+            })?;
 
         Ok(())
     }
@@ -1815,7 +1754,7 @@ impl Session {
         let amendment_host = normalize_host(&amendment.host);
         if amendment_host != approved_host {
             return Err(anyhow::anyhow!(
-                "网络策略修订主机 '{}' 与已批准主机 '{}' 不匹配",
+                "network policy amendment host '{}' does not match approved host '{}'",
                 amendment.host,
                 network_approval_context.host
             ));
@@ -1828,15 +1767,9 @@ impl Session {
         sub_id: &str,
         amendment: &NetworkPolicyAmendment,
     ) {
-        let (action, list_name) = match amendment.action {
-            NetworkPolicyRuleAction::Allow => ("允许", "允许列表"),
-            NetworkPolicyRuleAction::Deny => ("拒绝", "拒绝列表"),
-        };
-        let text = format!(
-            "已将{action}网络规则保存到 execpolicy（{list_name}）：{}",
-            amendment.host
-        );
-        let message: ResponseItem = DeveloperInstructions::new(text.clone()).into();
+        let fragment = NetworkRuleSaved::new(amendment);
+        let text = fragment.render();
+        let message: ResponseItem = ContextualUserFragment::into(fragment);
 
         if let Some(turn_context) = self.turn_context_for_sub_id(sub_id).await {
             self.record_conversation_items(&turn_context, std::slice::from_ref(&message))
@@ -1852,7 +1785,7 @@ impl Session {
             .await
             .is_err()
         {
-            warn!("找不到活跃轮次，无法为 {sub_id} 记录网络策略修订消息");
+            warn!("no active turn found to record network policy amendment message for {sub_id}");
         }
     }
 
@@ -1867,6 +1800,10 @@ impl Session {
     /// be used to derive the available decisions via
     /// [ExecApprovalRequestEvent::default_available_decisions].
     #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn request_command_approval(
         &self,
         turn_context: &TurnContext,
@@ -1877,7 +1814,7 @@ impl Session {
         reason: Option<String>,
         network_approval_context: Option<NetworkApprovalContext>,
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
-        additional_permissions: Option<PermissionProfile>,
+        additional_permissions: Option<AdditionalPermissionProfile>,
         available_decisions: Option<Vec<ReviewDecision>>,
     ) -> ReviewDecision {
         //  command-level approvals use `call_id`.
@@ -1896,7 +1833,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("正在覆盖 call_id {effective_approval_id} 现有的待审批项");
+            warn!("Overwriting existing pending approval for call_id: {effective_approval_id}");
         }
 
         let parsed_cmd = parse_command(&command);
@@ -1938,6 +1875,10 @@ impl Session {
         rx_approve.await.unwrap_or(ReviewDecision::Abort)
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn request_patch_approval(
         &self,
         turn_context: &TurnContext,
@@ -1960,7 +1901,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("正在覆盖 call_id {approval_id} 现有的待审批项");
+            warn!("Overwriting existing pending approval for call_id: {approval_id}");
         }
 
         let event = EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
@@ -1975,16 +1916,40 @@ impl Session {
     }
 
     pub async fn request_permissions(
-        &self,
-        turn_context: &TurnContext,
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
         call_id: String,
         args: RequestPermissionsArgs,
+        cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
-        match turn_context.approval_policy.value() {
+        self.request_permissions_for_cwd(
+            turn_context,
+            call_id,
+            args,
+            turn_context.cwd.clone(),
+            cancellation_token,
+        )
+        .await
+    }
+
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
+    pub(crate) async fn request_permissions_for_cwd(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        call_id: String,
+        args: RequestPermissionsArgs,
+        cwd: AbsolutePathBuf,
+        cancellation_token: CancellationToken,
+    ) -> Option<RequestPermissionsResponse> {
+        match turn_context.as_ref().approval_policy.value() {
             AskForApproval::Never => {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 });
             }
             AskForApproval::Granular(granular_config)
@@ -1993,6 +1958,7 @@ impl Session {
                 return Some(RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
                 });
             }
             AskForApproval::OnFailure
@@ -2001,34 +1967,132 @@ impl Session {
             | AskForApproval::Granular(_) => {}
         }
 
+        let requested_permissions = args.permissions;
+
+        if crate::guardian::routes_approval_to_guardian(turn_context.as_ref()) {
+            let originating_turn_state = {
+                let active = self.active_turn.lock().await;
+                active.as_ref().map(|active| Arc::clone(&active.turn_state))
+            };
+            let review_id = crate::guardian::new_guardian_review_id();
+            let session = Arc::clone(self);
+            let turn = Arc::clone(turn_context);
+            let request = crate::guardian::GuardianApprovalRequest::RequestPermissions {
+                id: call_id,
+                turn_id: turn_context.sub_id.clone(),
+                reason: args.reason,
+                permissions: requested_permissions.clone(),
+            };
+            let review_rx = crate::guardian::spawn_approval_request_review(
+                session,
+                turn,
+                review_id,
+                request,
+                /*retry_reason*/ None,
+                codex_analytics::GuardianApprovalRequestSource::MainTurn,
+                cancellation_token.clone(),
+            );
+            let decision = tokio::select! {
+                biased;
+                _ = cancellation_token.cancelled() => return None,
+                decision = review_rx => decision.unwrap_or(ReviewDecision::Denied),
+            };
+            let response = match decision {
+                ReviewDecision::Approved | ReviewDecision::ApprovedExecpolicyAmendment { .. } => {
+                    RequestPermissionsResponse {
+                        permissions: requested_permissions.clone(),
+                        scope: PermissionGrantScope::Turn,
+                        strict_auto_review: false,
+                    }
+                }
+                ReviewDecision::ApprovedForSession => RequestPermissionsResponse {
+                    permissions: requested_permissions.clone(),
+                    scope: PermissionGrantScope::Session,
+                    strict_auto_review: false,
+                },
+                ReviewDecision::NetworkPolicyAmendment {
+                    network_policy_amendment,
+                } => match network_policy_amendment.action {
+                    NetworkPolicyRuleAction::Allow => RequestPermissionsResponse {
+                        permissions: requested_permissions.clone(),
+                        scope: PermissionGrantScope::Turn,
+                        strict_auto_review: false,
+                    },
+                    NetworkPolicyRuleAction::Deny => RequestPermissionsResponse {
+                        permissions: RequestPermissionProfile::default(),
+                        scope: PermissionGrantScope::Turn,
+                        strict_auto_review: false,
+                    },
+                },
+                ReviewDecision::Abort | ReviewDecision::Denied | ReviewDecision::TimedOut => {
+                    RequestPermissionsResponse {
+                        permissions: RequestPermissionProfile::default(),
+                        scope: PermissionGrantScope::Turn,
+                        strict_auto_review: false,
+                    }
+                }
+            };
+            let response = Self::normalize_request_permissions_response(
+                requested_permissions,
+                response,
+                cwd.as_path(),
+            );
+            self.record_granted_request_permissions_for_turn(
+                &response,
+                originating_turn_state.as_ref(),
+            )
+            .await;
+            return Some(response);
+        }
+
         let (tx_response, rx_response) = oneshot::channel();
         let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
-                    ts.insert_pending_request_permissions(call_id.clone(), tx_response)
+                    ts.insert_pending_request_permissions(
+                        call_id.clone(),
+                        PendingRequestPermissions {
+                            tx_response,
+                            requested_permissions: requested_permissions.clone(),
+                            cwd: cwd.clone(),
+                        },
+                    )
                 }
                 None => None,
             }
         };
         if prev_entry.is_some() {
-            warn!("正在覆盖 call_id {call_id} 现有的待 `request_permissions` 请求");
+            warn!("Overwriting existing pending request_permissions for call_id: {call_id}");
         }
 
-        // TODO(ccunningham): Support auto-review for request_permissions /
-        // with_additional_permissions. V0 still routes this surface through
-        // the existing manual RequestPermissions event flow.
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
-            call_id,
+            call_id: call_id.clone(),
             turn_id: turn_context.sub_id.clone(),
             reason: args.reason,
-            permissions: args.permissions,
+            permissions: requested_permissions,
+            cwd: Some(cwd),
         });
-        self.send_event(turn_context, event).await;
-        rx_response.await.ok()
+        self.send_event(turn_context.as_ref(), event).await;
+        tokio::select! {
+            biased;
+            _ = cancellation_token.cancelled() => {
+                let mut active = self.active_turn.lock().await;
+                if let Some(at) = active.as_mut() {
+                    let mut ts = at.turn_state.lock().await;
+                    let _ = ts.remove_pending_request_permissions(&call_id);
+                }
+                None
+            }
+            response = rx_response => response.ok(),
+        }
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn request_user_input(
         &self,
         turn_context: &TurnContext,
@@ -2049,7 +2113,7 @@ impl Session {
             }
         };
         if prev_entry.is_some() {
-            warn!("正在覆盖 sub_id {event_id} 现有的待用户输入请求");
+            warn!("Overwriting existing pending user input for sub_id: {event_id}");
         }
 
         let event = EventMsg::RequestUserInput(RequestUserInputEvent {
@@ -2061,6 +2125,10 @@ impl Session {
         rx_response.await.ok()
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn notify_user_input_response(
         &self,
         sub_id: &str,
@@ -2081,64 +2149,141 @@ impl Session {
                 tx_response.send(response).ok();
             }
             None => {
-                warn!("未找到 sub_id {sub_id} 对应的待用户输入请求");
+                warn!("No pending user input found for sub_id: {sub_id}");
             }
         }
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn notify_request_permissions_response(
         &self,
         call_id: &str,
         response: RequestPermissionsResponse,
     ) {
-        let mut granted_for_session = None;
-        let entry = {
+        let (entry, originating_turn_state) = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
                     let mut ts = at.turn_state.lock().await;
                     let entry = ts.remove_pending_request_permissions(call_id);
-                    if entry.is_some() && !response.permissions.is_empty() {
-                        match response.scope {
-                            PermissionGrantScope::Turn => {
-                                ts.record_granted_permissions(response.permissions.clone().into());
-                            }
-                            PermissionGrantScope::Session => {
-                                granted_for_session = Some(response.permissions.clone());
-                            }
-                        }
-                    }
-                    entry
+                    let originating_turn_state = entry.as_ref().map(|_| Arc::clone(&at.turn_state));
+                    (entry, originating_turn_state)
                 }
-                None => None,
+                None => (None, None),
             }
         };
-        if let Some(permissions) = granted_for_session {
-            let mut state = self.state.lock().await;
-            state.record_granted_permissions(permissions.into());
-        }
         match entry {
-            Some(tx_response) => {
-                tx_response.send(response).ok();
+            Some(entry) => {
+                let response = Self::normalize_request_permissions_response(
+                    entry.requested_permissions,
+                    response,
+                    entry.cwd.as_path(),
+                );
+                self.record_granted_request_permissions_for_turn(
+                    &response,
+                    originating_turn_state.as_ref(),
+                )
+                .await;
+                entry.tx_response.send(response).ok();
             }
             None => {
-                warn!("未找到 call_id {call_id} 对应的待 `request_permissions` 请求");
+                warn!("No pending request_permissions found for call_id: {call_id}");
             }
         }
     }
 
-    pub(crate) async fn granted_turn_permissions(&self) -> Option<PermissionProfile> {
+    fn normalize_request_permissions_response(
+        requested_permissions: RequestPermissionProfile,
+        response: RequestPermissionsResponse,
+        cwd: &Path,
+    ) -> RequestPermissionsResponse {
+        if response.strict_auto_review && matches!(response.scope, PermissionGrantScope::Session) {
+            return RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            };
+        }
+
+        if response.permissions.is_empty() {
+            return response;
+        }
+
+        RequestPermissionsResponse {
+            permissions: intersect_permission_profiles(
+                requested_permissions.into(),
+                response.permissions.into(),
+                cwd,
+            )
+            .into(),
+            scope: response.scope,
+            strict_auto_review: response.strict_auto_review,
+        }
+    }
+
+    async fn record_granted_request_permissions_for_turn(
+        &self,
+        response: &RequestPermissionsResponse,
+        originating_turn_state: Option<&Arc<Mutex<crate::state::TurnState>>>,
+    ) {
+        if response.permissions.is_empty() {
+            return;
+        }
+        match response.scope {
+            PermissionGrantScope::Turn => {
+                if let Some(turn_state) = originating_turn_state {
+                    let mut ts = turn_state.lock().await;
+                    let permissions: AdditionalPermissionProfile =
+                        response.permissions.clone().into();
+                    ts.record_granted_permissions(permissions);
+                    if response.strict_auto_review {
+                        ts.enable_strict_auto_review();
+                    }
+                }
+            }
+            PermissionGrantScope::Session => {
+                let mut state = self.state.lock().await;
+                state.record_granted_permissions(response.permissions.clone().into());
+            }
+        }
+    }
+
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn reads must stay consistent with the matching turn state"
+    )]
+    pub(crate) async fn granted_turn_permissions(&self) -> Option<AdditionalPermissionProfile> {
         let active = self.active_turn.lock().await;
         let active = active.as_ref()?;
         let ts = active.turn_state.lock().await;
         ts.granted_permissions()
     }
 
-    pub(crate) async fn granted_session_permissions(&self) -> Option<PermissionProfile> {
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn reads must stay consistent with the matching turn state"
+    )]
+    pub(crate) async fn strict_auto_review_enabled_for_turn(&self) -> bool {
+        let active = self.active_turn.lock().await;
+        let Some(active) = active.as_ref() else {
+            return false;
+        };
+        let ts = active.turn_state.lock().await;
+        ts.strict_auto_review_enabled()
+    }
+
+    pub(crate) async fn granted_session_permissions(&self) -> Option<AdditionalPermissionProfile> {
         let state = self.state.lock().await;
         state.granted_permissions()
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn notify_dynamic_tool_response(&self, call_id: &str, response: DynamicToolResponse) {
         let entry = {
             let mut active = self.active_turn.lock().await;
@@ -2155,11 +2300,15 @@ impl Session {
                 tx_response.send(response).ok();
             }
             None => {
-                warn!("未找到 call_id {call_id} 对应的待动态工具调用");
+                warn!("No pending dynamic tool call found for call_id: {call_id}");
             }
         }
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn notify_approval(&self, approval_id: &str, decision: ReviewDecision) {
         let entry = {
             let mut active = self.active_turn.lock().await;
@@ -2176,7 +2325,7 @@ impl Session {
                 tx_approve.send(decision).ok();
             }
             None => {
-                warn!("未找到 call_id {approval_id} 对应的待审批项");
+                warn!("No pending approval found for call_id: {approval_id}");
             }
         }
     }
@@ -2233,7 +2382,11 @@ impl Session {
             return false;
         }
 
-        let warning_message = format!("此请求已被路由到 {server_model} 作为后备方案。");
+        warn!("server reported model {server_model} while requested model was {requested_model}");
+
+        let warning_message = format!(
+            "Your account was flagged for potentially high-risk cyber activity and this request was routed to gpt-5.2 as a fallback. To regain access to gpt-5.3-codex, apply for trusted access: {CYBER_VERIFY_URL} or learn more: {CYBER_SAFETY_URL}"
+        );
 
         self.send_event(
             turn_context,
@@ -2255,6 +2408,18 @@ impl Session {
         self.record_model_warning(warning_message, turn_context)
             .await;
         true
+    }
+
+    pub(crate) async fn emit_model_verification(
+        self: &Arc<Self>,
+        turn_context: &Arc<TurnContext>,
+        verifications: Vec<ModelVerification>,
+    ) {
+        self.send_event(
+            turn_context,
+            EventMsg::ModelVerification(ModelVerificationEvent { verifications }),
+        )
+        .await;
     }
 
     pub(crate) async fn replace_history(
@@ -2316,6 +2481,10 @@ impl Session {
         }
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "MCP app context rendering reads through the session-owned manager guard"
+    )]
     pub(crate) async fn build_initial_context(
         &self,
         turn_context: &TurnContext,
@@ -2323,6 +2492,9 @@ impl Session {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
+        // Pending turn wakeups may inject a recall note before the next request:
+        // pending_zmemory_recall_note_for(current_context.sub_id.as_str())
+        // build_developer_update_item(vec![recall_note])
         let (
             reference_context_item,
             previous_turn_settings,
@@ -2347,11 +2519,11 @@ impl Session {
                 turn_context,
             )
         {
-            developer_sections.push(model_switch_message.into_text());
+            developer_sections.push(model_switch_message);
         }
         if turn_context.config.include_permissions_instructions {
             developer_sections.push(
-                DeveloperInstructions::from_policy(
+                PermissionsInstructions::from_policy(
                     turn_context.sandbox_policy.get(),
                     turn_context.approval_policy.value(),
                     turn_context.config.approvals_reviewer,
@@ -2364,7 +2536,7 @@ impl Session {
                         .features
                         .enabled(Feature::RequestPermissionsTool),
                 )
-                .into_text(),
+                .render(),
             );
         }
         let separate_guardian_developer_message =
@@ -2385,7 +2557,7 @@ impl Session {
         {
             developer_sections.push(memory_prompt);
         }
-        if turn_context.features.enabled(Feature::Zmemory) {
+        if turn_context.features.enabled(Feature::MemoryTool) {
             developer_sections.push(build_zmemory_tool_developer_instructions());
             if let Some(recall_note) = pending_zmemory_recall_note {
                 developer_sections.push(recall_note);
@@ -2394,16 +2566,16 @@ impl Session {
         developer_sections.push(build_ztok_tool_developer_instructions());
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
-            DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
+            CollaborationModeInstructions::from_collaboration_mode(&collaboration_mode)
         {
-            developer_sections.push(collab_instructions.into_text());
+            developer_sections.push(collab_instructions.render());
         }
         if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
             reference_context_item.as_ref(),
             previous_turn_settings.as_ref(),
             turn_context,
         ) {
-            developer_sections.push(realtime_update.into_text());
+            developer_sections.push(realtime_update);
         }
         if self.features.enabled(Feature::Personality)
             && let Some(personality) = turn_context.personality
@@ -2418,10 +2590,8 @@ impl Session {
                         personality,
                     )
             {
-                developer_sections.push(
-                    DeveloperInstructions::personality_spec_message(personality_message)
-                        .into_text(),
-                );
+                developer_sections
+                    .push(PersonalitySpecInstructions::new(personality_message).render());
             }
         }
         if turn_context.config.include_apps_instructions && turn_context.apps_enabled() {
@@ -2432,41 +2602,44 @@ impl Session {
                     &turn_context.config,
                 )
                 .await;
-            if let Some(apps_section) = render_apps_section(&accessible_and_enabled_connectors) {
-                developer_sections.push(apps_section);
+            if let Some(apps_instructions) =
+                AppsInstructions::from_connectors(&accessible_and_enabled_connectors)
+            {
+                developer_sections.push(apps_instructions.render());
             }
         }
-        let implicit_skills = turn_context
-            .turn_skills
-            .outcome
-            .allowed_skills_for_implicit_invocation();
-        let rendered_skills = render_skills_section(
-            &implicit_skills,
-            default_skill_metadata_budget(turn_context.model_info.context_window),
-            SkillRenderSideEffects::ThreadStart {
-                session_telemetry: &self.services.session_telemetry,
-            },
-        );
-        if let Some(rendered_skills) = rendered_skills {
-            if rendered_skills.emit_warning {
-                self.send_event_raw(Event {
-                    id: String::new(),
-                    msg: EventMsg::Warning(WarningEvent {
-                        message: THREAD_START_SKILLS_TRIMMED_WARNING_MESSAGE.to_string(),
-                    }),
-                })
-                .await;
+        if turn_context.config.include_skill_instructions {
+            let available_skills = build_available_skills(
+                &turn_context.turn_skills.outcome,
+                default_skill_metadata_budget(turn_context.model_info.context_window),
+                SkillRenderSideEffects::ThreadStart {
+                    session_telemetry: &self.services.session_telemetry,
+                },
+            );
+            if let Some(available_skills) = available_skills {
+                let warning_message = available_skills.warning_message.clone();
+                let skills_instructions = AvailableSkillsInstructions::from(available_skills);
+                if let Some(warning_message) = warning_message {
+                    self.send_event_raw(Event {
+                        id: String::new(),
+                        msg: EventMsg::Warning(WarningEvent {
+                            message: warning_message,
+                        }),
+                    })
+                    .await;
+                }
+                developer_sections.push(skills_instructions.render());
             }
-            developer_sections.push(rendered_skills.text);
         }
         let loaded_plugins = self
             .services
             .plugins_manager
             .plugins_for_config(&turn_context.config)
             .await;
-        if let Some(plugin_section) = render_plugins_section(loaded_plugins.capability_summaries())
+        if let Some(plugin_instructions) =
+            AvailablePluginsInstructions::from_plugins(loaded_plugins.capability_summaries())
         {
-            developer_sections.push(plugin_section);
+            developer_sections.push(plugin_instructions.render());
         }
         if turn_context.features.enabled(Feature::CodexGitCommit)
             && let Some(commit_message_instruction) = commit_message_trailer_instruction(
@@ -2481,7 +2654,7 @@ impl Session {
                     text: user_instructions.to_string(),
                     directory: turn_context.cwd.to_string_lossy().into_owned(),
                 }
-                .serialize_to_text(),
+                .render(),
             );
         }
         if turn_context.config.include_environment_context {
@@ -2491,9 +2664,9 @@ impl Session {
                 .format_environment_context_subagents(self.conversation_id)
                 .await;
             contextual_user_sections.push(
-                EnvironmentContext::from_turn_context(turn_context, shell.as_ref())
+                crate::context::EnvironmentContext::from_turn_context(turn_context, shell.as_ref())
                     .with_subagents(subagents)
-                    .serialize_to_xml(),
+                    .render(),
             );
         }
 
@@ -2524,14 +2697,10 @@ impl Session {
     }
 
     pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
-        let recorder = {
-            let guard = self.services.rollout.lock().await;
-            guard.clone()
-        };
-        if let Some(rec) = recorder
-            && let Err(e) = rec.record_items(items).await
+        if let Some(live_thread) = self.live_thread()
+            && let Err(e) = live_thread.append_items(items).await
         {
-            error!("记录 rollout 条目失败：{e:#}");
+            error!("failed to record rollout items: {e:#}");
         }
     }
 
@@ -2566,15 +2735,7 @@ impl Session {
             let state = self.state.lock().await;
             state.reference_context_item()
         };
-        // Some model-visible inputs exist only in full startup context and have no steady-state
-        // diff item. If they change, we must reinject the full context bundle instead of emitting
-        // partial updates against a stale baseline.
-        let should_inject_full_context = reference_context_item.is_none()
-            || reference_context_item.as_ref().is_some_and(|previous| {
-                previous.user_instructions != turn_context.user_instructions
-                    || previous.developer_instructions != turn_context.developer_instructions
-                    || previous.final_output_json_schema != turn_context.final_output_json_schema
-            });
+        let should_inject_full_context = reference_context_item.is_none();
         let context_items = if should_inject_full_context {
             self.build_initial_context(turn_context).await
         } else {
@@ -2773,7 +2934,7 @@ impl Session {
         let token = match turn_context.tool_call_gate.subscribe().await {
             Ok(token) => token,
             Err(err) => {
-                warn!("订阅 ghost snapshot 就绪状态失败：{err}");
+                warn!("failed to subscribe to ghost snapshot readiness: {err}");
                 return;
             }
         };
@@ -2793,6 +2954,10 @@ impl Session {
     /// Inject additional user input into the currently active turn.
     ///
     /// Returns the active turn id when accepted.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn steer_input(
         &self,
         input: Vec<UserInput>,
@@ -2852,6 +3017,10 @@ impl Session {
     }
 
     /// Returns the input if there was no task running to inject into.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn inject_response_items(
         &self,
         input: Vec<ResponseInputItem>,
@@ -2892,6 +3061,14 @@ impl Session {
             .set_mailbox_delivery_phase(MailboxDeliveryPhase::CurrentTurn);
     }
 
+    pub(crate) async fn record_memory_citation_for_turn(&self, sub_id: &str) {
+        let turn_state = self.turn_state_for_sub_id(sub_id).await;
+        let Some(turn_state) = turn_state else {
+            return;
+        };
+        turn_state.lock().await.has_memory_citation = true;
+    }
+
     async fn turn_state_for_sub_id(
         &self,
         sub_id: &str,
@@ -2917,6 +3094,21 @@ impl Session {
         self.mailbox_rx.lock().await.has_pending_trigger_turn()
     }
 
+    pub(crate) async fn set_pending_zmemory_recall_note(&self, sub_id: &str, note: Option<String>) {
+        self.state
+            .lock()
+            .await
+            .set_pending_zmemory_recall_note(sub_id, note);
+    }
+
+    pub(crate) async fn has_pending_mailbox_items(&self) -> bool {
+        self.mailbox_rx.lock().await.has_pending()
+    }
+
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn prepend_pending_input(&self, input: Vec<ResponseInputItem>) -> Result<(), ()> {
         let mut active = self.active_turn.lock().await;
         match active.as_mut() {
@@ -2929,6 +3121,10 @@ impl Session {
         }
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
     pub async fn get_pending_input(&self) -> Vec<ResponseInputItem> {
         let (pending_input, accepts_mailbox_delivery) = {
             let mut active = self.active_turn.lock().await;
@@ -2966,7 +3162,6 @@ impl Session {
     }
 
     /// Queue response items to be injected into the next active turn created for this session.
-    #[cfg(test)]
     pub(crate) async fn queue_response_items_for_next_turn(&self, items: Vec<ResponseInputItem>) {
         if items.is_empty() {
             return;
@@ -2984,6 +3179,10 @@ impl Session {
         !self.idle_pending_input.lock().await.is_empty()
     }
 
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state reads must remain atomic"
+    )]
     pub async fn has_pending_input(&self) -> bool {
         let (has_turn_pending_input, accepts_mailbox_delivery) = {
             let active = self.active_turn.lock().await;
@@ -3004,22 +3203,16 @@ impl Session {
         if !accepts_mailbox_delivery {
             return false;
         }
-        self.mailbox_rx.lock().await.has_pending()
+        self.has_pending_mailbox_items().await
     }
 
     pub async fn interrupt_task(self: &Arc<Self>) {
-        info!("收到中断信号：如有当前任务则终止");
-        let has_active_turn = { self.active_turn.lock().await.is_some() };
-        if has_active_turn {
-            self.abort_all_tasks(TurnAbortReason::Interrupted).await;
-        } else {
+        info!("interrupt received: abort current task, if any");
+        let had_active_turn = self.active_turn.lock().await.is_some();
+        // Even without an active task, interrupt handling pauses any active goal.
+        self.abort_all_tasks(TurnAbortReason::Interrupted).await;
+        if !had_active_turn {
             self.cancel_mcp_startup().await;
-            if matches!(
-                self.agent_status.borrow().clone(),
-                AgentStatus::PendingInit | AgentStatus::Running
-            ) {
-                self.agent_status.send_replace(AgentStatus::Interrupted);
-            }
         }
     }
 
@@ -3031,17 +3224,22 @@ impl Session {
         Arc::clone(&self.services.user_shell)
     }
 
-    pub(crate) async fn current_rollout_path(&self) -> Option<PathBuf> {
-        let recorder = {
-            let guard = self.services.rollout.lock().await;
-            guard.clone()
+    pub(crate) async fn current_rollout_path(&self) -> anyhow::Result<Option<PathBuf>> {
+        let Some(live_thread) = self.live_thread() else {
+            return Ok(None);
         };
-        recorder.map(|recorder| recorder.rollout_path().to_path_buf())
+        live_thread.local_rollout_path().await.map_err(Into::into)
     }
 
     pub(crate) async fn hook_transcript_path(&self) -> Option<PathBuf> {
         self.ensure_rollout_materialized().await;
-        self.current_rollout_path().await
+        match self.current_rollout_path().await {
+            Ok(path) => path,
+            Err(err) => {
+                warn!("{err}");
+                None
+            }
+        }
     }
 
     pub(crate) async fn take_pending_session_start_source(
@@ -3069,7 +3267,7 @@ pub(crate) fn emit_subagent_session_started(
         client_version,
     } = client_metadata;
     let (Some(client_name), Some(client_version)) = (client_name, client_version) else {
-        tracing::warn!("跳过子 agent 线程埋点：缺少继承的客户端元数据");
+        tracing::warn!("skipping subagent thread analytics: missing inherited client metadata");
         return;
     };
     let created_at = SystemTime::now()

@@ -93,6 +93,7 @@ impl<T: HttpTransport> CompactClient<T> {
             text: create_text_param_for_request(
                 /*verbosity*/ None,
                 &Some(compaction_output_schema()),
+                /*output_schema_strict*/ true,
             ),
             max_output_tokens: None,
         };

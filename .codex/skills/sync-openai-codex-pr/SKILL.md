@@ -113,6 +113,28 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 2. 再吸收 upstream 新能力
 3. 最后最小化 diff
 
+### 上游删除反查 gate
+
+合并冲突清完后、跑 `check` 前，必须反查 upstream 已删除但当前 worktree 仍保留的路径：
+
+```bash
+git -C "$path" diff --name-status "$previous_sha..$openai_sha" --diff-filter=D |
+  awk '{print $2}' |
+  while read -r deleted_path; do
+    if git -C "$path" ls-files --error-unmatch "$deleted_path" >/dev/null 2>&1; then
+      echo "$deleted_path"
+    fi
+  done
+```
+
+如果输出非空，逐项分类：
+
+1. 已在 `local-fork-features.json` 中声明为本地长期特性：保留，并确认 checks 覆盖对应入口、资源、测试和文档。
+2. 未在权威基线声明，且确认是 upstream 原生功能删除/回滚：默认跟随 upstream 删除，不能因为冲突解决时文件还在就静默保留。
+3. 需要转成本地分叉特性继续保留：停止，先让用户明确确认；确认后再新增/更新 `local-fork-features.json`，并补齐 checks。
+
+禁止只用 `local_fork_feature_audit.mjs check` 代替这个删除反查；`check` 只能证明已声明特性没丢，不能发现“上游已删但本地意外复活”的未声明旧功能。
+
 ### 冲突分类
 
 1. `机械冲突`

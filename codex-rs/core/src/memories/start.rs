@@ -17,7 +17,7 @@ pub(crate) fn start_memories_startup_task(
     source: &SessionSource,
 ) {
     if config.ephemeral
-        || !config.features.enabled(Feature::NativeMemories)
+        || !config.features.enabled(Feature::MemoryTool)
         || matches!(source, SessionSource::SubAgent(_))
     {
         return;

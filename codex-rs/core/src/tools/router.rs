@@ -24,6 +24,7 @@ use codex_tools::ToolsConfig;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 pub use crate::tools::context::ToolCallSource;
@@ -182,10 +183,7 @@ impl ToolRouter {
                 ..
             } => {
                 let tool_name = ToolName::new(namespace.clone(), name.clone());
-                if let Some(tool_info) = session
-                    .resolve_mcp_tool_info(&name, namespace.as_deref())
-                    .await
-                {
+                if let Some(tool_info) = session.resolve_mcp_tool_info(&tool_name).await {
                     Ok(Some(ToolCall {
                         tool_name: tool_info.canonical_tool_name(),
                         call_id,
@@ -270,6 +268,7 @@ impl ToolRouter {
         &self,
         session: Arc<Session>,
         turn: Arc<TurnContext>,
+        cancellation_token: CancellationToken,
         tracker: SharedTurnDiffTracker,
         call: ToolCall,
         source: ToolCallSource,
@@ -280,24 +279,14 @@ impl ToolRouter {
             payload,
         } = call;
 
-        let direct_js_repl_call = tool_name.namespace.is_none()
-            && matches!(tool_name.name.as_str(), "js_repl" | "js_repl_reset");
-        if source == ToolCallSource::Direct
-            && turn.tools_config.js_repl_tools_only
-            && !direct_js_repl_call
-        {
-            return Err(FunctionCallError::RespondToModel(
-                "direct tool calls are disabled; use js_repl and codex.tool(...) instead"
-                    .to_string(),
-            ));
-        }
-
         let invocation = ToolInvocation {
             session,
             turn,
+            cancellation_token,
             tracker,
             call_id,
             tool_name,
+            source,
             payload,
         };
 

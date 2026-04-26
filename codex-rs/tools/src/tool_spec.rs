@@ -1,5 +1,6 @@
 use crate::FreeformTool;
 use crate::JsonSchema;
+use crate::LoadableToolSpec;
 use crate::ResponsesApiNamespace;
 use crate::ResponsesApiTool;
 use codex_native_tldr::tool_api::TLDR_TOOL_DESCRIPTION;
@@ -76,6 +77,15 @@ impl ToolSpec {
             ToolSpec::ImageGeneration { .. } => "image_generation",
             ToolSpec::WebSearch { .. } => "web_search",
             ToolSpec::Freeform(tool) => tool.name.as_str(),
+        }
+    }
+}
+
+impl From<LoadableToolSpec> for ToolSpec {
+    fn from(value: LoadableToolSpec) -> Self {
+        match value {
+            LoadableToolSpec::Function(tool) => ToolSpec::Function(tool),
+            LoadableToolSpec::Namespace(namespace) => ToolSpec::Namespace(namespace),
         }
     }
 }

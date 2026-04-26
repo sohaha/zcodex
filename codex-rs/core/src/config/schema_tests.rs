@@ -55,18 +55,21 @@ Run `just write-config-schema` to overwrite with your changes.\n\n{diff}"
 }
 
 #[test]
-fn config_schema_lists_chat_wire_api() {
+fn config_schema_hides_unsupported_inline_mcp_bearer_token() {
     let schema_json = config_schema_json().expect("serialize config schema");
     let schema_value: serde_json::Value =
         serde_json::from_slice(&schema_json).expect("decode schema json");
-    let wire_api = &schema_value["definitions"]["WireApi"]["oneOf"];
-    let variants = wire_api
-        .as_array()
-        .expect("WireApi variants should be an array")
-        .iter()
-        .flat_map(|variant| variant["enum"].as_array().into_iter().flatten())
-        .filter_map(serde_json::Value::as_str)
-        .collect::<Vec<_>>();
+    let properties = schema_value
+        .pointer("/definitions/RawMcpServerConfig/properties")
+        .expect("RawMcpServerConfig properties should exist")
+        .as_object()
+        .expect("RawMcpServerConfig properties should be an object");
 
-    assert_eq!(variants, vec!["responses", "chat", "anthropic"]);
+    assert_eq!(
+        (
+            properties.contains_key("bearer_token"),
+            properties.contains_key("bearer_token_env_var"),
+        ),
+        (false, true),
+    );
 }

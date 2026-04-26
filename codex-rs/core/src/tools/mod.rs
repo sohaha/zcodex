@@ -1,17 +1,18 @@
-pub mod code_mode;
-pub mod context;
-pub mod events;
+pub(crate) mod code_mode;
+pub(crate) mod context;
+pub(crate) mod events;
 pub(crate) mod handlers;
-pub mod js_repl;
+pub(crate) mod hook_names;
 pub(crate) mod network_approval;
-pub mod orchestrator;
-pub mod parallel;
-pub mod registry;
+pub(crate) mod orchestrator;
+pub(crate) mod parallel;
+pub(crate) mod registry;
 pub(crate) mod rewrite;
-pub mod router;
-pub mod runtimes;
-pub mod sandboxing;
-pub mod spec;
+pub(crate) mod router;
+pub(crate) mod runtimes;
+pub(crate) mod sandboxing;
+pub(crate) mod spec;
+pub(crate) mod tool_dispatch_trace;
 pub(crate) mod tool_search_entry;
 
 use codex_protocol::exec_output::ExecToolCallOutput;
@@ -77,31 +78,22 @@ pub fn format_exec_output_for_model_freeform(
 
     let content = build_content_with_timeout(exec_output);
 
+    let total_lines = content.lines().count();
+
     let formatted_output = truncate_text(&content, truncation_policy);
 
-    // 成功时省略 Exit code 和 Wall time 以节省 token
-    let prefix = if exec_output.exit_code == 0 && duration_seconds < 0.1 {
-        String::new()
-    } else {
-        let mut parts = Vec::new();
-        if exec_output.exit_code != 0 {
-            parts.push(format!("Exit code: {}", exec_output.exit_code));
-        }
-        if duration_seconds >= 0.1 {
-            parts.push(format!("{duration_seconds:.1}s"));
-        }
-        if !parts.is_empty() {
-            format!("{}: ", parts.join(", "))
-        } else {
-            String::new()
-        }
-    };
+    let mut sections = Vec::new();
 
-    if prefix.is_empty() {
-        formatted_output
-    } else {
-        format!("{prefix}\n{formatted_output}")
+    sections.push(format!("Exit code: {}", exec_output.exit_code));
+    sections.push(format!("Wall time: {duration_seconds} seconds"));
+    if total_lines != formatted_output.lines().count() {
+        sections.push(format!("Total output lines: {total_lines}"));
     }
+
+    sections.push("Output:".to_string());
+    sections.push(formatted_output);
+
+    sections.join("\n")
 }
 
 pub fn format_exec_output_str(

@@ -1,7 +1,6 @@
 use super::turn_context::image_generation_tool_auth_allowed;
 use super::*;
-use crate::tools::rewrite::AutoTldrContext;
-use crate::tools::rewrite::ToolRoutingDirectives;
+use std::sync::atomic::AtomicBool;
 
 /// Spawn a review thread using the given prompt.
 pub(super) async fn spawn_review_thread(
@@ -25,6 +24,7 @@ pub(super) async fn spawn_review_thread(
     let _ = review_features.disable(Feature::WebSearchRequest);
     let _ = review_features.disable(Feature::WebSearchCached);
     let review_web_search_mode = WebSearchMode::Disabled;
+    let goal_tools_supported = !config.ephemeral && parent_turn_context.tools_config.goal_tools;
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &review_model_info,
         available_models: &sess
@@ -32,7 +32,6 @@ pub(super) async fn spawn_review_thread(
             .models_manager
             .list_models(RefreshStrategy::OnlineIfUncached)
             .await,
-        wire_api: parent_turn_context.provider.info().wire_api,
         features: &review_features,
         image_generation_tool_auth_allowed: image_generation_tool_auth_allowed(Some(
             sess.services.auth_manager.as_ref(),
@@ -41,6 +40,7 @@ pub(super) async fn spawn_review_thread(
         session_source: parent_turn_context.session_source.clone(),
         sandbox_policy: parent_turn_context.sandbox_policy.get(),
         windows_sandbox_level: parent_turn_context.windows_sandbox_level,
+        wire_api: parent_turn_context.provider.info().wire_api,
     })
     .with_unified_exec_shell_mode_for_session(
         crate::tools::spec::tool_user_shell_type(sess.services.user_shell.as_ref()),
@@ -49,10 +49,12 @@ pub(super) async fn spawn_review_thread(
     )
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
-    .with_has_environment(parent_turn_context.environment.is_some())
+    .with_has_environment(parent_turn_context.tools_config.has_environment)
     .with_spawn_agent_usage_hint(config.multi_agent_v2.usage_hint_enabled)
     .with_spawn_agent_usage_hint_text(config.multi_agent_v2.usage_hint_text.clone())
     .with_hide_spawn_agent_metadata(config.multi_agent_v2.hide_spawn_agent_metadata)
+    .with_goal_tools_allowed(goal_tools_supported)
+    .with_max_concurrent_threads_per_session(config.agent_max_threads)
     .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
         &config.agent_roles,
     ));
@@ -113,6 +115,7 @@ pub(super) async fn spawn_review_thread(
         reasoning_summary,
         session_source,
         environment: parent_turn_context.environment.clone(),
+        environments: parent_turn_context.environments.clone(),
         tools_config,
         features: parent_turn_context.features.clone(),
         ghost_snapshot: parent_turn_context.ghost_snapshot.clone(),
@@ -136,14 +139,15 @@ pub(super) async fn spawn_review_thread(
         codex_self_exe: parent_turn_context.codex_self_exe.clone(),
         codex_linux_sandbox_exe: parent_turn_context.codex_linux_sandbox_exe.clone(),
         tool_call_gate: Arc::new(ReadinessFlag::new()),
-        js_repl: Arc::clone(&sess.js_repl),
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
-        tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-        auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
+        tool_routing_directives: parent_turn_context.tool_routing_directives.clone(),
+        auto_tldr_context: parent_turn_context.auto_tldr_context.clone(),
+        server_model_warning_emitted: AtomicBool::new(false),
+        model_verification_emitted: AtomicBool::new(false),
     };
 
     // Seed the child task with the review prompt as the initial user message.

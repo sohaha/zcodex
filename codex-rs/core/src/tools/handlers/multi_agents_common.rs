@@ -15,8 +15,6 @@ use crate::tools::context::ToolPayload;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
-use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use codex_models_manager::manager::ModelsManager;
 use codex_models_manager::manager::RefreshStrategy;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -249,6 +247,8 @@ pub(crate) async fn build_agent_shared_config(
             empty_cli_overrides,
             LoaderOverrides::default(),
             CloudRequirementsLoader::default(),
+            &codex_config::NoopThreadConfigLoader,
+            /*host_name*/ None,
         )
         .await
         .map_err(|err| {
@@ -349,7 +349,7 @@ pub(crate) fn reject_full_fork_spawn_overrides(
 ) -> Result<(), FunctionCallError> {
     if agent_type.is_some() || model.is_some() || reasoning_effort.is_some() {
         return Err(FunctionCallError::RespondToModel(
-            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without fork_context/fork_turns=all.".to_string(),
+            "Full-history forked agents inherit the parent agent type, model, and reasoning effort; omit agent_type, model, and reasoning_effort, or spawn without a full-history fork.".to_string(),
         ));
     }
     Ok(())
@@ -508,20 +508,10 @@ async fn resolve_spawn_agent_provider_default_model(
     if let Some(model) = config.model_provider.model.clone() {
         return Some(model);
     }
-
-    let auth_manager = turn.auth_manager.clone()?;
-    let models_manager = ModelsManager::new_with_provider_and_fallback(
-        config.codex_home.to_path_buf(),
-        auth_manager,
-        config.model_catalog.clone(),
-        CollaborationModesConfig::default(),
-        config.model_provider.clone(),
-        config.model_providers.get("openai").cloned(),
-    );
-    let model = models_manager
-        .get_default_model(&None, RefreshStrategy::Offline)
-        .await;
-    (!model.is_empty()).then_some(model)
+    config
+        .model
+        .clone()
+        .or_else(|| Some(turn.model_info.slug.clone()))
 }
 
 fn find_spawn_agent_model_name(
