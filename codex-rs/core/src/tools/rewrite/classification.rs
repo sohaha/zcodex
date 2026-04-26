@@ -31,6 +31,12 @@ impl Default for ToolRoutingIntent {
     }
 }
 
+impl ToolRoutingIntent {
+    pub(crate) fn has_directives(&self) -> bool {
+        self != &Self::default()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoTldrDirective {
     DisableOnce,

@@ -324,6 +324,10 @@ pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
                 eprintln!("已使用 ChatGPT 登录");
                 std::process::exit(0);
             }
+            AuthMode::AgentIdentity => {
+                eprintln!("Logged in using Agent Identity");
+                std::process::exit(0);
+            }
         },
         Ok(None) => {
             eprintln!("未登录");

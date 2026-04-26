@@ -1,6 +1,6 @@
 use super::*;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
-use codex_model_provider_info::built_in_model_providers;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use pretty_assertions::assert_eq;
 
@@ -191,13 +191,32 @@ fn build_token_limited_compacted_history_appends_summary_message() {
 
 #[test]
 fn should_use_remote_compact_task_for_azure_provider() {
-    let mut provider = built_in_model_providers(/*openai_base_url*/ None)["openai"].clone();
-    provider.name = Some("Azure".to_string());
-    provider.base_url = Some("https://example.com/openai".to_string());
-    provider.env_key = Some("AZURE_OPENAI_API_KEY".to_string());
-    provider.wire_api = WireApi::Responses;
-    provider.requires_openai_auth = false;
-    provider.supports_websockets = false;
+    let provider = ModelProviderInfo {
+        name: Some("Azure".into()),
+        model: None,
+        base_url: Some("https://example.com/openai".into()),
+        env_key: Some("AZURE_OPENAI_API_KEY".into()),
+        model_catalog: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        aws: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        retry_base_delay_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
+    };
 
     assert!(should_use_remote_compact_task(&provider));
 }

@@ -3,6 +3,7 @@ mod config_override;
 pub(crate) mod format_env_display;
 mod launcher;
 mod sandbox_mode_cli_arg;
+mod shared_options;
 
 pub use approval_mode_cli_arg::ApprovalModeCliArg;
 pub use config_override::CliConfigOverrides;
@@ -16,3 +17,4 @@ pub use launcher::format_launcher_command_from_env;
 pub use launcher::inject_codex_self_exe_env;
 pub use launcher::launcher_display_name;
 pub use sandbox_mode_cli_arg::SandboxModeCliArg;
+pub use shared_options::SharedCliOptions;

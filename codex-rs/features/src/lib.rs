@@ -75,28 +75,26 @@ pub enum Feature {
     GhostCommit,
     /// Enable the default shell tool.
     ShellTool,
+    /// Enable Claude-style lifecycle hooks loaded from hooks.json files.
+    CodexHooks,
 
     // Experimental
-    /// Enable JavaScript REPL tools backed by a persistent Node kernel.
-    JsRepl,
-    /// Enable a minimal JavaScript mode backed by Node's built-in vm runtime.
+    /// Enable JavaScript code mode backed by the in-process V8 runtime.
     CodeMode,
     /// Restrict model-visible tools to code mode entrypoints (`exec`, `wait`).
     CodeModeOnly,
-    /// Only expose js_repl tools directly to the model.
-    JsReplToolsOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
     /// Route shell tool execution through the zsh exec bridge.
     ShellZshFork,
+    /// Reflow transcript scrollback when the terminal is resized.
+    TerminalResizeReflow,
     /// Include the freeform apply_patch tool.
     ApplyPatchFreeform,
     /// Stream structured progress while apply_patch input is being generated.
     ApplyPatchStreamingEvents,
     /// Allow exec tools to request additional permissions while staying sandboxed.
     ExecPermissionApprovals,
-    /// Enable Claude-style lifecycle hooks loaded from hooks.json files.
-    CodexHooks,
     /// Expose the built-in request_permissions tool.
     RequestPermissionsTool,
     /// Allow the model to request web searches that fetch live content.
@@ -132,8 +130,8 @@ pub enum Feature {
     Sqlite,
     /// Enable startup memory extraction and file-backed memory consolidation.
     MemoryTool,
-    /// Enable the Telepathy sidecar for passive screen-context memories.
-    Telepathy,
+    /// Enable the Chronicle sidecar for passive screen-context memories.
+    Chronicle,
     /// Append additional AGENTS.md guidance to user instructions.
     ChildAgentsMd,
     /// Compress request bodies (zstd) when sending streaming requests to codex-backend.
@@ -156,6 +154,20 @@ pub enum Feature {
     ToolSuggest,
     /// Enable plugins.
     Plugins,
+    /// Allow the in-app browser pane in desktop apps.
+    ///
+    /// Requirements-only gate: this should be set from requirements, not user config.
+    InAppBrowser,
+    /// Allow Browser Use agent integration in desktop apps.
+    ///
+    /// Requirements-only gate: this should be set from requirements, not user config.
+    BrowserUse,
+    /// Allow Codex Computer Use.
+    ///
+    /// Requirements-only gate: this should be set from requirements, not user config.
+    ComputerUse,
+    /// Temporary internal-only flag for PS-backed remote plugin catalog development.
+    RemotePlugin,
     /// Show the startup prompt for migrating external agent config into Codex.
     ExternalMigration,
     /// Allow the model to invoke the built-in image generation tool.
@@ -171,6 +183,8 @@ pub enum Feature {
     DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
+    /// Enable persisted thread goals and automatic goal continuation.
+    Goals,
     /// Enable collaboration modes (Plan, Default).
     /// Kept for config backward compatibility; behavior is always collaboration-modes-enabled.
     CollaborationModes,
@@ -193,16 +207,14 @@ pub enum Feature {
     TuiAppServer,
     /// Prevent idle system sleep while a turn is actively running.
     PreventIdleSleep,
+    /// Enable workspace-specific owner nudge copy and prompts in the TUI.
+    WorkspaceOwnerUsageNudge,
     /// Legacy rollout flag for Responses API WebSocket transport experiments.
     ResponsesWebsockets,
     /// Legacy rollout flag for Responses API WebSocket transport v2 experiments.
     ResponsesWebsocketsV2,
-    /// Use the agent identity registration flow for ChatGPT-authenticated sessions.
-    UseAgentIdentity,
-    /// Enable zmemory persistent memory tools.
-    Zmemory,
-    /// Enable native memories integration.
-    NativeMemories,
+    /// Enable workspace dependency support.
+    WorkspaceDependencies,
 }
 
 impl Feature {
@@ -445,10 +457,6 @@ impl Features {
         if self.enabled(Feature::CodeModeOnly) && !self.enabled(Feature::CodeMode) {
             self.enable(Feature::CodeMode);
         }
-        if self.enabled(Feature::JsReplToolsOnly) && !self.enabled(Feature::JsRepl) {
-            tracing::warn!("js_repl_tools_only requires js_repl; disabling js_repl_tools_only");
-            self.disable(Feature::JsReplToolsOnly);
-        }
     }
 }
 
@@ -630,16 +638,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::JsRepl,
-        key: "js_repl",
-        stage: Stage::Experimental {
-            name: "JavaScript 交互环境",
-            menu_description: "启用一个由 Node 持久驱动的 JavaScript 交互环境，用于交互式网站调试和其他内联 JavaScript 执行能力。需要已安装 Node >= v22.22.0。",
-            announcement: "新功能：/experimental 中现已提供 JavaScript 交互环境。启用后，请新开一个聊天或重启 Codex 再使用。",
-        },
-        default_enabled: false,
-    },
-    FeatureSpec {
         id: Feature::CodeMode,
         key: "code_mode",
         stage: Stage::UnderDevelopment,
@@ -652,10 +650,14 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::JsReplToolsOnly,
-        key: "js_repl_tools_only",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        id: Feature::TerminalResizeReflow,
+        key: "terminal_resize_reflow",
+        stage: Stage::Experimental {
+            name: "终端宽度重排",
+            menu_description: "终端宽度变化时，重建 Codex 管理的转录滚动历史。",
+            announcement: "",
+        },
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::WebSearchRequest,
@@ -675,12 +677,6 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Removed,
         default_enabled: false,
     },
-    FeatureSpec {
-        id: Feature::UnavailableDummyTools,
-        key: "unavailable_dummy_tools",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
     // Experimental program. Rendered in the `/experimental` menu for users.
     FeatureSpec {
         id: Feature::CodexGitCommit,
@@ -698,7 +694,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::GeneralAnalytics,
         key: "general_analytics",
         stage: Stage::Stable,
-        default_enabled: false,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::Sqlite,
@@ -707,20 +703,18 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::NativeMemories,
-        key: "native_memories",
-        stage: Stage::Stable,
-        default_enabled: true,
+        id: Feature::MemoryTool,
+        key: "memories",
+        stage: Stage::Experimental {
+            name: "记忆",
+            menu_description: "允许 Codex 从对话中创建新记忆，并在新对话中带入相关记忆。",
+            announcement: "新功能：Codex 现在可以生成并使用记忆。试试 `/memories`。",
+        },
+        default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::Zmemory,
-        key: "zmemory",
-        stage: Stage::Stable,
-        default_enabled: true,
-    },
-    FeatureSpec {
-        id: Feature::Telepathy,
-        key: "telepathy",
+        id: Feature::Chronicle,
+        key: "chronicle",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
@@ -751,8 +745,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::CodexHooks,
         key: "codex_hooks",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::RequestPermissionsTool,
@@ -811,8 +805,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::MultiAgentV2,
         key: "multi_agent_v2",
-        stage: Stage::Stable,
-        default_enabled: true,
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::SpawnCsv,
@@ -841,14 +835,8 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::UnavailableDummyTools,
         key: "unavailable_dummy_tools",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
-    },
-    FeatureSpec {
-        id: Feature::ToolSearchAlwaysDeferMcpTools,
-        key: "tool_search_always_defer_mcp_tools",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        stage: Stage::Stable,
+        default_enabled: true,
     },
     FeatureSpec {
         id: Feature::ToolSuggest,
@@ -861,6 +849,30 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "plugins",
         stage: Stage::Stable,
         default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::InAppBrowser,
+        key: "in_app_browser",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::BrowserUse,
+        key: "browser_use",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::ComputerUse,
+        key: "computer_use",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::RemotePlugin,
+        key: "remote_plugin",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ExternalMigration,
@@ -905,11 +917,13 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::GuardianApproval,
         key: "guardian_approval",
-        stage: Stage::Experimental {
-            name: "Guardian 审批",
-            announcement: "",
-            menu_description: "启用 Guardian 自动审批功能，对模型操作进行自动安全审查。",
-        },
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::Goals,
+        key: "goals",
+        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
@@ -976,12 +990,18 @@ pub const FEATURES: &[FeatureSpec] = &[
         )) {
             Stage::Experimental {
                 name: "运行时防止休眠",
-                menu_description: "在 Codex 正在运行线程时保持计算机处于唤醒状态。",
-                announcement: "新功能：/experimental 中现已提供运行时防止休眠。",
+                menu_description: "Codex 运行线程时，让电脑保持唤醒。",
+                announcement: "新功能：运行时防止休眠已可在 /experimental 中启用。",
             }
         } else {
             Stage::UnderDevelopment
         },
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::WorkspaceOwnerUsageNudge,
+        key: "workspace_owner_usage_nudge",
+        stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
     FeatureSpec {
@@ -997,10 +1017,10 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
-        id: Feature::UseAgentIdentity,
-        key: "use_agent_identity",
-        stage: Stage::UnderDevelopment,
-        default_enabled: false,
+        id: Feature::WorkspaceDependencies,
+        key: "workspace_dependencies",
+        stage: Stage::Stable,
+        default_enabled: true,
     },
 ];
 
@@ -1038,7 +1058,7 @@ pub fn unstable_features_warning_event(
 
     let under_development_feature_keys = under_development_feature_keys.join(", ");
     let message = format!(
-        "已启用开发中功能：{under_development_feature_keys}。开发中功能尚未完成，行为可能不稳定。如需关闭此警告，请在 {config_path} 中设置 `suppress_unstable_features_warning = true`。"
+        "Under-development features enabled: {under_development_feature_keys}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {config_path}."
     );
     Some(Event {
         id: String::new(),

@@ -192,6 +192,7 @@ async fn resolve_target_path(
         SortDirection::Desc,
         INTERACTIVE_SESSION_SOURCES.as_slice(),
         None,
+        None,
         config.model_provider_id.as_str(),
         None,
     )

@@ -51,6 +51,23 @@ impl WidgetRef for &TrustDirectoryWidget {
         ]));
         column.push("");
 
+        if self.cwd != self.trust_target {
+            #[allow(clippy::disallowed_methods)]
+            let git_root_warning = Paragraph::new(format!(
+                "Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root: {}",
+                self.trust_target.display()
+            ))
+            .yellow();
+            column.push(
+                git_root_warning
+                    .wrap(Wrap { trim: true })
+                    .inset(Insets::tlbr(
+                        /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
+                    )),
+            );
+            column.push("");
+        }
+
         column.push(
             Paragraph::new(
                 "你信任此目录的内容吗？处理不受信任的内容存在更高的提示注入风险。\

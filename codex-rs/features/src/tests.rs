@@ -32,7 +32,8 @@ fn default_enabled_features_are_stable() {
     for spec in crate::FEATURES {
         if spec.default_enabled {
             assert!(
-                matches!(spec.stage, Stage::Stable | Stage::Removed),
+                matches!(spec.stage, Stage::Stable | Stage::Removed)
+                    || spec.id == Feature::TerminalResizeReflow,
                 "feature `{}` is enabled by default but is not stable/removed ({:?})",
                 spec.key,
                 spec.stage
@@ -60,23 +61,6 @@ fn image_detail_original_is_removed_and_disabled_by_default() {
 }
 
 #[test]
-fn js_repl_is_experimental_and_user_toggleable() {
-    let spec = Feature::JsRepl.info();
-    let stage = spec.stage;
-    let expected_node_version = include_str!("../../node-version.txt").trim_end();
-
-    assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("JavaScript REPL"));
-    assert_eq!(
-        stage.experimental_menu_description().map(str::to_owned),
-        Some(format!(
-            "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v{expected_node_version} installed."
-        ))
-    );
-    assert_eq!(Feature::JsRepl.default_enabled(), false);
-}
-
-#[test]
 fn code_mode_only_requires_code_mode() {
     let mut features = Features::with_defaults();
     features.enable(Feature::CodeModeOnly);
@@ -87,18 +71,11 @@ fn code_mode_only_requires_code_mode() {
 }
 
 #[test]
-fn guardian_approval_is_experimental_and_user_toggleable() {
+fn guardian_approval_is_stable_and_enabled_by_default() {
     let spec = Feature::GuardianApproval.info();
-    let stage = spec.stage;
 
-    assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("Guardian 审批"));
-    assert_eq!(
-        stage.experimental_menu_description().map(str::to_owned),
-        Some("启用 Guardian 自动审批功能，对模型操作进行自动安全审查。".to_string())
-    );
-    assert_eq!(stage.experimental_announcement(), None);
-    assert_eq!(Feature::GuardianApproval.default_enabled(), false);
+    assert_eq!(spec.stage, Stage::Stable);
+    assert_eq!(Feature::GuardianApproval.default_enabled(), true);
 }
 
 #[test]
@@ -107,10 +84,12 @@ fn external_migration_is_experimental_and_disabled_by_default() {
     let stage = spec.stage;
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("外部配置迁移"));
+    assert_eq!(stage.experimental_menu_name(), Some("External migration"));
     assert_eq!(
         stage.experimental_menu_description(),
-        Some("当 Codex 检测到此机器或项目存在可迁移的外部 agent 配置时，显示启动提示。")
+        Some(
+            "Show a startup prompt when Codex detects migratable external agent config for this machine or project."
+        )
     );
     assert_eq!(stage.experimental_announcement(), None);
     assert_eq!(Feature::ExternalMigration.default_enabled(), false);
@@ -135,6 +114,19 @@ fn request_permissions_tool_is_under_development() {
 }
 
 #[test]
+fn terminal_resize_reflow_is_experimental_and_enabled_by_default() {
+    assert_eq!(
+        feature_for_key("terminal_resize_reflow"),
+        Some(Feature::TerminalResizeReflow)
+    );
+    assert!(matches!(
+        Feature::TerminalResizeReflow.stage(),
+        Stage::Experimental { .. }
+    ));
+    assert_eq!(Feature::TerminalResizeReflow.default_enabled(), true);
+}
+
+#[test]
 fn tool_suggest_is_stable_and_enabled_by_default() {
     assert_eq!(Feature::ToolSuggest.stage(), Stage::Stable);
     assert_eq!(Feature::ToolSuggest.default_enabled(), true);
@@ -147,12 +139,21 @@ fn tool_search_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn unavailable_dummy_tools_is_under_development_and_disabled_by_default() {
+fn browser_controls_are_stable_and_enabled_by_default() {
+    assert_eq!(Feature::InAppBrowser.stage(), Stage::Stable);
+    assert_eq!(Feature::InAppBrowser.default_enabled(), true);
     assert_eq!(
-        Feature::UnavailableDummyTools.stage(),
-        Stage::UnderDevelopment
+        feature_for_key("in_app_browser"),
+        Some(Feature::InAppBrowser)
     );
-    assert_eq!(Feature::UnavailableDummyTools.default_enabled(), false);
+
+    assert_eq!(Feature::BrowserUse.stage(), Stage::Stable);
+    assert_eq!(Feature::BrowserUse.default_enabled(), true);
+    assert_eq!(feature_for_key("browser_use"), Some(Feature::BrowserUse));
+
+    assert_eq!(Feature::ComputerUse.stage(), Stage::Stable);
+    assert_eq!(Feature::ComputerUse.default_enabled(), true);
+    assert_eq!(feature_for_key("computer_use"), Some(Feature::ComputerUse));
 }
 
 #[test]
@@ -222,9 +223,21 @@ fn remote_control_is_under_development() {
 }
 
 #[test]
-fn use_agent_identity_is_under_development() {
-    assert_eq!(Feature::UseAgentIdentity.stage(), Stage::UnderDevelopment);
-    assert_eq!(Feature::UseAgentIdentity.default_enabled(), false);
+fn workspace_dependencies_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::WorkspaceDependencies.stage(), Stage::Stable);
+    assert_eq!(Feature::WorkspaceDependencies.default_enabled(), true);
+    assert_eq!(
+        feature_for_key("workspace_dependencies"),
+        Some(Feature::WorkspaceDependencies)
+    );
+}
+
+#[test]
+fn telepathy_is_legacy_alias_for_chronicle() {
+    assert_eq!(Feature::Chronicle.stage(), Stage::UnderDevelopment);
+    assert_eq!(Feature::Chronicle.default_enabled(), false);
+    assert_eq!(feature_for_key("chronicle"), Some(Feature::Chronicle));
+    assert_eq!(feature_for_key("telepathy"), Some(Feature::Chronicle));
 }
 
 #[test]
@@ -315,6 +328,25 @@ fn from_sources_ignores_removed_image_detail_original_feature_key() {
         "image_detail_original".to_string(),
         true,
     )]));
+
+    let features = Features::from_sources(
+        FeatureConfigSource {
+            features: Some(&features_toml),
+            ..Default::default()
+        },
+        FeatureConfigSource::default(),
+        FeatureOverrides::default(),
+    );
+
+    assert_eq!(features, Features::with_defaults());
+}
+
+#[test]
+fn from_sources_ignores_deleted_js_repl_feature_keys() {
+    let features_toml = FeaturesToml::from(BTreeMap::from([
+        ("js_repl".to_string(), true),
+        ("js_repl_tools_only".to_string(), true),
+    ]));
 
     let features = Features::from_sources(
         FeatureConfigSource {

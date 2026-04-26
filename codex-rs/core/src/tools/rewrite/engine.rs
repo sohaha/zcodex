@@ -20,7 +20,7 @@ pub(crate) async fn rewrite_tool_call(
     let from_tool = call.tool_name.display();
     let call_id = call.call_id.clone();
 
-    let decision = if matches!(source, ToolCallSource::JsRepl | ToolCallSource::CodeMode) {
+    let decision = if matches!(source, ToolCallSource::CodeMode { .. }) {
         ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
@@ -39,7 +39,7 @@ pub(crate) async fn rewrite_tool_call(
 
     log_tool_route(
         mode.as_str(),
-        source,
+        source.clone(),
         from_tool.as_str(),
         &call_id,
         &decision,
@@ -58,7 +58,7 @@ async fn route_auto_tldr(
     turn: &TurnContext,
     call: ToolCall,
     directives: ToolRoutingDirectives,
-    mode: crate::config::AutoTldrRoutingMode,
+    mode: codex_tools::AutoTldrRoutingMode,
 ) -> ToolRewriteDecision {
     match call.tool_name.as_str() {
         "grep_files" => rewrite_grep_files_to_tldr(turn, call, directives, mode).await,
@@ -187,8 +187,7 @@ fn search_signal_name(signal: SearchSignal) -> &'static str {
 fn tool_call_source_name(source: ToolCallSource) -> &'static str {
     match source {
         ToolCallSource::Direct => "direct",
-        ToolCallSource::JsRepl => "js_repl",
-        ToolCallSource::CodeMode => "code_mode",
+        ToolCallSource::CodeMode { .. } => "code_mode",
     }
 }
 

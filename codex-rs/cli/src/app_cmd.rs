@@ -1,8 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-const DEFAULT_CODEX_DMG_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
-
 #[derive(Debug, Parser)]
 pub struct AppCommand {
     /// 要在 Codex Desktop 中打开的工作区路径。
@@ -14,8 +12,14 @@ pub struct AppCommand {
     pub download_url: String,
 }
 
-#[cfg(target_os = "macos")]
 pub async fn run_app(cmd: AppCommand) -> anyhow::Result<()> {
     let workspace = std::fs::canonicalize(&cmd.path).unwrap_or(cmd.path);
-    crate::desktop_app::run_app_open_or_install(workspace, cmd.download_url).await
+    #[cfg(target_os = "macos")]
+    {
+        crate::desktop_app::run_app_open_or_install(workspace, cmd.download_url_override).await
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::desktop_app::run_app_open_or_install(workspace, cmd.download_url_override).await
+    }
 }

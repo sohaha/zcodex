@@ -1,7 +1,6 @@
 use crate::agents_md::AgentsMdManager;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
-use crate::config::types::ZmemoryConfig;
 use crate::config::types::ZmemoryToml;
 use crate::config::types::ZtokConfig;
 use crate::config_loader::CloudRequirementsLoader;
@@ -10,6 +9,7 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsToml;
 use crate::config_loader::ConstrainedWithSource;
+use crate::config_loader::FeatureRequirementsToml;
 use crate::config_loader::LoaderOverrides;
 use crate::config_loader::McpServerIdentity;
 use crate::config_loader::McpServerRequirement;
@@ -24,10 +24,12 @@ use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use crate::windows_sandbox::resolve_windows_sandbox_mode;
 use crate::windows_sandbox::resolve_windows_sandbox_private_desktop;
+use codex_config::ThreadConfigLoader;
 use codex_config::config_toml::ConfigToml;
 use codex_config::config_toml::ProjectConfig;
 use codex_config::config_toml::RealtimeAudioConfig;
 use codex_config::config_toml::RealtimeConfig;
+use codex_config::config_toml::ThreadStoreToml;
 use codex_config::config_toml::validate_model_providers;
 use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::ApprovalsReviewer;
@@ -46,7 +48,6 @@ use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
-use codex_config::types::ResumeModelSource;
 use codex_config::types::ShellEnvironmentPolicy;
 use codex_config::types::ToolSuggestConfig;
 use codex_config::types::ToolSuggestDiscoverable;
@@ -62,13 +63,14 @@ use codex_features::FeatureToml;
 use codex_features::Features;
 use codex_features::FeaturesToml;
 use codex_features::MultiAgentV2ConfigToml;
-use codex_git_utils::resolve_root_git_project_for_trust_with_fs as resolve_root_git_project_for_trust;
+use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_login::AuthManagerConfig;
 use codex_mcp::McpConfig;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use codex_model_provider_info::built_in_model_providers;
+use codex_model_provider_info::merge_configured_model_providers;
 use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::ForcedLoginMethod;
@@ -81,6 +83,8 @@ use codex_protocol::config_types::Verbosity;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -95,6 +99,7 @@ use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::config::permissions::compile_permission_profile;
 use crate::config::permissions::get_readable_roots_required_for_codex_runtime;
@@ -108,22 +113,19 @@ pub mod edit;
 mod managed_features;
 mod network_proxy_spec;
 mod permissions;
+#[cfg(test)]
 mod schema;
-pub(crate) mod service;
 pub mod types;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;
 pub use codex_config::ConstraintResult;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
 pub use codex_sandboxing::system_bwrap_warning;
-pub use codex_tools::AutoTldrRoutingMode;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
 pub(crate) use permissions::resolve_permission_profile;
-pub use schema::write_config_schema;
-pub use service::ConfigService;
-pub use service::ConfigServiceError;
+pub use types::ZmemoryConfig;
 
 pub use codex_git_utils::GhostSnapshotConfig;
 
@@ -223,6 +225,31 @@ pub struct Permissions {
     pub windows_sandbox_private_desktop: bool,
 }
 
+impl Permissions {
+    /// Effective runtime permissions after config requirements and runtime
+    /// readable-root additions have been applied.
+    pub fn permission_profile(&self) -> PermissionProfile {
+        PermissionProfile::from_runtime_permissions_with_enforcement(
+            SandboxEnforcement::from_legacy_sandbox_policy(self.sandbox_policy.get()),
+            &self.file_system_sandbox_policy,
+            self.network_sandbox_policy,
+        )
+    }
+}
+
+/// Configured thread persistence backend.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ThreadStoreConfig {
+    /// Persist threads locally using rollout JSONL files and sqlite metadata.
+    #[default]
+    Local,
+    /// Persist threads through the remote thread-store service.
+    Remote { endpoint: String },
+    /// Test-only in-memory thread store.
+    #[cfg(debug_assertions)]
+    InMemory { id: String },
+}
+
 /// Application configuration loaded from disk and merged with overrides.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -253,22 +280,6 @@ pub struct Config {
 
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
-
-    /// Controls whether thread resume should use persisted or current model metadata.
-    pub resume_model_source: ResumeModelSource,
-
-    /// Optional fallback provider identifier used when the primary provider
-    /// request fails for the current request.
-    pub fallback_provider_id: Option<String>,
-
-    /// Optional fallback provider definition resolved from `fallback_provider_id`.
-    pub fallback_provider: Option<ModelProviderInfo>,
-
-    /// Optional model slug to use with the fallback provider.
-    pub fallback_model: Option<String>,
-
-    /// Ordered list of fallback providers to try for the current request.
-    pub fallback_providers: Vec<FallbackProviderConfig>,
 
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
@@ -304,7 +315,7 @@ pub struct Config {
     /// Developer instructions override injected as a separate message.
     pub developer_instructions: Option<String>,
 
-    /// Guardian-specific tenant policy config override from requirements.toml.
+    /// Guardian-specific policy config override from requirements.toml or config.toml.
     /// This is inserted into the fixed guardian prompt template under the
     /// `# Policy Configuration` section rather than replacing the whole
     /// guardian developer prompt.
@@ -315,6 +326,9 @@ pub struct Config {
 
     /// Whether to inject the `<apps_instructions>` developer block.
     pub include_apps_instructions: bool,
+
+    /// Whether to inject the `<skills_instructions>` developer block.
+    pub include_skill_instructions: bool,
 
     /// Whether to inject the `<environment_context>` user block.
     pub include_environment_context: bool,
@@ -401,6 +415,9 @@ pub struct Config {
     /// JPEG quality used when the TUI auto-compresses pasted images.
     pub pasted_image_jpeg_quality: u8,
 
+    /// Terminal resize-reflow tuning knobs.
+    pub terminal_resize_reflow: TerminalResizeReflowConfig,
+
     /// The absolute directory that should be treated as the current working
     /// directory for the session. All relative paths inside the business-logic
     /// layer are resolved against this path.
@@ -453,6 +470,9 @@ pub struct Config {
     /// Maximum runtime in seconds for agent job workers before they are failed.
     pub agent_job_max_runtime_seconds: Option<u64>,
 
+    /// Whether to record a model-visible message when an agent turn is interrupted.
+    pub agent_interrupt_message_enabled: bool,
+
     /// Maximum nesting depth allowed for spawned agent threads.
     pub agent_max_depth: i32,
 
@@ -461,10 +481,8 @@ pub struct Config {
 
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
-
     /// Ztok runtime settings.
     pub ztok: ZtokConfig,
-
     /// Zmemory persistent-memory settings.
     pub zmemory: ZmemoryConfig,
 
@@ -515,12 +533,6 @@ pub struct Config {
     /// escalation. This cannot be set in the config file: it must be set in
     /// code via [`ConfigOverrides`].
     pub main_execve_wrapper_exe: Option<PathBuf>,
-
-    /// Optional absolute path to the Node runtime used by `js_repl`.
-    pub js_repl_node_path: Option<PathBuf>,
-
-    /// Ordered list of directories to search for Node modules in `js_repl`.
-    pub js_repl_node_module_dirs: Vec<PathBuf>,
 
     /// Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution.
     pub zsh_path: Option<PathBuf>,
@@ -579,6 +591,13 @@ pub struct Config {
     /// instructions inserted into developer messages when realtime becomes
     /// active.
     pub experimental_realtime_start_instructions: Option<String>,
+
+    /// Experimental / do not use. When set, app-server fetches thread-scoped
+    /// config from a remote service at this endpoint.
+    pub experimental_thread_config_endpoint: Option<String>,
+
+    /// Experimental / do not use. Selects the thread persistence backend.
+    pub experimental_thread_store: ThreadStoreConfig,
     /// When set, restricts ChatGPT login to a specific workspace identifier.
     pub forced_chatgpt_workspace_id: Option<String>,
 
@@ -653,13 +672,6 @@ pub struct Config {
     pub otel: codex_config::types::OtelConfig,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FallbackProviderConfig {
-    pub provider_id: String,
-    pub provider: ModelProviderInfo,
-    pub model: Option<String>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiAgentV2Config {
     pub usage_hint_enabled: bool,
@@ -677,6 +689,22 @@ impl Default for MultiAgentV2Config {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TerminalResizeReflowMaxRows {
+    /// Use the runtime terminal detector to choose a scrollback-sized cap.
+    #[default]
+    Auto,
+    /// Keep all rendered transcript rows during resize reflow.
+    Disabled,
+    /// Keep at most this many rendered transcript rows during resize reflow.
+    Limit(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TerminalResizeReflowConfig {
+    pub max_rows: TerminalResizeReflowMaxRows,
+}
+
 impl AuthManagerConfig for Config {
     fn codex_home(&self) -> PathBuf {
         self.codex_home.to_path_buf()
@@ -689,16 +717,37 @@ impl AuthManagerConfig for Config {
     fn forced_chatgpt_workspace_id(&self) -> Option<String> {
         self.forced_chatgpt_workspace_id.clone()
     }
+
+    fn chatgpt_base_url(&self) -> String {
+        self.chatgpt_base_url.clone()
+    }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone)]
 pub struct ConfigBuilder {
     codex_home: Option<PathBuf>,
     cli_overrides: Option<Vec<(String, TomlValue)>>,
     harness_overrides: Option<ConfigOverrides>,
     loader_overrides: Option<LoaderOverrides>,
     cloud_requirements: CloudRequirementsLoader,
+    thread_config_loader: Option<Arc<dyn ThreadConfigLoader>>,
     fallback_cwd: Option<PathBuf>,
+    host_name: Option<String>,
+}
+
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self {
+            codex_home: None,
+            cli_overrides: None,
+            harness_overrides: None,
+            loader_overrides: None,
+            cloud_requirements: CloudRequirementsLoader::default(),
+            thread_config_loader: None,
+            fallback_cwd: None,
+            host_name: codex_config::host_name(),
+        }
+    }
 }
 
 impl ConfigBuilder {
@@ -727,8 +776,21 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn thread_config_loader(
+        mut self,
+        thread_config_loader: Arc<dyn ThreadConfigLoader>,
+    ) -> Self {
+        self.thread_config_loader = Some(thread_config_loader);
+        self
+    }
+
     pub fn fallback_cwd(mut self, fallback_cwd: Option<PathBuf>) -> Self {
         self.fallback_cwd = fallback_cwd;
+        self
+    }
+
+    pub fn host_name(mut self, host_name: Option<String>) -> Self {
+        self.host_name = host_name;
         self
     }
 
@@ -739,7 +801,9 @@ impl ConfigBuilder {
             harness_overrides,
             loader_overrides,
             cloud_requirements,
+            thread_config_loader,
             fallback_cwd,
+            host_name,
         } = self;
         let codex_home = match codex_home {
             Some(codex_home) => AbsolutePathBuf::from_absolute_path(codex_home)?,
@@ -761,6 +825,10 @@ impl ConfigBuilder {
             &cli_overrides,
             loader_overrides,
             cloud_requirements,
+            thread_config_loader
+                .as_deref()
+                .unwrap_or(&codex_config::NoopThreadConfigLoader),
+            host_name.as_deref(),
         )
         .await?;
         let merged_toml = config_layer_stack.effective_config();
@@ -809,8 +877,8 @@ impl Config {
             base_instructions: self.base_instructions.clone(),
             personality_enabled: self.features.enabled(Feature::Personality),
             model_supports_reasoning_summaries: self.model_supports_reasoning_summaries,
-            skip_reasoning_popup: self.model_provider.skip_reasoning_popup,
             model_catalog: self.model_catalog.clone(),
+            skip_reasoning_popup: self.model_provider.skip_reasoning_popup,
         }
     }
 
@@ -918,22 +986,34 @@ pub async fn load_config_as_toml_with_cli_overrides(
     cwd: Option<&AbsolutePathBuf>,
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> std::io::Result<ConfigToml> {
+    load_config_as_toml_with_cli_and_loader_overrides(
+        codex_home,
+        cwd,
+        cli_overrides,
+        LoaderOverrides::default(),
+    )
+    .await
+}
+
+pub async fn load_config_as_toml_with_cli_and_loader_overrides(
+    codex_home: &Path,
+    cwd: Option<&AbsolutePathBuf>,
+    cli_overrides: Vec<(String, TomlValue)>,
+    loader_overrides: LoaderOverrides,
+) -> std::io::Result<ConfigToml> {
     let config_layer_stack = load_config_layers_state(
         LOCAL_FS.as_ref(),
         codex_home,
         cwd.cloned(),
         &cli_overrides,
-        LoaderOverrides::default(),
+        loader_overrides,
         CloudRequirementsLoader::default(),
+        &codex_config::NoopThreadConfigLoader,
+        /*host_name*/ None,
     )
     .await?;
 
-    let mut merged_toml = config_layer_stack.effective_config();
-    // Apply CLI overrides (-c key=value) on top of effective config so they
-    // have the highest precedence.
-    for (path, value) in cli_overrides {
-        apply_single_override(&mut merged_toml, &path, value);
-    }
+    let merged_toml = config_layer_stack.effective_config();
     let cfg = deserialize_config_toml_with_base(merged_toml, codex_home).map_err(|e| {
         tracing::error!("Failed to deserialize overridden config: {e}");
         e
@@ -942,46 +1022,7 @@ pub async fn load_config_as_toml_with_cli_overrides(
     Ok(cfg)
 }
 
-/// Apply a single CLI override onto the config root, creating intermediate
-/// tables as necessary.
-fn apply_single_override(root: &mut TomlValue, path: &str, value: TomlValue) {
-    use toml::map::Map;
-    let parts: Vec<&str> = path.split('.').collect();
-    let mut current = root;
-    for (i, part) in parts.iter().enumerate() {
-        let is_last = i == parts.len() - 1;
-        if is_last {
-            match current {
-                TomlValue::Table(tbl) => {
-                    tbl.insert((*part).to_string(), value);
-                }
-                _ => {
-                    let mut tbl = Map::new();
-                    tbl.insert((*part).to_string(), value);
-                    *current = TomlValue::Table(tbl);
-                }
-            }
-            return;
-        }
-        match current {
-            TomlValue::Table(tbl) => {
-                current = tbl
-                    .entry((*part).to_string())
-                    .or_insert_with(|| TomlValue::Table(Map::new()));
-            }
-            _ => {
-                *current = TomlValue::Table(Map::new());
-                if let TomlValue::Table(tbl) = current {
-                    current = tbl
-                        .entry((*part).to_string())
-                        .or_insert_with(|| TomlValue::Table(Map::new()));
-                }
-            }
-        }
-    }
-}
-
-pub(crate) fn deserialize_config_toml_with_base(
+pub fn deserialize_config_toml_with_base(
     root_value: TomlValue,
     config_base_dir: &Path,
 ) -> std::io::Result<ConfigToml> {
@@ -991,6 +1032,15 @@ pub(crate) fn deserialize_config_toml_with_base(
     root_value
         .try_into()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+}
+
+/// Validate user-visible feature settings against managed feature requirements.
+pub fn validate_feature_requirements_for_config_toml(
+    cfg: &ConfigToml,
+    feature_requirements: Option<&Sourced<FeatureRequirementsToml>>,
+) -> std::io::Result<()> {
+    managed_features::validate_explicit_feature_settings_in_config_toml(cfg, feature_requirements)?;
+    managed_features::validate_feature_requirements_in_config_toml(cfg, feature_requirements)
 }
 
 fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> {
@@ -1140,6 +1190,8 @@ pub async fn load_global_mcp_servers(
         &cli_overrides,
         LoaderOverrides::default(),
         CloudRequirementsLoader::default(),
+        &codex_config::NoopThreadConfigLoader,
+        /*host_name*/ None,
     )
     .await?;
     let merged_toml = config_layer_stack.effective_config();
@@ -1308,6 +1360,21 @@ fn resolve_tool_suggest_config(config_toml: &ConfigToml) -> ToolSuggestConfig {
     ToolSuggestConfig { discoverables }
 }
 
+fn thread_store_config(
+    thread_store: Option<ThreadStoreToml>,
+    legacy_remote_endpoint: Option<String>,
+) -> ThreadStoreConfig {
+    match thread_store {
+        Some(ThreadStoreToml::Local {}) => ThreadStoreConfig::Local,
+        Some(ThreadStoreToml::Remote { endpoint }) => ThreadStoreConfig::Remote { endpoint },
+        #[cfg(debug_assertions)]
+        Some(ThreadStoreToml::InMemory { id }) => ThreadStoreConfig::InMemory { id },
+        None => legacy_remote_endpoint.map_or(ThreadStoreConfig::Local, |endpoint| {
+            ThreadStoreConfig::Remote { endpoint }
+        }),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PermissionConfigSyntax {
     Legacy,
@@ -1398,14 +1465,13 @@ pub struct ConfigOverrides {
     pub approval_policy: Option<AskForApproval>,
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     pub sandbox_mode: Option<SandboxMode>,
+    pub permission_profile: Option<PermissionProfile>,
     pub model_provider: Option<String>,
     pub service_tier: Option<Option<ServiceTier>>,
     pub config_profile: Option<String>,
     pub codex_self_exe: Option<PathBuf>,
     pub codex_linux_sandbox_exe: Option<PathBuf>,
     pub main_execve_wrapper_exe: Option<PathBuf>,
-    pub js_repl_node_path: Option<PathBuf>,
-    pub js_repl_node_module_dirs: Option<Vec<PathBuf>>,
     pub zsh_path: Option<PathBuf>,
     pub base_instructions: Option<String>,
     pub developer_instructions: Option<String>,
@@ -1515,6 +1581,20 @@ fn resolve_multi_agent_v2_config(
     }
 }
 
+fn resolve_terminal_resize_reflow_config(config_toml: &ConfigToml) -> TerminalResizeReflowConfig {
+    let Some(tui) = config_toml.tui.as_ref() else {
+        return TerminalResizeReflowConfig::default();
+    };
+
+    TerminalResizeReflowConfig {
+        max_rows: match tui.terminal_resize_reflow_max_rows {
+            Some(0) => TerminalResizeReflowMaxRows::Disabled,
+            Some(rows) => TerminalResizeReflowMaxRows::Limit(rows),
+            None => TerminalResizeReflowMaxRows::Auto,
+        },
+    }
+}
+
 fn multi_agent_v2_toml_config(features: Option<&FeaturesToml>) -> Option<&MultiAgentV2ConfigToml> {
     match features?.multi_agent_v2.as_ref()? {
         FeatureToml::Enabled(_) => None,
@@ -1596,11 +1676,13 @@ impl Config {
             sandbox_policy: mut constrained_sandbox_policy,
             web_search_mode: mut constrained_web_search_mode,
             feature_requirements,
+            managed_hooks: _,
             mcp_servers,
             exec_policy: _,
             enforce_residency,
             network: network_requirements,
             filesystem: filesystem_requirements,
+            guardian_policy_config_source: _,
         } = config_layer_stack.requirements().clone();
 
         let user_instructions = AgentsMdManager::load_global_instructions(Some(&codex_home))
@@ -1615,14 +1697,13 @@ impl Config {
             approval_policy: approval_policy_override,
             approvals_reviewer: approvals_reviewer_override,
             sandbox_mode,
+            permission_profile,
             model_provider,
             service_tier: service_tier_override,
             config_profile: config_profile_key,
             codex_self_exe,
             codex_linux_sandbox_exe,
             main_execve_wrapper_exe,
-            js_repl_node_path: js_repl_node_path_override,
-            js_repl_node_module_dirs: js_repl_node_module_dirs_override,
             zsh_path: zsh_path_override,
             base_instructions,
             developer_instructions,
@@ -1634,6 +1715,13 @@ impl Config {
             ephemeral,
             additional_writable_roots,
         } = overrides;
+
+        if sandbox_mode.is_some() && permission_profile.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "`sandbox_mode` and `permission_profile` overrides cannot both be set",
+            ));
+        }
 
         let active_profile_name = config_profile_key
             .as_ref()
@@ -1675,7 +1763,11 @@ impl Config {
             },
             feature_overrides,
         );
-        let features = ManagedFeatures::from_configured(configured_features, feature_requirements)?;
+        let features = ManagedFeatures::from_configured_with_warnings(
+            configured_features,
+            feature_requirements,
+            &mut startup_warnings,
+        )?;
         let windows_sandbox_mode = resolve_windows_sandbox_mode(&cfg, &config_profile);
         let windows_sandbox_private_desktop =
             resolve_windows_sandbox_private_desktop(&cfg, &config_profile);
@@ -1701,11 +1793,11 @@ impl Config {
             .into_iter()
             .map(|path| AbsolutePathBuf::resolve_path_against_base(path, resolved_cwd.as_path()))
             .collect();
-        let repo_root = resolve_root_git_project_for_trust(fs, &resolved_cwd).await;
+        let repo_root = resolve_root_git_project_for_trust(resolved_cwd.as_path());
         let active_project = cfg
             .get_active_project(
                 resolved_cwd.as_path(),
-                repo_root.as_ref().map(AbsolutePathBuf::as_path),
+                repo_root.as_deref(),
             )
             .unwrap_or(ProjectConfig { trust_level: None });
         let permission_config_syntax = resolve_permission_config_syntax(
@@ -1755,7 +1847,56 @@ impl Config {
             sandbox_policy,
             file_system_sandbox_policy,
             network_sandbox_policy,
-        ) = if profiles_are_active {
+        ) = if let Some(permission_profile) = permission_profile {
+            let (mut file_system_sandbox_policy, network_sandbox_policy) =
+                permission_profile.to_runtime_permissions();
+            let configured_network_proxy_config =
+                if network_sandbox_policy.is_enabled() && profiles_are_active {
+                    let permissions = cfg.permissions.as_ref().ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "default_permissions requires a `[permissions]` table",
+                        )
+                    })?;
+                    let default_permissions = cfg.default_permissions.as_deref().ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "default_permissions requires a named permissions profile",
+                        )
+                    })?;
+                    let profile = resolve_permission_profile(permissions, default_permissions)?;
+
+                    // PermissionProfile carries the active network sandbox bit, not the configured
+                    // proxy/allowlist policy. Keep that config so active profiles can round-trip
+                    // without broadening network behavior.
+                    network_proxy_config_from_profile_network(profile.network.as_ref())
+                } else {
+                    NetworkProxyConfig::default()
+                };
+            let mut sandbox_policy = permission_profile
+                .to_legacy_sandbox_policy(resolved_cwd.as_path())
+                .map_err(|err| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid permission_profile override: {err}"),
+                    )
+                })?;
+            if matches!(sandbox_policy, SandboxPolicy::WorkspaceWrite { .. }) {
+                file_system_sandbox_policy = file_system_sandbox_policy
+                    .with_additional_writable_roots(
+                        resolved_cwd.as_path(),
+                        &additional_writable_roots,
+                    );
+                sandbox_policy = file_system_sandbox_policy
+                    .to_legacy_sandbox_policy(network_sandbox_policy, resolved_cwd.as_path())?;
+            }
+            (
+                configured_network_proxy_config,
+                sandbox_policy,
+                file_system_sandbox_policy,
+                network_sandbox_policy,
+            )
+        } else if profiles_are_active {
             let permissions = cfg.permissions.as_ref().ok_or_else(|| {
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
@@ -1813,7 +1954,8 @@ impl Config {
                     }
                 }
             }
-            let file_system_sandbox_policy = FileSystemSandboxPolicy::from_legacy_sandbox_policy(
+            let file_system_sandbox_policy =
+                FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
                 &sandbox_policy,
                 resolved_cwd.as_path(),
             );
@@ -1869,6 +2011,7 @@ impl Config {
             .unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg, &config_profile);
         let multi_agent_v2 = resolve_multi_agent_v2_config(&cfg, &config_profile);
+        let terminal_resize_reflow = resolve_terminal_resize_reflow_config(&cfg);
 
         let agent_roles =
             agent_roles::load_agent_roles(fs, &cfg, &config_layer_stack, &mut startup_warnings)
@@ -1879,11 +2022,9 @@ impl Config {
             .clone()
             .filter(|value| !value.is_empty());
 
-        let mut model_providers = built_in_model_providers(openai_base_url);
-        // Merge user-defined providers into the built-in list.
-        for (key, provider) in cfg.model_providers.into_iter() {
-            model_providers.entry(key).or_insert(provider);
-        }
+        let model_providers =
+            merge_configured_model_providers(built_in_model_providers(openai_base_url), cfg.model_providers)
+                .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
 
         let model_provider_id = model_provider
             .or(config_profile.model_provider)
@@ -1901,66 +2042,18 @@ impl Config {
             })?
             .clone();
 
-        let fallback_provider_id = cfg.fallback_provider.clone();
-        let fallback_provider = fallback_provider_id
-            .as_ref()
-            .map(|provider_id| {
-                model_providers.get(provider_id).ok_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!("Fallback model provider `{provider_id}` not found"),
-                    )
-                })
-            })
-            .transpose()?
-            .cloned();
-        let mut fallback_providers = cfg
-            .fallback_providers
-            .iter()
-            .map(|fallback| {
-                let provider_id = fallback.provider.clone();
-                let provider = model_providers
-                    .get(&provider_id)
-                    .ok_or_else(|| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::NotFound,
-                            format!("Fallback model provider `{provider_id}` not found"),
-                        )
-                    })?
-                    .clone();
-                Ok(FallbackProviderConfig {
-                    provider_id,
-                    provider,
-                    model: fallback.model.clone(),
-                })
-            })
-            .collect::<std::io::Result<Vec<_>>>()?;
-        if let Some(provider_id) = fallback_provider_id.as_ref()
-            && !fallback_providers
-                .iter()
-                .any(|fallback| &fallback.provider_id == provider_id)
-        {
-            let Some(provider) = fallback_provider.clone() else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Fallback model provider `{provider_id}` not found"),
-                ));
-            };
-            fallback_providers.insert(
-                0,
-                FallbackProviderConfig {
-                    provider_id: provider_id.clone(),
-                    provider,
-                    model: cfg.fallback_model.clone(),
-                },
-            );
-        }
-
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
 
         let history = cfg.history.unwrap_or_default();
 
+        let agent_max_threads_from_config = cfg.agents.as_ref().and_then(|agents| agents.max_threads);
+        if features.enabled(Feature::MultiAgentV2) && agent_max_threads_from_config.is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "agents.max_threads cannot be set when multi_agent_v2 is enabled",
+            ));
+        }
         let agent_max_threads = cfg
             .agents
             .as_ref()
@@ -2002,6 +2095,11 @@ impl Config {
                 "agents.job_max_runtime_seconds must fit within a 64-bit signed integer",
             ));
         }
+        let agent_interrupt_message_enabled = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.interrupt_message)
+            .unwrap_or(true);
         let background_terminal_max_timeout = cfg
             .background_terminal_max_timeout
             .unwrap_or(DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
@@ -2047,16 +2145,25 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let provider_model = model_provider.model.clone();
-        let model = model.or(provider_model).or(config_profile.model).or(cfg.model);
-        let service_tier = service_tier_override
-            .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
+        let model = model.or(config_profile.model).or(cfg.model);
+        let mut notices = cfg.notice.unwrap_or_default();
+        let service_tier = match service_tier_override {
+            Some(Some(service_tier)) => Some(service_tier),
+            Some(None) => {
+                // Preserve explicit standard/clear intent after the nested override
+                // collapses into `Config.service_tier = None`.
+                notices.fast_default_opt_out = Some(true);
+                None
+            }
+            None => config_profile.service_tier.or(cfg.service_tier),
+        };
         let service_tier = match service_tier {
             Some(ServiceTier::Fast) if features.enabled(Feature::FastMode) => {
                 Some(ServiceTier::Fast)
             }
+            Some(ServiceTier::Fast) => None,
             Some(ServiceTier::Flex) => Some(ServiceTier::Flex),
-            _ => None,
+            None => None,
         };
 
         let compact_prompt = compact_prompt.or(cfg.compact_prompt).and_then(|value| {
@@ -2093,12 +2200,24 @@ impl Config {
             .include_apps_instructions
             .or(cfg.include_apps_instructions)
             .unwrap_or(true);
+        let include_skill_instructions = cfg
+            .skills
+            .as_ref()
+            .and_then(|skills| skills.include_instructions)
+            .unwrap_or(true);
         let include_environment_context = config_profile
             .include_environment_context
             .or(cfg.include_environment_context)
             .unwrap_or(true);
         let guardian_policy_config =
-            guardian_policy_config_from_requirements(config_layer_stack.requirements_toml());
+            guardian_policy_config_from_requirements(config_layer_stack.requirements_toml())
+                .or_else(|| {
+                    cfg.auto_review
+                        .as_ref()
+                        .and_then(|auto_review| normalize_guardian_policy_config(
+                            auto_review.policy.as_deref(),
+                        ))
+                });
         let personality = personality
             .or(config_profile.personality)
             .or(cfg.personality)
@@ -2119,20 +2238,6 @@ impl Config {
         )
         .await?;
         let compact_prompt = compact_prompt.or(file_compact_prompt);
-        let js_repl_node_path = js_repl_node_path_override
-            .or(config_profile.js_repl_node_path.map(Into::into))
-            .or(cfg.js_repl_node_path.map(Into::into));
-        let js_repl_node_module_dirs = js_repl_node_module_dirs_override
-            .or_else(|| {
-                config_profile
-                    .js_repl_node_module_dirs
-                    .map(|dirs| dirs.into_iter().map(Into::into).collect::<Vec<PathBuf>>())
-            })
-            .or_else(|| {
-                cfg.js_repl_node_module_dirs
-                    .map(|dirs| dirs.into_iter().map(Into::into).collect::<Vec<PathBuf>>())
-            })
-            .unwrap_or_default();
         let zsh_path = zsh_path_override
             .or(config_profile.zsh_path.map(Into::into))
             .or(cfg.zsh_path.map(Into::into));
@@ -2283,11 +2388,6 @@ impl Config {
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
-            resume_model_source: cfg.resume_model_source.unwrap_or_default(),
-            fallback_provider_id,
-            fallback_provider,
-            fallback_model: cfg.fallback_model.clone(),
-            fallback_providers,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {
@@ -2312,6 +2412,7 @@ impl Config {
             commit_attribution,
             include_permissions_instructions,
             include_apps_instructions,
+            include_skill_instructions,
             include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.
@@ -2349,19 +2450,18 @@ impl Config {
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
             ztok: ZtokConfig::from_toml(cfg.ztok.clone()),
-            zmemory: ZmemoryConfig::from_toml(
-                cfg.zmemory.clone().map(|z| ZmemoryToml {
-                    path: z.path,
-                    valid_domains: z.valid_domains,
-                    core_memory_uris: z.core_memory_uris,
-                    namespace: z.namespace,
-                }),
-            ),
+            zmemory: ZmemoryConfig::from_toml(cfg.zmemory.clone().map(|z| ZmemoryToml {
+                path: z.path,
+                valid_domains: z.valid_domains,
+                core_memory_uris: z.core_memory_uris,
+                namespace: z.namespace,
+            })),
             tui_show_buddy: cfg.tui_show_buddy.unwrap_or(true),
             tui_buddy_soul: cfg.tui_buddy_soul,
             tui_buddy_reactions_enabled: cfg.tui_buddy_reactions_enabled.unwrap_or(true),
             tui_buddy_reaction_strategy: cfg.tui_buddy_reaction_strategy.unwrap_or_default(),
             agent_job_max_runtime_seconds,
+            agent_interrupt_message_enabled,
             codex_home,
             sqlite_home,
             log_dir,
@@ -2372,8 +2472,6 @@ impl Config {
             codex_self_exe,
             codex_linux_sandbox_exe,
             main_execve_wrapper_exe,
-            js_repl_node_path,
-            js_repl_node_module_dirs,
             zsh_path,
 
             hide_agent_reasoning: cfg.hide_agent_reasoning.unwrap_or(false),
@@ -2420,6 +2518,11 @@ impl Config {
             experimental_realtime_ws_backend_prompt: cfg.experimental_realtime_ws_backend_prompt,
             experimental_realtime_ws_startup_context: cfg.experimental_realtime_ws_startup_context,
             experimental_realtime_start_instructions: cfg.experimental_realtime_start_instructions,
+            experimental_thread_config_endpoint: cfg.experimental_thread_config_endpoint,
+            experimental_thread_store: thread_store_config(
+                cfg.experimental_thread_store,
+                cfg.experimental_thread_store_endpoint,
+            ),
             forced_chatgpt_workspace_id,
             forced_login_method,
             include_apply_patch_tool: include_apply_patch_tool_flag,
@@ -2436,7 +2539,7 @@ impl Config {
             active_profile: active_profile_name,
             active_project,
             windows_wsl_setup_acknowledged: cfg.windows_wsl_setup_acknowledged.unwrap_or(false),
-            notices: cfg.notice.unwrap_or_default(),
+            notices,
             check_for_update_on_startup,
             disable_paste_burst: cfg.disable_paste_burst.unwrap_or(false),
             analytics_enabled: config_profile
@@ -2491,6 +2594,7 @@ impl Config {
                 .as_ref()
                 .map(|t| t.pasted_image_jpeg_quality)
                 .unwrap_or(85),
+            terminal_resize_reflow,
             otel: {
                 let t: OtelConfigToml = cfg.otel.unwrap_or_default();
                 let log_user_prompt = t.log_user_prompt.unwrap_or(false);
@@ -2500,13 +2604,14 @@ impl Config {
                 let exporter = t.exporter.unwrap_or(OtelExporterKind::None);
                 let trace_exporter = t.trace_exporter.unwrap_or_else(|| exporter.clone());
                 let metrics_exporter = t.metrics_exporter.unwrap_or(OtelExporterKind::Statsig);
+                let posthog_api_key = t.posthog_api_key;
                 OtelConfig {
                     log_user_prompt,
                     environment,
                     exporter,
                     trace_exporter,
                     metrics_exporter,
-                    posthog_api_key: t.posthog_api_key,
+                    posthog_api_key,
                 }
             },
         };
@@ -2600,13 +2705,14 @@ pub(crate) fn uses_deprecated_instructions_file(config_layer_stack: &ConfigLayer
 fn guardian_policy_config_from_requirements(
     requirements_toml: &ConfigRequirementsToml,
 ) -> Option<String> {
-    requirements_toml
-        .guardian_policy_config
-        .as_deref()
-        .and_then(|value| {
-            let trimmed = value.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        })
+    normalize_guardian_policy_config(requirements_toml.guardian_policy_config.as_deref())
+}
+
+fn normalize_guardian_policy_config(value: Option<&str>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
 }
 
 fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {

@@ -1,3 +1,8 @@
+//! Top-level TUI application state and runtime wiring.
+//!
+//! This module owns the `App` struct, shared imports, and the high-level run loop that coordinates
+//! the focused app submodules.
+
 use crate::app_backtrack::BacktrackState;
 use crate::app_command::AppCommand;
 use crate::app_command::AppCommandView;
@@ -42,7 +47,6 @@ use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::edit::ConfigEdit;
 use crate::legacy_core::config::edit::ConfigEditsBuilder;
-use crate::legacy_core::config_loader::ConfigLayerStackOrdering;
 use crate::legacy_core::lookup_message_history_entry;
 use crate::legacy_core::plugins::PluginsManager;
 #[cfg(target_os = "windows")]
@@ -67,6 +71,7 @@ use crate::test_support::PathBufExt;
 use crate::test_support::test_path_buf;
 #[cfg(test)]
 use crate::test_support::test_path_display;
+use crate::transcript_reflow::TranscriptReflowState;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
@@ -75,6 +80,7 @@ use crate::zteam;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
+use codex_app_server_protocol::AddCreditsNudgeCreditType;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::ConfigLayerSource;
@@ -97,6 +103,7 @@ use codex_app_server_protocol::PluginReadResponse;
 use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::SendAddCreditsNudgeEmailParams;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SkillsListParams;
@@ -114,6 +121,7 @@ use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError as AppServerTurnError;
 use codex_app_server_protocol::TurnStatus;
+use codex_config::ConfigLayerStackOrdering;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::ModelAvailabilityNuxConfig;
 use codex_exec_server::EnvironmentManager;
@@ -151,6 +159,8 @@ use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::KeyModifiers;
+use ratatui::backend::Backend;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -158,6 +168,7 @@ use ratatui::widgets::Wrap;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -180,12 +191,22 @@ mod app_server_adapter;
 pub(crate) mod app_server_requests;
 mod loaded_threads;
 mod pending_interactive_replay;
+mod platform_actions;
+mod resize_reflow;
+mod side;
+mod startup_prompts;
+mod thread_goal_actions;
 
 use self::agent_navigation::AgentNavigationDirection;
 use self::agent_navigation::AgentNavigationState;
 use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
+use self::platform_actions::*;
+use self::side::SideParentStatus;
+use self::side::SideParentStatusChange;
+use self::side::SideThreadState;
+use self::startup_prompts::*;
 
 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
@@ -267,7 +288,7 @@ fn default_exec_approval_decisions(
     proposed_network_policy_amendments: Option<
         &[codex_protocol::approvals::NetworkPolicyAmendment],
     >,
-    additional_permissions: Option<&codex_protocol::models::PermissionProfile>,
+    additional_permissions: Option<&codex_protocol::models::AdditionalPermissionProfile>,
 ) -> Vec<codex_protocol::protocol::ReviewDecision> {
     ExecApprovalRequestEvent::default_available_decisions(
         network_approval_context,
@@ -278,7 +299,7 @@ fn default_exec_approval_decisions(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct GuardianApprovalsMode {
+struct AutoReviewMode {
     approval_policy: AskForApproval,
     approvals_reviewer: ApprovalsReviewer,
     sandbox_policy: SandboxPolicy,
@@ -287,11 +308,11 @@ struct GuardianApprovalsMode {
 /// Enabling the Auto-review experiment in the TUI should also switch the
 /// current `/approvals` settings to the matching Auto-review mode. Users
 /// can still change `/approvals` afterward; this just assumes that opting into
-/// the experiment means they want guardian review enabled immediately.
-fn guardian_approvals_mode() -> GuardianApprovalsMode {
-    GuardianApprovalsMode {
+/// the experiment means they want Auto-review enabled immediately.
+fn auto_review_mode() -> AutoReviewMode {
+    AutoReviewMode {
         approval_policy: AskForApproval::OnRequest,
-        approvals_reviewer: ApprovalsReviewer::GuardianSubagent,
+        approvals_reviewer: ApprovalsReviewer::AutoReview,
         sandbox_policy: SandboxPolicy::new_workspace_write_policy(),
     }
 }
@@ -341,11 +362,10 @@ fn session_summary(
     rollout_path: Option<&Path>,
 ) -> Option<SessionSummary> {
     let usage_line = (!token_usage.is_zero()).then(|| FinalOutput::from(token_usage).to_string());
-    let (thread_id, thread_name) = resumable_thread(thread_id, thread_name, rollout_path)
-        .map(|thread| (Some(thread.thread_id), thread.thread_name))
-        .unwrap_or((None, None));
+    let thread_id =
+        resumable_thread(thread_id, thread_name, rollout_path).map(|thread| thread.thread_id);
     let resume_command =
-        crate::legacy_core::util::resume_command(thread_name.as_deref(), thread_id);
+        crate::legacy_core::util::resume_command(/*thread_name*/ None, thread_id);
 
     if usage_line.is_none() && resume_command.is_none() {
         return None;
@@ -695,6 +715,25 @@ impl ThreadEventStore {
         }
     }
 
+    fn pending_replay_requests(&self) -> Vec<ServerRequest> {
+        self.buffer
+            .iter()
+            .filter_map(|event| match event {
+                ThreadBufferedEvent::Request(request)
+                    if self
+                        .pending_interactive_replay
+                        .should_replay_snapshot_request(request) =>
+                {
+                    Some(request.clone())
+                }
+                ThreadBufferedEvent::Request(_)
+                | ThreadBufferedEvent::Notification(_)
+                | ThreadBufferedEvent::HistoryEntryResponse(_)
+                | ThreadBufferedEvent::FeedbackSubmission(_) => None,
+            })
+            .collect()
+    }
+
     fn note_outbound_op<T>(&mut self, op: T)
     where
         T: Into<AppCommand>,
@@ -757,6 +796,11 @@ impl ThreadEventChannel {
             ))),
         }
     }
+}
+
+#[derive(Default)]
+struct InitialHistoryReplayBuffer {
+    retained_lines: VecDeque<Line<'static>>,
 }
 
 fn should_show_model_migration_prompt(
@@ -1012,6 +1056,8 @@ pub(crate) struct App {
     pub(crate) overlay: Option<Overlay>,
     pub(crate) deferred_history_lines: Vec<Line<'static>>,
     has_emitted_history_lines: bool,
+    transcript_reflow: TranscriptReflowState,
+    initial_history_replay_buffer: Option<InitialHistoryReplayBuffer>,
 
     pub(crate) enhanced_keys_supported: bool,
 
@@ -1052,6 +1098,7 @@ pub(crate) struct App {
     thread_event_channels: HashMap<ThreadId, ThreadEventChannel>,
     thread_event_listener_tasks: HashMap<ThreadId, JoinHandle<()>>,
     agent_navigation: AgentNavigationState,
+    side_threads: HashMap<ThreadId, SideThreadState>,
     active_thread_id: Option<ThreadId>,
     active_thread_rx: Option<mpsc::Receiver<ThreadBufferedEvent>>,
     primary_thread_id: Option<ThreadId>,
@@ -1063,30 +1110,6 @@ pub(crate) struct App {
     // overwrite a newer toggle, even if the plugin is toggled from different
     // cwd contexts.
     pending_plugin_enabled_writes: HashMap<String, Option<bool>>,
-}
-
-#[derive(Default)]
-struct WindowsSandboxState {
-    setup_started_at: Option<Instant>,
-    // One-shot suppression of the next world-writable scan after user confirmation.
-    skip_world_writable_scan_once: bool,
-}
-
-fn normalize_harness_overrides_for_cwd(
-    mut overrides: ConfigOverrides,
-    base_cwd: &AbsolutePathBuf,
-) -> Result<ConfigOverrides> {
-    if overrides.additional_writable_roots.is_empty() {
-        return Ok(overrides);
-    }
-
-    let mut normalized = Vec::with_capacity(overrides.additional_writable_roots.len());
-    for root in overrides.additional_writable_roots.drain(..) {
-        let absolute = base_cwd.join(root);
-        normalized.push(absolute.into_path_buf());
-    }
-    overrides.additional_writable_roots = normalized;
-    Ok(overrides)
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<AppServerTurnError> {
@@ -1278,7 +1301,7 @@ impl App {
             return;
         }
 
-        let guardian_approvals_preset = guardian_approvals_mode();
+        let guardian_approvals_preset = auto_review_mode();
         let mut next_config = self.config.clone();
         let active_profile = self.active_profile.clone();
         let scoped_segments = |key: &str| {
@@ -2043,6 +2066,7 @@ impl App {
                 config.cwd.to_path_buf(),
                 config.permissions.approval_policy.value(),
                 config.permissions.sandbox_policy.get().clone(),
+                Some(config.permissions.permission_profile()),
                 self.chat_widget.current_model().to_string(),
                 self.chat_widget.current_reasoning_effort(),
                 /*summary*/ None,
@@ -2250,14 +2274,18 @@ impl App {
     /// tradeoff because the effect is limited to stale inventory output in history,
     /// while request-token invalidation would add cross-cutting async state for a
     /// low-severity path.
-    fn fetch_mcp_inventory(&mut self, app_server: &AppServerSession) {
+    fn fetch_mcp_inventory(
+        &mut self,
+        app_server: &AppServerSession,
+        detail: McpServerStatusDetail,
+    ) {
         let request_handle = app_server.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         tokio::spawn(async move {
-            let result = fetch_all_mcp_server_statuses(request_handle)
+            let result = fetch_all_mcp_server_statuses(request_handle, detail)
                 .await
                 .map_err(|err| err.to_string());
-            app_event_tx.send(AppEvent::McpInventoryLoaded { result });
+            app_event_tx.send(AppEvent::McpInventoryLoaded { result, detail });
         });
     }
 
@@ -2275,6 +2303,21 @@ impl App {
                 .await
                 .map_err(|err| err.to_string());
             app_event_tx.send(AppEvent::RateLimitsLoaded { origin, result });
+        });
+    }
+
+    fn send_add_credits_nudge_email(
+        &mut self,
+        app_server: &AppServerSession,
+        credit_type: AddCreditsNudgeCreditType,
+    ) {
+        let request_handle = app_server.request_handle();
+        let app_event_tx = self.app_event_tx.clone();
+        tokio::spawn(async move {
+            let result = send_add_credits_nudge_email(request_handle, credit_type)
+                .await
+                .map_err(|err| err.to_string());
+            app_event_tx.send(AppEvent::AddCreditsNudgeEmailFinished { result });
         });
     }
 
@@ -2562,7 +2605,11 @@ impl App {
     ///
     /// When both the local config and the app-server report zero servers, a special
     /// "empty" cell is shown instead of the full table.
-    fn handle_mcp_inventory_result(&mut self, result: Result<Vec<McpServerStatus>, String>) {
+    fn handle_mcp_inventory_result(
+        &mut self,
+        result: Result<Vec<McpServerStatus>, String>,
+        detail: McpServerStatusDetail,
+    ) {
         let config = self.chat_widget.config_ref().clone();
         self.chat_widget.clear_mcp_inventory_loading();
         self.clear_committed_mcp_inventory_loading();
@@ -2584,9 +2631,7 @@ impl App {
 
         self.chat_widget
             .add_to_history(history_cell::new_mcp_tools_output_from_statuses(
-                &config,
-                &statuses,
-                McpServerStatusDetail::ToolsAndAuthOnly,
+                &config, &statuses, detail,
             ));
     }
 
@@ -2685,6 +2730,7 @@ impl App {
                 approval_policy,
                 approvals_reviewer,
                 sandbox_policy,
+                permission_profile,
                 model,
                 effort,
                 summary,
@@ -2768,6 +2814,7 @@ impl App {
                             approvals_reviewer
                                 .unwrap_or(self.chat_widget.config_ref().approvals_reviewer),
                             sandbox_policy.clone(),
+                            permission_profile.clone(),
                             model.to_string(),
                             effort,
                             *summary,
@@ -2938,6 +2985,49 @@ impl App {
             .collect();
 
         self.chat_widget.set_pending_thread_approvals(threads);
+    }
+
+    pub(super) async fn surface_pending_inactive_thread_interactive_requests(&mut self) {
+        if self.active_side_parent_thread_id().is_some() {
+            return;
+        }
+
+        let channels: Vec<(ThreadId, Arc<Mutex<ThreadEventStore>>)> = self
+            .thread_event_channels
+            .iter()
+            .map(|(thread_id, channel)| (*thread_id, Arc::clone(&channel.store)))
+            .collect();
+        let mut requests = Vec::new();
+        for (thread_id, store) in channels {
+            if Some(thread_id) == self.active_thread_id {
+                continue;
+            }
+
+            let store = store.lock().await;
+            requests.extend(
+                store
+                    .pending_replay_requests()
+                    .into_iter()
+                    .map(|request| (thread_id, request)),
+            );
+        }
+
+        for (thread_id, request) in requests {
+            if let Some(request) = self
+                .interactive_request_for_thread_request(thread_id, &request)
+                .await
+            {
+                match request {
+                    ThreadInteractiveRequest::Approval(request) => {
+                        self.chat_widget.push_approval_request(request);
+                    }
+                    ThreadInteractiveRequest::McpServerElicitation(request) => {
+                        self.chat_widget
+                            .push_mcp_server_elicitation_request(request);
+                    }
+                }
+            }
+        }
     }
 
     async fn enqueue_thread_notification(
@@ -3501,6 +3591,7 @@ impl App {
             .unwrap_or(ThreadSessionState {
                 thread_id,
                 forked_from_id: None,
+                fork_parent_title: None,
                 thread_name: None,
                 model: self.chat_widget.current_model().to_string(),
                 model_provider_id: self.config.model_provider_id.clone(),
@@ -3508,6 +3599,7 @@ impl App {
                 approval_policy: self.config.permissions.approval_policy.value(),
                 approvals_reviewer: self.config.approvals_reviewer,
                 sandbox_policy: self.config.permissions.sandbox_policy.get().clone(),
+                permission_profile: Some(self.config.permissions.permission_profile()),
                 cwd: thread.cwd.clone(),
                 instruction_source_paths: Vec::new(),
                 reasoning_effort: self.chat_widget.current_reasoning_effort(),
@@ -4089,6 +4181,7 @@ impl App {
                     archived: Some(false),
                     cwd: None,
                     search_term: None,
+                    use_state_db_only: false,
                 })
                 .await?;
 
@@ -4544,6 +4637,8 @@ impl App {
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
+            transcript_reflow: TranscriptReflowState::default(),
+            initial_history_replay_buffer: None,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: terminal_title_invalid_items_warned.clone(),
@@ -4560,6 +4655,7 @@ impl App {
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
+            side_threads: HashMap::new(),
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,
@@ -4731,7 +4827,10 @@ impl App {
         app_server: &mut AppServerSession,
         event: TuiEvent,
     ) -> Result<AppRunControl> {
-        if matches!(event, TuiEvent::Draw) {
+        let terminal_resize_reflow_enabled = self.terminal_resize_reflow_enabled();
+        if terminal_resize_reflow_enabled && matches!(event, TuiEvent::Draw | TuiEvent::Resize) {
+            self.handle_draw_pre_render(tui)?;
+        } else if matches!(event, TuiEvent::Draw | TuiEvent::Resize) {
             let size = tui.terminal.size()?;
             if size != tui.terminal.last_known_screen_size {
                 self.refresh_status_line();
@@ -4753,7 +4852,7 @@ impl App {
                     let pasted = pasted.replace("\r", "\n");
                     self.chat_widget.handle_paste(pasted);
                 }
-                TuiEvent::Draw => {
+                TuiEvent::Draw | TuiEvent::Resize => {
                     if self.backtrack_render_pending {
                         self.backtrack_render_pending = false;
                         self.render_transcript_once(tui);
@@ -4767,15 +4866,23 @@ impl App {
                     }
                     // Allow widgets to process any pending timers before rendering.
                     self.chat_widget.pre_draw_tick();
-                    tui.draw(
-                        self.chat_widget.desired_height(tui.terminal.size()?.width),
-                        |frame| {
+                    let desired_height =
+                        self.chat_widget.desired_height(tui.terminal.size()?.width);
+                    if terminal_resize_reflow_enabled {
+                        tui.draw_with_resize_reflow(desired_height, |frame| {
                             self.chat_widget.render(frame.area(), frame.buffer);
                             if let Some((x, y)) = self.chat_widget.cursor_pos(frame.area()) {
                                 frame.set_cursor_position((x, y));
                             }
-                        },
-                    )?;
+                        })?;
+                    } else {
+                        tui.draw(desired_height, |frame| {
+                            self.chat_widget.render(frame.area(), frame.buffer);
+                            if let Some((x, y)) = self.chat_widget.cursor_pos(frame.area()) {
+                                frame.set_cursor_position((x, y));
+                            }
+                        })?;
+                    }
                     if self.chat_widget.external_editor_state() == ExternalEditorState::Requested {
                         self.chat_widget
                             .set_external_editor_state(ExternalEditorState::Active);
@@ -4985,13 +5092,7 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
-                match crate::lookup_session_target_with_app_server(
-                    app_server,
-                    self.config.codex_home.as_path(),
-                    &id_or_name,
-                )
-                .await?
-                {
+                match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
                     Some(target_session) => {
                         return self
                             .resume_target_session(tui, app_server, target_session)
@@ -5346,11 +5447,107 @@ impl App {
                         .on_plugin_enabled_set(cwd, plugin_id, enabled, result);
                 }
             }
-            AppEvent::FetchMcpInventory => {
-                self.fetch_mcp_inventory(app_server);
+            AppEvent::FetchMcpInventory { detail } => {
+                self.fetch_mcp_inventory(app_server, detail);
             }
-            AppEvent::McpInventoryLoaded { result } => {
-                self.handle_mcp_inventory_result(result);
+            AppEvent::McpInventoryLoaded { result, detail } => {
+                self.handle_mcp_inventory_result(result, detail);
+            }
+            AppEvent::BeginInitialHistoryReplayBuffer => {
+                self.begin_initial_history_replay_buffer();
+            }
+            AppEvent::InsertHistoryCell(cell) => {
+                let cell: Arc<dyn HistoryCell> = cell.into();
+                if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                    t.insert_cell(cell.clone());
+                    tui.frame_requester().schedule_frame();
+                }
+                self.transcript_cells.push(cell.clone());
+                if self.initial_history_replay_buffer.as_ref().is_some() {
+                    self.insert_history_cell_lines_with_initial_replay_buffer(
+                        tui,
+                        cell.as_ref(),
+                        tui.terminal.last_known_screen_size.width,
+                    );
+                } else {
+                    self.insert_history_cell_lines(
+                        tui,
+                        cell.as_ref(),
+                        tui.terminal.last_known_screen_size.width,
+                    );
+                }
+            }
+            AppEvent::EndInitialHistoryReplayBuffer => {
+                self.finish_initial_history_replay_buffer(tui);
+            }
+            AppEvent::ConsolidateAgentMessage { source, cwd } => {
+                if !self.terminal_resize_reflow_enabled() {
+                    self.transcript_reflow.clear();
+                    return Ok(AppRunControl::Continue);
+                }
+                let end = self.transcript_cells.len();
+                let start = resize_reflow::trailing_run_start::<history_cell::AgentMessageCell>(
+                    &self.transcript_cells,
+                );
+                if start < end {
+                    let consolidated: Arc<dyn HistoryCell> =
+                        Arc::new(history_cell::AgentMarkdownCell::new(source, &cwd));
+                    self.transcript_cells
+                        .splice(start..end, std::iter::once(consolidated.clone()));
+
+                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                        t.consolidate_cells(start..end, consolidated.clone());
+                        tui.frame_requester().schedule_frame();
+                    }
+
+                    self.maybe_finish_stream_reflow(tui)?;
+                } else {
+                    self.maybe_finish_stream_reflow(tui)?;
+                }
+            }
+            AppEvent::ConsolidateProposedPlan(source) => {
+                if !self.terminal_resize_reflow_enabled() {
+                    self.transcript_reflow.clear();
+                    return Ok(AppRunControl::Continue);
+                }
+                let end = self.transcript_cells.len();
+                let start = resize_reflow::trailing_run_start::<history_cell::ProposedPlanStreamCell>(
+                    &self.transcript_cells,
+                );
+                let consolidated: Arc<dyn HistoryCell> =
+                    Arc::new(history_cell::new_proposed_plan(source, &self.config.cwd));
+
+                if start < end {
+                    self.transcript_cells
+                        .splice(start..end, std::iter::once(consolidated.clone()));
+
+                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                        t.consolidate_cells(start..end, consolidated.clone());
+                        tui.frame_requester().schedule_frame();
+                    }
+
+                    self.finish_required_stream_reflow(tui)?;
+                } else {
+                    self.transcript_cells.push(consolidated.clone());
+                    if let Some(Overlay::Transcript(t)) = &mut self.overlay {
+                        t.insert_cell(consolidated.clone());
+                        tui.frame_requester().schedule_frame();
+                    }
+                    self.insert_history_cell_lines(
+                        tui,
+                        consolidated.as_ref(),
+                        tui.terminal.last_known_screen_size.width,
+                    );
+                    self.finish_required_stream_reflow(tui)?;
+                }
+            }
+            AppEvent::StartSide {
+                parent_thread_id,
+                user_message,
+            } => {
+                return self
+                    .handle_start_side(tui, app_server, parent_thread_id, user_message)
+                    .await;
             }
             AppEvent::SkillsListLoaded { result } => {
                 self.handle_skills_list_result(
@@ -5366,6 +5563,36 @@ impl App {
             }
             AppEvent::RefreshRateLimits { origin } => {
                 self.refresh_rate_limits(app_server, origin);
+            }
+            AppEvent::OpenThreadGoalMenu { thread_id } => {
+                self.open_thread_goal_menu(app_server, thread_id).await;
+            }
+            AppEvent::SetThreadGoalObjective {
+                thread_id,
+                objective,
+                mode,
+            } => {
+                self.set_thread_goal_objective(app_server, thread_id, objective, mode)
+                    .await;
+            }
+            AppEvent::SetThreadGoalStatus { thread_id, status } => {
+                self.set_thread_goal_status(app_server, thread_id, status)
+                    .await;
+            }
+            AppEvent::ClearThreadGoal { thread_id } => {
+                self.clear_thread_goal(app_server, thread_id).await;
+            }
+            AppEvent::SendAddCreditsNudgeEmail { credit_type } => {
+                if self
+                    .chat_widget
+                    .start_add_credits_nudge_email_request(credit_type)
+                {
+                    self.send_add_credits_nudge_email(app_server, credit_type);
+                }
+            }
+            AppEvent::AddCreditsNudgeEmailFinished { result } => {
+                self.chat_widget
+                    .finish_add_credits_nudge_email_request(result);
             }
             AppEvent::RateLimitsLoaded { origin, result } => match result {
                 Ok(snapshots) => {
@@ -7005,6 +7232,7 @@ impl App {
 /// the inventory atomically. Each page requests up to 100 entries.
 async fn fetch_all_mcp_server_statuses(
     request_handle: AppServerRequestHandle,
+    detail: McpServerStatusDetail,
 ) -> Result<Vec<McpServerStatus>> {
     let mut cursor = None;
     let mut statuses = Vec::new();
@@ -7017,7 +7245,7 @@ async fn fetch_all_mcp_server_statuses(
                 params: ListMcpServerStatusParams {
                     cursor: cursor.clone(),
                     limit: Some(100),
-                    detail: Some(McpServerStatusDetail::ToolsAndAuthOnly),
+                    detail: Some(detail),
                 },
             })
             .await
@@ -7046,6 +7274,22 @@ async fn fetch_account_rate_limits(
         .wrap_err("account/rateLimits/read failed in TUI")?;
 
     Ok(app_server_rate_limit_snapshots_to_core(response))
+}
+
+async fn send_add_credits_nudge_email(
+    request_handle: AppServerRequestHandle,
+    credit_type: AddCreditsNudgeCreditType,
+) -> Result<codex_app_server_protocol::AddCreditsNudgeEmailStatus> {
+    let request_id = RequestId::String(format!("add-credits-nudge-{}", Uuid::new_v4()));
+    let response: codex_app_server_protocol::SendAddCreditsNudgeEmailResponse = request_handle
+        .request_typed(ClientRequest::SendAddCreditsNudgeEmail {
+            request_id,
+            params: SendAddCreditsNudgeEmailParams { credit_type },
+        })
+        .await
+        .wrap_err("account/sendAddCreditsNudgeEmail failed in TUI")?;
+
+    Ok(response.status)
 }
 
 async fn fetch_skills_list(
@@ -9079,7 +9323,7 @@ mod tests {
         let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
         let codex_home = tempdir()?;
         app.config.codex_home = codex_home.path().to_path_buf().abs();
-        let guardian_approvals = guardian_approvals_mode();
+        let guardian_approvals = auto_review_mode();
 
         app.update_feature_flags(vec![(Feature::GuardianApproval, true)])
             .await;
@@ -9266,7 +9510,7 @@ mod tests {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
         let codex_home = tempdir()?;
         app.config.codex_home = codex_home.path().to_path_buf().abs();
-        let guardian_approvals = guardian_approvals_mode();
+        let guardian_approvals = auto_review_mode();
         let config_toml_path = codex_home.path().join("config.toml").abs();
         let config_toml = "approvals_reviewer = \"user\"\n";
         std::fs::write(config_toml_path.as_path(), config_toml)?;
@@ -9396,7 +9640,7 @@ mod tests {
         let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
         let codex_home = tempdir()?;
         app.config.codex_home = codex_home.path().to_path_buf().abs();
-        let guardian_approvals = guardian_approvals_mode();
+        let guardian_approvals = auto_review_mode();
         app.active_profile = Some("guardian".to_string());
         let config_toml_path = codex_home.path().join("config.toml").abs();
         let config_toml = "profile = \"guardian\"\napprovals_reviewer = \"user\"\n";

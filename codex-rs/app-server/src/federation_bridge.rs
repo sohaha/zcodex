@@ -239,6 +239,7 @@ async fn process_text_task(
             approval_policy: snapshot.approval_policy,
             approvals_reviewer: Some(snapshot.approvals_reviewer),
             sandbox_policy: snapshot.sandbox_policy,
+            permission_profile: None,
             model: snapshot.model,
             effort: None,
             summary: None,
@@ -246,6 +247,7 @@ async fn process_text_task(
             final_output_json_schema: None,
             collaboration_mode: None,
             personality: None,
+            environments: None,
         })
         .await
         .context("submit federation text task to local thread")?;

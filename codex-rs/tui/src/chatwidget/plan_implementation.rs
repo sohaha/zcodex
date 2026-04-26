@@ -20,9 +20,15 @@ pub(super) const PLAN_IMPLEMENTATION_CLEAR_CONTEXT_PREFIX: &str = concat!(
 pub(super) const PLAN_IMPLEMENTATION_DEFAULT_UNAVAILABLE: &str = "默认模式当前不可用";
 pub(super) const PLAN_IMPLEMENTATION_NO_APPROVED_PLAN: &str = "没有已批准的计划";
 
+/// Builds the confirmation prompt shown after a plan is approved in Plan mode.
+///
+/// The optional usage label is already phrased for display, such as `89% used`
+/// or `123K used`. This module only decides where that label belongs in the
+/// decision copy so action wiring stays separate from token accounting.
 pub(super) fn selection_view_params(
     default_mask: Option<CollaborationModeMask>,
     plan_markdown: Option<&str>,
+    clear_context_usage_label: Option<&str>,
 ) -> SelectionViewParams {
     let (implement_actions, implement_disabled_reason) = match default_mask.clone() {
         Some(mask) => {
@@ -62,6 +68,11 @@ pub(super) fn selection_view_params(
             Some(PLAN_IMPLEMENTATION_NO_APPROVED_PLAN.to_string()),
         ),
     };
+
+    let clear_context_description = clear_context_usage_label.map_or_else(
+        || "Fresh thread with this plan.".to_string(),
+        |label| format!("Fresh thread. Context: {label}."),
+    );
 
     SelectionViewParams {
         title: Some(PLAN_IMPLEMENTATION_TITLE.to_string()),

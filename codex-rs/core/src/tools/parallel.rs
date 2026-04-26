@@ -17,7 +17,6 @@ use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ToolArgumentDiffConsumer;
-use crate::tools::rewrite::rewrite_tool_call;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
 use crate::tools::router::ToolRouter;
@@ -87,53 +86,55 @@ impl ToolCallRuntime {
         source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<AnyToolResult, FunctionCallError>> {
+        let supports_parallel = self.router.tool_supports_parallel(&call);
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);
         let turn = Arc::clone(&self.turn_context);
         let tracker = Arc::clone(&self.tracker);
         let lock = Arc::clone(&self.parallel_execution);
+        let invocation_cancellation_token = cancellation_token.clone();
         let started = Instant::now();
+        let display_name = call.tool_name.display();
+
+        let dispatch_span = trace_span!(
+            "dispatch_tool_call_with_code_mode_result",
+            otel.name = display_name.as_str(),
+            tool_name = display_name.as_str(),
+            call_id = call.call_id.as_str(),
+            aborted = false,
+        );
+
+        let handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
+            AbortOnDropHandle::new(tokio::spawn(async move {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        let secs = started.elapsed().as_secs_f32().max(0.1);
+                        dispatch_span.record("aborted", true);
+                        Ok(Self::aborted_response(&call, secs))
+                    },
+                    res = async {
+                        let _guard = if supports_parallel {
+                            Either::Left(lock.read().await)
+                        } else {
+                            Either::Right(lock.write().await)
+                        };
+
+                        router
+                            .dispatch_tool_call_with_code_mode_result(
+                                session,
+                                turn,
+                                invocation_cancellation_token,
+                                tracker,
+                                call.clone(),
+                                source,
+                            )
+                            .instrument(dispatch_span.clone())
+                            .await
+                    } => res,
+                }
+            }));
+
         async move {
-            let call = Self::rewrite_call_for_dispatch(turn.as_ref(), call, source).await;
-            let supports_parallel = router.tool_supports_parallel(&call);
-            let display_name = call.tool_name.display();
-            let dispatch_span = trace_span!(
-                "dispatch_tool_call_with_code_mode_result",
-                otel.name = display_name.as_str(),
-                tool_name = display_name.as_str(),
-                call_id = call.call_id.as_str(),
-                aborted = false,
-            );
-
-            let handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
-                AbortOnDropHandle::new(tokio::spawn(async move {
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {
-                            let secs = started.elapsed().as_secs_f32().max(0.1);
-                            dispatch_span.record("aborted", true);
-                            Ok(Self::aborted_response(&call, secs))
-                        },
-                        res = async {
-                            let _guard = if supports_parallel {
-                                Either::Left(lock.read().await)
-                            } else {
-                                Either::Right(lock.write().await)
-                            };
-
-                            router
-                                .dispatch_tool_call_with_code_mode_result(
-                                    session,
-                                    turn,
-                                    tracker,
-                                    call.clone(),
-                                    source,
-                                )
-                                .instrument(dispatch_span.clone())
-                                .await
-                        } => res,
-                    }
-                }));
-
             handle.await.map_err(|err| {
                 FunctionCallError::Fatal(format!("tool task failed to receive: {err:?}"))
             })?
@@ -143,15 +144,6 @@ impl ToolCallRuntime {
 }
 
 impl ToolCallRuntime {
-    pub(crate) async fn rewrite_call_for_dispatch(
-        turn: &TurnContext,
-        call: ToolCall,
-        source: ToolCallSource,
-    ) -> ToolCall {
-        let decision = rewrite_tool_call(turn, call, source).await;
-        decision.into_call()
-    }
-
     fn failure_response(call: ToolCall, err: FunctionCallError) -> ResponseInputItem {
         let message = err.to_string();
         match call.payload {
@@ -186,6 +178,7 @@ impl ToolCallRuntime {
             result: Box::new(AbortedToolOutput {
                 message: Self::abort_message(call, secs),
             }),
+            post_tool_use_payload: None,
         }
     }
 

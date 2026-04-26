@@ -1,5 +1,5 @@
 use crate::config::ConfigBuilder;
-use crate::config::types::ZmemoryConfig;
+use crate::config::ZmemoryConfig;
 use crate::memories::zmemory_contract::StablePreferenceMemory;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;

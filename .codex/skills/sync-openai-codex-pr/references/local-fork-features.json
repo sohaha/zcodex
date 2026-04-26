@@ -747,7 +747,7 @@
         {
           "type": "regex",
           "path": "codex-rs/core/src/session/turn.rs",
-          "pattern": "merge_tool_routing_directives\\(current_directives, &routing_inputs\\);"
+          "pattern": "merge_tool_routing_directives\\(current_directives, user_inputs\\);"
         },
         {
           "type": "regex",

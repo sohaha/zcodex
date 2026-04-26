@@ -33,6 +33,7 @@ fn resume_history(
         timezone: None,
         approval_policy: config.permissions.approval_policy.value(),
         sandbox_policy: config.permissions.sandbox_policy.get().clone(),
+        permission_profile: None,
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
@@ -70,14 +71,10 @@ fn resume_history(
                 last_agent_message: None,
                 completed_at: None,
                 duration_ms: None,
+                time_to_first_token_ms: None,
             })),
         ],
-        rollout_path: rollout_path.to_path_buf(),
-        session_meta: None,
-        history_complete: true,
-        cached_window_generation: None,
-        cached_has_prior_user_turns: None,
-        cached_latest_token_usage: None,
+        rollout_path: Some(rollout_path.to_path_buf()),
     })
 }
 

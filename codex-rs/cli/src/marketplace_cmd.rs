@@ -4,15 +4,16 @@ use anyhow::bail;
 use clap::Parser;
 use codex_core::config::Config;
 use codex_core::config::find_codex_home;
-use codex_core::plugins::MarketplaceAddRequest;
-use codex_core::plugins::MarketplaceRemoveRequest;
 use codex_core::plugins::PluginMarketplaceUpgradeOutcome;
 use codex_core::plugins::PluginsManager;
-use codex_core::plugins::add_marketplace;
-use codex_core::plugins::remove_marketplace;
+use codex_core_plugins::marketplace_add::MarketplaceAddRequest;
+use codex_core_plugins::marketplace_add::add_marketplace;
+use codex_core_plugins::marketplace_remove::MarketplaceRemoveRequest;
+use codex_core_plugins::marketplace_remove::remove_marketplace;
 use codex_utils_cli::CliConfigOverrides;
 
 #[derive(Debug, Parser)]
+#[command(bin_name = "codex plugin marketplace")]
 pub struct MarketplaceCli {
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
@@ -29,6 +30,7 @@ enum MarketplaceSubcommand {
 }
 
 #[derive(Debug, Parser)]
+#[command(bin_name = "codex plugin marketplace add")]
 struct AddMarketplaceArgs {
     /// 市场源地址。支持 `owner/repo[@ref]`、HTTP(S) Git URL、SSH URL，
     /// 以及本地市场源根目录。
@@ -46,11 +48,13 @@ struct AddMarketplaceArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(bin_name = "codex plugin marketplace upgrade")]
 struct UpgradeMarketplaceArgs {
     marketplace_name: Option<String>,
 }
 
 #[derive(Debug, Parser)]
+#[command(bin_name = "codex plugin marketplace remove")]
 struct RemoveMarketplaceArgs {
     /// 要移除的已配置市场源名称。
     marketplace_name: String,
