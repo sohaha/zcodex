@@ -26,8 +26,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-24` 计算，覆盖 `2026-04-22` 至 `2026-04-24`。
+- 时间窗按当前日期 `2026-04-26` 计算，覆盖 `2026-04-24` 至 `2026-04-26`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-26-upstream-sync-must-commit-worktree-before-mergeback-and-treat-upstream-deletions-as-gates.md`：同步 worktree 分支若与主工作区 HEAD 相同，必须先把 worktree 的 staged/unstaged 同步结果提交成真实 sync commit，再 merge-back；上游删除功能要用删除反查 gate 与主动面 grep 证明没有静默保留。
 - `.agents/llmdoc/memory/reflections/2026-04-24-hidden-collaboration-visibility-should-use-one-protocol-truth-source.md`：`<subagent_notification>` / inter-agent envelope 这类内部协作消息的可见性真相源应上收至 `codex-protocol`，再让 `core`、`tui`、`app-server-protocol` 和 `zteam` 输入净化统一复用。
 - `.agents/llmdoc/memory/reflections/2026-04-24-zteam-autopilot-root-actions-must-stay-on-primary-thread-and-repair-must-be-higher-than-manual-override.md`：`ZTeam Mission Autopilot` 的 root 动作不能跟着当前 active thread 漂移；primary thread 才是 root 锚点，同时 `manual override` 只能打断自动派工，不应压住 attach-first repair。
 - `.agents/llmdoc/memory/reflections/2026-04-24-zteam-docs-should-split-config-entry-from-command-workflow-and-real-cases.md`：`ZTeam` 这类 TUI 本地工作流不能只写配置开关；配置文档应保留入口与边界，命令文档应单独承担完整语法、运行中限制和真实协作案例。
