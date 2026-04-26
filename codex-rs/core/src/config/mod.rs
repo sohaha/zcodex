@@ -281,6 +281,19 @@ pub struct Config {
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
 
+    /// Optional fallback provider identifier used when the primary provider
+    /// request fails for the current request.
+    pub fallback_provider_id: Option<String>,
+
+    /// Optional fallback provider definition resolved from `fallback_provider_id`.
+    pub fallback_provider: Option<ModelProviderInfo>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
+
+    /// Ordered list of fallback providers to try for the current request.
+    pub fallback_providers: Vec<FallbackProviderConfig>,
+
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
 
@@ -1338,6 +1351,13 @@ pub struct AgentRoleConfig {
     pub nickname_candidates: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct FallbackProviderConfig {
+    pub provider_id: String,
+    pub provider: ModelProviderInfo,
+    pub model: Option<String>,
+}
+
 fn resolve_tool_suggest_config(config_toml: &ConfigToml) -> ToolSuggestConfig {
     let discoverables = config_toml
         .tool_suggest
@@ -2041,6 +2061,61 @@ impl Config {
                 std::io::Error::new(std::io::ErrorKind::NotFound, message)
             })?
             .clone();
+        let fallback_provider_id = cfg.fallback_provider.clone();
+        let fallback_provider = fallback_provider_id
+            .as_ref()
+            .map(|provider_id| {
+                model_providers.get(provider_id).ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Fallback model provider `{provider_id}` not found"),
+                    )
+                })
+            })
+            .transpose()?
+            .cloned();
+        let mut fallback_providers = cfg
+            .fallback_providers
+            .clone()
+            .into_iter()
+            .map(|fallback| {
+                let provider_id = fallback.provider;
+                let provider = model_providers
+                    .get(&provider_id)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("Fallback model provider `{provider_id}` not found"),
+                        )
+                    })?
+                    .clone();
+                Ok(FallbackProviderConfig {
+                    provider_id,
+                    provider,
+                    model: fallback.model,
+                })
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
+        if let Some(provider_id) = fallback_provider_id.as_ref()
+            && !fallback_providers
+                .iter()
+                .any(|fallback| &fallback.provider_id == provider_id && fallback.model == cfg.fallback_model)
+        {
+            let Some(provider) = fallback_provider.clone() else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Fallback model provider `{provider_id}` not found"),
+                ));
+            };
+            fallback_providers.insert(
+                0,
+                FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider,
+                    model: cfg.fallback_model.clone(),
+                },
+            );
+        }
 
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
@@ -2388,6 +2463,10 @@ impl Config {
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
+            fallback_provider_id,
+            fallback_provider,
+            fallback_model: cfg.fallback_model,
+            fallback_providers,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {

@@ -64,6 +64,14 @@ pub(crate) use user_shell::execute_user_shell_command;
 
 const GRACEFULL_INTERRUPTION_TIMEOUT_MS: u64 = 100;
 
+#[cfg(test)]
+fn should_run_buddy_observer(turn_context: &TurnContext) -> bool {
+    matches!(
+        turn_context.session_source,
+        codex_protocol::protocol::SessionSource::Cli
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InterruptedTurnHistoryMarker {
     Disabled,

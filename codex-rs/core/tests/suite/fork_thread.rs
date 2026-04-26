@@ -196,6 +196,7 @@ async fn fork_thread_from_history_does_not_require_source_rollout_path() {
                 conversation_id: test.session_configured.session_id,
                 history: source_items.clone(),
                 rollout_path: None,
+                ..Default::default()
             }),
             /*persist_extended_history*/ false,
             /*parent_trace*/ None,

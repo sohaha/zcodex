@@ -50,6 +50,75 @@
       ]
     },
     {
+      "id": "request-fallback-provider-chain",
+      "kind": "local_behavior",
+      "area": "codex-rs/core config + session turn + tests",
+      "summary": "保留本地 request fallback provider/model 链：主 provider 请求失败时按 fallback_provider/fallback_model/fallback_providers 重试，并只在用户可见 Warning 层提示。",
+      "better_when": "upstream 原生提供等价的 provider/model fallback 链、配置 schema、失败重试语义和非模型可见提示，且本地配置 key 不回退。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/config_toml.rs",
+          "pattern": "pub fallback_provider: Option<String>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/config_toml.rs",
+          "pattern": "pub fallback_model: Option<String>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/config/src/config_toml.rs",
+          "pattern": "pub fallback_providers: Vec<FallbackProviderToml>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "pub struct FallbackProviderConfig"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "fallback_provider_id: Option<String>"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "next_fallback_turn_context"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "should_retry_with_fallback_provider"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn.rs",
+          "pattern": "CodexErr::UsageLimitReached"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/turn_context.rs",
+          "pattern": "with_model_provider"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/websocket_fallback.rs",
+          "pattern": "request_fallback_walks_provider_chain_until_success"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/websocket_fallback.rs",
+          "pattern": "request_fallback_handles_primary_usage_limit"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/websocket_fallback.rs",
+          "pattern": "此请求已被路由到 z-ai/glm4\\.7 作为后备方案。"
+        }
+      ]
+    },
+    {
       "id": "zconfig-layer-loading",
       "kind": "local_behavior",
       "area": "codex-rs/core config",

@@ -19,6 +19,7 @@ use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
+use serde_json::json;
 use tokio::time::Duration;
 use tokio::time::timeout;
 use wiremock::Mock;
@@ -283,6 +284,84 @@ async fn request_fallback_switches_to_configured_provider_and_model() -> Result<
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
+                aws: None,
+                wire_api: WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: Some(0),
+                stream_max_retries: Some(0),
+                stream_idle_timeout_ms: None,
+                retry_base_delay_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+                model_context_window: None,
+                model_auto_compact_token_limit: None,
+                max_output_tokens: None,
+                skip_reasoning_popup: false,
+            });
+            config.fallback_model = Some("fallback-model".to_string());
+        }
+    });
+    let test = builder.build(&primary_server).await?;
+
+    test.submit_turn("hello").await?;
+
+    let primary_requests = primary_server.received_requests().await.unwrap_or_default();
+    let primary_http_attempts = primary_requests
+        .iter()
+        .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(primary_http_attempts, 1);
+
+    let fallback_request = fallback_mock.single_request();
+    let fallback_body: Value = fallback_request.body_json();
+    assert_eq!(fallback_body["model"].as_str(), Some("fallback-model"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_fallback_handles_primary_usage_limit() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = responses::start_mock_server().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+            "error": {
+                "type": "usage_limit_reached",
+                "message": "limit reached"
+            }
+        })))
+        .mount(&primary_server)
+        .await;
+
+    let fallback_server = responses::start_mock_server().await;
+    let fallback_mock = mount_sse_once(
+        &fallback_server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let fallback_base_url = format!("{}/v1", fallback_server.uri());
+        move |config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+            config.model_provider.supports_websockets = false;
+            config.fallback_provider_id = Some("fallback".to_string());
+            config.fallback_provider = Some(ModelProviderInfo {
+                name: Some("fallback".to_string()),
+                model: None,
+                base_url: Some(fallback_base_url),
+                env_key: None,
+                model_catalog: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                aws: None,
                 wire_api: WireApi::Responses,
                 query_params: None,
                 http_headers: None,
@@ -354,6 +433,7 @@ async fn request_fallback_emits_warning_event_without_warning_item() -> Result<(
                 env_key_instructions: None,
                 experimental_bearer_token: None,
                 auth: None,
+                aws: None,
                 wire_api: WireApi::Responses,
                 query_params: None,
                 http_headers: None,
@@ -377,6 +457,7 @@ async fn request_fallback_emits_warning_event_without_warning_item() -> Result<(
 
     codex
         .submit(Op::UserTurn {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "hello".into(),
                 text_elements: Vec::new(),
@@ -386,6 +467,7 @@ async fn request_fallback_emits_warning_event_without_warning_item() -> Result<(
             approval_policy: AskForApproval::Never,
             approvals_reviewer: None,
             sandbox_policy: SandboxPolicy::DangerFullAccess,
+            permission_profile: None,
             model: "gpt-5".to_string(),
             effort: None,
             summary: None,
@@ -477,6 +559,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                         env_key_instructions: None,
                         experimental_bearer_token: None,
                         auth: None,
+                        aws: None,
                         wire_api: WireApi::Responses,
                         query_params: None,
                         http_headers: None,
@@ -506,6 +589,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                         env_key_instructions: None,
                         experimental_bearer_token: None,
                         auth: None,
+                        aws: None,
                         wire_api: WireApi::Responses,
                         query_params: None,
                         http_headers: None,
@@ -600,6 +684,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                         env_key_instructions: None,
                         experimental_bearer_token: None,
                         auth: None,
+                        aws: None,
                         wire_api: WireApi::Responses,
                         query_params: None,
                         http_headers: None,
@@ -629,6 +714,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                         env_key_instructions: None,
                         experimental_bearer_token: None,
                         auth: None,
+                        aws: None,
                         wire_api: WireApi::Responses,
                         query_params: None,
                         http_headers: None,
@@ -697,6 +783,7 @@ async fn request_fallback_chain_uses_provider_default_model_when_unspecified() -
                     env_key_instructions: None,
                     experimental_bearer_token: None,
                     auth: None,
+                    aws: None,
                     wire_api: WireApi::Responses,
                     query_params: None,
                     http_headers: None,

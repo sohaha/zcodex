@@ -2655,6 +2655,21 @@ pub struct ResumedHistory {
     pub cached_latest_token_usage: Option<TokenUsageInfo>,
 }
 
+impl Default for ResumedHistory {
+    fn default() -> Self {
+        Self {
+            conversation_id: ThreadId::default(),
+            history: Vec::new(),
+            rollout_path: None,
+            session_meta: None,
+            history_complete: resumed_history_complete_default(),
+            cached_window_generation: None,
+            cached_has_prior_user_turns: None,
+            cached_latest_token_usage: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub enum InitialHistory {
     New,

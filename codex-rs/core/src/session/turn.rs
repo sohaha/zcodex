@@ -16,6 +16,7 @@ use crate::compact::collect_user_messages;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::config::FallbackProviderConfig;
 use crate::connectors;
 use crate::context::ContextualUserFragment;
 use crate::feedback_tags;
@@ -441,7 +442,7 @@ pub(crate) async fn run_turn(
                 if let Some(active_turn) = active.as_mut() {
                     let mut turn_state = active_turn.turn_state.lock().await;
                     for item in pending_side_effect_items {
-                        turn_state.push_pending_input(item.into());
+                        turn_state.push_pending_input(item);
                     }
                 }
             }
@@ -1081,25 +1082,30 @@ async fn run_sampling_request(
         .await;
     let mut retries = 0;
     let mut initial_input = Some(input);
+    let primary_requested_model = turn_context.model_info.slug.clone();
+    let mut sampling_turn_context = turn_context;
+    let mut fallback_client_session: Option<ModelClientSession> = None;
+    let mut next_fallback_index = 0;
     loop {
         let prompt_input = if let Some(input) = initial_input.take() {
             input
         } else {
             sess.clone_history()
                 .await
-                .for_prompt(&turn_context.model_info.input_modalities)
+                .for_prompt(&sampling_turn_context.model_info.input_modalities)
         };
         let prompt = build_prompt(
             prompt_input,
             router.as_ref(),
-            turn_context.as_ref(),
+            sampling_turn_context.as_ref(),
             base_instructions.clone(),
         );
+        let active_client_session = fallback_client_session.as_mut().unwrap_or(client_session);
         let err = match try_run_sampling_request(
             tool_runtime.clone(),
             Arc::clone(&sess),
-            Arc::clone(&turn_context),
-            client_session,
+            Arc::clone(&sampling_turn_context),
+            active_client_session,
             turn_metadata_header,
             Arc::clone(&turn_diff_tracker),
             &prompt,
@@ -1111,33 +1117,74 @@ async fn run_sampling_request(
                 return Ok(output);
             }
             Err(CodexErr::ContextWindowExceeded) => {
-                sess.set_total_tokens_full(&turn_context).await;
+                sess.set_total_tokens_full(&sampling_turn_context).await;
                 return Err(CodexErr::ContextWindowExceeded);
             }
             Err(CodexErr::UsageLimitReached(e)) => {
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
-                    sess.update_rate_limits(&turn_context, *rate_limits).await;
+                    sess.update_rate_limits(&sampling_turn_context, *rate_limits)
+                        .await;
                 }
-                return Err(CodexErr::UsageLimitReached(e));
+                CodexErr::UsageLimitReached(e)
             }
             Err(err) => err,
         };
+
+        if should_retry_with_fallback_provider(&err)
+            && let Some((fallback_turn_context, used_fallback_index)) = next_fallback_turn_context(
+                sess.as_ref(),
+                &sampling_turn_context,
+                &primary_requested_model,
+                next_fallback_index,
+            )
+            .await
+        {
+            next_fallback_index = used_fallback_index + 1;
+            let fallback_provider = fallback_turn_context.config.model_provider_id.clone();
+            let fallback_model = fallback_turn_context.model_info.slug.clone();
+            fallback_client_session = Some(
+                sess.services
+                    .model_client
+                    .new_session_for_provider(fallback_turn_context.provider.info().clone()),
+            );
+            sampling_turn_context = fallback_turn_context;
+            retries = 0;
+            sess.send_event(
+                &sampling_turn_context,
+                EventMsg::Warning(WarningEvent {
+                    message: format!(
+                        "此请求已被路由到 {fallback_provider}/{fallback_model} 作为后备方案。"
+                    ),
+                }),
+            )
+            .await;
+            continue;
+        }
 
         if !err.is_retryable() {
             return Err(err);
         }
 
         // Use the configured provider-specific stream retry budget.
-        let max_retries = turn_context.provider.info().stream_max_retries();
-        if retries >= max_retries
-            && client_session.try_switch_fallback_transport(
-                &turn_context.session_telemetry,
-                &turn_context.model_info,
-            )
-        {
+        let max_retries = sampling_turn_context.provider.info().stream_max_retries();
+        let activated_transport_fallback =
+            if let Some(fallback_client_session) = fallback_client_session.as_mut() {
+                retries >= max_retries
+                    && fallback_client_session.try_switch_fallback_transport(
+                        &sampling_turn_context.session_telemetry,
+                        &sampling_turn_context.model_info,
+                    )
+            } else {
+                retries >= max_retries
+                    && client_session.try_switch_fallback_transport(
+                        &sampling_turn_context.session_telemetry,
+                        &sampling_turn_context.model_info,
+                    )
+            };
+        if activated_transport_fallback {
             sess.send_event(
-                &turn_context,
+                &sampling_turn_context,
                 EventMsg::Warning(WarningEvent {
                     message: format!("Falling back from WebSockets to HTTPS transport. {err:#}"),
                 }),
@@ -1162,14 +1209,18 @@ async fn run_sampling_request(
             // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
             let report_error = retries > 1
                 || cfg!(debug_assertions)
-                || !sess.services.model_client.responses_websocket_enabled();
+                || if let Some(fallback_client_session) = fallback_client_session.as_ref() {
+                    !fallback_client_session.responses_websocket_enabled()
+                } else {
+                    !sess.services.model_client.responses_websocket_enabled()
+                };
             if report_error {
                 // Surface retry information to any UI/front‑end so the
                 // user understands what is happening instead of staring
                 // at a seemingly frozen screen.
                 sess.notify_stream_error(
-                    &turn_context,
-                    format!("Reconnecting... {retries}/{max_retries}"),
+                    &sampling_turn_context,
+                    format!("正在重新连接... {retries}/{max_retries}"),
                     err,
                 )
                 .await;
@@ -1179,6 +1230,73 @@ async fn run_sampling_request(
             return Err(err);
         }
     }
+}
+
+async fn next_fallback_turn_context(
+    sess: &Session,
+    turn_context: &Arc<TurnContext>,
+    primary_requested_model: &str,
+    start_index: usize,
+) -> Option<(Arc<TurnContext>, usize)> {
+    let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
+        turn_context
+            .config
+            .fallback_provider_id
+            .as_ref()
+            .zip(turn_context.config.fallback_provider.as_ref())
+            .map(|(provider_id, provider)| {
+                vec![FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider: provider.clone(),
+                    model: turn_context.config.fallback_model.clone(),
+                }]
+            })
+            .unwrap_or_default()
+    } else {
+        turn_context.config.fallback_providers.clone()
+    };
+
+    for (index, fallback) in fallback_candidates.iter().enumerate().skip(start_index) {
+        let fallback_model = fallback
+            .model
+            .clone()
+            .or_else(|| fallback.provider.model.clone())
+            .unwrap_or_else(|| primary_requested_model.to_string());
+        if fallback.provider_id == turn_context.config.model_provider_id
+            && fallback_model == turn_context.model_info.slug
+        {
+            continue;
+        }
+
+        let fallback_turn_context = turn_context
+            .with_model_provider(
+                fallback_model,
+                fallback.provider_id.clone(),
+                fallback.provider.clone(),
+                &sess.services.models_manager,
+            )
+            .await;
+        return Some((Arc::new(fallback_turn_context), index));
+    }
+
+    None
+}
+
+fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {
+    matches!(
+        err,
+        CodexErr::Stream(_, _)
+            | CodexErr::UnexpectedStatus(_)
+            | CodexErr::InvalidRequest(_)
+            | CodexErr::UsageLimitReached(_)
+            | CodexErr::QuotaExceeded
+            | CodexErr::UsageNotIncluded
+            | CodexErr::ServerOverloaded
+            | CodexErr::ResponseStreamFailed(_)
+            | CodexErr::ConnectionFailed(_)
+            | CodexErr::InternalServerError
+            | CodexErr::Timeout
+    )
 }
 
 #[expect(
@@ -2337,14 +2455,11 @@ pub(crate) async fn apply_pending_user_input_side_effects(
         // build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
         if let Some(recall_note) =
             build_stable_preference_recall_note(sess, turn_context, user_inputs).await
-        {
-            if let Some(item) =
+            && let Some(item) =
                 crate::context_manager::updates::build_developer_update_item(vec![recall_note])
-            {
-                if let ResponseItem::Message { role, content, .. } = item {
-                    return vec![ResponseInputItem::Message { role, content }];
-                }
-            }
+            && let ResponseItem::Message { role, content, .. } = item
+        {
+            return vec![ResponseInputItem::Message { role, content }];
         }
     }
 

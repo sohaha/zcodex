@@ -140,7 +140,7 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -218,7 +218,7 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -260,7 +260,7 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -346,7 +346,7 @@ async fn zmemory_function_audit_exposes_recent_entries() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -450,7 +450,7 @@ async fn zmemory_function_history_exposes_version_chain() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -536,7 +536,7 @@ async fn zmemory_function_batch_create_returns_results() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -629,7 +629,7 @@ async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -705,7 +705,7 @@ async fn zmemory_function_search_returns_bounded_json_for_existing_memory() -> R
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -779,7 +779,7 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -848,7 +848,7 @@ async fn zmemory_mcp_read_memory_tool_maps_to_read_action() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -898,7 +898,7 @@ async fn zmemory_mcp_read_memory_tool_supports_paths_view() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -963,7 +963,7 @@ async fn zmemory_mcp_create_memory_tool_maps_to_create_action() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1016,7 +1016,7 @@ async fn zmemory_mcp_update_memory_tool_maps_to_update_action() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1080,7 +1080,7 @@ async fn zmemory_mcp_search_memory_tool_maps_to_search_action() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1144,7 +1144,7 @@ async fn zmemory_mcp_search_memory_tool_accepts_uri_scope_and_legacy_domain() ->
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1257,7 +1257,7 @@ async fn zmemory_mcp_delete_memory_tool_maps_to_delete_path_action() -> Result<(
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1334,7 +1334,7 @@ async fn zmemory_mcp_delete_memory_tool_preserves_other_paths_for_same_node() ->
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1426,7 +1426,7 @@ async fn zmemory_function_add_alias_returns_bounded_json() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1509,7 +1509,7 @@ async fn zmemory_mcp_manage_triggers_tool_maps_to_manage_triggers_action() -> Re
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1602,7 +1602,7 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -1713,7 +1713,7 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
         move |config| {
             config
                 .features
-                .enable(Feature::Zmemory)
+                .enable(Feature::MemoryTool)
                 .expect("test config should allow feature update");
             config.zmemory.path = Some(explicit_db_path);
         }
@@ -1802,7 +1802,7 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
         config.zmemory = ZmemoryConfig::from_toml(Some(ZmemoryToml {
             path: None,
@@ -1944,7 +1944,7 @@ core_memory_uris = [
         .with_config(|config| {
             config
                 .features
-                .enable(Feature::Zmemory)
+                .enable(Feature::MemoryTool)
                 .expect("test config should allow feature update");
         });
     let test = builder.build(&server).await?;
@@ -1980,6 +1980,7 @@ core_memory_uris = [
             approval_policy: Some(AskForApproval::Never),
             approvals_reviewer: None,
             sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            permission_profile: None,
             windows_sandbox_level: None,
             model: None,
             effort: None,
@@ -1991,6 +1992,7 @@ core_memory_uris = [
         .await?;
     test.codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "inspect overridden zmemory runtime profile".into(),
                 text_elements: Vec::new(),
@@ -2079,7 +2081,7 @@ async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_overri
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2139,6 +2141,7 @@ async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_overri
             approval_policy: Some(AskForApproval::Never),
             approvals_reviewer: None,
             sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            permission_profile: None,
             windows_sandbox_level: None,
             model: None,
             effort: None,
@@ -2150,6 +2153,7 @@ async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_overri
         .await?;
     test.codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "inspect workspace memory runtime facts".into(),
                 text_elements: Vec::new(),
@@ -2197,7 +2201,7 @@ async fn zmemory_function_error_returns_failure_without_json_block() -> Result<(
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2247,7 +2251,7 @@ async fn zmemory_proactively_captures_explicit_naming_preferences() -> Result<()
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2324,7 +2328,7 @@ async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Res
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2369,7 +2373,7 @@ async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Resul
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2454,9 +2458,9 @@ async fn zmemory_recall_note_skips_conflicting_canonical_contract_content() -> R
         move |config| {
             config
                 .features
-                .enable(Feature::Zmemory)
+                .enable(Feature::MemoryTool)
                 .expect("test config should allow feature update");
-            config.zmemory.path = Some(explicit_db_path.clone());
+            config.zmemory.path = Some(explicit_db_path);
         }
     });
     let test = builder.build(&server).await?;
@@ -2521,7 +2525,7 @@ async fn zmemory_proactively_captures_explicit_preferences_even_in_high_load_tur
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2579,9 +2583,9 @@ async fn zmemory_proactive_capture_updates_existing_conflicting_contract_memory(
         move |config| {
             config
                 .features
-                .enable(Feature::Zmemory)
+                .enable(Feature::MemoryTool)
                 .expect("test config should allow feature update");
-            config.zmemory.path = Some(explicit_db_path.clone());
+            config.zmemory.path = Some(explicit_db_path);
         }
     });
     let test = builder.build(&server).await?;
@@ -2687,7 +2691,7 @@ async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::Zmemory)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -2732,6 +2736,7 @@ async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -
             approval_policy: Some(AskForApproval::Never),
             approvals_reviewer: None,
             sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            permission_profile: None,
             windows_sandbox_level: None,
             model: None,
             effort: None,
@@ -2743,6 +2748,7 @@ async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -
         .await?;
     test.codex
         .submit(Op::UserInput {
+            environments: None,
             items: vec![UserInput::Text {
                 text: "你现在开始称呼我\"指挥官\",你的名字是\"小白\"".into(),
                 text_elements: Vec::new(),
@@ -2806,7 +2812,7 @@ async fn zmemory_does_not_proactively_capture_preferences_without_feature_flag()
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .disable(Feature::Zmemory)
+            .disable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;

@@ -3,6 +3,7 @@ use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use codex_model_provider::SharedModelProvider;
 use codex_model_provider::create_model_provider;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::protocol::TurnEnvironmentSelection;
@@ -204,6 +205,134 @@ impl TurnContext {
                 .clone()
                 .with_model(model.as_str(), model_info.slug.as_str()),
             provider: self.provider.clone(),
+            reasoning_effort,
+            reasoning_summary: self.reasoning_summary,
+            session_source: self.session_source.clone(),
+            environment: self.environment.clone(),
+            environments: self.environments.clone(),
+            cwd: self.cwd.clone(),
+            current_date: self.current_date.clone(),
+            timezone: self.timezone.clone(),
+            app_server_client_name: self.app_server_client_name.clone(),
+            developer_instructions: self.developer_instructions.clone(),
+            compact_prompt: self.compact_prompt.clone(),
+            user_instructions: self.user_instructions.clone(),
+            collaboration_mode,
+            personality: self.personality,
+            approval_policy: self.approval_policy.clone(),
+            sandbox_policy: self.sandbox_policy.clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: self.network_sandbox_policy,
+            network: self.network.clone(),
+            windows_sandbox_level: self.windows_sandbox_level,
+            shell_environment_policy: self.shell_environment_policy.clone(),
+            tools_config,
+            features,
+            ghost_snapshot: self.ghost_snapshot.clone(),
+            final_output_json_schema: self.final_output_json_schema.clone(),
+            codex_self_exe: self.codex_self_exe.clone(),
+            codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
+            tool_call_gate: Arc::new(ReadinessFlag::new()),
+            truncation_policy,
+            dynamic_tools: self.dynamic_tools.clone(),
+            turn_metadata_state: self.turn_metadata_state.clone(),
+            turn_skills: self.turn_skills.clone(),
+            turn_timing_state: Arc::clone(&self.turn_timing_state),
+            tool_routing_directives: self.tool_routing_directives.clone(),
+            auto_tldr_context: self.auto_tldr_context.clone(),
+            server_model_warning_emitted: AtomicBool::new(
+                self.server_model_warning_emitted.load(Ordering::Relaxed),
+            ),
+            model_verification_emitted: AtomicBool::new(
+                self.model_verification_emitted.load(Ordering::Relaxed),
+            ),
+        }
+    }
+
+    pub(crate) async fn with_model_provider(
+        &self,
+        model: String,
+        model_provider_id: String,
+        model_provider: ModelProviderInfo,
+        models_manager: &SharedModelsManager,
+    ) -> Self {
+        let mut config = (*self.config).clone();
+        config.model = Some(model.clone());
+        config.model_provider_id = model_provider_id;
+        config.model_provider = model_provider.clone();
+        let model_info = models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await;
+        let truncation_policy = model_info.truncation_policy.into();
+        let supported_reasoning_levels = model_info
+            .supported_reasoning_levels
+            .iter()
+            .map(|preset| preset.effort)
+            .collect::<Vec<_>>();
+        let reasoning_effort = if let Some(current_reasoning_effort) = self.reasoning_effort {
+            if supported_reasoning_levels.contains(&current_reasoning_effort) {
+                Some(current_reasoning_effort)
+            } else {
+                supported_reasoning_levels
+                    .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
+                    .copied()
+                    .or(model_info.default_reasoning_level)
+            }
+        } else {
+            supported_reasoning_levels
+                .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
+                .copied()
+                .or(model_info.default_reasoning_level)
+        };
+        config.model_reasoning_effort = reasoning_effort;
+
+        let collaboration_mode = self.collaboration_mode.with_updates(
+            Some(model.clone()),
+            Some(reasoning_effort),
+            /*developer_instructions*/ None,
+        );
+        let features = self.features.clone();
+        let provider = create_model_provider(model_provider, self.auth_manager.clone());
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            available_models: &models_manager
+                .list_models(RefreshStrategy::OnlineIfUncached)
+                .await,
+            features: &features,
+            image_generation_tool_auth_allowed: image_generation_tool_auth_allowed(
+                self.auth_manager.as_deref(),
+            ),
+            web_search_mode: self.tools_config.web_search_mode,
+            session_source: self.session_source.clone(),
+            sandbox_policy: self.sandbox_policy.get(),
+            windows_sandbox_level: self.windows_sandbox_level,
+            wire_api: provider.info().wire_api,
+        })
+        .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
+        .with_web_search_config(self.tools_config.web_search_config.clone())
+        .with_allow_login_shell(self.tools_config.allow_login_shell)
+        .with_has_environment(self.tools_config.has_environment)
+        .with_spawn_agent_usage_hint(config.multi_agent_v2.usage_hint_enabled)
+        .with_spawn_agent_usage_hint_text(config.multi_agent_v2.usage_hint_text.clone())
+        .with_hide_spawn_agent_metadata(config.multi_agent_v2.hide_spawn_agent_metadata)
+        .with_goal_tools_allowed(self.tools_config.goal_tools)
+        .with_max_concurrent_threads_per_session(config.agent_max_threads)
+        .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
+            &config.agent_roles,
+        ));
+
+        Self {
+            sub_id: self.sub_id.clone(),
+            trace_id: self.trace_id.clone(),
+            realtime_active: self.realtime_active,
+            config: Arc::new(config),
+            auth_manager: self.auth_manager.clone(),
+            model_info: model_info.clone(),
+            session_telemetry: self
+                .session_telemetry
+                .clone()
+                .with_model(model.as_str(), model_info.slug.as_str()),
+            provider,
             reasoning_effort,
             reasoning_summary: self.reasoning_summary,
             session_source: self.session_source.clone(),

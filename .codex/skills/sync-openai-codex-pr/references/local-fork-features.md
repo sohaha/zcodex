@@ -41,6 +41,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | --- | --- | --- |
 | `wire-api-streaming-chat-anthropic` | `local_behavior` | codex-rs/core + codex-rs/codex-api |
 | `responses-max-output-tokens-from-provider` | `local_behavior` | codex-rs/core |
+| `request-fallback-provider-chain` | `local_behavior` | codex-rs/core config + session turn + tests |
 | `zconfig-layer-loading` | `local_behavior` | codex-rs/core config |
 | `models-manager-provider-overrides` | `local_behavior` | codex-rs/models-manager |
 | `responses-reasoning-content-strip` | `local_behavior` | codex-rs/core + codex-rs/protocol |
@@ -79,6 +80,23 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: upstream 提供了更明确的 provider 级输出上限策略，且不会让本地 provider 配置回退成硬编码 None。
 - checks:
   - `regex` `codex-rs/core/src/client.rs`: `let max_output_tokens = self\s*\.\s*client\s*\.\s*state\s*\.\s*provider\s*\.\s*info\(\)\s*\.\s*max_output_tokens\s*\.\s*filter\(\|v\| \*v > 0\)`
+
+### `request-fallback-provider-chain`
+- summary: 保留本地 request fallback provider/model 链：主 provider 请求失败时按 fallback_provider/fallback_model/fallback_providers 重试，并只在用户可见 Warning 层提示。
+- better_when: upstream 原生提供等价的 provider/model fallback 链、配置 schema、失败重试语义和非模型可见提示，且本地配置 key 不回退。
+- checks:
+  - `regex` `codex-rs/config/src/config_toml.rs`: `pub fallback_provider: Option<String>`
+  - `regex` `codex-rs/config/src/config_toml.rs`: `pub fallback_model: Option<String>`
+  - `regex` `codex-rs/config/src/config_toml.rs`: `pub fallback_providers: Vec<FallbackProviderToml>`
+  - `regex` `codex-rs/core/src/config/mod.rs`: `pub struct FallbackProviderConfig`
+  - `regex` `codex-rs/core/src/config/mod.rs`: `fallback_provider_id: Option<String>`
+  - `regex` `codex-rs/core/src/session/turn.rs`: `next_fallback_turn_context`
+  - `regex` `codex-rs/core/src/session/turn.rs`: `should_retry_with_fallback_provider`
+  - `regex` `codex-rs/core/src/session/turn.rs`: `CodexErr::UsageLimitReached`
+  - `regex` `codex-rs/core/src/session/turn_context.rs`: `with_model_provider`
+  - `regex` `codex-rs/core/tests/suite/websocket_fallback.rs`: `request_fallback_walks_provider_chain_until_success`
+  - `regex` `codex-rs/core/tests/suite/websocket_fallback.rs`: `request_fallback_handles_primary_usage_limit`
+  - `regex` `codex-rs/core/tests/suite/websocket_fallback.rs`: `此请求已被路由到 z-ai/glm4\.7 作为后备方案。`
 
 ### `zconfig-layer-loading`
 - summary: 显式加载 $CODEX_HOME/zconfig.toml，并把它放在 User 与 Project 之间。
@@ -388,12 +406,13 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 
 ## Latest Audit
 
-- overall: `24/24` passed
+- overall: `25/25` passed
 
 | ID | Status | Area |
 | --- | --- | --- |
 | `wire-api-streaming-chat-anthropic` | `PASS` | codex-rs/core + codex-rs/codex-api |
 | `responses-max-output-tokens-from-provider` | `PASS` | codex-rs/core |
+| `request-fallback-provider-chain` | `PASS` | codex-rs/core config + session turn + tests |
 | `zconfig-layer-loading` | `PASS` | codex-rs/core config |
 | `models-manager-provider-overrides` | `PASS` | codex-rs/models-manager |
 | `responses-reasoning-content-strip` | `PASS` | codex-rs/core + codex-rs/protocol |
@@ -436,6 +455,25 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: upstream 提供了更明确的 provider 级输出上限策略，且不会让本地 provider 配置回退成硬编码 None。
 - evidence:
   - `ok` `codex-rs/core/src/client.rs`: codex-rs/core/src/client.rs:920 let max_output_tokens = self
+
+### `request-fallback-provider-chain`
+- status: `PASS`
+- kind: `local_behavior`
+- summary: 保留本地 request fallback provider/model 链：主 provider 请求失败时按 fallback_provider/fallback_model/fallback_providers 重试，并只在用户可见 Warning 层提示。
+- better_when: upstream 原生提供等价的 provider/model fallback 链、配置 schema、失败重试语义和非模型可见提示，且本地配置 key 不回退。
+- evidence:
+  - `ok` `codex-rs/config/src/config_toml.rs`: codex-rs/config/src/config_toml.rs:98 pub fallback_provider: Option<String>,
+  - `ok` `codex-rs/config/src/config_toml.rs`: codex-rs/config/src/config_toml.rs:101 pub fallback_model: Option<String>,
+  - `ok` `codex-rs/config/src/config_toml.rs`: codex-rs/config/src/config_toml.rs:105 pub fallback_providers: Vec<FallbackProviderToml>,
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:1355 pub struct FallbackProviderConfig {
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:286 pub fallback_provider_id: Option<String>,
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:1135 && let Some((fallback_turn_context, used_fallback_index)) = next_fallback_turn_context(
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:1134 if should_retry_with_fallback_provider(&err)
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:1123 Err(CodexErr::UsageLimitReached(e)) => {
+  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:252 pub(crate) async fn with_model_provider(
+  - `ok` `codex-rs/core/tests/suite/websocket_fallback.rs`: codex-rs/core/tests/suite/websocket_fallback.rs:519 async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
+  - `ok` `codex-rs/core/tests/suite/websocket_fallback.rs`: codex-rs/core/tests/suite/websocket_fallback.rs:326 async fn request_fallback_handles_primary_usage_limit() -> Result<()> {
+  - `ok` `codex-rs/core/tests/suite/websocket_fallback.rs`: codex-rs/core/tests/suite/websocket_fallback.rs:496 if text.contains("此请求已被路由到 z-ai/glm4.7 作为后备方案。")
 
 ### `zconfig-layer-loading`
 - status: `PASS`
@@ -586,7 +624,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:226 message: "当前没有可追加输入的活跃轮次".to_string(),
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:230 message: format!("期望的活跃轮次 ID 为 `{expected}`，但当前为 `{actual}`"),
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2363 text: format!("警告：{}", message.into()),
-  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:716 "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能降低性能并导致异常。",
+  - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:845 "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能降低性能并导致异常。",
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7551 "无法向审查轮次追加输入".to_string(),
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7585 "输入不能为空".to_string(),
   - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1146 let mismatch_prefix = "期望的活跃轮次 ID 为 `";
@@ -594,8 +632,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/analytics/src/analytics_client_tests.rs`: codex-rs/analytics/src/analytics_client_tests.rs:379 message: "无法向审查轮次追加输入".to_string(),
   - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:96 ContentItem::InputText { text } if text.starts_with("警告：")
   - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:420 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4880 text: "警告：too many unified exec processes".to_string(),
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4905 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能降低性能并导致异常。"
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4883 text: "警告：too many unified exec processes".to_string(),
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4908 "未找到模型 `mystery-model` 的元数据，已改用兜底元数据；这可能降低性能并导致异常。"
 
 ### `community-branding-and-release-links`
 - status: `PASS`
@@ -641,7 +679,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/tests/suite/mod.rs`: codex-rs/core/tests/suite/mod.rs:101 mod tldr_e2e;
   - `ok` `codex-rs/core/tests/suite/mod.rs`: codex-rs/core/tests/suite/mod.rs:118 mod zmemory_e2e;
   - `ok` `codex-rs/core/tests/suite/tldr_e2e.rs`: codex-rs/core/tests/suite/tldr_e2e.rs:169 assert!(tool_names(&body).contains(&"ztldr".to_string()));
-  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2365 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
+  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2369 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
 
 ### `pending-input-routing-and-zmemory-recall`
 - status: `PASS`
@@ -649,16 +687,16 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - summary: turn 起始和 mid-turn 的 `pending_input` 必须保留现有 tool routing 基线、按最新 steer 合并指令，并把 zmemory recall note 注入到后续 developer 上下文。
 - better_when: 只有在 upstream 用新的 turn-local 状态机制等效覆盖 pending_input 路由合并、regular turn recall 生产、follow-up developer 注入和相关回归测试时，才允许迁移；迁移前必须先把新的状态流锚点更新到这里。
 - evidence:
-  - `ok` `codex-rs/core/src/tasks/mod.rs`: codex-rs/core/src/tasks/mod.rs:348 // merge_tool_routing_directives(current_directives, &pending_turn_inputs);
-  - `ok` `codex-rs/core/src/tasks/mod.rs`: codex-rs/core/src/tasks/mod.rs:349 // self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
+  - `ok` `codex-rs/core/src/tasks/mod.rs`: codex-rs/core/src/tasks/mod.rs:356 // merge_tool_routing_directives(current_directives, &pending_turn_inputs);
+  - `ok` `codex-rs/core/src/tasks/mod.rs`: codex-rs/core/src/tasks/mod.rs:357 // self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2496 // pending_zmemory_recall_note_for(current_context.sub_id.as_str())
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2497 // build_developer_update_item(vec![recall_note])
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2322 pub(crate) async fn apply_pending_user_input_side_effects(
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2331 merge_tool_routing_directives(current_directives, user_inputs);
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2337 // build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4913 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
-  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4918 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
-  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2365 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2440 pub(crate) async fn apply_pending_user_input_side_effects(
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2449 merge_tool_routing_directives(current_directives, user_inputs);
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2455 // build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4916 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
+  - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4921 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
+  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2369 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
 
 ### `zteam-mission-workflow`
 - status: `PASS`
@@ -667,7 +705,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: 只有在 upstream 或本地新架构提供等效或更强的 TUI-first 多协作者 mission 工作流，且继续覆盖默认启用配置、slash command 入口、AppEvent/app loop bridge、Mission Board、autopilot repair、loaded-thread recovery、federation adapter seam、中文提示和快照回归锚点时，才允许迁移；迁移前必须先更新这里的路径与检查点。
 - evidence:
   - `ok` `codex-rs/config/src/types.rs`: codex-rs/config/src/types.rs:585 pub zteam_enabled: bool,
-  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2562 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2641 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:807 key: "multi_agent_v2",
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:806 id: Feature::MultiAgentV2,
   - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:185 mod zteam;
@@ -718,9 +756,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/tools/handlers/multi_agents_common.rs`: codex-rs/core/src/tools/handlers/multi_agents_common.rs:315 let has_enabled_project_layer = reloaded_config
   - `ok` `codex-rs/core/src/tools/handlers/multi_agents_common.rs`: codex-rs/core/src/tools/handlers/multi_agents_common.rs:322 .any(|layer| matches!(layer.name, ConfigLayerSource::Project { .. }));
   - `ok` `codex-rs/core/src/tools/handlers/multi_agents_common.rs`: codex-rs/core/src/tools/handlers/multi_agents_common.rs:324 if has_enabled_project_layer && reloaded_for_comparison != *live_config {
-  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3694 async fn build_agent_spawn_config_preserves_runtime_provider_details() {
-  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3700 async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_turn_cwd_override() {
-  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3706 async fn build_agent_spawn_config_preserves_active_profile_when_reloading_turn_cwd_override() {
+  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3695 async fn build_agent_spawn_config_preserves_runtime_provider_details() {
+  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3701 async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_turn_cwd_override() {
+  - `ok` `codex-rs/core/src/tools/handlers/multi_agents_tests.rs`: codex-rs/core/src/tools/handlers/multi_agents_tests.rs:3707 async fn build_agent_spawn_config_preserves_active_profile_when_reloading_turn_cwd_override() {
 
 ### `native-tldr-daemon-first-runtime`
 - status: `PASS`
@@ -785,4 +823,4 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/zmemory/src/service/tests.rs`: codex-rs/zmemory/src/service/tests.rs:1683 .any(|issue| issue["code"] == "content_governance_conflicts")
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:342 async fn zmemory_function_audit_exposes_recent_entries() -> Result<()> {
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:1755 assert!(output.contains("read system://workspace: workspace view"));
-  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2639 contract_memory.structured_content["result"]["governance"]["status"],
+  - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2643 contract_memory.structured_content["result"]["governance"]["status"],

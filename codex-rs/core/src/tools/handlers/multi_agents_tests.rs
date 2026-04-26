@@ -6,6 +6,7 @@ use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::context::TurnAborted;
 use crate::function_tool::FunctionCallError;
 use crate::session::tests::make_session_and_context;
+use crate::session::turn_context::TurnContext;
 use crate::session_prefix::format_subagent_notification_message;
 use crate::state::TaskKind;
 use crate::tasks::SessionTask;

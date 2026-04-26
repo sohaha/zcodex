@@ -507,12 +507,19 @@ fn config_toml_deserializes_model_availability_nux() {
         cfg.tui.expect("tui config should deserialize"),
         Tui {
             notification_settings: TuiNotificationSettings::default(),
+            zteam_enabled: true,
             animations: true,
             show_tooltips: true,
+            show_buddy: true,
             alternate_screen: AltScreenMode::default(),
             status_line: None,
             terminal_title: None,
             theme: None,
+            auto_compress_pasted_images: true,
+            pasted_image_max_width: 1280,
+            pasted_image_max_height: 720,
+            pasted_image_jpeg_quality: 85,
+            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
                     ("gpt-bar".to_string(), 4),
@@ -1399,12 +1406,19 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
         tui,
         Tui {
             notification_settings: TuiNotificationSettings::default(),
+            zteam_enabled: true,
             animations: true,
             show_tooltips: true,
+            show_buddy: true,
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
             terminal_title: None,
             theme: None,
+            auto_compress_pasted_images: true,
+            pasted_image_max_width: 1280,
+            pasted_image_max_height: 720,
+            pasted_image_jpeg_quality: 85,
+            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
             terminal_resize_reflow_max_rows: None,
         }
@@ -5214,9 +5228,11 @@ model_verbosity = "high"
     let codex_home_temp_dir = TempDir::new().unwrap();
 
     let openai_custom_provider = ModelProviderInfo {
-        name: "OpenAI custom".to_string(),
+        name: Some("OpenAI custom".to_string()),
+        model: None,
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
+        model_catalog: None,
         wire_api: WireApi::Responses,
         env_key_instructions: None,
         experimental_bearer_token: None,
@@ -5228,9 +5244,14 @@ model_verbosity = "high"
         request_max_retries: Some(4),
         stream_max_retries: Some(10),
         stream_idle_timeout_ms: Some(300_000),
+        retry_base_delay_ms: None,
         websocket_connect_timeout_ms: Some(15_000),
         requires_openai_auth: false,
         supports_websockets: false,
+        model_context_window: None,
+        model_auto_compact_token_limit: None,
+        max_output_tokens: None,
+        skip_reasoning_popup: false,
     };
     let model_provider_map = {
         let mut model_provider_map =
@@ -5290,6 +5311,10 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             service_tier: None,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
+            fallback_provider_id: None,
+            fallback_provider: None,
+            fallback_model: None,
+            fallback_providers: Vec::new(),
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5498,6 +5523,10 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5660,6 +5689,10 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5807,6 +5840,10 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),

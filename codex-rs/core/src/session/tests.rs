@@ -1277,6 +1277,7 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
             conversation_id: ThreadId::default(),
             history: rollout_items,
             rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+            ..Default::default()
         }))
         .await;
 
@@ -1306,6 +1307,7 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
             conversation_id: ThreadId::default(),
             history: rollout_items,
             rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+            ..Default::default()
         }))
         .await;
 
@@ -1399,6 +1401,7 @@ async fn record_initial_history_seeds_token_info_from_rollout() {
             conversation_id: ThreadId::default(),
             history: rollout_items,
             rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+            ..Default::default()
         }))
         .await;
 
