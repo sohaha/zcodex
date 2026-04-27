@@ -88,6 +88,7 @@ async fn continue_after_stream_error() {
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     let TestCodex { codex, .. } = test_codex()

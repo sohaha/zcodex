@@ -674,6 +674,20 @@ fn test_merge_configured_model_providers_adds_custom_provider() {
 }
 
 #[test]
+fn test_retry_429_defaults_to_true_when_omitted() {
+    let provider: ModelProviderInfo = toml::from_str(
+        r#"
+name = "Custom"
+base_url = "https://example.com/v1"
+        "#,
+    )
+    .expect("provider should deserialize");
+
+    assert!(provider.retry_429);
+    assert!(ModelProviderInfo::default().retry_429);
+}
+
+#[test]
 fn test_merge_configured_model_providers_applies_amazon_bedrock_profile_override() {
     let configured_model_providers = std::collections::HashMap::from([(
         AMAZON_BEDROCK_PROVIDER_ID.to_string(),

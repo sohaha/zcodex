@@ -2213,7 +2213,8 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let model = model.or(config_profile.model).or(cfg.model);
+        let provider_model = model_provider.model.clone();
+        let model = model.or(provider_model).or(config_profile.model).or(cfg.model);
         let mut notices = cfg.notice.unwrap_or_default();
         let service_tier = match service_tier_override {
             Some(Some(service_tier)) => Some(service_tier),
@@ -2452,8 +2453,8 @@ impl Config {
             model,
             service_tier,
             review_model,
-            model_context_window: cfg.model_context_window,
-            model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
+            model_context_window: model_provider.model_context_window.or(cfg.model_context_window),
+            model_auto_compact_token_limit: model_provider.model_auto_compact_token_limit.or(cfg.model_auto_compact_token_limit),
             model_provider_id,
             model_provider,
             fallback_provider_id,

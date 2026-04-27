@@ -174,7 +174,12 @@ pub trait ModelsManager: fmt::Debug + Send + Sync {
     async fn get_model_info(&self, model: &str, config: &ModelsManagerConfig) -> ModelInfo {
         async move {
             let remote_models = self.get_remote_models().await;
-            construct_model_info_from_candidates(model, &remote_models, config)
+            construct_model_info_from_candidates(
+                model,
+                &remote_models,
+                self.provider_info(),
+                config,
+            )
         }
         .instrument(tracing::info_span!("get_model_info", model = model))
         .await
@@ -471,6 +476,18 @@ fn apply_provider_model_overrides(
         } else {
             matching
         }
+    } else if let Some(model_slug) = provider_info.model.as_ref() {
+        let matching: Vec<_> = models
+            .iter()
+            .filter(|model| model.slug == *model_slug)
+            .cloned()
+            .collect();
+        if matching.is_empty() && synthesize_if_empty {
+            let provider_model = vec![model_slug.clone()];
+            synthesize_models_from_slugs(&provider_model, &models)
+        } else {
+            matching
+        }
     } else {
         models
     };
@@ -582,12 +599,23 @@ fn find_model_by_namespaced_suffix(model: &str, candidates: &[ModelInfo]) -> Opt
 pub(crate) fn construct_model_info_from_candidates(
     model: &str,
     candidates: &[ModelInfo],
+    provider_info: Option<&ModelProviderInfo>,
     config: &ModelsManagerConfig,
 ) -> ModelInfo {
     // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
     // retry for namespaced slugs like `custom/gpt-5.3-codex`.
     let remote = find_model_by_longest_prefix(model, candidates)
-        .or_else(|| find_model_by_namespaced_suffix(model, candidates));
+        .or_else(|| find_model_by_namespaced_suffix(model, candidates))
+        .or_else(|| {
+            provider_info
+                .and_then(|info| info.model.as_deref())
+                .filter(|configured_model| *configured_model == model)
+                .and_then(|configured_model| {
+                    synthesize_models_from_slugs(&[configured_model.to_string()], candidates)
+                        .into_iter()
+                        .next()
+                })
+        });
     let model_info = if let Some(remote) = remote {
         ModelInfo {
             slug: model.to_string(),

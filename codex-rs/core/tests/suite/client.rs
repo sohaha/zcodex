@@ -870,6 +870,7 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     let codex_home = TempDir::new().unwrap();
@@ -2280,6 +2281,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     let codex_home = TempDir::new().unwrap();
@@ -3042,6 +3044,7 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     // Init session
@@ -3137,6 +3140,7 @@ async fn env_var_overrides_loaded_auth() {
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     // Init session

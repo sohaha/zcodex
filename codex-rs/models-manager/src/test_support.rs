@@ -34,5 +34,5 @@ pub fn construct_model_info_offline_for_tests(
     } else {
         &[]
     };
-    construct_model_info_from_candidates(model, candidates, config)
+    construct_model_info_from_candidates(model, candidates, None, config)
 }

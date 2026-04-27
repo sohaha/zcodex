@@ -29,6 +29,8 @@
 - 时间窗按当前日期 `2026-04-27` 计算，覆盖 `2026-04-25` 至 `2026-04-27`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
 - `.agents/llmdoc/memory/reflections/2026-04-27-cli-shared-options-localization-must-live-in-utils-cli-source.md`：CLI 外壳级 help 本地化不会覆盖 `SharedCliOptions` 的正文说明；共享参数汉化必须回到 `codex-rs/utils/cli/src/shared_options.rs`，并用顶层 help 断言同时锁中文出现与旧英文消失。
+- `.agents/llmdoc/memory/reflections/2026-04-27-cyber-reroute-warning-must-use-runtime-models-and-avoid-stale-recovery-copy.md`：安全降级 warning 若把原模型、目标模型或恢复入口写死，就会在实际切到 `glm/glm-4.7` 之类目标时显示错误文案；模型名必须取运行时值，非稳定恢复文案应直接删掉。
+- `.agents/llmdoc/memory/reflections/2026-04-27-websocket-wrapped-429-must-preserve-retryable-semantics.md`：Responses WebSocket 的 wrapped `status=429` error 若一律降格成 `TransportError::Http(429)`，会在 `api_bridge`/`core` 链路里丢掉 retryable 语义；应保留普通 rate-limit 429 的流式重连语义，仅让 `usage_limit_reached` / `usage_not_included` 继续走终止型 429。
 - `.agents/llmdoc/memory/reflections/2026-04-27-upstream-sync-cli-shared-options-must-not-duplicate-tui-fields.md`：interactive CLI 参数若已收敛到 `SharedCliOptions`，不能在 TUI 重复声明同名 clap 字段；本地特性 gate 应检查真实所有者、bridge 透传和 `Command::debug_assert()`。
 - `.agents/llmdoc/memory/reflections/2026-04-27-desktop-app-download-url-renames-must-stay-aligned-across-cli-and-platform-installers.md`：桌面 app 的下载 URL 改名若只改 CLI 参数层、不同时更新平台分发器和 `desktop_app/*` 实现，`mise run build-ubuntu-macos-arm64` 这类交叉构建会在晚期暴露半截重命名错误。
 - `.agents/llmdoc/memory/reflections/2026-04-27-tui-color-eyre-requires-errorlayer-for-spantrace.md`：TUI 若安装 `color_eyre` 却没把 `tracing_error::ErrorLayer` 接进 subscriber，错误报告只会退化成 `SpanTrace capture is Unsupported`；回归保护宜用独立 integration test 锁住 `SpanTraceStatus::CAPTURED`。

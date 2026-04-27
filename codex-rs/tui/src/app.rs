@@ -3526,91 +3526,59 @@ impl App {
     ) -> bool {
         let existing_entry = self.agent_navigation.get(&thread_id).cloned();
         let has_replay_channel = self.thread_event_channels.contains_key(&thread_id);
-        if !has_replay_channel {
-            match app_server
-                .thread_loaded_list(ThreadLoadedListParams {
-                    cursor: None,
-                    limit: None,
-                })
-                .await
-            {
-                Ok(response) => {
-                    let is_loaded = response
-                        .data
-                        .iter()
-                        .any(|loaded_thread_id| loaded_thread_id == &thread_id.to_string());
-                    if !is_loaded {
-                        self.agent_navigation.remove(thread_id);
-                        self.sync_active_agent_label();
-                        return false;
-                    }
-                    if let Some(entry) = existing_entry {
-                        self.upsert_agent_picker_thread(
-                            thread_id,
-                            entry.agent_nickname,
-                            entry.agent_role,
-                            /*is_closed*/ false,
-                        );
-                    }
-                    return true;
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        %err,
-                        "failed to list loaded threads for agent picker liveness refresh"
-                    );
-                    return true;
-                }
-            }
-        }
-
         match app_server
-            .thread_read(thread_id, /*include_turns*/ false)
+            .thread_loaded_list(ThreadLoadedListParams {
+                cursor: None,
+                limit: None,
+            })
             .await
         {
-            Ok(thread) => {
-                self.upsert_agent_picker_thread(
-                    thread_id,
-                    thread.agent_nickname.or_else(|| {
-                        existing_entry
-                            .as_ref()
-                            .and_then(|entry| entry.agent_nickname.clone())
-                    }),
-                    thread.agent_role.or_else(|| {
-                        existing_entry
-                            .as_ref()
-                            .and_then(|entry| entry.agent_role.clone())
-                    }),
-                    matches!(
-                        thread.status,
-                        codex_app_server_protocol::ThreadStatus::NotLoaded
-                    ),
-                );
-                true
-            }
-            Err(err) => {
-                if Self::is_terminal_thread_read_error(&err) && !has_replay_channel {
+            Ok(response) => {
+                let is_loaded = response
+                    .data
+                    .iter()
+                    .any(|loaded_thread_id| loaded_thread_id == &thread_id.to_string());
+                if !is_loaded {
+                    if has_replay_channel {
+                        if let Some(entry) = existing_entry {
+                            self.upsert_agent_picker_thread(
+                                thread_id,
+                                entry.agent_nickname,
+                                entry.agent_role,
+                                /*is_closed*/ true,
+                            );
+                        } else {
+                            self.upsert_agent_picker_thread(
+                                thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
+                                /*is_closed*/ true,
+                            );
+                        }
+                        return true;
+                    }
                     self.agent_navigation.remove(thread_id);
                     self.sync_active_agent_label();
                     return false;
                 }
-                let is_closed = Self::closed_state_for_thread_read_error(
-                    &err,
-                    existing_entry.as_ref().map(|entry| entry.is_closed),
-                );
                 if let Some(entry) = existing_entry {
                     self.upsert_agent_picker_thread(
                         thread_id,
                         entry.agent_nickname,
                         entry.agent_role,
-                        is_closed,
+                        /*is_closed*/ false,
                     );
                 } else {
                     self.upsert_agent_picker_thread(
                         thread_id, /*agent_nickname*/ None, /*agent_role*/ None,
-                        is_closed,
+                        /*is_closed*/ false,
                     );
                 }
+                true
+            }
+            Err(err) => {
+                tracing::warn!(
+                    %err,
+                    "failed to list loaded threads for agent picker liveness refresh"
+                );
                 true
             }
         }

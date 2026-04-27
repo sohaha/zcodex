@@ -216,6 +216,7 @@ fn should_use_remote_compact_task_for_azure_provider() {
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
 
     assert!(should_use_remote_compact_task(&provider));

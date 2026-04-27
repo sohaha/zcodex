@@ -431,6 +431,11 @@ fn map_ws_error(err: WsError, url: &Url) -> ApiError {
                 .body()
                 .as_ref()
                 .and_then(|bytes| String::from_utf8(bytes.clone()).ok());
+            if let Some(retryable_error) =
+                retryable_429_api_error(status, parse_http_error_body(body.as_deref()).as_ref())
+            {
+                return retryable_error;
+            }
             ApiError::Transport(TransportError::Http {
                 status,
                 url: Some(url.to_string()),
@@ -447,7 +452,15 @@ fn map_ws_error(err: WsError, url: &Url) -> ApiError {
 }
 
 #[derive(Debug, Deserialize)]
+struct HttpErrorBody {
+    #[serde(default)]
+    error: Option<WrappedWebsocketError>,
+}
+
+#[derive(Debug, Deserialize)]
 struct WrappedWebsocketError {
+    #[serde(rename = "type")]
+    error_type: Option<String>,
     code: Option<String>,
     message: Option<String>,
 }
@@ -501,12 +514,44 @@ fn map_wrapped_websocket_error_event(
         return None;
     }
 
+    if let Some(retryable_error) = retryable_429_api_error(status, error.as_ref()) {
+        return Some(retryable_error);
+    }
+
     Some(ApiError::Transport(TransportError::Http {
         status,
         url: None,
         headers: headers.map(json_headers_to_http_headers),
         body: Some(original_payload),
     }))
+}
+
+fn parse_http_error_body(body: Option<&str>) -> Option<WrappedWebsocketError> {
+    let body = body?;
+    let parsed = serde_json::from_str::<HttpErrorBody>(body).ok()?;
+    parsed.error
+}
+
+fn retryable_429_api_error(
+    status: StatusCode,
+    error: Option<&WrappedWebsocketError>,
+) -> Option<ApiError> {
+    if status != StatusCode::TOO_MANY_REQUESTS {
+        return None;
+    }
+
+    let error = error?;
+    if matches!(
+        error.error_type.as_deref(),
+        Some("usage_limit_reached" | "usage_not_included")
+    ) {
+        return None;
+    }
+
+    Some(ApiError::Retryable {
+        message: error.message.clone().unwrap_or_else(|| status.to_string()),
+        delay: None,
+    })
 }
 
 fn json_headers_to_http_headers(headers: JsonMap<String, Value>) -> HeaderMap {
@@ -788,6 +833,88 @@ mod tests {
         };
         assert_eq!(message, WEBSOCKET_CONNECTION_LIMIT_REACHED_MESSAGE);
         assert_eq!(delay, None);
+    }
+
+    #[test]
+    fn parse_wrapped_websocket_error_event_with_generic_429_maps_retryable() {
+        let payload = json!({
+            "type": "error",
+            "status": 429,
+            "error": {
+                "type": "rate_limit_exceeded",
+                "code": "rate_limit_exceeded",
+                "message": "Rate limit reached for gpt-5.1. Please try again in 11.054s."
+            }
+        })
+        .to_string();
+
+        let wrapped_error = parse_wrapped_websocket_error_event(&payload)
+            .expect("expected websocket error payload to be parsed");
+        let api_error = map_wrapped_websocket_error_event(wrapped_error, payload)
+            .expect("expected websocket error payload to map to ApiError");
+        let ApiError::Retryable { message, delay } = api_error else {
+            panic!("expected ApiError::Retryable");
+        };
+        assert_eq!(
+            message,
+            "Rate limit reached for gpt-5.1. Please try again in 11.054s."
+        );
+        assert_eq!(delay, None);
+    }
+
+    #[test]
+    fn map_ws_error_with_generic_429_maps_retryable() {
+        let payload = json!({
+            "error": {
+                "type": "rate_limit_exceeded",
+                "code": "rate_limit_exceeded",
+                "message": "Rate limit reached for gpt-5.1. Please try again in 11.054s."
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let response = http::Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .body(Some(payload))
+            .expect("response should build");
+
+        let api_error = map_ws_error(
+            WsError::Http(Box::new(response)),
+            &Url::parse("wss://example.com/v1/responses").expect("url should parse"),
+        );
+        let ApiError::Retryable { message, delay } = api_error else {
+            panic!("expected ApiError::Retryable");
+        };
+        assert_eq!(
+            message,
+            "Rate limit reached for gpt-5.1. Please try again in 11.054s."
+        );
+        assert_eq!(delay, None);
+    }
+
+    #[test]
+    fn map_ws_error_with_usage_limit_429_stays_terminal() {
+        let payload = json!({
+            "error": {
+                "type": "usage_limit_reached",
+                "message": "The usage limit has been reached"
+            }
+        })
+        .to_string()
+        .into_bytes();
+        let response = http::Response::builder()
+            .status(StatusCode::TOO_MANY_REQUESTS)
+            .body(Some(payload))
+            .expect("response should build");
+
+        let api_error = map_ws_error(
+            WsError::Http(Box::new(response)),
+            &Url::parse("wss://example.com/v1/responses").expect("url should parse"),
+        );
+        let ApiError::Transport(TransportError::Http { status, .. }) = api_error else {
+            panic!("expected ApiError::Transport(Http)");
+        };
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[test]

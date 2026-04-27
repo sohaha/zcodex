@@ -64,6 +64,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `ztok-default-launcher-and-prompt-wiring` | `local_behavior` | codex-rs/arg0 + codex-rs/core session/tools + codex-rs/ztok |
 | `ztok-behavior-mode` | `local_behavior` | codex-rs/config + codex-rs/core + codex-rs/cli + codex-rs/ztok |
 | `zmemory-governance-system-views-and-diagnostics` | `local_behavior` | codex-rs/zmemory + codex-rs/tools + codex-rs/core tests |
+| `provider-config-field-precedence` | `local_behavior` | codex-rs/core/src/config |
 
 ### `wire-api-streaming-chat-anthropic`
 - summary: 为 WireApi::Chat 和 WireApi::Anthropic 提供真实 streaming，而不是 runtime panic 占位。
@@ -416,9 +417,17 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/core/tests/suite/zmemory_e2e.rs`: `read system://workspace: workspace view`
   - `regex` `codex-rs/core/tests/suite/zmemory_e2e.rs`: `structured_content\["result"\]\["governance"\]\["status"\]`
 
+### `provider-config-field-precedence`
+- summary: 渠道（ModelProviderInfo）配置的字段在配置解析时优先于全局 ConfigToml 的同名字段。当前覆盖：model、model_context_window、model_auto_compact_token_limit。上游同步时如果重写 config/mod.rs 中的模型解析链路，必须确保 provider 级别的字段仍作为 override 插入到全局配置之前。
+- better_when: upstream 把 provider 级配置字段的优先级（provider > profile > global）作为一等公民整合进配置系统，且不退化本地分叉的 provider 优先级行为。
+- checks:
+  - `regex` `codex-rs/core/src/config/mod.rs`: `provider_model = model_provider`
+  - `regex` `codex-rs/core/src/config/mod.rs`: `model_provider.model_context_window.or`
+  - `regex` `codex-rs/core/src/config/mod.rs`: `model_provider.model_auto_compact_token_limit.or`
+
 ## Latest Audit
 
-- overall: `25/25` passed
+- overall: `26/26` passed
 
 | ID | Status | Area |
 | --- | --- | --- |
@@ -447,6 +456,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `ztok-default-launcher-and-prompt-wiring` | `PASS` | codex-rs/arg0 + codex-rs/core session/tools + codex-rs/ztok |
 | `ztok-behavior-mode` | `PASS` | codex-rs/config + codex-rs/core + codex-rs/cli + codex-rs/ztok |
 | `zmemory-governance-system-views-and-diagnostics` | `PASS` | codex-rs/zmemory + codex-rs/tools + codex-rs/core tests |
+| `provider-config-field-precedence` | `PASS` | codex-rs/core/src/config |
 
 ### `wire-api-streaming-chat-anthropic`
 - status: `PASS`
@@ -599,8 +609,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:99 SlashCommand::Buddy => "孵化、抚摸或隐藏底部小伙伴",
   - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:615 PersistBuddyVisibility(bool),
   - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:618 PersistBuddyFullVisibility,
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:6339 AppEvent::PersistBuddyVisibility(visible) => {
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:6342 AppEvent::PersistBuddyFullVisibility => {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:6343 AppEvent::PersistBuddyVisibility(visible) => {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:6346 AppEvent::PersistBuddyFullVisibility => {
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:295 EventMsg::BuddySoulGenerated(event) => {
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:307 EventMsg::BuddyReaction(event) => {
   - `ok` `codex-rs/config/src/types.rs`: codex-rs/config/src/types.rs:721 pub struct BuddyReactionStrategy {
@@ -621,8 +631,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:80 SlashCommand::Init => "创建 AGENTS.md 文件，为 Codex 提供指令",
   - `ok` `codex-rs/tools/src/request_user_input_tool.rs`: codex-rs/tools/src/request_user_input_tool.rs:91 Some(format!("request_user_input 在 {mode_name} 模式不可用"))
   - `ok` `codex-rs/tui/src/bottom_pane/feedback_view.rs`: codex-rs/tui/src/bottom_pane/feedback_view.rs:325 Some(_) => format!("{prefix}请使用以下链接提交 Issue："),
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:211 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:491 "因 SKILL.md 文件无效，已跳过加载 {error_count} 个技能。"
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:208 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:488 "因 SKILL.md 文件无效，已跳过加载 {error_count} 个技能。"
   - `ok` `codex-rs/tui/src/onboarding/trust_directory.rs`: codex-rs/tui/src/onboarding/trust_directory.rs:49 "你当前位于 ".bold(),
   - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1258 " 开始使用时，请描述一个任务，或试试这些命令："
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:881 name: "外部配置迁移",
@@ -635,7 +645,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:113 "description": "适合日常编程任务的强力模型。",
   - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:305 "migration_markdown": "介绍 GPT-5.4\n\nCodex 已升级至 GPT-5.4，这是我们面向专业工作的最强模型。它比此前模型表现更好，同时 token 效率更高，并在长时运行任务、工具调用、计算机使用和...
   - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:43 "description": "为复杂问题提供超高强度推理"
-  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:493 const TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING: &str = "多项标记提示可能存在网络安全风险。已启用额外安全检查。如需授权安全工作，请加入 Trusted Access f...
+  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:493 const TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING: &str = "多项标记提示可能存在网络安全风险。";
   - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:4078 Some(permission_request_summary("权限请求", reason))
   - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1889 " 如果判断有误，请尝试改写请求。若要获得授权安全工作权限，请加入 ".dim(),
 
@@ -651,8 +661,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/session/turn_context.rs`: codex-rs/core/src/session/turn_context.rs:845 "未找到模型 `{}` 的元数据，已改用兜底元数据；这可能降低性能并导致异常。",
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7551 "无法向审查轮次追加输入".to_string(),
   - `ok` `codex-rs/app-server/src/codex_message_processor.rs`: codex-rs/app-server/src/codex_message_processor.rs:7585 "输入不能为空".to_string(),
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1146 let mismatch_prefix = "期望的活跃轮次 ID 为 `";
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1140 if source.message == "当前没有可追加输入的活跃轮次" {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1143 let mismatch_prefix = "期望的活跃轮次 ID 为 `";
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:1137 if source.message == "当前没有可追加输入的活跃轮次" {
   - `ok` `codex-rs/analytics/src/analytics_client_tests.rs`: codex-rs/analytics/src/analytics_client_tests.rs:379 message: "无法向审查轮次追加输入".to_string(),
   - `ok` `codex-rs/core/tests/suite/safety_check_downgrade.rs`: codex-rs/core/tests/suite/safety_check_downgrade.rs:96 ContentItem::InputText { text } if text.starts_with("警告：")
   - `ok` `codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs`: codex-rs/app-server/tests/suite/v2/safety_check_downgrade.rs:420 UserInput::Text { text, .. } if text.starts_with("警告：") => Some(text.as_str()),
@@ -729,7 +739,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: 只有在 upstream 或本地新架构提供等效或更强的 TUI-first 多协作者 mission 工作流，且继续覆盖默认启用配置、slash command 入口、AppEvent/app loop bridge、Mission Board、autopilot repair、loaded-thread recovery、federation adapter seam、中文提示和快照回归锚点时，才允许迁移；迁移前必须先更新这里的路径与检查点。
 - evidence:
   - `ok` `codex-rs/config/src/types.rs`: codex-rs/config/src/types.rs:585 pub zteam_enabled: bool,
-  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2634 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2635 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:807 key: "multi_agent_v2",
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:806 id: Feature::MultiAgentV2,
   - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:186 mod zteam;
@@ -737,9 +747,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:87 SlashCommand::Zteam => "以目标启动 ZTeam mission 协作并查看状态",
   - `ok` `codex-rs/tui/src/bottom_pane/slash_commands.rs`: codex-rs/tui/src/bottom_pane/slash_commands.rs:37 .filter(|(_, cmd)| flags.zteam_enabled || *cmd != SlashCommand::Zteam)
   - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:115 ZteamCommand(ZteamCommand),
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:2163 async fn handle_zteam_command(
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:2100 fn schedule_zteam_autopilot_tick(&self) {
-  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:3939 self.restore_loaded_zteam_workers(app_server).await;
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:2160 async fn handle_zteam_command(
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:2097 fn schedule_zteam_autopilot_tick(&self) {
+  - `ok` `codex-rs/tui/src/app.rs`: codex-rs/tui/src/app.rs:3943 self.restore_loaded_zteam_workers(app_server).await;
   - `ok` `codex-rs/tui/src/zteam.rs`: codex-rs/tui/src/zteam.rs:324 pub(crate) enum AutopilotWorkItem {
   - `ok` `codex-rs/tui/src/zteam/recovery.rs`: codex-rs/tui/src/zteam/recovery.rs:51 pub(crate) fn latest_local_threads_for_primary(
   - `ok` `codex-rs/tui/src/zteam/worker_source.rs`: codex-rs/tui/src/zteam/worker_source.rs:17 pub(crate) struct FederationAdapter {
@@ -848,3 +858,13 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:342 async fn zmemory_function_audit_exposes_recent_entries() -> Result<()> {
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:1755 assert!(output.contains("read system://workspace: workspace view"));
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2643 contract_memory.structured_content["result"]["governance"]["status"],
+
+### `provider-config-field-precedence`
+- status: `PASS`
+- kind: `local_behavior`
+- summary: 渠道（ModelProviderInfo）配置的字段在配置解析时优先于全局 ConfigToml 的同名字段。当前覆盖：model、model_context_window、model_auto_compact_token_limit。上游同步时如果重写 config/mod.rs 中的模型解析链路，必须确保 provider 级别的字段仍作为 override 插入到全局配置之前。
+- better_when: upstream 把 provider 级配置字段的优先级（provider > profile > global）作为一等公民整合进配置系统，且不退化本地分叉的 provider 优先级行为。
+- evidence:
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2216 let provider_model = model_provider.model.clone();
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2456 model_context_window: model_provider.model_context_window.or(cfg.model_context_window),
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2457 model_auto_compact_token_limit: model_provider.model_auto_compact_token_limit.or(cfg.model_auto_compact_token_limit),

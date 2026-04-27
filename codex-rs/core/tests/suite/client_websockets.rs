@@ -1156,6 +1156,44 @@ async fn responses_websocket_connection_limit_error_reconnects_and_completes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn responses_websocket_generic_429_reconnects_and_completes() {
+    skip_if_no_network!();
+
+    let generic_rate_limit_error = json!({
+        "type": "error",
+        "status": 429,
+        "error": {
+            "type": "rate_limit_exceeded",
+            "code": "rate_limit_exceeded",
+            "message": "Rate limit reached for gpt-5.1. Please try again in 11.054s."
+        }
+    });
+
+    let server = start_websocket_server(vec![
+        vec![vec![generic_rate_limit_error]],
+        vec![vec![ev_response_created("resp-1"), ev_completed("resp-1")]],
+    ])
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config.model_provider.request_max_retries = Some(0);
+        config.model_provider.stream_max_retries = Some(1);
+    });
+    let test = builder
+        .build_with_websocket_server(&server)
+        .await
+        .expect("build websocket codex");
+
+    test.submit_turn("hello")
+        .await
+        .expect("submission should reconnect after websocket 429 rate limit error");
+
+    let total_websocket_requests: usize = server.connections().iter().map(Vec::len).sum();
+    assert_eq!(total_websocket_requests, 2);
+
+    server.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn responses_websocket_uses_incremental_create_on_prefix() {
     skip_if_no_network!();
 
@@ -1762,6 +1800,7 @@ fn websocket_provider_with_connect_timeout(
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     }
 }
 

@@ -573,48 +573,48 @@
           "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
           "pattern": "加载 rollout"
         },
-      {
-        "type": "regex",
-        "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
-        "pattern": "审查器未输出任何回复"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/models-manager/models.json",
-        "pattern": "面向复杂编程、研究与真实世界工作的前沿模型"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/models-manager/models.json",
-        "pattern": "适合日常编程任务的强力模型"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/models-manager/models.json",
-        "pattern": "Codex 已升级至 GPT-5\\.4"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/models-manager/models.json",
-        "pattern": "为复杂问题提供超高强度推理"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/tui/src/chatwidget.rs",
-        "pattern": "多项标记提示可能存在网络安全风险"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/tui/src/chatwidget.rs",
-        "pattern": "权限请求"
-      },
-      {
-        "type": "regex",
-        "path": "codex-rs/tui/src/history_cell.rs",
-        "pattern": "如果判断有误，请尝试改写请求"
-      }
-    ]
-  },
+        {
+          "type": "regex",
+          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+          "pattern": "审查器未输出任何回复"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/models.json",
+          "pattern": "面向复杂编程、研究与真实世界工作的前沿模型"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/models.json",
+          "pattern": "适合日常编程任务的强力模型"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/models.json",
+          "pattern": "Codex 已升级至 GPT-5\\.4"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/models-manager/models.json",
+          "pattern": "为复杂问题提供超高强度推理"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/chatwidget.rs",
+          "pattern": "多项标记提示可能存在网络安全风险"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/chatwidget.rs",
+          "pattern": "权限请求"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/tui/src/history_cell.rs",
+          "pattern": "如果判断有误，请尝试改写请求"
+        }
+      ]
+    },
     {
       "id": "session-warning-steer-localization-bridge",
       "kind": "localized_behavior",
@@ -1348,6 +1348,30 @@
           "type": "regex",
           "path": "codex-rs/core/tests/suite/zmemory_e2e.rs",
           "pattern": "structured_content\\[\"result\"\\]\\[\"governance\"\\]\\[\"status\"\\]"
+        }
+      ]
+    },
+    {
+      "id": "provider-config-field-precedence",
+      "kind": "local_behavior",
+      "area": "codex-rs/core/src/config",
+      "summary": "渠道（ModelProviderInfo）配置的字段在配置解析时优先于全局 ConfigToml 的同名字段。当前覆盖：model、model_context_window、model_auto_compact_token_limit。上游同步时如果重写 config/mod.rs 中的模型解析链路，必须确保 provider 级别的字段仍作为 override 插入到全局配置之前。",
+      "better_when": "upstream 把 provider 级配置字段的优先级（provider > profile > global）作为一等公民整合进配置系统，且不退化本地分叉的 provider 优先级行为。",
+      "checks": [
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "provider_model = model_provider"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "model_provider.model_context_window.or"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/config/mod.rs",
+          "pattern": "model_provider.model_auto_compact_token_limit.or"
         }
       ]
     }

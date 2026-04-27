@@ -79,6 +79,14 @@ Particularly when introducing a new concept/feature/API, before adding to `codex
 
 Likewise, when reviewing code, do not hesitate to push back on PRs that would unnecessarily add code to `codex-core`.
 
+## Local Fork Feature Placement
+
+- For long-lived local features and fork-only behavior, prefer new local files, modules, crates, adapters, or command surfaces instead of placing the implementation directly inside high-churn upstream files.
+- If an upstream file must be touched, keep it to the thinnest possible seam: registration, argument/config plumbing, module exports, trait impls, or other minimal wiring.
+- Keep the main behavior, state machine, UI details, compatibility logic, and test scaffolding in local-owned files whenever possible so future upstream syncs hit less overlap.
+- Treat overlap with upstream-owned files as an explicit engineering cost. When two designs both satisfy correctness and scope, choose the one with the smaller long-term overlap footprint.
+- If an existing local feature is already deeply embedded in an upstream hotspot and you need to extend it, prefer extracting it first or clearly document the hotspot and intended extraction target in your result.
+
 ## TUI style conventions
 
 See `codex-rs/tui` file-local conventions and shared TUI rules in this document.

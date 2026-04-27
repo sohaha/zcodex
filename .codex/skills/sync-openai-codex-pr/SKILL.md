@@ -113,6 +113,25 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 2. 再吸收 upstream 新能力
 3. 最后最小化 diff
 
+### 本地特性落位与上游重叠控制
+
+- 同步时不要只追求“这次 merge 好解”；还要显式压低未来持续同步的重叠面积。
+- 对新引入或继续演进的本地分叉特性，优先放进新增的本地文件、模块、crate、命令面或 adapter seam，而不是直接堆进 upstream 高频文件。
+- 如果必须触碰 upstream 文件，只保留最薄的一层桥接：
+  - 子命令注册
+  - 参数透传
+  - trait impl / re-export
+  - 配置接线
+  - 模块 wiring
+- 主体业务逻辑、状态机、渲染、规则判断、文案生成、兼容层、测试基座，优先落在本地新增文件；不要为了“看起来改动更少”继续把主体实现压在 upstream 文件里。
+- 若某本地特性已经和 upstream 高频文件深度交织，而本轮同步又反复在同一区域冲突：
+  - 优先评估先抽离再继续叠加
+  - 至少在最终报告里明确指出该特性的重叠热点文件与建议抽离目标
+- 审查本地特性时，除“功能是否保留”外，还要额外回答：
+  - 这项本地能力的主体现在是否仍压在 upstream 文件里
+  - 是否存在可以把主体迁到本地新文件、只保留薄桥接的更优落位
+  - 若暂时不能迁移，原因是什么
+
 ### 上游删除反查 gate
 
 合并冲突清完后、跑 `check` 前，必须反查 upstream 已删除但当前 worktree 仍保留的路径：
@@ -148,7 +167,20 @@ git -C "$path" diff --name-status "$previous_sha..$openai_sha" --diff-filter=D |
    - 停下，请求用户二选一
 4. `上游原生功能已被删除/回滚`
    - 先查历史确认它最初来自 upstream，而不是本地分叉
-   - 停下，请求用户决定是否跟随 upstream 删除
+  - 停下，请求用户决定是否跟随 upstream 删除
+
+### Provider 配置字段优先级保护
+
+当同步重写 `codex-rs/core/src/config/mod.rs` 中的 `load_config` 函数时，必须逐字段验证以下 provider 级优先级未被覆盖：
+
+- `model`：provider 的 `model` 字段必须作为 `provider_model` 插入到 `model.or(provider_model).or(config_profile.model).or(cfg.model)` 链中
+- `model_context_window`：provider 的值必须优先于全局 `cfg.model_context_window`
+- `model_auto_compact_token_limit`：同上
+- `skip_reasoning_popup`：已从 `model_provider.skip_reasoning_popup` 取值（无需额外保护）
+
+上游重写该函数时，通常会把 `model` 解析简化为 `model.or(config_profile.model).or(cfg.model)`，这会丢失 provider 级 override。合并后必须用 `check` 验证 `provider-config-field-precedence` 特性，若 fail 立即补回。
+
+同样地，对 `ModelProviderInfo` 结构体上的字段（如 `model_catalog`、`max_output_tokens`、`request_max_retries` 等），如果上游重命名、删除或移动了这些字段的消费位置，同步后也必须确认渠道配置仍能正确生效。
 
 只有下面两类情况才允许阻塞问用户：
 

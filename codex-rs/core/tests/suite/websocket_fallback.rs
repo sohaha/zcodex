@@ -300,6 +300,7 @@ async fn request_fallback_switches_to_configured_provider_and_model() -> Result<
                 model_auto_compact_token_limit: None,
                 max_output_tokens: None,
                 skip_reasoning_popup: false,
+                retry_429: true,
             });
             config.fallback_model = Some("fallback-model".to_string());
         }
@@ -377,6 +378,7 @@ async fn request_fallback_handles_primary_usage_limit() -> Result<()> {
                 model_auto_compact_token_limit: None,
                 max_output_tokens: None,
                 skip_reasoning_popup: false,
+                retry_429: true,
             });
             config.fallback_model = Some("fallback-model".to_string());
         }
@@ -449,6 +451,7 @@ async fn request_fallback_emits_warning_event_without_warning_item() -> Result<(
                 model_auto_compact_token_limit: None,
                 max_output_tokens: None,
                 skip_reasoning_popup: false,
+                retry_429: true,
             });
             config.fallback_model = Some("glm4.7".to_string());
         }
@@ -575,6 +578,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                         model_auto_compact_token_limit: None,
                         max_output_tokens: None,
                         skip_reasoning_popup: false,
+                        retry_429: true,
                     },
                     model: Some("fallback-model-a".to_string()),
                 },
@@ -605,6 +609,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                         model_auto_compact_token_limit: None,
                         max_output_tokens: None,
                         skip_reasoning_popup: false,
+                        retry_429: true,
                     },
                     model: Some("fallback-model-b".to_string()),
                 },
@@ -700,6 +705,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                         model_auto_compact_token_limit: None,
                         max_output_tokens: None,
                         skip_reasoning_popup: false,
+                        retry_429: true,
                     },
                     model: Some("fallback-model-a".to_string()),
                 },
@@ -730,6 +736,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                         model_auto_compact_token_limit: None,
                         max_output_tokens: None,
                         skip_reasoning_popup: false,
+                        retry_429: true,
                     },
                     model: None,
                 },
@@ -799,6 +806,7 @@ async fn request_fallback_chain_uses_provider_default_model_when_unspecified() -
                     model_auto_compact_token_limit: None,
                     max_output_tokens: None,
                     skip_reasoning_popup: false,
+                    retry_429: true,
                 },
                 model: None,
             }];

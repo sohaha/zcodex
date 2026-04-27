@@ -284,6 +284,7 @@ mod tests {
                     base_url = "http://127.0.0.1:8061/api/codex"
                     wire_api = "responses"
                     requires_openai_auth = false
+                    retry_429 = true
                     supports_websockets = true
                     skip_reasoning_popup = false
 
@@ -321,6 +322,7 @@ mod tests {
             model_auto_compact_token_limit: None,
             max_output_tokens: None,
             skip_reasoning_popup: false,
+            retry_429: true,
         }
     }
 }

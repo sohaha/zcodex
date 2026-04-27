@@ -191,6 +191,7 @@ fn model_provider_from_proto(
         model_auto_compact_token_limit: None,
         max_output_tokens: None,
         skip_reasoning_popup: false,
+        retry_429: true,
     };
     Ok((id, info))
 }
@@ -225,6 +226,7 @@ fn model_provider_to_proto(
         model_auto_compact_token_limit: _,
         max_output_tokens: _,
         skip_reasoning_popup: _,
+        retry_429: _,
     } = provider;
 
     proto::ModelProvider {
@@ -535,6 +537,7 @@ mod tests {
             model_auto_compact_token_limit: None,
             max_output_tokens: None,
             skip_reasoning_popup: false,
+            retry_429: true,
         }
     }
 

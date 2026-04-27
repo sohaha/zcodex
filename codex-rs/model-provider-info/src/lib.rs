@@ -33,6 +33,10 @@ const MAX_STREAM_MAX_RETRIES: u64 = 100;
 /// Hard cap for user-configured `request_max_retries`.
 const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
+const fn default_retry_429() -> bool {
+    true
+}
+
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -88,7 +92,7 @@ impl<'de> Deserialize<'de> for WireApi {
 }
 
 /// Serializable representation of a provider definition.
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ModelProviderInfo {
     /// Friendly display name.
@@ -168,6 +172,44 @@ pub struct ModelProviderInfo {
     /// default reasoning effort directly.
     #[serde(default)]
     pub skip_reasoning_popup: bool,
+    /// When true, HTTP 429 (Too Many Requests) responses will be retried with
+    /// exponential backoff, up to the provider's `request_max_retries` limit.
+    /// Defaults to true because provider-side rate limits are usually
+    /// transient and should be retried like 5xx responses.
+    #[serde(default = "default_retry_429")]
+    pub retry_429: bool,
+}
+
+impl Default for ModelProviderInfo {
+    fn default() -> Self {
+        Self {
+            name: None,
+            model: None,
+            base_url: None,
+            env_key: None,
+            model_catalog: None,
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            auth: None,
+            aws: None,
+            wire_api: WireApi::default(),
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            retry_base_delay_ms: None,
+            websocket_connect_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            skip_reasoning_popup: false,
+            retry_429: default_retry_429(),
+        }
+    }
 }
 
 /// AWS SigV4 auth configuration for a model provider.
@@ -193,7 +235,7 @@ impl ModelProviderInfo {
         };
 
         format!(
-            "ModelProviderInfo {{ name: {:?}, model: {:?}, base_url: {:?}, env_key: {:?}, model_catalog: {:?}, env_key_instructions_present: {}, experimental_bearer_token_configured: {}, auth_configured: {}, wire_api: {:?}, query_param_names: {:?}, http_header_names: {:?}, env_http_header_names: {:?}, request_max_retries: {:?}, stream_max_retries: {:?}, stream_idle_timeout_ms: {:?}, retry_base_delay_ms: {:?}, websocket_connect_timeout_ms: {:?}, requires_openai_auth: {}, supports_websockets: {}, model_context_window: {:?}, model_auto_compact_token_limit: {:?}, max_output_tokens: {:?}, skip_reasoning_popup: {} }}",
+            "ModelProviderInfo {{ name: {:?}, model: {:?}, base_url: {:?}, env_key: {:?}, model_catalog: {:?}, env_key_instructions_present: {}, experimental_bearer_token_configured: {}, auth_configured: {}, wire_api: {:?}, query_param_names: {:?}, http_header_names: {:?}, env_http_header_names: {:?}, request_max_retries: {:?}, stream_max_retries: {:?}, stream_idle_timeout_ms: {:?}, retry_base_delay_ms: {:?}, websocket_connect_timeout_ms: {:?}, requires_openai_auth: {}, supports_websockets: {}, model_context_window: {:?}, model_auto_compact_token_limit: {:?}, max_output_tokens: {:?}, skip_reasoning_popup: {}, retry_429: {} }}",
             self.name,
             self.model,
             self.base_url,
@@ -216,7 +258,8 @@ impl ModelProviderInfo {
             self.model_context_window,
             self.model_auto_compact_token_limit,
             self.max_output_tokens,
-            self.skip_reasoning_popup
+            self.skip_reasoning_popup,
+            self.retry_429
         )
     }
 
@@ -351,7 +394,7 @@ impl ModelProviderInfo {
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: self.retry_base_delay(),
-            retry_429: false,
+            retry_429: self.retry_429,
             retry_5xx: true,
             retry_transport: true,
         };
@@ -469,6 +512,7 @@ impl ModelProviderInfo {
             max_output_tokens: None,
             model_catalog: None,
             skip_reasoning_popup: false,
+            retry_429: true,
         }
     }
 
@@ -503,6 +547,7 @@ impl ModelProviderInfo {
             model_catalog: None,
             supports_websockets: false,
             skip_reasoning_popup: false,
+            retry_429: true,
         }
     }
 
@@ -693,5 +738,6 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         model_catalog: None,
         supports_websockets: false,
         skip_reasoning_popup: false,
+        retry_429: true,
     }
 }

@@ -231,13 +231,7 @@ async fn response_model_field_mismatch_emits_warning_when_header_matches_request
     assert_eq!(reroute.reason, ModelRerouteReason::HighRiskCyberActivity);
 
     let warning = wait_for_event(&test.codex, |event| {
-        matches!(
-            event,
-            EventMsg::Warning(warning)
-                if warning
-                    .message
-                    .contains("flagged for potentially high-risk cyber activity")
-        )
+        matches!(event, EventMsg::Warning(warning) if warning.message.contains("高风险网络活动"))
     })
     .await;
     let EventMsg::Warning(warning) = warning else {

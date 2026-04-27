@@ -317,6 +317,29 @@ async fn get_model_info_matches_namespaced_suffix() {
 }
 
 #[tokio::test]
+async fn get_model_info_uses_provider_fixed_model_without_fallback_warning() {
+    let config = ModelsManagerConfig::default();
+    let manager = StaticModelsManager::new(
+        /*auth_manager*/ None,
+        ModelsResponse {
+            models: vec![remote_model("gpt-overlay", "Overlay", /*priority*/ 0)],
+        },
+        Some(ModelProviderInfo {
+            model: Some("deepseek/deepseek-v4-flash-free".to_string()),
+            ..ModelProviderInfo::default()
+        }),
+        CollaborationModesConfig::default(),
+    );
+
+    let model_info = manager
+        .get_model_info("deepseek/deepseek-v4-flash-free", &config)
+        .await;
+
+    assert_eq!(model_info.slug, "deepseek/deepseek-v4-flash-free");
+    assert!(!model_info.used_fallback_model_metadata);
+}
+
+#[tokio::test]
 async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
     let codex_home = tempdir().expect("temp dir");
     let config = ModelsManagerConfig::default();
