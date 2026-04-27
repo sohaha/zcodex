@@ -217,6 +217,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/tui/src/onboarding/trust_directory.rs`: `你当前位于 `
   - `regex` `codex-rs/tui/src/history_cell.rs`: `开始使用时，请描述一个任务，或试试这些命令`
   - `regex` `codex-rs/features/src/lib.rs`: `外部配置迁移`
+  - `regex` `codex-rs/features/src/lib.rs`: `已启用开发中功能：\{under_development_feature_keys\}`
+  - `regex` `codex-rs/features/src/tests.rs`: `assert!\(message\.contains\("已启用开发中功能"\)\);`
+  - `regex` `codex-rs/core/tests/suite/unstable_features_warning.rs`: `assert!\(message\.contains\("已启用开发中功能"\)\);`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `加载 rollout`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `审查器未输出任何回复`
 
@@ -573,10 +576,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1857 interactive.provider = Some(provider);
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1854 .shared
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2251 fn multitool_command_debug_asserts() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2466 fn resume_merges_option_flags_and_full_auto() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2497 assert_eq!(interactive.provider.as_deref(), Some("oss"));
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2529 fn fork_merges_provider_flags() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2544 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2467 fn resume_merges_option_flags_and_full_auto() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2498 assert_eq!(interactive.provider.as_deref(), Some("oss"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2530 fn fork_merges_provider_flags() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2545 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
 
 ### `buddy-surface`
 - status: `PASS`
@@ -616,6 +619,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/onboarding/trust_directory.rs`: codex-rs/tui/src/onboarding/trust_directory.rs:49 "你当前位于 ".bold(),
   - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1258 " 开始使用时，请描述一个任务，或试试这些命令："
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:881 name: "外部配置迁移",
+  - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:1061 "已启用开发中功能：{under_development_feature_keys}。开发中功能尚未完成，行为可能不稳定。如需关闭此警告，请在 {config_path} 中设置 `suppress_unstable_features...
+  - `ok` `codex-rs/features/src/tests.rs`: codex-rs/features/src/tests.rs:457 assert!(message.contains("已启用开发中功能"));
+  - `ok` `codex-rs/core/tests/suite/unstable_features_warning.rs`: codex-rs/core/tests/suite/unstable_features_warning.rs:60 assert!(message.contains("已启用开发中功能"));
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:1944 "加载 rollout `{}` 失败：{err}",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2790 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 
@@ -658,8 +664,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - evidence:
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:815 Some(Subcommand::Zoffsec(zoffsec_cli)) => {
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1790 fn finalize_zoffsec_resume_interactive(
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2664 fn zoffsec_subcommand_registers_at_top_level() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2679 fn finalize_zoffsec_resume_enables_clean_before_resume() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2665 fn zoffsec_subcommand_registers_at_top_level() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2680 fn finalize_zoffsec_resume_enables_clean_before_resume() {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:22 pub struct ZoffsecCommand {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:119 pub async fn run_zoffsec_clean_command(
   - `ok` `codex-rs/cli/src/zoffsec_config.rs`: codex-rs/cli/src/zoffsec_config.rs:3 pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";

@@ -238,6 +238,12 @@ just bazel-lock-check
 - 对 `turn_context.rs` 这类直接发出 warning 文案的源头，至少保留一条覆盖具体中文 warning 文案的回归测试；不能只靠静态 grep 判定“没有回归”
 - 至少保留一条覆盖中文 warning 前缀和一条覆盖 steer 错误文案的回归测试；不能只靠静态 grep 判定“没有回归”
 
+如果本次同步触及 `codex-rs/features/src/lib.rs` 或实验/开发中功能元数据与 warning：
+
+- 不要只检查 `codex features enable` 的直出文案；TUI 启动页 warning 走 `unstable_features_warning_event()`，这是另一条源头路径
+- `chinese-localization-sentinels` 必须覆盖 `codex-rs/features/src/lib.rs` 的中文 warning 文案、`codex-rs/features/src/tests.rs` 的源头单测，以及 `codex-rs/core/tests/suite/unstable_features_warning.rs` 的会话事件断言
+- 若截图或用户反馈出现启动页英文 warning，先 grep `Under-development features enabled` / `Under-development features are incomplete`，不能只看 CLI feature 子命令测试是否通过
+
 ## Responses / reasoning 相关专项检查
 
 如果本次同步触及 Responses 输入序列化、Prompt 格式化、历史 replay 或 reasoning item 相关链路，例如：

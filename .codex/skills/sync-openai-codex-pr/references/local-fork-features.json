@@ -555,6 +555,21 @@
         },
         {
           "type": "regex",
+          "path": "codex-rs/features/src/lib.rs",
+          "pattern": "已启用开发中功能：\\{under_development_feature_keys\\}"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/features/src/tests.rs",
+          "pattern": "assert!\\(message\\.contains\\(\"已启用开发中功能\"\\)\\);"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/tests/suite/unstable_features_warning.rs",
+          "pattern": "assert!\\(message\\.contains\\(\"已启用开发中功能\"\\)\\);"
+        },
+        {
+          "type": "regex",
           "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
           "pattern": "加载 rollout"
         },
