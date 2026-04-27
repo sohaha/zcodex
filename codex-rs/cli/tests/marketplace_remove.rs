@@ -41,7 +41,7 @@ async fn marketplace_remove_deletes_config_and_installed_root() -> Result<()> {
         .args(["plugin", "marketplace", "remove", "debug"])
         .assert()
         .success()
-        .stdout(contains("Removed marketplace `debug`."));
+        .stdout(contains("已移除市场源 `debug`。"));
 
     let config_path = codex_home.path().join("config.toml");
     let config = std::fs::read_to_string(config_path)?;

@@ -225,8 +225,9 @@ just bazel-lock-check
 
 - 不要只看 Clap 参数还存在
 - 额外审查子命令到最终 `TuiCli` 的 merge/bridge 函数，例如 `merge_interactive_cli_flags()`
+- 如果参数已经收敛到 `codex-rs/utils/cli/src/shared_options.rs` 的 `SharedCliOptions`，不要在 `codex-rs/tui/src/cli.rs` 重新声明同名字段；重复的 clap arg id 会在 debug build 的 Command 构建阶段 panic，例如 `oss_provider` / `--local-provider`
 - 对新增或本地扩展的 interactive 参数，确认 root 路径和 `resume` / `fork` 等子命令路径都会透传
-- 至少保留一条覆盖 bridge 行为的回归测试；不能只靠 help 文案或解析测试宣称功能仍在
+- 至少保留一条覆盖 bridge 行为的回归测试，并保留一条 `Command::debug_assert()` 级别测试覆盖重复参数注册；不能只靠 help 文案或解析测试宣称功能仍在
 - 特别是 provider / local-provider、sandbox、approval、cwd、search 这类“能解析但可能在 merge 时被静默丢掉”的参数，要把 merge 赋值和回归测试一起纳入审查
 
 如果本次同步触及 `codex-rs/core/src/session/mod.rs`、`codex-rs/core/src/session/turn_context.rs`、`codex-rs/app-server/src/codex_message_processor.rs`、`codex-rs/tui/src/app.rs`，或任何 `turn/steer` / warning 文案映射：

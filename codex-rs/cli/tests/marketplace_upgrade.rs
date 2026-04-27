@@ -17,7 +17,7 @@ async fn marketplace_upgrade_runs_under_plugin() -> Result<()> {
         .args(["plugin", "marketplace", "upgrade"])
         .assert()
         .success()
-        .stdout(contains("No configured Git marketplaces to upgrade."));
+        .stdout(contains("当前没有可升级的已配置 Git 市场源。"));
 
     Ok(())
 }

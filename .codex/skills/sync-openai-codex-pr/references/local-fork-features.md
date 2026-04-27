@@ -169,13 +169,15 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/cli/src/main.rs`: `显示版本`
 
 ### `resume-fork-provider-bridge`
-- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
-- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点和回归测试锚点更新到这里。
+- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与共享 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
+- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点、重复 clap 参数防护和回归测试锚点更新到这里。
 - checks:
   - `regex` `codex-rs/tui/src/cli.rs`: `pub provider: Option<String>,`
-  - `regex` `codex-rs/tui/src/cli.rs`: `pub oss_provider: Option<String>,`
+  - `regex` `codex-rs/utils/cli/src/shared_options.rs`: `#\[arg\(long = "local-provider"\)\]`
+  - `regex` `codex-rs/utils/cli/src/shared_options.rs`: `pub oss_provider: Option<String>,`
   - `regex` `codex-rs/cli/src/main.rs`: `interactive\.provider = Some\(provider\);`
-  - `regex` `codex-rs/cli/src/main.rs`: `interactive\.oss_provider = Some\(oss_provider\);`
+  - `regex` `codex-rs/cli/src/main.rs`: `\.shared\s*\.apply_subcommand_overrides\(shared\.into_inner\(\)\);`
+  - `regex` `codex-rs/cli/src/main.rs`: `fn multitool_command_debug_asserts\(`
   - `regex` `codex-rs/cli/src/main.rs`: `fn resume_merges_option_flags_and_full_auto\(`
   - `regex` `codex-rs/cli/src/main.rs`: `assert_eq!\(interactive\.provider\.as_deref\(\), Some\("oss"\)\);`
   - `regex` `codex-rs/cli/src/main.rs`: `fn fork_merges_provider_flags\(`
@@ -555,24 +557,26 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:180 #[clap(visible_alias = "r")]
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:954 tldr_cmd::run_tldr_command(tldr_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:962 run_zmemory_command(zmemory_cli).await?;
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1921 let rendered = localize_help_output(err.to_string());
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1989 "显示帮助（使用 '-h' 查看摘要）",
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1996 .replace("Print version", "显示版本")
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1917 let rendered = localize_help_output(err.to_string());
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1985 "显示帮助（使用 '-h' 查看摘要）",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1992 .replace("Print version", "显示版本")
 
 ### `resume-fork-provider-bridge`
 - status: `PASS`
 - kind: `local_behavior`
-- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
-- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点和回归测试锚点更新到这里。
+- summary: `resume` / `fork` 这类复用 `TuiCli` 的交互子命令，继续允许通过 `-P/--provider` 与共享 `--local-provider` 切换 model_provider，且 merge 后真正写入最终 interactive 配置。
+- better_when: upstream 把 interactive CLI 参数合并统一收敛为等效或更强的实现，并继续保证 `resume` / `fork` 等子命令不会在 bridge 阶段静默丢失 provider / local-provider 等 interactive 参数；迁移前必须先把新的桥接点、重复 clap 参数防护和回归测试锚点更新到这里。
 - evidence:
   - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:73 pub provider: Option<String>,
-  - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:81 pub oss_provider: Option<String>,
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1858 interactive.provider = Some(provider);
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1861 interactive.oss_provider = Some(oss_provider);
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2465 fn resume_merges_option_flags_and_full_auto() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2496 assert_eq!(interactive.provider.as_deref(), Some("oss"));
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2528 fn fork_merges_provider_flags() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2543 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
+  - `ok` `codex-rs/utils/cli/src/shared_options.rs`: codex-rs/utils/cli/src/shared_options.rs:29 #[arg(long = "local-provider")]
+  - `ok` `codex-rs/utils/cli/src/shared_options.rs`: codex-rs/utils/cli/src/shared_options.rs:30 pub oss_provider: Option<String>,
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1857 interactive.provider = Some(provider);
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1854 .shared
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2251 fn multitool_command_debug_asserts() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2466 fn resume_merges_option_flags_and_full_auto() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2497 assert_eq!(interactive.provider.as_deref(), Some("oss"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2529 fn fork_merges_provider_flags() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2544 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
 
 ### `buddy-surface`
 - status: `PASS`
@@ -654,8 +658,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - evidence:
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:815 Some(Subcommand::Zoffsec(zoffsec_cli)) => {
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1790 fn finalize_zoffsec_resume_interactive(
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2663 fn zoffsec_subcommand_registers_at_top_level() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2678 fn finalize_zoffsec_resume_enables_clean_before_resume() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2664 fn zoffsec_subcommand_registers_at_top_level() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2679 fn finalize_zoffsec_resume_enables_clean_before_resume() {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:22 pub struct ZoffsecCommand {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:119 pub async fn run_zoffsec_clean_command(
   - `ok` `codex-rs/cli/src/zoffsec_config.rs`: codex-rs/cli/src/zoffsec_config.rs:3 pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";

@@ -42,6 +42,8 @@
   - “什么情况下算被更好的实现替换”
   - 可脚本化的存在性或文本证据检查
 - 对 `codex-rs/cli` 这类本地 CLI 面，不能只保底层 crate/模块存在；要把顶层 `Subcommand`、dispatch、help/localization 哨兵和本地别名一起纳入 checks
+- 对 interactive CLI 参数，基线还要记录参数的真实所有者。若参数已在 `codex-rs/utils/cli/src/shared_options.rs` 的 `SharedCliOptions` 中声明，不要再要求 `codex-rs/tui/src/cli.rs` 存在同名字段；重复 clap arg id 会在 debug build 的 Command 构建阶段 panic。
+- 对 `resume` / `fork` / `zoffsec resume` 这类复用 `TuiCli` 的路径，基线应同时检查 shared 参数声明、bridge 透传和 `Command::debug_assert()` 测试，避免“help 文案还在但命令构建 panic”或“能解析但 merge 丢字段”。
 
 ## 先 discover，再 promote
 - 自动发现和最终批准不是同一个动作。

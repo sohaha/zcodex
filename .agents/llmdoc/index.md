@@ -26,8 +26,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-26` 计算，覆盖 `2026-04-24` 至 `2026-04-26`。
+- 时间窗按当前日期 `2026-04-27` 计算，覆盖 `2026-04-25` 至 `2026-04-27`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-27-upstream-sync-cli-shared-options-must-not-duplicate-tui-fields.md`：interactive CLI 参数若已收敛到 `SharedCliOptions`，不能在 TUI 重复声明同名 clap 字段；本地特性 gate 应检查真实所有者、bridge 透传和 `Command::debug_assert()`。
 - `.agents/llmdoc/memory/reflections/2026-04-26-upstream-sync-fallback-provider-is-local-feature-and-needs-gate.md`：`fallback_provider` / `fallback_model` / `fallback_providers` 是本地 request provider fallback 功能；同步上游时必须恢复实现、测试和 `local_fork_feature_audit` gate，不能把它当作上游旧残留删除。
 - `.agents/llmdoc/memory/reflections/2026-04-26-upstream-sync-must-commit-worktree-before-mergeback-and-treat-upstream-deletions-as-gates.md`：同步 worktree 分支若与主工作区 HEAD 相同，必须先把 worktree 的 staged/unstaged 同步结果提交成真实 sync commit，再 merge-back；上游删除功能要用删除反查 gate 与主动面 grep 证明没有静默保留。
 - `.agents/llmdoc/memory/reflections/2026-04-24-hidden-collaboration-visibility-should-use-one-protocol-truth-source.md`：`<subagent_notification>` / inter-agent envelope 这类内部协作消息的可见性真相源应上收至 `codex-protocol`，再让 `core`、`tui`、`app-server-protocol` 和 `zteam` 输入净化统一复用。

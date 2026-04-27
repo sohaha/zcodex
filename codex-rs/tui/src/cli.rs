@@ -72,14 +72,6 @@ pub struct Cli {
     )]
     pub provider: Option<String>,
 
-    /// 指定要使用的本地提供方（lmstudio 或 ollama）。
-    /// 如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择。
-    #[arg(
-        long = "local-provider",
-        help = "指定要使用的本地提供方（lmstudio 或 ollama）。如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择。"
-    )]
-    pub oss_provider: Option<String>,
-
     /// 配置模型在执行命令前何时需要人工批准。
     #[arg(
         long = "ask-for-approval",

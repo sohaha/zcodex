@@ -56,7 +56,7 @@ async fn zmemory_export_help_lists_system_views() -> Result<()> {
         .args(["zmemory", "export", "--help"])
         .assert()
         .success()
-        .stderr(
+        .stdout(
             predicate::str::contains("boot")
                 .and(predicate::str::contains("defaults"))
                 .and(predicate::str::contains("workspace"))
@@ -72,7 +72,7 @@ async fn zmemory_export_memory_help_lists_uri_and_domain_flags() -> Result<()> {
         .args(["zmemory", "export-memory", "--help"])
         .assert()
         .success()
-        .stderr(
+        .stdout(
             predicate::str::contains("--uri")
                 .and(predicate::str::contains("--domain"))
                 .and(predicate::str::contains("export-memory")),
@@ -87,7 +87,7 @@ async fn zmemory_import_memory_help_shows_items_json() -> Result<()> {
         .args(["zmemory", "import-memory", "--help"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("--items-json"));
+        .stdout(predicate::str::contains("--items-json"));
     Ok(())
 }
 
@@ -266,7 +266,7 @@ async fn zmemory_audit_help_lists_limit_flag() -> Result<()> {
         .args(["zmemory", "audit", "--help"])
         .assert()
         .success()
-        .stderr(
+        .stdout(
             predicate::str::contains("--limit")
                 .and(predicate::str::contains("--action"))
                 .and(predicate::str::contains("--uri")),
@@ -326,7 +326,7 @@ async fn zmemory_batch_create_help_shows_items_json() -> Result<()> {
         .args(["zmemory", "batch-create", "--help"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("--items-json"));
+        .stdout(predicate::str::contains("--items-json"));
     Ok(())
 }
 
@@ -337,7 +337,7 @@ async fn zmemory_batch_update_help_shows_items_json() -> Result<()> {
         .args(["zmemory", "batch-update", "--help"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("--items-json"));
+        .stdout(predicate::str::contains("--items-json"));
     Ok(())
 }
 
