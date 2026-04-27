@@ -1058,7 +1058,7 @@ pub fn unstable_features_warning_event(
 
     let under_development_feature_keys = under_development_feature_keys.join(", ");
     let message = format!(
-        "Under-development features enabled: {under_development_feature_keys}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {config_path}."
+        "已启用开发中功能：{under_development_feature_keys}。开发中功能尚未完成，行为可能不稳定。如需关闭此警告，请在 {config_path} 中设置 `suppress_unstable_features_warning = true`。"
     );
     Some(Event {
         id: String::new(),
