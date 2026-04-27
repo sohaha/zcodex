@@ -216,7 +216,12 @@ async fn command_exec_env_overrides_merge_with_server_environment_and_support_un
 async fn command_exec_accepts_permission_profile() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -266,7 +271,12 @@ async fn command_exec_permission_profile_cwd_uses_command_cwd() -> Result<()> {
     let codex_home = TempDir::new()?;
     let command_dir = codex_home.path().join("command-cwd");
     std::fs::create_dir(&command_dir)?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -331,7 +341,12 @@ async fn command_exec_permission_profile_cwd_uses_command_cwd() -> Result<()> {
 async fn command_exec_rejects_sandbox_policy_with_permission_profile() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 

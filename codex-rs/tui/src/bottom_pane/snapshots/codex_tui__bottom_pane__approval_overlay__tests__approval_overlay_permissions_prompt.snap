@@ -11,6 +11,7 @@ expression: "normalize_snapshot_paths(render_overlay_lines(&view, 120))"
 
 › 1. 是 ， 授 予 这 些 权 限  (y)
   2. 是 ， 授 予 这 些 权 限 （ 本 次 会 话 有 效 ）  (a)
-  3. 否 ， 跳 过 不 授 予 权 限  (n)
+  3. 是 ， 授 予 这 些 权 限 并 启 用 严 格 自 动 审 查  (r)
+  4. 否 ， 跳 过 不 授 予 权 限  (n)
 
   按  enter 确 认 或  esc 取 消

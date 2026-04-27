@@ -1,18 +1,9 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 2288
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 • 处理中 (0s • esc 中断)
-  .------------.
-  | 轻轻漂来。 |
-  '------------.
-    \
-  }~   ~{
-  ( ^..^ )
-   \__/
-  Ripple ★ 常见 美西螈 · 坐立不安
 
 • 排队的后续消息
   ↳ Hello, world! 0
@@ -23,7 +14,15 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
   ↳ Hello, world! 5
   ↳ Hello, world! 6
   ↳ Hello, world! 7
+  ↳ Hello, world! 8
+  ↳ Hello, world! 9
+  ↳ Hello, world! 10
+  ↳ Hello, world! 11
+  ↳ Hello, world! 12
+  ↳ Hello, world! 13
+  ↳ Hello, world! 14
+  ↳ Hello, world! 15
 
 › 让 Codex 帮你做任何事
 
-  gpt-5.3-codex 默认 · 已用 0% · /tmp/project
+  gpt-5.5 默认 · 已用 0% · /tmp/project

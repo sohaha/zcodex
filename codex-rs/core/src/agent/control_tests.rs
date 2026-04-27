@@ -1137,12 +1137,20 @@ async fn resume_agent_releases_slot_after_resume_failure() {
 #[tokio::test]
 async fn spawn_child_completion_notifies_parent_history() {
     let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let mut config = harness.config.clone();
+    let _ = config.features.disable(Feature::MultiAgentV2);
+    let parent = harness
+        .manager
+        .start_thread(config.clone())
+        .await
+        .expect("start parent thread");
+    let parent_thread_id = parent.thread_id;
+    let parent_thread = parent.thread;
 
     let child_thread_id = harness
         .control
         .spawn_agent(
-            harness.config.clone(),
+            config,
             text_input("hello child"),
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,

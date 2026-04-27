@@ -830,7 +830,7 @@ pub(crate) fn format_additional_permissions_rule(
                 .filter(|entry| entry.access == FileSystemAccessMode::None),
         );
         if !denied_reads.is_empty() {
-            parts.push(format!("deny read {denied_reads}"));
+            parts.push(format!("拒绝读取 {denied_reads}"));
         }
     }
     if parts.is_empty() {
@@ -905,19 +905,27 @@ fn permissions_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
             label: "是，授予这些权限".to_string(),
-            decision: ApprovalDecision::Review(ReviewDecision::Approved),
+            decision: ApprovalDecision::Permissions(PermissionsDecision::GrantForTurn),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
             label: "是，授予这些权限（本次会话有效）".to_string(),
-            decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
+            decision: ApprovalDecision::Permissions(PermissionsDecision::GrantForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
+            label: "是，授予这些权限并启用严格自动审查".to_string(),
+            decision: ApprovalDecision::Permissions(
+                PermissionsDecision::GrantForTurnWithStrictAutoReview,
+            ),
+            display_shortcut: None,
+            additional_shortcuts: vec![key_hint::plain(KeyCode::Char('r'))],
+        },
+        ApprovalOption {
             label: "否，跳过不授予权限".to_string(),
-            decision: ApprovalDecision::Review(ReviewDecision::Denied),
+            decision: ApprovalDecision::Permissions(PermissionsDecision::Deny),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
         },
@@ -1352,6 +1360,7 @@ mod tests {
             vec![
                 "是，授予这些权限".to_string(),
                 "是，授予这些权限（本次会话有效）".to_string(),
+                "是，授予这些权限并启用严格自动审查".to_string(),
                 "否，跳过不授予权限".to_string(),
             ]
         );
@@ -1382,7 +1391,7 @@ mod tests {
 
         assert_eq!(
             format_additional_permissions_rule(&additional_permissions),
-            Some("write `:root`; deny read glob `**/*.env`".to_string())
+            Some("写入 `:root`；拒绝读取 glob `**/*.env`".to_string())
         );
     }
 

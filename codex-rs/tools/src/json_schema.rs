@@ -39,6 +39,10 @@ pub enum JsonSchema {
         value: String,
         description: Option<String>,
     },
+    StringEnum {
+        values: Vec<String>,
+        description: Option<String>,
+    },
     /// MCP schema allows "number" | "integer" for Number.
     Number {
         description: Option<String>,
@@ -92,12 +96,20 @@ impl JsonSchema {
     }
 
     pub fn string_enum(values: Vec<JsonValue>, description: Option<String>) -> Self {
+        let values = values
+            .into_iter()
+            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+            .collect::<Vec<_>>();
         match values.as_slice() {
-            [JsonValue::String(value)] => Self::LiteralString {
+            [value] => Self::LiteralString {
                 value: value.clone(),
                 description,
             },
-            _ => Self::String { description },
+            [] => Self::String { description },
+            _ => Self::StringEnum {
+                values,
+                description,
+            },
         }
     }
 
@@ -184,6 +196,16 @@ fn schema_to_json(schema: &JsonSchema) -> JsonValue {
             let mut schema = typed_schema("string", description.as_deref());
             if let JsonValue::Object(map) = &mut schema {
                 map.insert("enum".to_string(), json!([value]));
+            }
+            schema
+        }
+        JsonSchema::StringEnum {
+            values,
+            description,
+        } => {
+            let mut schema = typed_schema("string", description.as_deref());
+            if let JsonValue::Object(map) = &mut schema {
+                map.insert("enum".to_string(), json!(values));
             }
             schema
         }
@@ -286,10 +308,17 @@ fn schema_from_json(value: JsonValue) -> Result<JsonSchema, String> {
     match schema_type.as_str() {
         "boolean" => Ok(JsonSchema::Boolean { description }),
         "string" => {
-            let literal = parse_literal_string(map.remove("enum"), map.remove("const"))?;
-            Ok(match literal {
-                Some(value) => JsonSchema::LiteralString { value, description },
-                None => JsonSchema::String { description },
+            let enum_values = parse_string_enum(map.remove("enum"), map.remove("const"))?;
+            Ok(match enum_values.as_slice() {
+                [value] => JsonSchema::LiteralString {
+                    value: value.clone(),
+                    description,
+                },
+                [] => JsonSchema::String { description },
+                _ => JsonSchema::StringEnum {
+                    values: enum_values,
+                    description,
+                },
             })
         }
         "number" => Ok(JsonSchema::Number { description }),
@@ -381,20 +410,25 @@ fn take_schema_array(
         .map(Some)
 }
 
-fn parse_literal_string(
+fn parse_string_enum(
     enum_value: Option<JsonValue>,
     const_value: Option<JsonValue>,
-) -> Result<Option<String>, String> {
-    if let Some(JsonValue::Array(values)) = enum_value
-        && values.len() == 1
-        && let Some(value) = values[0].as_str()
-    {
-        return Ok(Some(value.to_string()));
+) -> Result<Vec<String>, String> {
+    if let Some(JsonValue::Array(values)) = enum_value {
+        return values
+            .into_iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| "string schema `enum` values must be strings".to_string())
+            })
+            .collect();
     }
     if let Some(JsonValue::String(value)) = const_value {
-        return Ok(Some(value));
+        return Ok(vec![value]);
     }
-    Ok(None)
+    Ok(Vec::new())
 }
 
 fn schema_from_primitive_type(schema_type: &str) -> Result<JsonSchema, String> {

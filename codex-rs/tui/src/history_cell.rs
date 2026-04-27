@@ -1882,20 +1882,13 @@ pub(crate) fn new_cyber_policy_error_event() -> CyberPolicyNoticeCell {
 impl HistoryCell for CyberPolicyNoticeCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(
-            vec![
-                "ⓘ ".cyan(),
-                "This chat was flagged for possible cybersecurity risk".bold(),
-            ]
-            .into(),
-        );
+        lines.push(vec!["ⓘ ".cyan(), "多项标记提示可能存在网络安全风险".bold()].into());
 
         let wrap_width = width.saturating_sub(2).max(1) as usize;
         let body = Line::from(vec![
-            "  If this seems wrong, try rephrasing your request. To get authorized for security work, join the "
-                .dim(),
+            "  如果判断有误，请尝试改写请求。若要获得授权安全工作权限，请加入 ".dim(),
             "Trusted Access for Cyber".cyan().underlined(),
-            " program.".dim(),
+            " 计划。".dim(),
         ]);
         let wrapped = adaptive_wrap_line(
             &body,

@@ -74,6 +74,7 @@ fn spawned_thread_start_appends_to_root_bundle() -> anyhow::Result<()> {
         session_source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id: root_thread_id,
             depth: 1,
+            parent_model: None,
             agent_path: Some(
                 AgentPath::try_from("/root/repo_file_counter").map_err(anyhow::Error::msg)?,
             ),

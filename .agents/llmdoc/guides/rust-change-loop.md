@@ -23,6 +23,7 @@
 
 ## 常见失败点
 - 忽略 `justfile` 已经封装的独立 `CARGO_HOME`/`CARGO_TARGET_DIR`，导致并发锁竞争。
+- 给二进制入口接入 `color_eyre` 却没把 `tracing_error::ErrorLayer` 挂进 `tracing_subscriber`，最终只会得到 `SpanTrace capture is Unsupported` 这类降级错误报告。
 - 把项目范围配置问题误判为默认值问题，没有先看 `system://workspace`。
 - 在 `codex-core` 继续叠加实现，导致边界进一步模糊。
 - 在 dirty worktree 中直接 `cargo insta accept`，误把其他模块的 pending snapshots 一并接收。

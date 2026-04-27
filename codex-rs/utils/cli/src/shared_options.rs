@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[derive(Args, Debug, Default)]
 pub struct SharedCliOptions {
-    /// Optional image(s) to attach to the initial prompt.
+    /// 可选的初始提示附加图片。
     #[arg(
         long = "image",
         short = 'i',
@@ -16,34 +16,33 @@ pub struct SharedCliOptions {
     )]
     pub images: Vec<PathBuf>,
 
-    /// Model the agent should use.
+    /// Agent 应使用的模型。
     #[arg(long, short = 'm')]
     pub model: Option<String>,
 
-    /// Use open-source provider.
+    /// 使用开源 provider。
     #[arg(long = "oss", default_value_t = false)]
     pub oss: bool,
 
-    /// Specify which local provider to use (lmstudio or ollama).
-    /// If not specified with --oss, will use config default or show selection.
+    /// 指定要使用的本地 provider（lmstudio 或 ollama）。
+    /// 若未与 `--oss` 一起指定，则使用配置默认值或显示选择界面。
     #[arg(long = "local-provider")]
     pub oss_provider: Option<String>,
 
-    /// Configuration profile from config.toml to specify default options.
+    /// 从 config.toml 中选择配置 profile 以指定默认选项。
     #[arg(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
-    /// Select the sandbox policy to use when executing model-generated shell
-    /// commands.
+    /// 选择执行模型生成 shell 命令时使用的沙盒策略。
     #[arg(long = "sandbox", short = 's')]
     pub sandbox_mode: Option<SandboxModeCliArg>,
 
-    /// Convenience alias for low-friction sandboxed automatic execution.
+    /// 低摩擦沙盒自动执行的便捷别名。
     #[arg(long = "full-auto", default_value_t = false)]
     pub full_auto: bool,
 
-    /// Skip all confirmation prompts and execute commands without sandboxing.
-    /// EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed.
+    /// 跳过所有确认提示，并在无沙盒下执行命令。
+    /// 极度危险。仅适用于运行在外部已隔离环境中的场景。
     #[arg(
         long = "dangerously-bypass-approvals-and-sandbox",
         alias = "yolo",
@@ -52,11 +51,11 @@ pub struct SharedCliOptions {
     )]
     pub dangerously_bypass_approvals_and_sandbox: bool,
 
-    /// Tell the agent to use the specified directory as its working root.
+    /// 让 agent 使用指定目录作为工作根目录。
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
-    /// Additional directories that should be writable alongside the primary workspace.
+    /// 指定除主工作区外还应允许写入的额外目录。
     #[arg(long = "add-dir", value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
     pub add_dir: Vec<PathBuf>,
 }

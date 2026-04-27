@@ -355,7 +355,7 @@ async fn thread_start_params_include_review_policy_when_review_policy_is_manual_
         .await
         .expect("build config with manual-only review policy");
 
-    let params = thread_start_params_from_config(&config, /*federation*/ None);
+    let params = thread_start_params_from_config(&config);
 
     assert_eq!(
         params.approvals_reviewer,
@@ -383,37 +383,12 @@ async fn thread_start_params_include_review_policy_when_auto_review_is_enabled()
         .await
         .expect("build config with guardian review policy");
 
-    let params = thread_start_params_from_config(&config, /*federation*/ None);
+    let params = thread_start_params_from_config(&config);
 
     assert_eq!(
         params.approvals_reviewer,
         Some(codex_app_server_protocol::ApprovalsReviewer::AutoReview)
     );
-}
-
-#[tokio::test]
-async fn thread_start_params_include_federation_settings_when_enabled() {
-    let codex_home = tempdir().expect("create temp codex home");
-    let cwd = tempdir().expect("create temp cwd");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .fallback_cwd(Some(cwd.path().to_path_buf()))
-        .build()
-        .await
-        .expect("build default config");
-
-    let federation = codex_app_server_protocol::FederationThreadStartParams {
-        instance_id: Some("instance-1".to_string()),
-        name: "exec-worker".to_string(),
-        role: Some("worker".to_string()),
-        scope: Some("repo".to_string()),
-        state_root: Some("/tmp/federation".to_string()),
-        lease_ttl_secs: None,
-    };
-
-    let params = thread_start_params_from_config(&config, Some(federation.clone()));
-
-    assert_eq!(params.federation, Some(federation));
 }
 
 #[test]

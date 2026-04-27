@@ -127,7 +127,7 @@ async fn plan_implementation_clear_context_requires_default_mode_and_plan() {
 
     assert_eq!(
         params.items[1].description.as_deref(),
-        Some("Fresh thread with this plan.")
+        Some("在新线程中实现此计划。")
     );
 
     let params = plan_implementation::selection_view_params(
@@ -137,7 +137,7 @@ async fn plan_implementation_clear_context_requires_default_mode_and_plan() {
     );
     assert_eq!(
         params.items[1].description.as_deref(),
-        Some("Fresh thread. Context: 89% used.")
+        Some("新线程。上下文：89% used。")
     );
 }
 
@@ -1198,7 +1198,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini，推理级别 中，用于 计划 模式。"),
+        plan_messages.contains("模型已切换为 gpt-5.4-mini，推理级别 中，用于 计划 模式。"),
         "expected Plan-mode model switch notice, got: {plan_messages:?}"
     );
 

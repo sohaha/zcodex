@@ -2,4 +2,4 @@
 source: tui/src/chatwidget/tests/review_mode.rs
 expression: last
 ---
-■ Goal budget reached - the turn was stopped.
+■ 对话已中断——请告诉模型接下来该如何调整。

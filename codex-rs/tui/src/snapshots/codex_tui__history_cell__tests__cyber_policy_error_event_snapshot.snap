@@ -1,9 +1,8 @@
 ---
 source: tui/src/history_cell.rs
-assertion_line: 3305
 expression: rendered
 ---
-ⓘ This chat was flagged for possible cybersecurity risk
-  If this seems wrong, try rephrasing your request. To get authorized for
-  security work, join the Trusted Access for Cyber program.
+ⓘ 多项标记提示可能存在网络安全风险
+  如果判断有误，请尝试改写请求。若要获得授权安全工作权限，请加入 Trusted
+  Access for Cyber 计划。
   https://chatgpt.com/cyber

@@ -35,7 +35,7 @@ pub struct ZoffsecStartCommand {
         default_value = "default",
         value_enum,
         value_name = "模板",
-        help = "要使用的内置 zoffsec 模板。可选值：default、web、reverse。"
+        help = "要使用的内置 zoffsec 模板。"
     )]
     pub template: ZoffsecTemplate,
 

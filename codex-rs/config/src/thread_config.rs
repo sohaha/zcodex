@@ -285,6 +285,7 @@ mod tests {
                     wire_api = "responses"
                     requires_openai_auth = false
                     supports_websockets = true
+                    skip_reasoning_popup = false
 
                     [features]
                     plugins = false
@@ -296,9 +297,11 @@ mod tests {
 
     fn test_provider(name: &str) -> ModelProviderInfo {
         ModelProviderInfo {
-            name: name.to_string(),
+            name: Some(name.to_string()),
+            model: None,
             base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
             env_key: None,
+            model_catalog: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
@@ -310,9 +313,14 @@ mod tests {
             request_max_retries: None,
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
+            retry_base_delay_ms: None,
             websocket_connect_timeout_ms: None,
             requires_openai_auth: false,
             supports_websockets: true,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            skip_reasoning_popup: false,
         }
     }
 }

@@ -3,6 +3,14 @@ source: tui/src/chatwidget/tests/side.rs
 expression: terminal.backend()
 ---
 "                                                                                "
+"  .------------.                                                                "
+"  | 轻轻漂来。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
+"  '------------.                                                                "
+"    \                                                                           "
+"  }~   ~{                                                                       "
+"  ( ^..^ )                                                                      "
+"   \__/                                                                         "
+"  Ripple ★ 常见 美西螈 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
 "                                                                                "
 "› Check recently modified functions for compatibility                           "
 "                                                                                "

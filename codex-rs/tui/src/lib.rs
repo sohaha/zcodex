@@ -83,6 +83,7 @@ use std::sync::Arc;
 use tracing::error;
 use tracing::warn;
 use tracing_appender::non_blocking;
+use tracing_error::ErrorLayer;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
 use url::Url;
@@ -1035,6 +1036,7 @@ pub async fn run_main(
         .with(log_db_layer)
         .with(otel_logger_layer)
         .with(otel_tracing_layer)
+        .with(ErrorLayer::default())
         .try_init();
 
     run_ratatui_app(
@@ -1870,7 +1872,7 @@ mod tests {
             LoaderOverrides::default(),
             CloudRequirementsLoader::default(),
             codex_feedback::CodexFeedback::new(),
-            Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
+            Arc::new(EnvironmentManager::default_for_tests()),
         )
         .await
     }
@@ -2221,7 +2223,7 @@ mod tests {
             LoaderOverrides::default(),
             CloudRequirementsLoader::default(),
             codex_feedback::CodexFeedback::new(),
-            Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
+            Arc::new(EnvironmentManager::default_for_tests()),
             |_args| async { Err(std::io::Error::other("boom")) },
         )
         .await;

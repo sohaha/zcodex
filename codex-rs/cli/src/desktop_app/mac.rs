@@ -22,6 +22,13 @@ pub async fn run_mac_app_open_or_install(
         return Ok(());
     }
     eprintln!("未找到 Codex Desktop，正在下载安装包...");
+    let download_url = download_url_override
+        .as_deref()
+        .unwrap_or(if is_apple_silicon_mac() {
+            CODEX_DMG_URL_ARM64
+        } else {
+            CODEX_DMG_URL_X64
+        });
     let installed_app = download_and_install_codex_to_user_applications(&download_url)
         .await
         .context("下载/安装 Codex Desktop 失败")?;

@@ -494,7 +494,7 @@
     {
       "id": "chinese-localization-sentinels",
       "kind": "localized_behavior",
-      "area": "codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server",
+      "area": "codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server + codex-rs/models-manager",
       "summary": "用高频哨兵文案检查中文化输出没有被 upstream 英文重新覆盖。",
       "better_when": "用户可见链路已迁移到新的源码位置，且新的实现保持自然中文表达；需要先更新这里的哨兵文案位置。",
       "checks": [
@@ -573,13 +573,48 @@
           "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
           "pattern": "加载 rollout"
         },
-        {
-          "type": "regex",
-          "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
-          "pattern": "审查器未输出任何回复"
-        }
-      ]
-    },
+      {
+        "type": "regex",
+        "path": "codex-rs/app-server/src/bespoke_event_handling.rs",
+        "pattern": "审查器未输出任何回复"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/models-manager/models.json",
+        "pattern": "面向复杂编程、研究与真实世界工作的前沿模型"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/models-manager/models.json",
+        "pattern": "适合日常编程任务的强力模型"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/models-manager/models.json",
+        "pattern": "Codex 已升级至 GPT-5\\.4"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/models-manager/models.json",
+        "pattern": "为复杂问题提供超高强度推理"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/tui/src/chatwidget.rs",
+        "pattern": "多项标记提示可能存在网络安全风险"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/tui/src/chatwidget.rs",
+        "pattern": "权限请求"
+      },
+      {
+        "type": "regex",
+        "path": "codex-rs/tui/src/history_cell.rs",
+        "pattern": "如果判断有误，请尝试改写请求"
+      }
+    ]
+  },
     {
       "id": "session-warning-steer-localization-bridge",
       "kind": "localized_behavior",

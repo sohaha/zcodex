@@ -155,10 +155,10 @@ async fn guardian_approved_request_permissions_renders_request_summary() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "Reviewing approval request");
+    assert_eq!(status.header(), "正在审查批准请求");
     assert_eq!(
         status.details(),
-        Some("permission request: Need write access for generated report assets.")
+        Some("权限请求：Need write access for generated report assets.")
     );
 
     chat.handle_codex_event(Event {

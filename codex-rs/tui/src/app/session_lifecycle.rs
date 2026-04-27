@@ -140,6 +140,44 @@ impl App {
     ) -> bool {
         let existing_entry = self.agent_navigation.get(&thread_id).cloned();
         let has_replay_channel = self.thread_event_channels.contains_key(&thread_id);
+        if !has_replay_channel {
+            match app_server
+                .thread_loaded_list(ThreadLoadedListParams {
+                    cursor: None,
+                    limit: None,
+                })
+                .await
+            {
+                Ok(response) => {
+                    let is_loaded = response
+                        .data
+                        .iter()
+                        .any(|loaded_thread_id| loaded_thread_id == &thread_id.to_string());
+                    if !is_loaded {
+                        self.agent_navigation.remove(thread_id);
+                        self.sync_active_agent_label();
+                        return false;
+                    }
+                    if let Some(entry) = existing_entry {
+                        self.upsert_agent_picker_thread(
+                            thread_id,
+                            entry.agent_nickname,
+                            entry.agent_role,
+                            /*is_closed*/ false,
+                        );
+                    }
+                    return true;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        %err,
+                        "failed to list loaded threads for agent picker liveness refresh"
+                    );
+                    return true;
+                }
+            }
+        }
+
         match app_server
             .thread_read(thread_id, /*include_turns*/ false)
             .await
@@ -167,6 +205,7 @@ impl App {
             Err(err) => {
                 if Self::is_terminal_thread_read_error(&err) && !has_replay_channel {
                     self.agent_navigation.remove(thread_id);
+                    self.sync_active_agent_label();
                     return false;
                 }
                 let is_closed = Self::closed_state_for_thread_read_error(

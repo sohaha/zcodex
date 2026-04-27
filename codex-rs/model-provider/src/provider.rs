@@ -250,9 +250,11 @@ mod tests {
 
     fn provider_for(base_url: String) -> ModelProviderInfo {
         ModelProviderInfo {
-            name: "mock".into(),
+            name: Some("mock".to_string()),
+            model: None,
             base_url: Some(base_url),
             env_key: None,
+            model_catalog: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
@@ -264,9 +266,14 @@ mod tests {
             request_max_retries: Some(0),
             stream_max_retries: Some(0),
             stream_idle_timeout_ms: Some(5_000),
+            retry_base_delay_ms: None,
             websocket_connect_timeout_ms: None,
             requires_openai_auth: false,
             supports_websockets: false,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            skip_reasoning_popup: false,
         }
     }
 
@@ -364,7 +371,7 @@ mod tests {
     fn custom_non_openai_provider_returns_no_account_state() {
         let provider = create_model_provider(
             ModelProviderInfo {
-                name: "Custom".to_string(),
+                name: Some("Custom".to_string()),
                 base_url: Some("http://localhost:1234/v1".to_string()),
                 wire_api: WireApi::Responses,
                 requires_openai_auth: false,

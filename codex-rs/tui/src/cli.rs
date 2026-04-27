@@ -143,8 +143,8 @@ pub struct Cli {
     #[arg(
         long = "no-alt-screen",
         default_value_t = false,
-        help = "禁用备用屏幕模式",
-        long_help = "禁用备用屏幕模式\n\n以内联模式运行 TUI，保留终端滚动历史记录。这在严格遵循 xterm 规范并禁用备用屏幕缓冲区中滚动的终端复用器（如 Zellij）中很有用。"
+        help = "禁用备用屏幕模式。",
+        long_help = "以内联模式运行 TUI，保留终端滚动历史记录。这在严格遵循 xterm 规范并禁用备用屏幕缓冲区中滚动的终端复用器（如 Zellij）中很有用。"
     )]
     pub no_alt_screen: bool,
 

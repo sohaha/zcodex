@@ -3,10 +3,10 @@ source: tui/src/chatwidget/tests/status_and_layout.rs
 expression: popup
 ---
   接 近 限 额
-  切 换 到  gpt-5.1-codex-mini 以 减 少 额 度 消 耗 ？
+  切 换 到  gpt-5.4-mini 以 减 少 额 度 消 耗 ？
 
-› 1. 切 换 到  gpt-5.1-codex-mini  为  Codex 优 化 。 更 便 宜 、 更 快 ， 但 能 力 稍 弱 。
+› 1. 切 换 到  gpt-5.4-mini       小 巧 、 快 速 且 成 本 高 效 ， 适 合 较 简 单 的 编 程 任 务 。
   2. 保 留 当 前 模 型
-  3. 保 留 当 前 模 型 （ 不 再 提 示 ）    隐 藏 未 来 有 关 切 换 模 型 的 限 额 提 醒 。
+  3. 保 留 当 前 模 型 （ 不 再 提 示 ）   隐 藏 未 来 有 关 切 换 模 型 的 限 额 提 醒 。
 
   按  enter 确 认 或 按  esc 返 回

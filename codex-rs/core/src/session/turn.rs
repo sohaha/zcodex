@@ -1490,6 +1490,71 @@ pub(super) struct AssistantMessageStreamParsers {
 
 type ParsedAssistantTextDelta = AssistantTextChunk;
 
+#[derive(Default)]
+struct PendingStreamDeltas {
+    output_text: Vec<String>,
+    reasoning_summary: Vec<(i64, String)>,
+    reasoning_section_breaks: Vec<i64>,
+    reasoning_raw: Vec<(i64, String)>,
+}
+
+impl PendingStreamDeltas {
+    fn push_output_text(&mut self, delta: String) {
+        self.output_text.push(delta);
+    }
+
+    fn push_reasoning_summary(&mut self, summary_index: i64, delta: String) {
+        self.reasoning_summary.push((summary_index, delta));
+    }
+
+    fn push_reasoning_section_break(&mut self, summary_index: i64) {
+        self.reasoning_section_breaks.push(summary_index);
+    }
+
+    fn push_reasoning_raw(&mut self, content_index: i64, delta: String) {
+        self.reasoning_raw.push((content_index, delta));
+    }
+
+    fn take_output_text(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.output_text)
+    }
+
+    fn take_reasoning_summary(&mut self) -> Vec<(i64, String)> {
+        std::mem::take(&mut self.reasoning_summary)
+    }
+
+    fn take_reasoning_section_breaks(&mut self) -> Vec<i64> {
+        std::mem::take(&mut self.reasoning_section_breaks)
+    }
+
+    fn take_reasoning_raw(&mut self) -> Vec<(i64, String)> {
+        std::mem::take(&mut self.reasoning_raw)
+    }
+
+    fn clear_for_completed_item(&mut self, item: &ResponseItem) {
+        match item {
+            ResponseItem::Message { role, .. } if role == "assistant" => {
+                self.output_text.clear();
+            }
+            ResponseItem::Reasoning { .. } => {
+                self.reasoning_summary.clear();
+                self.reasoning_section_breaks.clear();
+                self.reasoning_raw.clear();
+            }
+            _ => {}
+        }
+    }
+}
+
+fn reasoning_item_added_is_empty(item: &ResponseItem) -> bool {
+    match item {
+        ResponseItem::Reasoning {
+            summary, content, ..
+        } => summary.is_empty() && content.as_ref().is_none_or(Vec::is_empty),
+        _ => false,
+    }
+}
+
 impl AssistantMessageStreamParsers {
     pub(super) fn new(plan_mode: bool) -> Self {
         Self {
@@ -1812,6 +1877,64 @@ async fn emit_streamed_assistant_text_delta(
         .await;
 }
 
+async fn replay_pending_output_text_deltas(
+    pending_stream_deltas: &mut PendingStreamDeltas,
+    assistant_message_stream_parsers: &mut AssistantMessageStreamParsers,
+    sess: &Session,
+    turn_context: &TurnContext,
+    mut plan_mode_state: Option<&mut PlanModeStreamState>,
+    item_id: &str,
+) {
+    for delta in pending_stream_deltas.take_output_text() {
+        let parsed = assistant_message_stream_parsers.parse_delta(item_id, &delta);
+        emit_streamed_assistant_text_delta(
+            sess,
+            turn_context,
+            plan_mode_state.as_deref_mut(),
+            item_id,
+            parsed,
+        )
+        .await;
+    }
+}
+
+async fn replay_pending_reasoning_deltas(
+    pending_stream_deltas: &mut PendingStreamDeltas,
+    sess: &Session,
+    turn_context: &TurnContext,
+    item_id: &str,
+) {
+    for (summary_index, delta) in pending_stream_deltas.take_reasoning_summary() {
+        let event = ReasoningContentDeltaEvent {
+            thread_id: sess.conversation_id.to_string(),
+            turn_id: turn_context.sub_id.clone(),
+            item_id: item_id.to_string(),
+            delta,
+            summary_index,
+        };
+        sess.send_event(turn_context, EventMsg::ReasoningContentDelta(event))
+            .await;
+    }
+    for summary_index in pending_stream_deltas.take_reasoning_section_breaks() {
+        let event = EventMsg::AgentReasoningSectionBreak(AgentReasoningSectionBreakEvent {
+            item_id: item_id.to_string(),
+            summary_index,
+        });
+        sess.send_event(turn_context, event).await;
+    }
+    for (content_index, delta) in pending_stream_deltas.take_reasoning_raw() {
+        let event = ReasoningRawContentDeltaEvent {
+            thread_id: sess.conversation_id.to_string(),
+            turn_id: turn_context.sub_id.clone(),
+            item_id: item_id.to_string(),
+            delta,
+            content_index,
+        };
+        sess.send_event(turn_context, EventMsg::ReasoningRawContentDelta(event))
+            .await;
+    }
+}
+
 /// Flush buffered assistant text parser state when an assistant message item ends.
 async fn flush_assistant_text_segments_for_item(
     sess: &Session,
@@ -2053,6 +2176,7 @@ async fn try_run_sampling_request(
     let mut needs_follow_up = false;
     let mut last_agent_message: Option<String> = None;
     let mut active_item: Option<TurnItem> = None;
+    let mut pending_stream_deltas = PendingStreamDeltas::default();
     let mut active_tool_argument_diff_consumer: Option<(
         String,
         Box<dyn ToolArgumentDiffConsumer>,
@@ -2100,6 +2224,7 @@ async fn try_run_sampling_request(
         match event {
             ResponseEvent::Created => {}
             ResponseEvent::OutputItemDone(item) => {
+                pending_stream_deltas.clear_for_completed_item(&item);
                 if let Some((_, mut consumer)) = active_tool_argument_diff_consumer.take()
                     && let Some(event) = consumer.flush_on_complete()
                 {
@@ -2202,6 +2327,7 @@ async fn try_run_sampling_request(
                     let mut turn_item = turn_item;
                     let mut seeded_parsed: Option<ParsedAssistantTextDelta> = None;
                     let mut seeded_item_id: Option<String> = None;
+                    let mut seeded_message_text = false;
                     if matches!(turn_item, TurnItem::AgentMessage(_))
                         && let Some(raw_text) = raw_assistant_output_text_from_item(&item)
                     {
@@ -2220,6 +2346,7 @@ async fn try_run_sampling_request(
                         }
                         seeded_parsed = plan_mode.then_some(seeded);
                         seeded_item_id = Some(item_id);
+                        seeded_message_text = !raw_text.is_empty();
                     }
                     if let Some(state) = plan_mode_state.as_mut()
                         && matches!(turn_item, TurnItem::AgentMessage(_))
@@ -2244,6 +2371,41 @@ async fn try_run_sampling_request(
                             parsed,
                         )
                         .await;
+                    }
+                    match &turn_item {
+                        TurnItem::AgentMessage(_) => {
+                            if seeded_message_text {
+                                pending_stream_deltas.take_output_text();
+                            } else {
+                                let item_id = turn_item.id();
+                                replay_pending_output_text_deltas(
+                                    &mut pending_stream_deltas,
+                                    &mut assistant_message_stream_parsers,
+                                    &sess,
+                                    &turn_context,
+                                    plan_mode_state.as_mut(),
+                                    &item_id,
+                                )
+                                .await;
+                            }
+                        }
+                        TurnItem::Reasoning(_) => {
+                            if reasoning_item_added_is_empty(&item) {
+                                let item_id = turn_item.id();
+                                replay_pending_reasoning_deltas(
+                                    &mut pending_stream_deltas,
+                                    &sess,
+                                    &turn_context,
+                                    &item_id,
+                                )
+                                .await;
+                            } else {
+                                pending_stream_deltas.take_reasoning_summary();
+                                pending_stream_deltas.take_reasoning_section_breaks();
+                                pending_stream_deltas.take_reasoning_raw();
+                            }
+                        }
+                        _ => {}
                     }
                     active_item = Some(turn_item);
                 }
@@ -2328,7 +2490,7 @@ async fn try_run_sampling_request(
                             .await;
                     }
                 } else {
-                    error_or_panic("OutputTextDelta without active item".to_string());
+                    pending_stream_deltas.push_output_text(delta);
                 }
             }
             ResponseEvent::ToolCallInputDelta {
@@ -2364,7 +2526,7 @@ async fn try_run_sampling_request(
                     sess.send_event(&turn_context, EventMsg::ReasoningContentDelta(event))
                         .await;
                 } else {
-                    error_or_panic("ReasoningSummaryDelta without active item".to_string());
+                    pending_stream_deltas.push_reasoning_summary(summary_index, delta);
                 }
             }
             ResponseEvent::ReasoningSummaryPartAdded { summary_index } => {
@@ -2376,7 +2538,7 @@ async fn try_run_sampling_request(
                         });
                     sess.send_event(&turn_context, event).await;
                 } else {
-                    error_or_panic("ReasoningSummaryPartAdded without active item".to_string());
+                    pending_stream_deltas.push_reasoning_section_break(summary_index);
                 }
             }
             ResponseEvent::ReasoningContentDelta {
@@ -2394,7 +2556,7 @@ async fn try_run_sampling_request(
                     sess.send_event(&turn_context, EventMsg::ReasoningRawContentDelta(event))
                         .await;
                 } else {
-                    error_or_panic("ReasoningRawContentDelta without active item".to_string());
+                    pending_stream_deltas.push_reasoning_raw(content_index, delta);
                 }
             }
         }

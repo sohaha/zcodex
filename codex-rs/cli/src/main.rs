@@ -1944,12 +1944,12 @@ fn localize_help_subcommand(cmd: clap::Command) -> clap::Command {
         .any(|subcmd| subcmd.get_name() == "help")
     {
         cmd.mut_subcommand("help", |subcmd| {
-            let subcmd = subcmd.about("显示此消息或指定子命令的帮助");
+            let subcmd = subcmd.about("显示此消息或指定子命令的帮助。");
             if subcmd
                 .get_arguments()
                 .any(|arg| arg.get_id().as_str() == "subcommand")
             {
-                subcmd.mut_arg("subcommand", |arg| arg.help("显示指定子命令的帮助"))
+                subcmd.mut_arg("subcommand", |arg| arg.help("显示指定子命令的帮助。"))
             } else {
                 subcmd
             }
@@ -1969,27 +1969,27 @@ fn localize_help_output(output: String) -> String {
         .replace("[default:", "[默认：")
         .replace(
             "Print this message or the help of the given subcommand(s)",
-            "显示此消息或指定子命令的帮助",
+            "显示此消息或指定子命令的帮助。",
         )
         .replace(
             "Print this message or the help of the given\nsubcommand(s)",
-            "显示此消息或指定子命令的帮助",
+            "显示此消息或指定子命令的帮助。",
         )
         .replace(
             "Print this message or the help of the given\n                 subcommand(s)",
-            "显示此消息或指定子命令的帮助",
+            "显示此消息或指定子命令的帮助。",
         )
-        .replace("Print help for the subcommand(s)", "显示指定子命令的帮助")
+        .replace("Print help for the subcommand(s)", "显示指定子命令的帮助。")
         .replace(
             "Print help (see a summary with '-h')",
-            "显示帮助（使用 '-h' 查看摘要）",
+            "显示帮助（使用 '-h' 查看摘要）。",
         )
         .replace(
             "Print help (see more with '--help')",
-            "显示帮助（使用 '--help' 查看更多）",
+            "显示帮助（使用 '--help' 查看更多）。",
         )
-        .replace("Print help", "显示帮助")
-        .replace("Print version", "显示版本")
+        .replace("Print help", "显示帮助。")
+        .replace("Print version", "显示版本。")
         .replace("Possible values:", "可选值：")
         .replace("[possible values:", "[可选值：")
         .replace("error: invalid value", "错误：无效的值")
@@ -2248,6 +2248,41 @@ mod tests {
     }
 
     #[test]
+    fn help_output_localizes_shared_cli_option_descriptions() {
+        let help = localize_help_output(localized_multitool_command().render_help().to_string());
+
+        for expected in [
+            "可选的初始提示附加图片",
+            "Agent 应使用的模型",
+            "使用开源 provider",
+            "指定要使用的本地 provider",
+            "从 config.toml 中选择配置 profile 以指定默认选项",
+            "选择执行模型生成 shell 命令时使用的沙盒策略",
+            "低摩擦沙盒自动执行的便捷别名",
+            "跳过所有确认提示，并在无沙盒下执行命令",
+            "让 agent 使用指定目录作为工作根目录",
+            "指定除主工作区外还应允许写入的额外目录",
+        ] {
+            assert!(help.contains(expected), "{help}");
+        }
+
+        for unexpected in [
+            "Optional image(s) to attach to the initial prompt",
+            "Model the agent should use",
+            "Use open-source provider",
+            "Specify which local provider to use",
+            "Configuration profile from config.toml to specify default options",
+            "Select the sandbox policy to use when executing model-generated shell commands",
+            "Convenience alias for low-friction sandboxed automatic execution",
+            "Skip all confirmation prompts and execute commands without sandboxing",
+            "Tell the agent to use the specified directory as its working root",
+            "Additional directories that should be writable alongside the primary workspace",
+        ] {
+            assert!(!help.contains(unexpected), "{help}");
+        }
+    }
+
+    #[test]
     fn multitool_command_debug_asserts() {
         localized_multitool_command().debug_assert();
     }
@@ -2260,7 +2295,7 @@ mod tests {
         let help_subcommand = command.find_subcommand("help").expect("help subcommand");
         assert_eq!(
             help_subcommand.get_about().map(ToString::to_string),
-            Some("显示此消息或指定子命令的帮助".to_string())
+            Some("显示此消息或指定子命令的帮助。".to_string())
         );
 
         if let Some(arg) = help_subcommand
@@ -2269,7 +2304,7 @@ mod tests {
         {
             assert_eq!(
                 arg.get_help().map(ToString::to_string),
-                Some("显示指定子命令的帮助".to_string())
+                Some("显示指定子命令的帮助。".to_string())
             );
         }
     }

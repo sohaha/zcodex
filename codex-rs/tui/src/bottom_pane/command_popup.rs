@@ -523,10 +523,12 @@ mod tests {
             connectors_enabled: false,
             plugins_command_enabled: false,
             fast_command_enabled: false,
+            goal_command_enabled: false,
             personality_command_enabled: true,
             realtime_conversation_enabled: false,
             audio_device_selection_enabled: false,
             windows_degraded_sandbox_active: false,
+            side_conversation_active: false,
         });
         popup.on_composer_text_change("/zteam".to_string());
 

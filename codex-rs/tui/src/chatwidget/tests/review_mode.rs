@@ -161,7 +161,7 @@ async fn live_core_review_prompt_item_is_not_rendered() {
     });
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1);
-    assert!(lines_to_single_string(&cells[0]).contains("Code review started"));
+    assert!(lines_to_single_string(&cells[0]).contains("代码评审已开始"));
 
     complete_user_message(
         &mut chat,
@@ -190,7 +190,7 @@ async fn live_app_server_review_prompt_item_is_not_rendered() {
     );
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1);
-    assert!(lines_to_single_string(&cells[0]).contains("Code review started"));
+    assert!(lines_to_single_string(&cells[0]).contains("代码评审已开始"));
 
     chat.handle_server_notification(
         ServerNotification::ItemCompleted(ItemCompletedNotification {

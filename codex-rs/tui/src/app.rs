@@ -168,7 +168,6 @@ use ratatui::widgets::Wrap;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -203,8 +202,6 @@ use self::app_server_requests::PendingAppServerRequests;
 use self::loaded_threads::find_loaded_subagent_threads_for_primary;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 use self::platform_actions::*;
-use self::side::SideParentStatus;
-use self::side::SideParentStatusChange;
 use self::side::SideThreadState;
 use self::startup_prompts::*;
 
@@ -3529,6 +3526,44 @@ impl App {
     ) -> bool {
         let existing_entry = self.agent_navigation.get(&thread_id).cloned();
         let has_replay_channel = self.thread_event_channels.contains_key(&thread_id);
+        if !has_replay_channel {
+            match app_server
+                .thread_loaded_list(ThreadLoadedListParams {
+                    cursor: None,
+                    limit: None,
+                })
+                .await
+            {
+                Ok(response) => {
+                    let is_loaded = response
+                        .data
+                        .iter()
+                        .any(|loaded_thread_id| loaded_thread_id == &thread_id.to_string());
+                    if !is_loaded {
+                        self.agent_navigation.remove(thread_id);
+                        self.sync_active_agent_label();
+                        return false;
+                    }
+                    if let Some(entry) = existing_entry {
+                        self.upsert_agent_picker_thread(
+                            thread_id,
+                            entry.agent_nickname,
+                            entry.agent_role,
+                            /*is_closed*/ false,
+                        );
+                    }
+                    return true;
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        %err,
+                        "failed to list loaded threads for agent picker liveness refresh"
+                    );
+                    return true;
+                }
+            }
+        }
+
         match app_server
             .thread_read(thread_id, /*include_turns*/ false)
             .await
@@ -3556,6 +3591,7 @@ impl App {
             Err(err) => {
                 if Self::is_terminal_thread_read_error(&err) && !has_replay_channel {
                     self.agent_navigation.remove(thread_id);
+                    self.sync_active_agent_label();
                     return false;
                 }
                 let is_closed = Self::closed_state_for_thread_read_error(
@@ -7511,7 +7547,7 @@ mod tests {
     use crate::legacy_core::config::ConfigOverrides;
     use codex_app_server_protocol::AdditionalFileSystemPermissions;
     use codex_app_server_protocol::AdditionalNetworkPermissions;
-    use codex_app_server_protocol::AdditionalPermissionProfile;
+    use codex_app_server_protocol::AdditionalPermissionProfile as AppServerAdditionalPermissionProfile;
     use codex_app_server_protocol::AgentMessageDeltaNotification;
     use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
     use codex_app_server_protocol::ConfigWarningNotification;
@@ -7557,9 +7593,9 @@ mod tests {
     use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::Settings;
     use codex_protocol::mcp::Tool;
+    use codex_protocol::models::AdditionalPermissionProfile as CoreAdditionalPermissionProfile;
     use codex_protocol::models::FileSystemPermissions;
     use codex_protocol::models::NetworkPermissions;
-    use codex_protocol::models::PermissionProfile;
     use codex_protocol::openai_models::ModelAvailabilityNux;
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::Event;
@@ -7703,13 +7739,16 @@ mod tests {
                 /*animations_enabled*/ false,
             )));
 
-        app.handle_mcp_inventory_result(Ok(vec![McpServerStatus {
-            name: "docs".to_string(),
-            tools: HashMap::new(),
-            resources: Vec::new(),
-            resource_templates: Vec::new(),
-            auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
-        }]));
+        app.handle_mcp_inventory_result(
+            Ok(vec![McpServerStatus {
+                name: "docs".to_string(),
+                tools: HashMap::new(),
+                resources: Vec::new(),
+                resource_templates: Vec::new(),
+                auth_status: codex_app_server_protocol::McpAuthStatus::Unsupported,
+            }]),
+            McpServerStatusDetail::ToolsAndAuthOnly,
+        );
 
         assert_eq!(app.transcript_cells.len(), 0);
     }
@@ -9372,6 +9411,7 @@ mod tests {
                 approval_policy: Some(guardian_approvals.approval_policy),
                 approvals_reviewer: Some(guardian_approvals.approvals_reviewer),
                 sandbox_policy: Some(guardian_approvals.sandbox_policy.clone()),
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9426,9 +9466,9 @@ mod tests {
             .set_enabled(Feature::GuardianApproval, /*enabled*/ true)?;
         app.chat_widget
             .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
-        app.config.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+        app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
         app.chat_widget
-            .set_approvals_reviewer(ApprovalsReviewer::GuardianSubagent);
+            .set_approvals_reviewer(ApprovalsReviewer::AutoReview);
         app.config
             .permissions
             .approval_policy
@@ -9469,6 +9509,7 @@ mod tests {
                 approval_policy: None,
                 approvals_reviewer: Some(ApprovalsReviewer::User),
                 sandbox_policy: None,
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9554,6 +9595,7 @@ mod tests {
                 approval_policy: Some(guardian_approvals.approval_policy),
                 approvals_reviewer: Some(guardian_approvals.approvals_reviewer),
                 sandbox_policy: Some(guardian_approvals.sandbox_policy.clone()),
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9611,6 +9653,7 @@ mod tests {
                 approval_policy: None,
                 approvals_reviewer: Some(ApprovalsReviewer::User),
                 sandbox_policy: None,
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9673,6 +9716,7 @@ mod tests {
                 approval_policy: Some(guardian_approvals.approval_policy),
                 approvals_reviewer: Some(guardian_approvals.approvals_reviewer),
                 sandbox_policy: Some(guardian_approvals.sandbox_policy.clone()),
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9734,9 +9778,9 @@ guardian_approval = true
             .set_enabled(Feature::GuardianApproval, /*enabled*/ true)?;
         app.chat_widget
             .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
-        app.config.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+        app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
         app.chat_widget
-            .set_approvals_reviewer(ApprovalsReviewer::GuardianSubagent);
+            .set_approvals_reviewer(ApprovalsReviewer::AutoReview);
 
         app.update_feature_flags(vec![(Feature::GuardianApproval, false)])
             .await;
@@ -9760,6 +9804,7 @@ guardian_approval = true
                 approval_policy: None,
                 approvals_reviewer: Some(ApprovalsReviewer::User),
                 sandbox_policy: None,
+                permission_profile: None,
                 windows_sandbox_level: None,
                 model: None,
                 effort: None,
@@ -9819,9 +9864,9 @@ guardian_approval = true
             .set_enabled(Feature::GuardianApproval, /*enabled*/ true)?;
         app.chat_widget
             .set_feature_enabled(Feature::GuardianApproval, /*enabled*/ true);
-        app.config.approvals_reviewer = ApprovalsReviewer::GuardianSubagent;
+        app.config.approvals_reviewer = ApprovalsReviewer::AutoReview;
         app.chat_widget
-            .set_approvals_reviewer(ApprovalsReviewer::GuardianSubagent);
+            .set_approvals_reviewer(ApprovalsReviewer::AutoReview);
 
         app.update_feature_flags(vec![(Feature::GuardianApproval, false)])
             .await;
@@ -9833,13 +9878,10 @@ guardian_approval = true
                 .features
                 .enabled(Feature::GuardianApproval)
         );
-        assert_eq!(
-            app.config.approvals_reviewer,
-            ApprovalsReviewer::GuardianSubagent
-        );
+        assert_eq!(app.config.approvals_reviewer, ApprovalsReviewer::AutoReview);
         assert_eq!(
             app.chat_widget.config_ref().approvals_reviewer,
-            ApprovalsReviewer::GuardianSubagent
+            ApprovalsReviewer::AutoReview
         );
         assert!(
             op_rx.try_recv().is_err(),
@@ -10028,13 +10070,15 @@ guardian_approval = true
             host: "example.com".to_string(),
             protocol: AppServerNetworkApprovalProtocol::Socks5Tcp,
         });
-        params.additional_permissions = Some(AdditionalPermissionProfile {
+        params.additional_permissions = Some(AppServerAdditionalPermissionProfile {
             network: Some(AdditionalNetworkPermissions {
                 enabled: Some(true),
             }),
             file_system: Some(AdditionalFileSystemPermissions {
                 read: Some(vec![test_absolute_path("/tmp/read-only")]),
                 write: Some(vec![test_absolute_path("/tmp/write")]),
+                glob_scan_max_depth: None,
+                entries: None,
             }),
         });
         params.proposed_network_policy_amendments = Some(vec![AppServerNetworkPolicyAmendment {
@@ -10063,14 +10107,14 @@ guardian_approval = true
         );
         assert_eq!(
             additional_permissions,
-            Some(PermissionProfile {
+            Some(CoreAdditionalPermissionProfile {
                 network: Some(NetworkPermissions {
                     enabled: Some(true),
                 }),
-                file_system: Some(FileSystemPermissions {
-                    read: Some(vec![test_absolute_path("/tmp/read-only")]),
-                    write: Some(vec![test_absolute_path("/tmp/write")]),
-                }),
+                file_system: Some(FileSystemPermissions::from_read_write_roots(
+                    Some(vec![test_absolute_path("/tmp/read-only")]),
+                    Some(vec![test_absolute_path("/tmp/write")]),
+                )),
             })
         );
         assert_eq!(
@@ -10134,6 +10178,7 @@ guardian_approval = true
                 thread_id: thread_id.to_string(),
                 turn_id: "turn-approval".to_string(),
                 item_id: "call-approval".to_string(),
+                cwd: app.config.cwd.clone(),
                 reason: Some("Need access to .git".to_string()),
                 permissions: codex_app_server_protocol::RequestPermissionProfile {
                     network: Some(AdditionalNetworkPermissions {
@@ -10142,6 +10187,8 @@ guardian_approval = true
                     file_system: Some(AdditionalFileSystemPermissions {
                         read: Some(vec![test_absolute_path("/tmp/read-only")]),
                         write: Some(vec![test_absolute_path("/tmp/write")]),
+                        glob_scan_max_depth: None,
+                        entries: None,
                     }),
                 },
             },
@@ -10163,10 +10210,10 @@ guardian_approval = true
                 network: Some(NetworkPermissions {
                     enabled: Some(true),
                 }),
-                file_system: Some(FileSystemPermissions {
-                    read: Some(vec![test_absolute_path("/tmp/read-only")]),
-                    write: Some(vec![test_absolute_path("/tmp/write")]),
-                }),
+                file_system: Some(FileSystemPermissions::from_read_write_roots(
+                    Some(vec![test_absolute_path("/tmp/read-only")]),
+                    Some(vec![test_absolute_path("/tmp/write")]),
+                )),
             }
         );
     }
@@ -10268,6 +10315,7 @@ guardian_approval = true
             timezone: None,
             approval_policy: primary_session.approval_policy,
             sandbox_policy: primary_session.sandbox_policy.clone(),
+            permission_profile: None,
             network: None,
             file_system_sandbox_policy: None,
             model: "gpt-agent".to_string(),
@@ -10600,6 +10648,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: test_path_buf("/tmp/project").abs(),
                 reasoning_effort: Some(ReasoningEffortConfig::High),
                 history_log_id: 0,
@@ -10732,6 +10781,8 @@ guardian_approval = true
             overlay: None,
             deferred_history_lines: Vec::new(),
             has_emitted_history_lines: false,
+            transcript_reflow: TranscriptReflowState::default(),
+            initial_history_replay_buffer: None,
             enhanced_keys_supported: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -10740,7 +10791,7 @@ guardian_approval = true
             backtrack_render_pending: false,
             feedback: codex_feedback::CodexFeedback::new(),
             feedback_audience: FeedbackAudience::External,
-            environment_manager: Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
+            environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
             remote_app_server_url: None,
             remote_app_server_auth_token: None,
             pending_update_action: None,
@@ -10749,6 +10800,7 @@ guardian_approval = true
             thread_event_channels: HashMap::new(),
             thread_event_listener_tasks: HashMap::new(),
             agent_navigation: AgentNavigationState::default(),
+            side_threads: HashMap::new(),
             active_thread_id: None,
             active_thread_rx: None,
             primary_thread_id: None,
@@ -10791,6 +10843,8 @@ guardian_approval = true
                 overlay: None,
                 deferred_history_lines: Vec::new(),
                 has_emitted_history_lines: false,
+                transcript_reflow: TranscriptReflowState::default(),
+                initial_history_replay_buffer: None,
                 enhanced_keys_supported: false,
                 commit_anim_running: Arc::new(AtomicBool::new(false)),
                 status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -10799,9 +10853,7 @@ guardian_approval = true
                 backtrack_render_pending: false,
                 feedback: codex_feedback::CodexFeedback::new(),
                 feedback_audience: FeedbackAudience::External,
-                environment_manager: Arc::new(EnvironmentManager::new(
-                    /*exec_server_url*/ None,
-                )),
+                environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
                 remote_app_server_url: None,
                 remote_app_server_auth_token: None,
                 pending_update_action: None,
@@ -10810,6 +10862,7 @@ guardian_approval = true
                 thread_event_channels: HashMap::new(),
                 thread_event_listener_tasks: HashMap::new(),
                 agent_navigation: AgentNavigationState::default(),
+                side_threads: HashMap::new(),
                 active_thread_id: None,
                 active_thread_rx: None,
                 primary_thread_id: None,
@@ -10868,6 +10921,7 @@ guardian_approval = true
         ThreadSessionState {
             thread_id,
             forked_from_id: None,
+            fork_parent_title: None,
             thread_name: None,
             model: "gpt-test".to_string(),
             model_provider_id: "test-provider".to_string(),
@@ -10875,6 +10929,7 @@ guardian_approval = true
             approval_policy: AskForApproval::Never,
             approvals_reviewer: ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            permission_profile: None,
             cwd: cwd.abs(),
             instruction_source_paths: Vec::new(),
             reasoning_effort: None,
@@ -11428,32 +11483,20 @@ guardian_approval = true
     async fn model_migration_prompt_only_shows_for_deprecated_models() {
         let seen = BTreeMap::new();
         assert!(should_show_model_migration_prompt(
-            "gpt-5",
-            "gpt-5.2-codex",
+            "gpt-5.2",
+            "gpt-5.4",
             &seen,
             &all_model_presets()
         ));
         assert!(should_show_model_migration_prompt(
-            "gpt-5-codex",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(should_show_model_migration_prompt(
-            "gpt-5-codex-mini",
-            "gpt-5.2-codex",
-            &seen,
-            &all_model_presets()
-        ));
-        assert!(should_show_model_migration_prompt(
-            "gpt-5.1-codex",
-            "gpt-5.2-codex",
+            "gpt-5.3-codex",
+            "gpt-5.4",
             &seen,
             &all_model_presets()
         ));
         assert!(!should_show_model_migration_prompt(
-            "gpt-5.1-codex",
-            "gpt-5.1-codex",
+            "gpt-5.3-codex",
+            "gpt-5.3-codex",
             &seen,
             &all_model_presets()
         ));
@@ -11467,10 +11510,10 @@ guardian_approval = true
         });
         let target = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5")
+            .find(|preset| preset.model == "gpt-5.4")
             .expect("target preset present");
         target.availability_nux = Some(ModelAvailabilityNux {
-            message: "gpt-5 is available".to_string(),
+            message: "gpt-5.4 is available".to_string(),
         });
 
         let selected = select_model_availability_nux(&presets, &model_availability_nux_config(&[]));
@@ -11478,8 +11521,8 @@ guardian_approval = true
         assert_eq!(
             selected,
             Some(StartupTooltipOverride {
-                model_slug: "gpt-5".to_string(),
-                message: "gpt-5 is available".to_string(),
+                model_slug: "gpt-5.4".to_string(),
+                message: "gpt-5.4 is available".to_string(),
             })
         );
     }
@@ -11490,31 +11533,31 @@ guardian_approval = true
         presets.iter_mut().for_each(|preset| {
             preset.availability_nux = None;
         });
-        let gpt_5 = presets
+        let gpt_5_4 = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5")
-            .expect("gpt-5 preset present");
-        gpt_5.availability_nux = Some(ModelAvailabilityNux {
-            message: "gpt-5 is available".to_string(),
+            .find(|preset| preset.model == "gpt-5.4")
+            .expect("gpt-5.4 preset present");
+        gpt_5_4.availability_nux = Some(ModelAvailabilityNux {
+            message: "gpt-5.4 is available".to_string(),
         });
-        let gpt_5_2 = presets
+        let gpt_5_5 = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5.2")
-            .expect("gpt-5.2 preset present");
-        gpt_5_2.availability_nux = Some(ModelAvailabilityNux {
-            message: "gpt-5.2 is available".to_string(),
+            .find(|preset| preset.model == "gpt-5.5")
+            .expect("gpt-5.5 preset present");
+        gpt_5_5.availability_nux = Some(ModelAvailabilityNux {
+            message: "gpt-5.5 is available".to_string(),
         });
 
         let selected = select_model_availability_nux(
             &presets,
-            &model_availability_nux_config(&[("gpt-5", MODEL_AVAILABILITY_NUX_MAX_SHOW_COUNT)]),
+            &model_availability_nux_config(&[("gpt-5.4", MODEL_AVAILABILITY_NUX_MAX_SHOW_COUNT)]),
         );
 
         assert_eq!(
             selected,
             Some(StartupTooltipOverride {
-                model_slug: "gpt-5.2".to_string(),
-                message: "gpt-5.2 is available".to_string(),
+                model_slug: "gpt-5.5".to_string(),
+                message: "gpt-5.5 is available".to_string(),
             })
         );
     }
@@ -11588,15 +11631,15 @@ guardian_approval = true
         });
         let first = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5")
-            .expect("gpt-5 preset present");
+            .find(|preset| preset.model == "gpt-5.4-mini")
+            .expect("gpt-5.4-mini preset present");
         first.availability_nux = Some(ModelAvailabilityNux {
             message: "first".to_string(),
         });
         let second = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5.2")
-            .expect("gpt-5.2 preset present");
+            .find(|preset| preset.model == "gpt-5.4")
+            .expect("gpt-5.4 preset present");
         second.availability_nux = Some(ModelAvailabilityNux {
             message: "second".to_string(),
         });
@@ -11606,7 +11649,7 @@ guardian_approval = true
         assert_eq!(
             selected,
             Some(StartupTooltipOverride {
-                model_slug: "gpt-5.2".to_string(),
+                model_slug: "gpt-5.4".to_string(),
                 message: "second".to_string(),
             })
         );
@@ -11620,15 +11663,15 @@ guardian_approval = true
         });
         let target = presets
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5")
+            .find(|preset| preset.model == "gpt-5.4")
             .expect("target preset present");
         target.availability_nux = Some(ModelAvailabilityNux {
-            message: "gpt-5 is available".to_string(),
+            message: "gpt-5.4 is available".to_string(),
         });
 
         let selected = select_model_availability_nux(
             &presets,
-            &model_availability_nux_config(&[("gpt-5", MODEL_AVAILABILITY_NUX_MAX_SHOW_COUNT)]),
+            &model_availability_nux_config(&[("gpt-5.4", MODEL_AVAILABILITY_NUX_MAX_SHOW_COUNT)]),
         );
 
         assert_eq!(selected, None);
@@ -11637,16 +11680,16 @@ guardian_approval = true
     #[tokio::test]
     async fn model_migration_prompt_respects_hide_flag_and_self_target() {
         let mut seen = BTreeMap::new();
-        seen.insert("gpt-5".to_string(), "gpt-5.1".to_string());
+        seen.insert("gpt-5.2".to_string(), "gpt-5.4".to_string());
         assert!(!should_show_model_migration_prompt(
-            "gpt-5",
-            "gpt-5.1",
+            "gpt-5.2",
+            "gpt-5.4",
             &seen,
             &all_model_presets()
         ));
         assert!(!should_show_model_migration_prompt(
-            "gpt-5.1",
-            "gpt-5.1",
+            "gpt-5.4",
+            "gpt-5.4",
             &seen,
             &all_model_presets()
         ));
@@ -11657,7 +11700,7 @@ guardian_approval = true
         let mut available = all_model_presets();
         let mut current = available
             .iter()
-            .find(|preset| preset.model == "gpt-5-codex")
+            .find(|preset| preset.model == "gpt-5.2")
             .cloned()
             .expect("preset present");
         current.upgrade = Some(ModelUpgrade {
@@ -11668,7 +11711,7 @@ guardian_approval = true
             upgrade_copy: None,
             migration_markdown: None,
         });
-        available.retain(|preset| preset.model != "gpt-5-codex");
+        available.retain(|preset| preset.model != "gpt-5.2");
         available.push(current.clone());
 
         assert!(!should_show_model_migration_prompt(
@@ -11683,17 +11726,17 @@ guardian_approval = true
         let mut with_hidden_target = all_model_presets();
         let target = with_hidden_target
             .iter_mut()
-            .find(|preset| preset.model == "gpt-5.2-codex")
+            .find(|preset| preset.model == "gpt-5.4")
             .expect("target preset present");
         target.show_in_picker = false;
 
         assert!(!should_show_model_migration_prompt(
-            "gpt-5-codex",
-            "gpt-5.2-codex",
+            "gpt-5.2",
+            "gpt-5.4",
             &BTreeMap::new(),
             &with_hidden_target,
         ));
-        assert!(target_preset_for_upgrade(&with_hidden_target, "gpt-5.2-codex").is_none());
+        assert!(target_preset_for_upgrade(&with_hidden_target, "gpt-5.4").is_none());
     }
 
     #[tokio::test]
@@ -11707,18 +11750,17 @@ guardian_approval = true
 
         let mut available_models = all_model_presets();
         let current = available_models
-            .iter()
-            .find(|preset| preset.model == "gpt-5.1-codex")
-            .cloned()
-            .expect("gpt-5.1-codex preset present");
+            .iter_mut()
+            .find(|preset| preset.model == "gpt-5.3-codex")
+            .expect("gpt-5.3-codex preset present");
+        current.show_in_picker = false;
+        let current = current.clone();
         assert!(
             !current.show_in_picker,
-            "expected gpt-5.1-codex to be hidden from picker for this test"
+            "expected gpt-5.3-codex to be hidden from picker for this test"
         );
 
         let upgrade = current.upgrade.as_ref().expect("upgrade configured");
-        // Test "hidden current model still prompts" even if bundled
-        // catalog data changes the target model's picker visibility.
         available_models
             .iter_mut()
             .find(|preset| preset.model == upgrade.id)
@@ -11849,6 +11891,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: next_cwd.clone().abs(),
                 reasoning_effort: None,
                 history_log_id: 0,
@@ -11965,6 +12008,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: test_path_buf("/home/user/project").abs(),
                 reasoning_effort: None,
                 history_log_id: 0,
@@ -12028,6 +12072,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: test_path_buf("/home/user/project").abs(),
                 reasoning_effort: None,
                 history_log_id: 0,
@@ -12121,6 +12166,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: test_path_buf("/home/user/project").abs(),
                 reasoning_effort: None,
                 history_log_id: 0,
@@ -12501,6 +12547,7 @@ guardian_approval = true
             approval_policy: AskForApproval::Never,
             approvals_reviewer: ApprovalsReviewer::User,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            permission_profile: None,
             cwd: test_path_buf("/home/user/project").abs(),
             reasoning_effort: None,
             history_log_id: 0,
@@ -12617,6 +12664,7 @@ guardian_approval = true
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: ApprovalsReviewer::User,
                 sandbox_policy: SandboxPolicy::new_read_only_policy(),
+                permission_profile: None,
                 cwd: test_path_buf("/tmp/project").abs(),
                 reasoning_effort: None,
                 history_log_id: 0,
@@ -12718,7 +12766,7 @@ guardian_approval = true
     }
 
     #[tokio::test]
-    async fn session_summary_prefers_name_over_id() {
+    async fn session_summary_uses_id_even_when_thread_has_name() {
         let usage = TokenUsage {
             input_tokens: 10,
             output_tokens: 2,
@@ -12739,7 +12787,7 @@ guardian_approval = true
         .expect("summary");
         assert_eq!(
             summary.resume_command,
-            Some("codex resume my-session".to_string())
+            Some("codex resume 123e4567-e89b-12d3-a456-426614174000".to_string())
         );
     }
 }

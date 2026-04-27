@@ -1,8 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 2050
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
+
+
+
+
+
+
+
+
 
 
 
@@ -30,14 +37,6 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
     读取 diff_render.rs
 
 • Investigating rendering code (0s • esc 中断)
-  .------------.
-  | 轻轻漂来。 |
-  '------------.
-    \
-  }~   ~{
-  ( ^..^ )
-   \__/
-  Ripple ★ 常见 美西螈 · 坐立不安
 
 
 › Summarize recent commits

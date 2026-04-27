@@ -951,7 +951,7 @@ approval_policy = "never"
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(rendered.contains("hooks:"));
         assert!(rendered.contains("handlers=1"));
-        assert!(rendered.contains("(source: cloud requirements)"));
+        assert!(rendered.contains("(来源: cloud requirements)"));
     }
 
     #[test]

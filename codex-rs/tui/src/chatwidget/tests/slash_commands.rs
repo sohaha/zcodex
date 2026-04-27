@@ -38,6 +38,16 @@ fn queue_composer_text_with_tab(chat: &mut ChatWidget, text: &str) {
     chat.handle_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
 }
 
+fn turn_complete_event(turn_id: &str, last_agent_message: Option<&str>) -> TurnCompleteEvent {
+    TurnCompleteEvent {
+        turn_id: turn_id.to_string(),
+        last_agent_message: last_agent_message.map(str::to_string),
+        completed_at: None,
+        duration_ms: None,
+        time_to_first_token_ms: None,
+    }
+}
+
 fn recall_latest_after_clearing(chat: &mut ChatWidget) -> String {
     chat.bottom_pane
         .set_composer_text(String::new(), Vec::new(), Vec::new());
@@ -349,8 +359,9 @@ async fn assert_cancelled_queued_menu_drains_next_input(command: &str, expected_
 
     assert_eq!(chat.queued_user_messages.len(), 1);
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains(expected_popup_text),
+        normalized_popup.contains(&normalize_rendered_text(expected_popup_text)),
         "expected {command} menu to open; popup:\n{popup}"
     );
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
@@ -372,9 +383,8 @@ async fn assert_cancelled_queued_menu_drains_next_input(command: &str, expected_
 
 #[tokio::test]
 async fn queued_slash_menu_cancel_drains_next_input() {
-    assert_cancelled_queued_menu_drains_next_input("/model", "Select Model").await;
-    assert_cancelled_queued_menu_drains_next_input("/permissions", "Update Model Permissions")
-        .await;
+    assert_cancelled_queued_menu_drains_next_input("/model", "选择模型").await;
+    assert_cancelled_queued_menu_drains_next_input("/permissions", "更新权限设置").await;
 }
 
 #[tokio::test]
@@ -400,8 +410,9 @@ async fn queued_slash_menu_selection_drains_next_input() {
     });
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
+    let normalized_popup = normalize_rendered_text(&popup);
     assert!(
-        popup.contains("Update Model Permissions"),
+        normalized_popup.contains("更新权限设置"),
         "expected permissions menu to open; popup:\n{popup}"
     );
 
@@ -444,7 +455,8 @@ async fn queued_bare_rename_drains_next_input_after_name_update() {
     });
 
     assert_eq!(chat.queued_user_messages.len(), 1);
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Name thread"));
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(normalize_rendered_text(&popup).contains("命名线程"));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 
     chat.handle_paste("Queued rename".to_string());
@@ -1759,6 +1771,7 @@ async fn slash_copy_state_clears_on_thread_rollback() {
             last_agent_message: Some("Reply that will be rolled back".to_string()),
             completed_at: None,
             duration_ms: None,
+            time_to_first_token_ms: None,
         }),
     });
     chat.handle_codex_event(Event {
@@ -1964,6 +1977,7 @@ async fn slash_copy_does_not_return_stale_output_after_thread_rollback() {
             last_agent_message: None,
             completed_at: None,
             duration_ms: None,
+            time_to_first_token_ms: None,
         }),
     });
     let _ = drain_insert_history(&mut rx);
@@ -2066,7 +2080,8 @@ async fn queued_menu_slash_keeps_agent_turn_complete_notification() {
         chat.pending_notification,
         Some(Notification::AgentTurnComplete { ref response }) if response == "Done"
     );
-    assert!(render_bottom_popup(&chat, /*width*/ 80).contains("Select Model"));
+    let popup = render_bottom_popup(&chat, /*width*/ 80);
+    assert!(normalize_rendered_text(&popup).contains("选择模型"));
     assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
 }
 
@@ -2083,7 +2098,7 @@ async fn slash_copy_uses_latest_surviving_response_after_rollback() {
             text_elements: Vec::new(),
         }),
     });
-    chat.handle_codex_event_replay(Event {
+    chat.handle_codex_event(Event {
         id: "agent-1".into(),
         msg: EventMsg::AgentMessage(AgentMessageEvent {
             message: "foo response".to_string(),
@@ -2100,7 +2115,7 @@ async fn slash_copy_uses_latest_surviving_response_after_rollback() {
             text_elements: Vec::new(),
         }),
     });
-    chat.handle_codex_event_replay(Event {
+    chat.handle_codex_event(Event {
         id: "agent-2".into(),
         msg: EventMsg::AgentMessage(AgentMessageEvent {
             message: "bar response".to_string(),
@@ -2133,7 +2148,7 @@ async fn slash_copy_reports_when_rewind_exceeds_retained_copy_history() {
             text_elements: Vec::new(),
         }),
     });
-    chat.handle_codex_event_replay(Event {
+    chat.handle_codex_event(Event {
         id: "agent-1".into(),
         msg: EventMsg::AgentMessage(AgentMessageEvent {
             message: "foo response".to_string(),
@@ -2149,9 +2164,7 @@ async fn slash_copy_reports_when_rewind_exceeds_retained_copy_history() {
     let cells = drain_insert_history(&mut rx);
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains(
-            "Cannot copy that response after rewinding. Only the most recent 32 responses are available to /copy."
-        ),
+        rendered.contains("回退后无法复制该回复。/copy 只能使用最近 32 条回复。"),
         "expected evicted-history message, got {rendered:?}"
     );
 }
@@ -2238,7 +2251,7 @@ async fn slash_mcp_requests_inventory_via_app_server() {
     chat.dispatch_command(SlashCommand::Mcp);
 
     assert!(active_blob(&chat).contains("正在加载 MCP 清单"));
-    assert_matches!(rx.try_recv(), Ok(AppEvent::FetchMcpInventory));
+    assert_matches!(rx.try_recv(), Ok(AppEvent::FetchMcpInventory { detail: _ }));
     assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
 }
 

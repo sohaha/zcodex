@@ -2315,12 +2315,12 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
 
     let before_escape = render_bottom_popup(&chat, /*width*/ 80);
     let normalized_before_escape = normalize_rendered_text(&before_escape);
-    assert!(normalized_before_escape.contains("选择gpt-5.1-codex-max的推理级别"));
+    assert!(normalized_before_escape.contains("选择gpt-5.4的推理级别"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 80);
     let normalized_after_escape = normalize_rendered_text(&after_escape);
     assert!(normalized_after_escape.contains("选择模型与推理级别"));
-    assert!(!normalized_after_escape.contains("选择gpt-5.1-codex-max的推理级别"));
+    assert!(!normalized_after_escape.contains("选择gpt-5.4的推理级别"));
 }

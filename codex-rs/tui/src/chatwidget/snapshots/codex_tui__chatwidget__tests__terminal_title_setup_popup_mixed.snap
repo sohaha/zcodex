@@ -2,19 +2,19 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: terminal_title_popup_snapshot(&mut chat)
 ---
-  Configure Terminal Title
-  Select which items to display in the terminal title.
+  配 置 终 端 标 题
+  选 择 要 在 终 端 标 题 中 显 示 的 项 目
 
-  Type to search
+  输 入 搜 索
   >
-› [x] project-name   Project name (falls back to current directory name)
-  [x] thread-title   Current thread title (omitted when unavailable)
-  [x] task-progress  Latest task progress from update_plan (omitted until available)
-  [ ] app-name       Codex app name
-  [ ] current-dir    Current working directory
-  [ ] spinner        Animated task spinner (omitted while idle or when animations are off)
-  [ ] run-state      Compact session run-state text (Ready, Working, Thinking)
-  [ ] git-branch     Current Git branch (omitted when unavailable)
+› [x] project-name   项 目 名 称 （ 回 退 到 当 前 目 录 名 ）
+  [x] thread-title   当 前 线 程 标 题 （ 可 用 前 省 略 ）
+  [x] task-progress  最 新 任 务 进 度 （ 可 用 前 省 略 ）
+  [ ] app-name       Codex 应 用 名 称
+  [ ] current-dir    当 前 工 作 目 录
+  [ ] spinner        动 画 任 务 指 示 器 （ 空 闲 或 动 画 关 闭 时 省 略 ）
+  [ ] run-state      会 话 状 态 文 本 （ 就 绪 /处 理 中 /思 考 中 ）
+  [ ] git-branch     当 前  Git 分 支 （ 不 可 用 时 省 略 ）
 
   project | Mixed preview thread | Tasks 0/0
-  Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc to cancel.
+  使 用  ↑↓ 导 航 ， ←→ 移 动 ， 空 格 选 择 ， 回 车 确 认 ， Esc 取 消 。

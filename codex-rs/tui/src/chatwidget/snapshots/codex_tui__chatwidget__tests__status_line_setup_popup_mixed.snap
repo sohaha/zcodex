@@ -2,19 +2,19 @@
 source: tui/src/chatwidget/tests/status_surface_previews.rs
 expression: status_line_popup_snapshot(&mut chat)
 ---
-  Configure Status Line
-  Select which items to display in the status line.
+  配 置 状 态 栏
+  选 择 要 在 状 态 栏 中 显 示 的 项 目
 
-  Type to search
+  输 入 搜 索
   >
-› [x] project-name          Project name (omitted when unavailable)
-  [x] git-branch            Current Git branch (omitted when unavailable)
-  [x] thread-title          Current thread title (omitted when unavailable)
-  [ ] model                 Current model name
-  [ ] model-with-reasoning  Current model name with reasoning level
-  [ ] current-dir           Current working directory
-  [ ] run-state             Compact session run-state text (Ready, Working, Thinking)
-  [ ] context-remaining     Percentage of context window remaining (omitted when unknown)
+› [x] project-name          项 目 根 目 录 （ 不 可 用 时 省 略 ）
+  [x] git-branch            当 前  Git 分 支 （ 不 可 用 时 省 略 ）
+  [x] thread-title          当 前 线 程 标 题 （ 未 更 改 时 省 略 ）
+  [ ] model                 当 前 模 型 名 称
+  [ ] model-with-reasoning  当 前 模 型 名 称 及 推 理 级 别
+  [ ] current-dir           当 前 工 作 目 录
+  [ ] run-state             会 话 状 态 文 本 （ 就 绪 /处 理 中 /思 考 中 ）
+  [ ] context-remaining     上 下 文 窗 口 剩 余 百 分 比 （ 未 知 时 省 略 ）
 
   my-project · feature/mixed-preview · Mixed preview thread
-  Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc to cancel.
+  使 用  ↑↓ 导 航 ， ←→ 移 动 ， 空 格 选 择 ， 回 车 确 认 ， Esc 取 消 。

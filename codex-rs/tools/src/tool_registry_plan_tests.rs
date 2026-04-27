@@ -117,8 +117,10 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         vec![
             create_spawn_agent_tool_v2(spawn_agent_tool_options(&config)),
             create_send_message_tool(),
+            create_followup_task_tool(),
             create_wait_agent_tool_v2(wait_agent_timeout_options()),
             create_close_agent_tool_v2(),
+            create_list_agents_tool(),
         ]
     } else {
         vec![
@@ -140,6 +142,8 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         let spec = create_request_permissions_tool(request_permissions_tool_description());
         expected.insert(spec.name().to_string(), spec);
     }
+    let spec = create_tldr_tool();
+    expected.insert(spec.name().to_string(), spec);
 
     assert_eq!(
         actual.keys().collect::<Vec<_>>(),
@@ -182,18 +186,26 @@ fn test_build_specs_collab_tools_enabled() {
 
     assert_contains_tool_names(
         &tools,
-        &["spawn_agent", "send_input", "wait_agent", "close_agent"],
+        &[
+            "spawn_agent",
+            "send_message",
+            "followup_task",
+            "wait_agent",
+            "close_agent",
+            "list_agents",
+        ],
     );
     assert_lacks_tool_name(&tools, "spawn_agents_on_csv");
-    assert_lacks_tool_name(&tools, "list_agents");
+    assert_lacks_tool_name(&tools, "send_input");
+    assert_lacks_tool_name(&tools, "resume_agent");
 
     let spawn_agent = find_tool(&tools, "spawn_agent");
     let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = &spawn_agent.spec else {
         panic!("spawn_agent should be a function tool");
     };
     let (properties, _) = expect_object_schema(parameters);
-    assert!(properties.contains_key("fork_context"));
-    assert!(!properties.contains_key("fork_turns"));
+    assert!(!properties.contains_key("fork_context"));
+    assert!(properties.contains_key("fork_turns"));
 }
 
 #[test]
@@ -210,6 +222,7 @@ fn goal_tools_require_goals_feature() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -231,6 +244,7 @@ fn goal_tools_require_goals_feature() {
         session_source: SessionSource::Cli,
         sandbox_policy: &SandboxPolicy::DangerFullAccess,
         windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        wire_api: WireApi::Responses,
     });
     let (tools, _) = build_specs(
         &tools_config,
@@ -414,9 +428,11 @@ fn test_build_specs_enable_fanout_enables_agent_jobs_and_collab_tools() {
         &tools,
         &[
             "spawn_agent",
-            "send_input",
+            "send_message",
+            "followup_task",
             "wait_agent",
             "close_agent",
+            "list_agents",
             "spawn_agents_on_csv",
         ],
     );
@@ -558,10 +574,11 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         &tools,
         &[
             "spawn_agent",
-            "send_input",
-            "resume_agent",
+            "send_message",
+            "followup_task",
             "wait_agent",
             "close_agent",
+            "list_agents",
             "spawn_agents_on_csv",
             "report_agent_job_result",
             REQUEST_USER_INPUT_TOOL_NAME,
@@ -2298,7 +2315,9 @@ fn expect_object_schema(
 
 fn expect_string_description(schema: &JsonSchema) -> &str {
     match schema {
-        JsonSchema::String { description } | JsonSchema::LiteralString { description, .. } => {
+        JsonSchema::String { description }
+        | JsonSchema::LiteralString { description, .. }
+        | JsonSchema::StringEnum { description, .. } => {
             description.as_deref().expect("expected description")
         }
         _ => panic!("expected string schema, got {schema:?}"),
@@ -2310,6 +2329,7 @@ fn strip_descriptions_schema(schema: &mut JsonSchema) {
         JsonSchema::Boolean { description }
         | JsonSchema::String { description }
         | JsonSchema::LiteralString { description, .. }
+        | JsonSchema::StringEnum { description, .. }
         | JsonSchema::Number { description }
         | JsonSchema::Integer { description }
         | JsonSchema::Null { description } => {

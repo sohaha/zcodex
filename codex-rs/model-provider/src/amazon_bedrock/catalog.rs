@@ -126,12 +126,12 @@ fn reasoning_effort_preset(effort: ReasoningEffort) -> ReasoningEffortPreset {
     ReasoningEffortPreset {
         effort,
         description: match effort {
-            ReasoningEffort::None => "No reasoning",
-            ReasoningEffort::Minimal => "Minimal reasoning",
-            ReasoningEffort::Low => "Fast responses with lighter reasoning",
-            ReasoningEffort::Medium => "Balances speed and reasoning depth for everyday tasks",
-            ReasoningEffort::High => "Greater reasoning depth for complex problems",
-            ReasoningEffort::XHigh => "Extra high reasoning depth for complex problems",
+            ReasoningEffort::None => "不使用推理",
+            ReasoningEffort::Minimal => "最小推理",
+            ReasoningEffort::Low => "快速响应，使用较轻量的推理",
+            ReasoningEffort::Medium => "在速度与推理深度之间取得平衡，适合日常任务",
+            ReasoningEffort::High => "为复杂问题提供更深入的推理",
+            ReasoningEffort::XHigh => "为复杂问题提供超高强度推理",
         }
         .to_string(),
     }

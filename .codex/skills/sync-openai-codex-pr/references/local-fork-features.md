@@ -51,7 +51,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `cli-zmemory-ztok-ztldr-surface` | `local_surface` | codex-rs/cli |
 | `resume-fork-provider-bridge` | `local_behavior` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `local_surface` | codex-rs/tui + codex-rs/core config + codex-rs/app-server |
-| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `chinese-localization-sentinels` | `localized_behavior` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server + codex-rs/models-manager |
 | `session-warning-steer-localization-bridge` | `localized_behavior` | codex-rs/core + codex-rs/app-server + codex-rs/tui + tests |
 | `community-branding-and-release-links` | `localized_behavior` | README + install/update surfaces |
 | `zoffsec-native-command-workflow` | `local_surface` | codex-rs/cli + codex-rs/tui + codex-rs/rollout |
@@ -222,6 +222,13 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `regex` `codex-rs/core/tests/suite/unstable_features_warning.rs`: `assert!\(message\.contains\("已启用开发中功能"\)\);`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `加载 rollout`
   - `regex` `codex-rs/app-server/src/bespoke_event_handling.rs`: `审查器未输出任何回复`
+  - `regex` `codex-rs/models-manager/models.json`: `面向复杂编程、研究与真实世界工作的前沿模型`
+  - `regex` `codex-rs/models-manager/models.json`: `适合日常编程任务的强力模型`
+  - `regex` `codex-rs/models-manager/models.json`: `Codex 已升级至 GPT-5\.4`
+  - `regex` `codex-rs/models-manager/models.json`: `为复杂问题提供超高强度推理`
+  - `regex` `codex-rs/tui/src/chatwidget.rs`: `多项标记提示可能存在网络安全风险`
+  - `regex` `codex-rs/tui/src/chatwidget.rs`: `权限请求`
+  - `regex` `codex-rs/tui/src/history_cell.rs`: `如果判断有误，请尝试改写请求`
 
 ### `session-warning-steer-localization-bridge`
 - summary: `core/src/session/mod.rs` 与 `core/src/session/turn_context.rs` 的中文 steer 错误和 warning 文案必须在 app-server 映射、tui 解析和回归测试里保持一致，避免同步上游英文实现时只改一层导致桥接回归。
@@ -427,7 +434,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 | `cli-zmemory-ztok-ztldr-surface` | `PASS` | codex-rs/cli |
 | `resume-fork-provider-bridge` | `PASS` | codex-rs/cli + codex-rs/tui |
 | `buddy-surface` | `PASS` | codex-rs/tui + codex-rs/core config + codex-rs/app-server |
-| `chinese-localization-sentinels` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server |
+| `chinese-localization-sentinels` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/tools + codex-rs/app-server + codex-rs/models-manager |
 | `session-warning-steer-localization-bridge` | `PASS` | codex-rs/core + codex-rs/app-server + codex-rs/tui + tests |
 | `community-branding-and-release-links` | `PASS` | README + install/update surfaces |
 | `zoffsec-native-command-workflow` | `PASS` | codex-rs/cli + codex-rs/tui + codex-rs/rollout |
@@ -561,8 +568,8 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:954 tldr_cmd::run_tldr_command(tldr_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:962 run_zmemory_command(zmemory_cli).await?;
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1917 let rendered = localize_help_output(err.to_string());
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1985 "显示帮助（使用 '-h' 查看摘要）",
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1992 .replace("Print version", "显示版本")
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1985 "显示帮助（使用 '-h' 查看摘要）。",
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1992 .replace("Print version", "显示版本。")
 
 ### `resume-fork-provider-bridge`
 - status: `PASS`
@@ -575,11 +582,11 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/utils/cli/src/shared_options.rs`: codex-rs/utils/cli/src/shared_options.rs:30 pub oss_provider: Option<String>,
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1857 interactive.provider = Some(provider);
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1854 .shared
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2251 fn multitool_command_debug_asserts() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2467 fn resume_merges_option_flags_and_full_auto() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2498 assert_eq!(interactive.provider.as_deref(), Some("oss"));
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2530 fn fork_merges_provider_flags() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2545 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2286 fn multitool_command_debug_asserts() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2502 fn resume_merges_option_flags_and_full_auto() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2533 assert_eq!(interactive.provider.as_deref(), Some("oss"));
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2565 fn fork_merges_provider_flags() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2580 assert_eq!(interactive.oss_provider.as_deref(), Some("lmstudio"));
 
 ### `buddy-surface`
 - status: `PASS`
@@ -588,7 +595,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: upstream 原生提供等效 buddy 能力，且同时覆盖可见交互、配置落盘、app-server 通知、reaction_strategy 配置、local preset fallback 与 AI cooldown/critical 场景语义；或者本地正式迁移到新模块并同步更新检查点。
 - evidence:
   - `ok` `codex-rs/tui/src/buddy/mod.rs`: codex-rs/tui/src/buddy/mod.rs:91 "小伙伴已孵化：{} {}。",
-  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:6043 "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:6063 "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:99 SlashCommand::Buddy => "孵化、抚摸或隐藏底部小伙伴",
   - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:615 PersistBuddyVisibility(bool),
   - `ok` `codex-rs/tui/src/app_event.rs`: codex-rs/tui/src/app_event.rs:618 PersistBuddyFullVisibility,
@@ -620,10 +627,17 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1258 " 开始使用时，请描述一个任务，或试试这些命令："
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:881 name: "外部配置迁移",
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:1061 "已启用开发中功能：{under_development_feature_keys}。开发中功能尚未完成，行为可能不稳定。如需关闭此警告，请在 {config_path} 中设置 `suppress_unstable_features...
-  - `ok` `codex-rs/features/src/tests.rs`: codex-rs/features/src/tests.rs:457 assert!(message.contains("已启用开发中功能"));
+  - `ok` `codex-rs/features/src/tests.rs`: codex-rs/features/src/tests.rs:466 assert!(message.contains("已启用开发中功能"));
   - `ok` `codex-rs/core/tests/suite/unstable_features_warning.rs`: codex-rs/core/tests/suite/unstable_features_warning.rs:60 assert!(message.contains("已启用开发中功能"));
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:1944 "加载 rollout `{}` 失败：{err}",
   - `ok` `codex-rs/app-server/src/bespoke_event_handling.rs`: codex-rs/app-server/src/bespoke_event_handling.rs:2790 const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
+  - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:26 "description": "面向复杂编程、研究与真实世界工作的前沿模型。",
+  - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:113 "description": "适合日常编程任务的强力模型。",
+  - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:305 "migration_markdown": "介绍 GPT-5.4\n\nCodex 已升级至 GPT-5.4，这是我们面向专业工作的最强模型。它比此前模型表现更好，同时 token 效率更高，并在长时运行任务、工具调用、计算机使用和...
+  - `ok` `codex-rs/models-manager/models.json`: codex-rs/models-manager/models.json:43 "description": "为复杂问题提供超高强度推理"
+  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:493 const TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING: &str = "多项标记提示可能存在网络安全风险。已启用额外安全检查。如需授权安全工作，请加入 Trusted Access f...
+  - `ok` `codex-rs/tui/src/chatwidget.rs`: codex-rs/tui/src/chatwidget.rs:4078 Some(permission_request_summary("权限请求", reason))
+  - `ok` `codex-rs/tui/src/history_cell.rs`: codex-rs/tui/src/history_cell.rs:1889 " 如果判断有误，请尝试改写请求。若要获得授权安全工作权限，请加入 ".dim(),
 
 ### `session-warning-steer-localization-bridge`
 - status: `PASS`
@@ -664,13 +678,13 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - evidence:
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:815 Some(Subcommand::Zoffsec(zoffsec_cli)) => {
   - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:1790 fn finalize_zoffsec_resume_interactive(
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2665 fn zoffsec_subcommand_registers_at_top_level() {
-  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2680 fn finalize_zoffsec_resume_enables_clean_before_resume() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2700 fn zoffsec_subcommand_registers_at_top_level() {
+  - `ok` `codex-rs/cli/src/main.rs`: codex-rs/cli/src/main.rs:2715 fn finalize_zoffsec_resume_enables_clean_before_resume() {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:22 pub struct ZoffsecCommand {
   - `ok` `codex-rs/cli/src/zoffsec_cmd.rs`: codex-rs/cli/src/zoffsec_cmd.rs:119 pub async fn run_zoffsec_clean_command(
   - `ok` `codex-rs/cli/src/zoffsec_config.rs`: codex-rs/cli/src/zoffsec_config.rs:3 pub const ZOFFSEC_SESSION_MARKER: &str = "codex-zoffsec";
   - `ok` `codex-rs/tui/src/cli.rs`: codex-rs/tui/src/cli.rs:43 pub resume_zoffsec_clean: bool,
-  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:1402 if cli.resume_zoffsec_clean {
+  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:1404 if cli.resume_zoffsec_clean {
   - `ok` `codex-rs/tui/src/zoffsec_resume.rs`: codex-rs/tui/src/zoffsec_resume.rs:16 pub(crate) async fn clean_resume_selection_if_needed(
   - `ok` `codex-rs/rollout/src/patch.rs`: codex-rs/rollout/src/patch.rs:113 pub async fn clean_zoffsec_rollout(
 
@@ -701,9 +715,9 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/core/src/tasks/mod.rs`: codex-rs/core/src/tasks/mod.rs:357 // self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2496 // pending_zmemory_recall_note_for(current_context.sub_id.as_str())
   - `ok` `codex-rs/core/src/session/mod.rs`: codex-rs/core/src/session/mod.rs:2497 // build_developer_update_item(vec![recall_note])
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2440 pub(crate) async fn apply_pending_user_input_side_effects(
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2449 merge_tool_routing_directives(current_directives, user_inputs);
-  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2455 // build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2602 pub(crate) async fn apply_pending_user_input_side_effects(
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2611 merge_tool_routing_directives(current_directives, user_inputs);
+  - `ok` `codex-rs/core/src/session/turn.rs`: codex-rs/core/src/session/turn.rs:2617 // build_stable_preference_recall_note(sess, turn_context, &user_inputs).await
   - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4916 async fn turn_start_zmemory_recall_note_is_produced_for_regular_user_turns() {
   - `ok` `codex-rs/core/src/session/tests.rs`: codex-rs/core/src/session/tests.rs:4921 async fn pending_user_input_neutral_steer_preserves_existing_tldr_directives() {
   - `ok` `codex-rs/core/tests/suite/zmemory_e2e.rs`: codex-rs/core/tests/suite/zmemory_e2e.rs:2369 async fn zmemory_recall_note_is_injected_into_follow_up_turn_requests() -> Result<()> {
@@ -715,10 +729,10 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
 - better_when: 只有在 upstream 或本地新架构提供等效或更强的 TUI-first 多协作者 mission 工作流，且继续覆盖默认启用配置、slash command 入口、AppEvent/app loop bridge、Mission Board、autopilot repair、loaded-thread recovery、federation adapter seam、中文提示和快照回归锚点时，才允许迁移；迁移前必须先更新这里的路径与检查点。
 - evidence:
   - `ok` `codex-rs/config/src/types.rs`: codex-rs/config/src/types.rs:585 pub zteam_enabled: bool,
-  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2641 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
+  - `ok` `codex-rs/core/src/config/mod.rs`: codex-rs/core/src/config/mod.rs:2634 zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:807 key: "multi_agent_v2",
   - `ok` `codex-rs/features/src/lib.rs`: codex-rs/features/src/lib.rs:806 id: Feature::MultiAgentV2,
-  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:185 mod zteam;
+  - `ok` `codex-rs/tui/src/lib.rs`: codex-rs/tui/src/lib.rs:186 mod zteam;
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:87 SlashCommand::Zteam => "以目标启动 ZTeam mission 协作并查看状态",
   - `ok` `codex-rs/tui/src/slash_command.rs`: codex-rs/tui/src/slash_command.rs:87 SlashCommand::Zteam => "以目标启动 ZTeam mission 协作并查看状态",
   - `ok` `codex-rs/tui/src/bottom_pane/slash_commands.rs`: codex-rs/tui/src/bottom_pane/slash_commands.rs:37 .filter(|(_, cmd)| flags.zteam_enabled || *cmd != SlashCommand::Zteam)
@@ -730,7 +744,7 @@ node /workspace/.codex/skills/sync-openai-codex-pr/scripts/local_fork_feature_au
   - `ok` `codex-rs/tui/src/zteam/recovery.rs`: codex-rs/tui/src/zteam/recovery.rs:51 pub(crate) fn latest_local_threads_for_primary(
   - `ok` `codex-rs/tui/src/zteam/worker_source.rs`: codex-rs/tui/src/zteam/worker_source.rs:17 pub(crate) struct FederationAdapter {
   - `ok` `codex-rs/tui/src/zteam/view.rs`: codex-rs/tui/src/zteam/view.rs:126 Paragraph::new(Line::from(format!("{MODE_NAME} Mission Board").bold()))
-  - `ok` `codex-rs/tui/src/chatwidget/tests/slash_commands.rs`: codex-rs/tui/src/chatwidget/tests/slash_commands.rs:1488 "zteam_workbench_active_view",
+  - `ok` `codex-rs/tui/src/chatwidget/tests/slash_commands.rs`: codex-rs/tui/src/chatwidget/tests/slash_commands.rs:1500 "zteam_workbench_active_view",
   - `ok` `codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_active_view.snap`: codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_active_view.snap exists (file)
   - `ok` `codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_entry_disabled_notice.snap`: codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_entry_disabled_notice.snap exists (file)
   - `ok` `docs/slash_commands.md`: docs/slash_commands.md:11 `/zteam` 是 TUI 内的本地协作入口。当前底层仍固定复用两个本地 worker，但推荐心智已经从“手动管理 frontend/backend 双 worker”切到“先给目标，再进入 ZTeam mission 协作”。

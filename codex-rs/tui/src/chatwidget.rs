@@ -209,8 +209,6 @@ use codex_protocol::protocol::SkillMetadata as ProtocolSkillMetadata;
 #[cfg(test)]
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::TerminalInteractionEvent;
-#[cfg(test)]
-use codex_protocol::protocol::ThreadGoalStatus as ProtocolThreadGoalStatus;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnAbortReason;
@@ -373,11 +371,9 @@ use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
+mod goal_menu;
 mod goal_status;
 use self::goal_status::GoalStatusState;
-#[cfg(test)]
-use self::goal_status::goal_status_indicator_from_app_goal;
-mod goal_menu;
 mod interrupts;
 use self::interrupts::InterruptManager;
 mod session_header;
@@ -494,7 +490,7 @@ fn is_standard_tool_call(parsed_cmd: &[ParsedCommand]) -> bool {
 }
 
 const RATE_LIMIT_WARNING_THRESHOLDS: [f64; 3] = [75.0, 90.0, 95.0];
-const TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING: &str = "已为安全验证启用受信任访问权限。";
+const TRUSTED_ACCESS_FOR_CYBER_VERIFICATION_WARNING: &str = "多项标记提示可能存在网络安全风险。";
 const NUDGE_MODEL_SLUG: &str = "gpt-5.4-mini";
 const RATE_LIMIT_SWITCH_PROMPT_THRESHOLD: f64 = 90.0;
 const MAX_AGENT_COPY_HISTORY: usize = 32;
@@ -2318,7 +2314,25 @@ impl ChatWidget {
         if message.is_empty() {
             return;
         }
-        self.last_agent_markdown = Some(message);
+        self.last_agent_markdown = Some(message.clone());
+        match self.agent_turn_markdowns.last_mut() {
+            Some(entry) if entry.user_turn_count == self.visible_user_turn_count => {
+                entry.markdown = message;
+            }
+            _ => {
+                self.agent_turn_markdowns.push(AgentTurnMarkdown {
+                    user_turn_count: self.visible_user_turn_count,
+                    markdown: message,
+                });
+                let overflow = self
+                    .agent_turn_markdowns
+                    .len()
+                    .saturating_sub(MAX_AGENT_COPY_HISTORY);
+                if overflow > 0 {
+                    self.agent_turn_markdowns.drain(0..overflow);
+                }
+            }
+        }
         self.saw_copy_source_this_turn = true;
     }
 
@@ -4028,7 +4042,7 @@ impl ChatWidget {
                 .as_deref()
                 .map(str::trim)
                 .filter(|reason| !reason.is_empty())
-                .map(|reason| format!("{subject}: {reason}"))
+                .map(|reason| format!("{subject}：{reason}"))
                 .unwrap_or_else(|| subject.to_string())
         };
         let guardian_action_summary = |action: &GuardianAssessmentAction| match action {
@@ -4061,7 +4075,7 @@ impl ChatWidget {
                 Some(format!("在 {label} 上调用 MCP {tool_name}"))
             }
             GuardianAssessmentAction::RequestPermissions { reason, .. } => {
-                Some(permission_request_summary("permission request", reason))
+                Some(permission_request_summary("权限请求", reason))
             }
         };
         let guardian_command = |action: &GuardianAssessmentAction| match action {
@@ -5870,7 +5884,7 @@ impl ChatWidget {
                             // Reset any reasoning header only when we are actually submitting a turn.
                             self.reasoning_buffer.clear();
                             self.full_reasoning_buffer.clear();
-                            self.set_status_header(String::from("Working"));
+                            self.set_status_header(String::from("处理中"));
                             self.submit_user_message(user_message);
                         } else {
                             self.queue_user_message(user_message);
@@ -5898,6 +5912,12 @@ impl ChatWidget {
                             return;
                         };
                         self.queue_user_message_with_options(user_message, action);
+                    }
+                    InputResult::Command(cmd) => {
+                        self.handle_slash_command_dispatch(cmd);
+                    }
+                    InputResult::CommandWithArgs(cmd, args, text_elements) => {
+                        self.handle_slash_command_with_args_dispatch(cmd, args, text_elements);
                     }
                     _ => {}
                 }
@@ -6014,7 +6034,7 @@ impl ChatWidget {
             },
             _ if self.copy_history_evicted_by_rollback => {
                 self.add_to_history(history_cell::new_error_event(format!(
-                    "Cannot copy that response after rewinding. Only the most recent {MAX_AGENT_COPY_HISTORY} responses are available to /copy."
+                    "回退后无法复制该回复。/copy 只能使用最近 {MAX_AGENT_COPY_HISTORY} 条回复。"
                 )));
             }
             _ => self.add_to_history(history_cell::new_error_event(
@@ -7653,6 +7673,7 @@ impl ChatWidget {
         match msg {
             EventMsg::SessionConfigured(e) => self.on_session_configured(e),
             EventMsg::ThreadNameUpdated(e) => self.on_thread_name_updated(e),
+            EventMsg::ThreadGoalUpdated(e) => self.on_thread_goal_updated(e.goal.into(), e.turn_id),
             EventMsg::AgentMessage(AgentMessageEvent { message: _, .. })
                 if matches!(replay_kind, Some(ReplayKind::ThreadSnapshot))
                     && !self.is_review_mode => {}

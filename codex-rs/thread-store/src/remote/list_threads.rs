@@ -155,6 +155,7 @@ mod tests {
                     sandbox_policy_json: None,
                     token_usage_json: None,
                     history: None,
+                    parent_model: None,
                 }],
                 next_cursor: Some("cursor-2".to_string()),
             }))
@@ -265,6 +266,7 @@ mod tests {
             sandbox_policy_json: None,
             token_usage_json: None,
             history: None,
+            parent_model: Some("gpt-5-parent".to_string()),
         };
 
         let stored = stored_thread_from_proto(thread.clone()).expect("proto to stored thread");
@@ -276,5 +278,6 @@ mod tests {
         assert_eq!(roundtripped.forked_from_id, thread.forked_from_id);
         assert_eq!(roundtripped.source, thread.source);
         assert_eq!(roundtripped.git_info, thread.git_info);
+        assert_eq!(roundtripped.parent_model, thread.parent_model);
     }
 }

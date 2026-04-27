@@ -1264,7 +1264,9 @@ async fn find_thread_path_by_id_str_in_subdir(
         )
         .await
     {
-        if tokio::fs::try_exists(&db_path).await.unwrap_or(false) {
+        if tokio::fs::try_exists(&db_path).await.unwrap_or(false)
+            && rollout_path_matches_thread_id(&db_path, thread_id).await
+        {
             return Ok(Some(db_path));
         }
         tracing::error!(
@@ -1310,6 +1312,20 @@ async fn find_thread_path_by_id_str_in_subdir(
     }
 
     Ok(found)
+}
+
+async fn rollout_path_matches_thread_id(path: &Path, thread_id: ThreadId) -> bool {
+    if let Some(item) = read_thread_item_from_rollout(path.to_path_buf()).await {
+        return item.thread_id == Some(thread_id) || rollout_file_name_matches_id(path, thread_id);
+    }
+    rollout_file_name_matches_id(path, thread_id)
+}
+
+fn rollout_file_name_matches_id(path: &Path, thread_id: ThreadId) -> bool {
+    let Some(file_name) = path.file_name().and_then(OsStr::to_str) else {
+        return false;
+    };
+    file_name.ends_with(&format!("{thread_id}.jsonl"))
 }
 
 /// Locate a recorded thread rollout file by its UUID string using the existing

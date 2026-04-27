@@ -70,8 +70,8 @@ pub(super) fn selection_view_params(
     };
 
     let clear_context_description = clear_context_usage_label.map_or_else(
-        || "Fresh thread with this plan.".to_string(),
-        |label| format!("Fresh thread. Context: {label}."),
+        || "在新线程中实现此计划。".to_string(),
+        |label| format!("新线程。上下文：{label}。"),
     );
 
     SelectionViewParams {
@@ -91,7 +91,7 @@ pub(super) fn selection_view_params(
             },
             SelectionItem {
                 name: PLAN_IMPLEMENTATION_CLEAR_CONTEXT.to_string(),
-                description: Some("在新线程中实现此计划。".to_string()),
+                description: Some(clear_context_description),
                 selected_description: None,
                 is_current: false,
                 actions: clear_context_actions,

@@ -251,6 +251,12 @@ fn multi_agent_is_stable_and_enabled_by_default() {
 }
 
 #[test]
+fn multi_agent_v2_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::MultiAgentV2.stage(), Stage::Stable);
+    assert_eq!(Feature::MultiAgentV2.default_enabled(), true);
+}
+
+#[test]
 fn enable_fanout_is_under_development() {
     assert_eq!(Feature::SpawnCsv.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::SpawnCsv.default_enabled(), false);
@@ -403,7 +409,7 @@ hide_spawn_agent_metadata = true
 }
 
 #[test]
-fn multi_agent_v2_feature_config_usage_hint_enabled_does_not_enable_feature() {
+fn multi_agent_v2_feature_config_without_enabled_toggle_keeps_default_state() {
     let features_toml: FeaturesToml = toml::from_str(
         r#"
 [multi_agent_v2]
@@ -420,7 +426,10 @@ usage_hint_enabled = false
         FeatureOverrides::default(),
     );
 
-    assert_eq!(features.enabled(Feature::MultiAgentV2), false);
+    assert_eq!(
+        features.enabled(Feature::MultiAgentV2),
+        Features::with_defaults().enabled(Feature::MultiAgentV2)
+    );
     assert_eq!(features_toml.entries(), BTreeMap::new());
     assert_eq!(
         features_toml.multi_agent_v2,

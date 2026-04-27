@@ -28,7 +28,13 @@
 ## 最近三天反思
 - 时间窗按当前日期 `2026-04-27` 计算，覆盖 `2026-04-25` 至 `2026-04-27`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-27-cli-shared-options-localization-must-live-in-utils-cli-source.md`：CLI 外壳级 help 本地化不会覆盖 `SharedCliOptions` 的正文说明；共享参数汉化必须回到 `codex-rs/utils/cli/src/shared_options.rs`，并用顶层 help 断言同时锁中文出现与旧英文消失。
 - `.agents/llmdoc/memory/reflections/2026-04-27-upstream-sync-cli-shared-options-must-not-duplicate-tui-fields.md`：interactive CLI 参数若已收敛到 `SharedCliOptions`，不能在 TUI 重复声明同名 clap 字段；本地特性 gate 应检查真实所有者、bridge 透传和 `Command::debug_assert()`。
+- `.agents/llmdoc/memory/reflections/2026-04-27-desktop-app-download-url-renames-must-stay-aligned-across-cli-and-platform-installers.md`：桌面 app 的下载 URL 改名若只改 CLI 参数层、不同时更新平台分发器和 `desktop_app/*` 实现，`mise run build-ubuntu-macos-arm64` 这类交叉构建会在晚期暴露半截重命名错误。
+- `.agents/llmdoc/memory/reflections/2026-04-27-tui-color-eyre-requires-errorlayer-for-spantrace.md`：TUI 若安装 `color_eyre` 却没把 `tracing_error::ErrorLayer` 接进 subscriber，错误报告只会退化成 `SpanTrace capture is Unsupported`；回归保护宜用独立 integration test 锁住 `SpanTraceStatus::CAPTURED`。
+- `.agents/llmdoc/memory/reflections/2026-04-27-tui-slash-command-inputresults-must-be-consumed-at-chatwidget-boundary.md`：slash command 输入链不能只在 composer 里产出 `InputResult::Command*`；`ChatWidget::handle_key_event()` 必须继续消费并转发到现有 dispatch 包装层，否则 `/model` 这类命令会在清空输入框后被静默吞掉。
+- `.agents/llmdoc/memory/reflections/2026-04-27-upstream-sync-localization-and-queued-slash-regressions-need-deeper-tui-gates.md`：同步后汉化检查要覆盖模型 reasoning 子描述、guardian/cyber 文案和 TUI 快照；queued slash inline args 不能从 composer 重新取参数。
+- `.agents/llmdoc/memory/reflections/2026-04-27-core-stream-deltas-must-tolerate-pre-item-added-order.md`：`core` 的 turn 流式状态机不能把无 item id 的 text/reasoning delta 强绑到已存在的 `active_item`；若协议允许 `delta -> added -> done`，就必须先缓存再回放，至少不能在 debug 构建里直接 panic。
 - `.agents/llmdoc/memory/reflections/2026-04-26-upstream-sync-fallback-provider-is-local-feature-and-needs-gate.md`：`fallback_provider` / `fallback_model` / `fallback_providers` 是本地 request provider fallback 功能；同步上游时必须恢复实现、测试和 `local_fork_feature_audit` gate，不能把它当作上游旧残留删除。
 - `.agents/llmdoc/memory/reflections/2026-04-26-upstream-sync-must-commit-worktree-before-mergeback-and-treat-upstream-deletions-as-gates.md`：同步 worktree 分支若与主工作区 HEAD 相同，必须先把 worktree 的 staged/unstaged 同步结果提交成真实 sync commit，再 merge-back；上游删除功能要用删除反查 gate 与主动面 grep 证明没有静默保留。
 - `.agents/llmdoc/memory/reflections/2026-04-24-hidden-collaboration-visibility-should-use-one-protocol-truth-source.md`：`<subagent_notification>` / inter-agent envelope 这类内部协作消息的可见性真相源应上收至 `codex-protocol`，再让 `core`、`tui`、`app-server-protocol` 和 `zteam` 输入净化统一复用。

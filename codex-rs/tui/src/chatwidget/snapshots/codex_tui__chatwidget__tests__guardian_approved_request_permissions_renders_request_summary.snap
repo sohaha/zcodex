@@ -1,16 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 198
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 
 
-✔ Request approved for permission request: Need write access for generated
-  report assets.
+✔ 自动审查器 已批准 执行 权限请求：Need write access for generated report
+  assets.
 
-• Working (0s • esc to interrupt)
+• 处理中 (0s • esc 中断)
 
 
-› Ask Codex to do anything
+› 让 Codex 帮你做任何事
 
-  gpt-5.5 default · /tmp/project
+  gpt-5.5 默认 · 已用 0% · /tmp/project

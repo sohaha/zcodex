@@ -13,6 +13,7 @@ use codex_api::Provider;
 use codex_api::ResponsesApiRequest;
 use codex_api::ResponsesClient;
 use codex_api::ResponsesOptions;
+use codex_api::provider::WireApi;
 use codex_client::HttpTransport;
 use codex_client::Request;
 use codex_client::RequestBody;
@@ -127,6 +128,7 @@ fn provider(name: &str) -> Provider {
     Provider {
         name: name.to_string(),
         base_url: "https://example.com/v1".to_string(),
+        wire_api: WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: codex_api::RetryConfig {
@@ -335,6 +337,7 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
 
@@ -437,6 +440,7 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         prompt_cache_key: None,
         text: None,
         client_metadata: None,
+        max_output_tokens: None,
     };
 
     let mut extra_headers = HeaderMap::new();

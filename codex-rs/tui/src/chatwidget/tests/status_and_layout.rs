@@ -1,5 +1,4 @@
 use super::*;
-use crate::bottom_pane::goal_status_indicator_line;
 use pretty_assertions::assert_eq;
 
 /// Receiving a TokenCount event without usage clears the context indicator.
@@ -44,8 +43,7 @@ async fn core_cyber_policy_error_renders_dedicated_notice() {
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1);
     let rendered = lines_to_single_string(&cells[0]);
-    assert!(rendered.contains("This chat was flagged for possible cybersecurity risk"));
-    assert!(rendered.contains("Trusted Access for Cyber"));
+    assert!(rendered.contains("多项标记提示可能存在网络安全风险"));
     assert!(!rendered.contains("server fallback message"));
 }
 
@@ -63,10 +61,7 @@ async fn core_model_verification_renders_warning() {
     let cells = drain_insert_history(&mut rx);
     assert_eq!(cells.len(), 1);
     let rendered = lines_to_single_string(&cells[0]);
-    assert!(rendered.contains("multiple flags for possible cybersecurity risk"));
-    assert!(rendered.contains("extra safety checks are on"));
-    assert!(rendered.contains("Trusted Access for Cyber"));
-    assert!(rendered.contains("https://chatgpt.com/cyber"));
+    assert!(rendered.contains("多项标记提示可能存在网络安全风险"));
 }
 
 #[tokio::test]

@@ -100,13 +100,19 @@ mod tests {
         let ToolSpec::Function(tool) = create_update_goal_tool() else {
             panic!("update_goal should be a function tool");
         };
-        let status = tool
-            .parameters
-            .properties
-            .as_ref()
-            .and_then(|properties| properties.get("status"))
+        let JsonSchema::Object { properties, .. } = &tool.parameters else {
+            panic!("update_goal parameters should be an object schema");
+        };
+        let status = properties
+            .get("status")
             .expect("status property should exist");
 
-        assert_eq!(status.enum_values, Some(vec![json!("complete")]));
+        assert_eq!(
+            status,
+            &JsonSchema::string_enum(vec![json!("complete")], Some(
+                "Required. Set to complete only when the objective is achieved and no required work remains."
+                    .to_string(),
+            ))
+        );
     }
 }

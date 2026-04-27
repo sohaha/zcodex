@@ -73,13 +73,11 @@ fn spawn_agent_tool_v2_requires_task_name_and_lists_visible_models() {
         Some(&JsonSchema::string(Some("role help".to_string())))
     );
     assert_eq!(
-        properties
-            .get("model")
-            .and_then(|schema| schema.description.as_deref()),
+        properties.get("model").map(expect_string_description),
         Some(SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION)
     );
     assert_eq!(
-        parameters.required.as_ref(),
+        required,
         Some(&vec!["task_name".to_string(), "message".to_string()])
     );
     assert_eq!(
@@ -107,9 +105,7 @@ fn spawn_agent_tool_v1_keeps_legacy_fork_context_field() {
     assert!(properties.contains_key("fork_context"));
     assert!(!properties.contains_key("fork_turns"));
     assert_eq!(
-        properties
-            .get("model")
-            .and_then(|schema| schema.description.as_deref()),
+        properties.get("model").map(expect_string_description),
         Some(SPAWN_AGENT_MODEL_OVERRIDE_DESCRIPTION)
     );
 }
@@ -255,5 +251,16 @@ fn expect_object_schema(
             ..
         } => (properties, required.as_ref()),
         _ => panic!("expected object schema, got {schema:?}"),
+    }
+}
+
+fn expect_string_description(schema: &JsonSchema) -> &str {
+    match schema {
+        JsonSchema::String { description }
+        | JsonSchema::LiteralString { description, .. }
+        | JsonSchema::StringEnum { description, .. } => {
+            description.as_deref().expect("expected description")
+        }
+        _ => panic!("expected string schema, got {schema:?}"),
     }
 }

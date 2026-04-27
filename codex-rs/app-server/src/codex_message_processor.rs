@@ -11380,9 +11380,11 @@ mod tests {
     async fn derive_config_from_params_uses_session_thread_config_model_provider() -> Result<()> {
         let temp_dir = TempDir::new()?;
         let session_provider = ModelProviderInfo {
-            name: "session".to_string(),
+            name: Some("session".to_string()),
+            model: None,
             base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
             env_key: None,
+            model_catalog: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: None,
@@ -11394,9 +11396,14 @@ mod tests {
             request_max_retries: None,
             stream_max_retries: None,
             stream_idle_timeout_ms: None,
+            retry_base_delay_ms: None,
             websocket_connect_timeout_ms: None,
             requires_openai_auth: false,
             supports_websockets: true,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            skip_reasoning_popup: false,
         };
         let config_manager = ConfigManager::new(
             temp_dir.path().to_path_buf(),
@@ -11498,10 +11505,12 @@ mod tests {
             approval_policy: None,
             approvals_reviewer: None,
             sandbox: None,
+            permission_profile: None,
             config: None,
             base_instructions: None,
             developer_instructions: None,
             personality: None,
+            exclude_turns: false,
             persist_extended_history: false,
         };
         let config_snapshot = ThreadConfigSnapshot {
@@ -11511,6 +11520,10 @@ mod tests {
             approval_policy: codex_protocol::protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
             sandbox_policy: codex_protocol::protocol::SandboxPolicy::DangerFullAccess,
+            permission_profile:
+                codex_protocol::models::PermissionProfile::from_legacy_sandbox_policy(
+                    &codex_protocol::protocol::SandboxPolicy::DangerFullAccess,
+                ),
             cwd: test_path_buf("/tmp").abs(),
             ephemeral: false,
             reasoning_effort: None,
@@ -11587,6 +11600,7 @@ mod tests {
                     last_agent_message: None,
                     completed_at: None,
                     duration_ms: None,
+                    time_to_first_token_ms: None,
                 },
             )),
         ];

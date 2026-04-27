@@ -24,6 +24,7 @@ use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::Verbosity;
 use codex_protocol::error::CodexErr;
+use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::FunctionCallOutputContentItem;
@@ -50,10 +51,15 @@ use core_test_support::PathBufExt;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::load_default_config_for_test;
 use core_test_support::responses::ResponsesRequest;
+use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_message_item_added;
 use core_test_support::responses::ev_output_text_delta;
+use core_test_support::responses::ev_reasoning_item;
+use core_test_support::responses::ev_reasoning_item_added;
+use core_test_support::responses::ev_reasoning_summary_text_delta;
+use core_test_support::responses::ev_reasoning_text_delta;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
@@ -64,6 +70,7 @@ use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use dunce::canonicalize as normalize_path;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
@@ -2835,6 +2842,128 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
 
     assert_eq!(responses_mock.requests().len(), 1);
 
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn output_text_delta_before_item_added_is_buffered_until_message_start() -> anyhow::Result<()>
+{
+    skip_if_no_network!(Ok(()));
+    let server = MockServer::start().await;
+
+    let response = sse(vec![
+        ev_response_created("resp_buffered_text"),
+        ev_output_text_delta("buffered hello"),
+        ev_message_item_added("msg_buffered_text", ""),
+        ev_assistant_message("msg_buffered_text", "buffered hello"),
+        ev_completed("resp_buffered_text"),
+    ]);
+
+    let responses_mock = mount_sse_once(&server, response).await;
+
+    let TestCodex { codex, .. } = test_codex()
+        .with_config(|config| {
+            config.model_provider.stream_max_retries = Some(0);
+        })
+        .build(&server)
+        .await?;
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "buffer text delta".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await?;
+
+    let started = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemStarted(event) => match &event.item {
+            TurnItem::AgentMessage(item) => Some(item.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+    .await;
+    let completed = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemCompleted(event) => match &event.item {
+            TurnItem::AgentMessage(item) => Some(item.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+    .await;
+    assert_eq!(started.id, "msg_buffered_text");
+    assert_eq!(completed.id, "msg_buffered_text");
+    let Some(codex_protocol::items::AgentMessageContent::Text { text }) = completed.content.first()
+    else {
+        panic!("expected agent message text content");
+    };
+    assert_eq!(text, "buffered hello");
+    assert_eq!(responses_mock.requests().len(), 1);
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reasoning_deltas_before_item_added_are_buffered_until_reasoning_start()
+-> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = MockServer::start().await;
+
+    let response = sse(vec![
+        ev_response_created("resp_buffered_reasoning"),
+        ev_reasoning_summary_text_delta("plan first"),
+        ev_reasoning_text_delta("raw first"),
+        ev_reasoning_item_added("reason_buffered", &[]),
+        ev_reasoning_item("reason_buffered", &["plan first"], &["raw first"]),
+        ev_completed("resp_buffered_reasoning"),
+    ]);
+
+    let responses_mock = mount_sse_once(&server, response).await;
+
+    let TestCodex { codex, .. } = test_codex()
+        .with_config(|config| {
+            config.model_provider.stream_max_retries = Some(0);
+        })
+        .build(&server)
+        .await?;
+    codex
+        .submit(Op::UserInput {
+            environments: None,
+            items: vec![UserInput::Text {
+                text: "buffer reasoning delta".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+        })
+        .await?;
+
+    let started = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemStarted(event) => match &event.item {
+            TurnItem::Reasoning(item) => Some(item.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+    .await;
+    let completed = wait_for_event_match(&codex, |ev| match ev {
+        EventMsg::ItemCompleted(event) => match &event.item {
+            TurnItem::Reasoning(item) => Some(item.clone()),
+            _ => None,
+        },
+        _ => None,
+    })
+    .await;
+    assert_eq!(started.id, "reason_buffered");
+    assert_eq!(completed.id, "reason_buffered");
+    assert_eq!(completed.summary_text, vec!["plan first".to_string()]);
+    assert_eq!(completed.raw_content, vec!["raw first".to_string()]);
+    assert_eq!(responses_mock.requests().len(), 1);
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
     Ok(())
 }

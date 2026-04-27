@@ -2,20 +2,20 @@
 source: tui/src/bottom_pane/title_setup.rs
 expression: "render_lines(&view, 84)"
 ---
-                                                                                    
-  配 置 终 端 标 题                                                                       
-  选 择 要 在 终 端 标 题 中 显 示 的 项 目                                                       
-                                                                                    
-  输 入 搜 索                                                                           
-  >                                                                                 
-› [x] project        项 目 名 称 （ 回 退 到 当 前 目 录 名 ）                                    
-  [x] spinner        动 画 任 务 指 示 器 （ 空 闲 或 动 画 关 闭 时 省 略 ）                          
-  [x] status         会 话 状 态 文 本 （ 就 绪 /处 理 中 /思 考 中 ）                              
-  [x] thread         当 前 线 程 标 题 （ 可 用 前 省 略 ）                                      
-  [ ] app-name       Codex 应 用 名 称                                                  
-  [ ] git-branch     当 前  Git 分 支 （ 不 可 用 时 省 略 ）                                   
-  [ ] model          当 前 模 型 名 称                                                    
-  [ ] task-progress  最 新 任 务 进 度 （ 可 用 前 省 略 ）                                      
-                                                                                    
-  my-project ⠋ 处 理 中  | 排 查 不 稳 定 测 试                                               
+
+  配 置 终 端 标 题
+  选 择 要 在 终 端 标 题 中 显 示 的 项 目
+
+  输 入 搜 索
+  >
+› [x] project-name       项 目 名 称 （ 回 退 到 当 前 目 录 名 ）
+  [x] spinner            动 画 任 务 指 示 器 （ 空 闲 或 动 画 关 闭 时 省 略 ）
+  [x] run-state          会 话 状 态 文 本 （ 就 绪 /处 理 中 /思 考 中 ）
+  [x] thread-title       当 前 线 程 标 题 （ 可 用 前 省 略 ）
+  [ ] app-name           Codex 应 用 名 称
+  [ ] current-dir        当 前 工 作 目 录
+  [ ] git-branch         当 前  Git 分 支 （ 不 可 用 时 省 略 ）
+  [ ] context-remaining  上 下 文 窗 口 剩 余 百 分 比 （ 未 知 时 省 略 ）
+
+  my-project ⠋ 处 理 中  | thread title
   使 用  ↑↓ 导 航 ， ←→ 移 动 ， 空 格 选 择 ， 回 车 确 认 ， Esc 取 消 。

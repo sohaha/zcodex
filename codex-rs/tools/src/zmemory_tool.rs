@@ -629,6 +629,12 @@ mod tests {
                         "priority".to_string(),
                     ]
                 ),
+                ("delete_memory".to_string(), vec!["uri".to_string()]),
+                (
+                    "add_alias".to_string(),
+                    vec!["new_uri".to_string(), "target_uri".to_string()]
+                ),
+                ("manage_triggers".to_string(), vec!["uri".to_string()]),
                 ("read_memory".to_string(), vec!["uri".to_string()]),
                 ("search_memory".to_string(), vec!["query".to_string()]),
                 ("update_memory".to_string(), vec!["uri".to_string()]),

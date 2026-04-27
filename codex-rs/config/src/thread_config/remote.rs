@@ -202,8 +202,10 @@ fn model_provider_to_proto(
 ) -> proto::ModelProvider {
     let ModelProviderInfo {
         name,
+        model: _,
         base_url,
         env_key,
+        model_catalog: _,
         env_key_instructions,
         experimental_bearer_token,
         auth,
@@ -215,14 +217,19 @@ fn model_provider_to_proto(
         request_max_retries,
         stream_max_retries,
         stream_idle_timeout_ms,
+        retry_base_delay_ms: _,
         websocket_connect_timeout_ms,
         requires_openai_auth,
         supports_websockets,
+        model_context_window: _,
+        model_auto_compact_token_limit: _,
+        max_output_tokens: _,
+        skip_reasoning_popup: _,
     } = provider;
 
     proto::ModelProvider {
         id: id.into(),
-        name,
+        name: name.unwrap_or_default(),
         base_url,
         env_key,
         env_key_instructions,
@@ -290,6 +297,8 @@ fn proto_string_map(values: HashMap<String, String>) -> proto::StringMap {
 fn proto_wire_api(wire_api: WireApi) -> proto::WireApi {
     match wire_api {
         WireApi::Responses => proto::WireApi::Responses,
+        WireApi::Chat => proto::WireApi::Unspecified,
+        WireApi::Anthropic => proto::WireApi::Unspecified,
     }
 }
 
@@ -487,9 +496,11 @@ mod tests {
 
     fn expected_provider() -> ModelProviderInfo {
         ModelProviderInfo {
-            name: "Local".to_string(),
+            name: Some("Local".to_string()),
+            model: None,
             base_url: Some("http://127.0.0.1:8061/api/codex".to_string()),
             env_key: None,
+            model_catalog: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
             auth: Some(ModelProviderAuthInfo {
@@ -515,10 +526,15 @@ mod tests {
             request_max_retries: Some(7),
             stream_max_retries: Some(8),
             stream_idle_timeout_ms: Some(9_000),
+            retry_base_delay_ms: None,
             websocket_connect_timeout_ms: Some(10_000),
             requires_openai_auth: false,
             supports_websockets: true,
             aws: None,
+            model_context_window: None,
+            model_auto_compact_token_limit: None,
+            max_output_tokens: None,
+            skip_reasoning_popup: false,
         }
     }
 

@@ -1,12 +1,11 @@
 ---
 source: tui/src/app.rs
-assertion_line: 9848
 expression: model_migration_copy_to_plain_text(&copy)
 ---
-**Codex 已升级，现已提供 gpt-5.3-codex。**
+介绍 GPT-5.4
 
-Codex 现已由 gpt-5.3-codex 驱动，这是我们迄今最强的智能编程模型。它专为长时运行、项目级规模的工作打造，支持中途引导与更频繁的进度更新，便于你边运行边协作，而且速度也更快。
+Codex 已升级至 GPT-5.4，这是我们面向专业工作的最强模型。它比此前模型表现更好，同时 token 效率更高，并在长时运行任务、工具调用、计算机使用和前端开发方面有明显提升。
 
-了解更多：https://openai.com/index/introducing-gpt-5-3-codex/
+了解更多：https://openai.com/index/introducing-gpt-5-4
 
-如果你愿意，也可以继续使用 gpt-5.1-codex。
+如果你愿意，也可以继续使用 GPT-5.3-Codex。

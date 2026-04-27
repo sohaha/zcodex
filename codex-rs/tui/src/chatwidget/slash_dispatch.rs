@@ -101,6 +101,13 @@ impl ChatWidget {
     }
 
     pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
+        if !self.ensure_slash_command_allowed_in_side_conversation(cmd) {
+            return;
+        }
+        if !self.ensure_side_command_allowed_outside_review(cmd) {
+            return;
+        }
+
         let available = match cmd {
             SlashCommand::Zteam => crate::zteam::entry_available_during_task(/*args*/ None),
             _ => cmd.available_during_task(),
@@ -565,11 +572,16 @@ impl ChatWidget {
                 }
                 self.session_telemetry
                     .counter("codex.thread.rename", /*inc*/ 1, &[]);
-                let Some((prepared_args, _prepared_elements)) = self
-                    .bottom_pane
-                    .prepare_inline_args_submission(/*record_history*/ false)
-                else {
-                    return;
+                let prepared_args = if source == SlashCommandDispatchSource::Queued {
+                    args
+                } else {
+                    let Some((prepared_args, _prepared_elements)) = self
+                        .bottom_pane
+                        .prepare_inline_args_submission(/*record_history*/ false)
+                    else {
+                        return;
+                    };
+                    prepared_args
                 };
                 let Some(name) = crate::legacy_core::util::normalize_thread_name(&prepared_args)
                 else {

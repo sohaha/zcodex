@@ -110,7 +110,7 @@ async fn status_command_uses_catalog_default_reasoning_when_config_empty() {
         other => panic!("expected status output, got {other:?}"),
     };
     assert!(
-        rendered.contains("gpt-5.1-codex-max (推理 中, 总结 自动)"),
+        rendered.contains("gpt-5.4 (推理 极高, 总结 自动)"),
         "expected /status to render the catalog default reasoning effort, got: {rendered}"
     );
 }

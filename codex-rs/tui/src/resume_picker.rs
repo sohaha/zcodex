@@ -14,7 +14,6 @@ use crate::tui::TuiEvent;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_app_server_protocol::ThreadSourceKind;
@@ -1512,7 +1511,6 @@ mod tests {
     use crossterm::event::KeyModifiers;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
-    use std::path::Path;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -1908,35 +1906,13 @@ mod tests {
         use ratatui::layout::Constraint;
         use ratatui::layout::Layout;
 
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        let session_index_path = tempdir.path().join("session_index.jsonl");
-
         let id1 =
             ThreadId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id 1");
         let id2 =
             ThreadId::from_string("22222222-2222-2222-2222-222222222222").expect("thread id 2");
-        let entries = vec![
-            json!({
-                "id": id1,
-                "thread_name": "Keep this for now",
-                "updated_at": "2025-01-01T00:00:00Z",
-            }),
-            json!({
-                "id": id2,
-                "thread_name": "Named thread",
-                "updated_at": "2025-01-01T00:00:00Z",
-            }),
-        ];
-        let mut out = String::new();
-        for entry in entries {
-            out.push_str(&serde_json::to_string(&entry).expect("session index entry"));
-            out.push('\n');
-        }
-        std::fs::write(&session_index_path, out).expect("write session index");
 
         let loader: PageLoader = Arc::new(|_| {});
         let mut state = PickerState::new(
-            tempdir.path().to_path_buf(),
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
@@ -1951,7 +1927,7 @@ mod tests {
                 path: Some(PathBuf::from("/tmp/a.jsonl")),
                 preview: String::from("First message preview"),
                 thread_id: Some(id1),
-                thread_name: None,
+                thread_name: Some(String::from("Keep this for now")),
                 created_at: None,
                 updated_at: Some(now - Duration::days(2)),
                 cwd: None,
@@ -1961,7 +1937,7 @@ mod tests {
                 path: Some(PathBuf::from("/tmp/b.jsonl")),
                 preview: String::from("Second message preview"),
                 thread_id: Some(id2),
-                thread_name: None,
+                thread_name: Some(String::from("Named thread")),
                 created_at: None,
                 updated_at: Some(now - Duration::days(3)),
                 cwd: None,
@@ -1974,8 +1950,6 @@ mod tests {
         state.selected = 0;
         state.scroll_top = 0;
         state.update_view_rows(/*rows*/ 2);
-
-        state.update_thread_names().await;
 
         let metrics = calculate_column_metrics(&state.filtered_rows, state.show_all);
 
@@ -1999,55 +1973,32 @@ mod tests {
         assert_snapshot!("resume_picker_thread_names", snapshot);
     }
 
-    #[tokio::test]
-    async fn update_thread_names_prefers_local_session_index_names() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
+    #[test]
+    fn app_server_row_prefers_thread_name_for_preview() {
         let thread_id =
             ThreadId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id");
-        let session_index_entry = json!({
-            "id": thread_id,
-            "thread_name": "Saved session name",
-            "updated_at": "2025-01-01T00:00:00Z",
-        });
-        std::fs::write(
-            tempdir.path().join("session_index.jsonl"),
-            format!("{session_index_entry}\n"),
-        )
-        .expect("write session index");
-
-        let loader: PageLoader = Arc::new(|_| {});
-        let mut state = PickerState::new(
-            tempdir.path().to_path_buf(),
-            FrameRequester::test_dummy(),
-            loader,
-            ProviderFilter::MatchDefault(String::from("openai")),
-            /*show_all*/ true,
-            /*filter_cwd*/ None,
-            SessionPickerAction::Resume,
-        );
-
-        state.all_rows = vec![Row {
-            path: Some(PathBuf::from("/tmp/a.jsonl")),
+        let row = row_from_app_server_thread(Thread {
+            id: thread_id.to_string(),
+            forked_from_id: None,
             preview: String::from("First prompt"),
-            thread_id: Some(thread_id),
-            thread_name: Some(String::from("stale backend title")),
-            created_at: None,
-            updated_at: None,
-            cwd: None,
-            git_branch: None,
-        }];
-        state.filtered_rows = state.all_rows.clone();
+            ephemeral: false,
+            model_provider: String::from("openai"),
+            created_at: 1,
+            updated_at: 2,
+            status: codex_app_server_protocol::ThreadStatus::Idle,
+            path: Some(PathBuf::from("/tmp/a.jsonl")),
+            cwd: test_path_buf("/tmp").abs(),
+            cli_version: String::from("0.0.0"),
+            source: codex_app_server_protocol::SessionSource::Cli,
+            agent_nickname: None,
+            agent_role: None,
+            git_info: None,
+            name: Some(String::from("Saved session name")),
+            turns: Vec::new(),
+        })
+        .expect("row");
 
-        state.update_thread_names().await;
-
-        assert_eq!(
-            state.all_rows[0].thread_name,
-            Some(String::from("Saved session name"))
-        );
-        assert_eq!(
-            state.filtered_rows[0].display_preview(),
-            "Saved session name"
-        );
+        assert_eq!(row.display_preview(), "Saved session name");
     }
 
     #[test]

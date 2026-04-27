@@ -96,8 +96,6 @@ mod skills_toggle_view;
 pub(crate) mod slash_commands;
 pub(crate) use footer::CollaborationModeIndicator;
 pub(crate) use footer::GoalStatusIndicator;
-#[cfg(test)]
-pub(crate) use footer::goal_status_indicator_line;
 pub(crate) use list_selection_view::ColumnWidthMode;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionToggle;
@@ -1265,7 +1263,7 @@ impl BottomPane {
             if let Some(status) = &self.status {
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
             }
-            if self.buddy.is_visible() {
+            if self.buddy.is_visible() && self.status.is_none() {
                 if let Some(delay) = self.buddy.next_redraw_in() {
                     self.request_redraw_in(delay);
                 }
@@ -1889,6 +1887,42 @@ mod tests {
         let height = pane.desired_height(width);
         let area = Rect::new(0, 0, width, height);
         assert_snapshot!("status_only_snapshot", render_snapshot(&pane, area));
+    }
+
+    #[test]
+    fn buddy_is_hidden_while_status_indicator_is_visible() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut pane = BottomPane::new(BottomPaneParams {
+            app_event_tx: tx,
+            frame_requester: FrameRequester::test_dummy(),
+            has_input_focus: true,
+            enhanced_keys_supported: false,
+            placeholder_text: "让 Codex 帮你做任何事".to_string(),
+            disable_paste_burst: false,
+            animations_enabled: true,
+            skills: Some(Vec::new()),
+        });
+
+        pane.set_task_running(/*running*/ true);
+        let width = 60;
+        let status_only_height = pane.desired_height(width);
+        let _ = pane.show_buddy("codex-home::project");
+
+        let height = pane.desired_height(width);
+        assert_eq!(height, status_only_height);
+
+        let area = Rect::new(0, 0, width, height);
+        let rendered = render_snapshot(&pane, area);
+
+        assert!(
+            rendered.contains("处理中") || rendered.contains("处 理 中"),
+            "expected status indicator to remain visible: {rendered:?}"
+        );
+        assert!(
+            !rendered.contains("坐 立 不 安") && !rendered.contains('★'),
+            "expected buddy to stay out of the composer surface while status is visible: {rendered:?}"
+        );
     }
 
     #[test]

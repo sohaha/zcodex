@@ -577,7 +577,7 @@ mod tests {
     fn plan_lines_stream_in_order() {
         let actual = collect_plan_streamed_lines(&["- one\n", "- two\n"], Some(80));
         assert!(
-            actual.iter().any(|line| line.contains("Proposed Plan")),
+            actual.iter().any(|line| line.contains("建议计划")),
             "expected plan header in streamed plan: {actual:?}",
         );
         assert!(
