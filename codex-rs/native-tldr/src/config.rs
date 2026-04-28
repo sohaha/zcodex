@@ -25,23 +25,12 @@ struct GlobalConfigFile {
     pub ztldr: Option<GlobalZtldrConfigFile>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct GlobalZtldrConfig {
     pub enabled: Option<bool>,
     pub artifact_location: Option<ZtldrArtifactLocation>,
     pub onnxruntime: Option<bool>,
     pub model: Option<String>,
-}
-
-impl Default for GlobalZtldrConfig {
-    fn default() -> Self {
-        Self {
-            enabled: None,
-            artifact_location: None,
-            onnxruntime: None,
-            model: None,
-        }
-    }
 }
 
 impl GlobalZtldrConfig {
@@ -156,7 +145,7 @@ fn load_global_ztldr_config_from_file(config_path: &Path) -> Result<GlobalZtldrC
         return Ok(GlobalZtldrConfig::default());
     }
 
-    let file = std::fs::read_to_string(&config_path)
+    let file = std::fs::read_to_string(config_path)
         .with_context(|| format!("read Codex config {}", config_path.display()))?;
     let parsed: GlobalConfigFile = toml::from_str(&file)
         .with_context(|| format!("parse Codex config {}", config_path.display()))?;
