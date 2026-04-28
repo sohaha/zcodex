@@ -155,7 +155,7 @@ fn fastembed_cache_dir_from_env(
     hf_home: Option<OsString>,
     home_dir: Option<PathBuf>,
 ) -> Result<PathBuf> {
-    if let Some(path) = hf_home.filter(|value| !value.is_empty()).map(PathBuf::from) {
+    if let Some(path) = hf_home.map(PathBuf::from) {
         return Ok(path);
     }
 
@@ -445,13 +445,10 @@ mod tests {
     }
 
     #[test]
-    fn fastembed_cache_dir_defaults_to_codex_embed_under_home() {
+    fn fastembed_cache_dir_defaults_to_codex_embed_under_home_without_hf_home() {
         assert_eq!(
-            fastembed_cache_dir_from_env(
-                Some(OsString::new()),
-                Some(PathBuf::from("/home/tester")),
-            )
-            .expect("cache dir should resolve"),
+            fastembed_cache_dir_from_env(None, Some(PathBuf::from("/home/tester")))
+                .expect("cache dir should resolve"),
             PathBuf::from("/home/tester/.codex/embed")
         );
     }

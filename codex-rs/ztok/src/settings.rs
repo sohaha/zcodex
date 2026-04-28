@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 pub const ZTOK_RUNTIME_SETTINGS_ENV_VAR: &str = "CODEX_ZTOK_RUNTIME_SETTINGS";
 pub const ZTOK_SESSION_ID_ENV_VAR: &str = "CODEX_ZTOK_SESSION_ID";
+pub const ZTOK_NO_DEDUP_ENV_VAR: &str = "CODEX_ZTOK_NO_DEDUP";
 
 #[derive(Debug, Clone)]
 pub(crate) struct ZtokRuntimeSettings {
@@ -14,6 +15,7 @@ pub(crate) struct ZtokRuntimeSettings {
     pub session_cache: SessionCacheSettings,
     pub near_dedup: NearDedupSettings,
     pub decision_trace: DecisionTraceSettings,
+    pub no_cache: NoCacheSettings,
 }
 
 #[derive(Debug, Clone)]
@@ -31,6 +33,11 @@ pub(crate) struct DecisionTraceSettings {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct NoCacheSettings {
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct ZtokRuntimeSettingsPayload {
     #[serde(default)]
@@ -39,6 +46,8 @@ struct ZtokRuntimeSettingsPayload {
     session_cache: SessionCachePayload,
     #[serde(default)]
     decision_trace: DecisionTracePayload,
+    #[serde(default)]
+    no_cache: NoCachePayload,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -53,6 +62,12 @@ struct DecisionTracePayload {
     enabled: Option<bool>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct NoCachePayload {
+    #[serde(default)]
+    enabled: Option<bool>,
+}
+
 pub(crate) fn runtime_settings() -> ZtokRuntimeSettings {
     ZtokRuntimeSettings::from_env()
 }
@@ -63,6 +78,7 @@ pub fn encode_runtime_settings_env(
 ) -> Result<String, serde_json::Error> {
     serde_json::to_string(&runtime_settings_payload(
         session_id, behavior, /*decision_trace_enabled*/ false,
+        /*no_cache_enabled*/ false,
     ))
 }
 
@@ -72,6 +88,21 @@ pub(crate) fn apply_decision_trace_override(enabled: bool) -> Result<(), serde_j
         .and_then(|raw| serde_json::from_str::<ZtokRuntimeSettingsPayload>(&raw).ok())
         .unwrap_or_else(ZtokRuntimeSettings::legacy_payload);
     payload.decision_trace.enabled = Some(enabled);
+    unsafe {
+        std::env::set_var(
+            ZTOK_RUNTIME_SETTINGS_ENV_VAR,
+            serde_json::to_string(&payload)?,
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_no_cache_override(enabled: bool) -> Result<(), serde_json::Error> {
+    let mut payload = std::env::var(ZTOK_RUNTIME_SETTINGS_ENV_VAR)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<ZtokRuntimeSettingsPayload>(&raw).ok())
+        .unwrap_or_else(ZtokRuntimeSettings::legacy_payload);
+    payload.no_cache.enabled = Some(enabled);
     unsafe {
         std::env::set_var(
             ZTOK_RUNTIME_SETTINGS_ENV_VAR,
@@ -97,6 +128,9 @@ impl ZtokRuntimeSettings {
                 session_id: std::env::var(ZTOK_SESSION_ID_ENV_VAR).ok(),
             },
             decision_trace: DecisionTracePayload::default(),
+            no_cache: NoCachePayload {
+                enabled: Some(no_dedup_env_enabled()),
+            },
         }
     }
 
@@ -113,6 +147,9 @@ impl ZtokRuntimeSettings {
             },
             decision_trace: DecisionTraceSettings {
                 enabled: payload.decision_trace.enabled.unwrap_or(false),
+            },
+            no_cache: NoCacheSettings {
+                enabled: payload.no_cache.enabled.unwrap_or(false) || no_dedup_env_enabled(),
             },
         }
     }
@@ -132,6 +169,7 @@ impl ZtokRuntimeSettings {
                 text: near_duplicate_config,
             },
             decision_trace: DecisionTraceSettings::default(),
+            no_cache: NoCacheSettings::default(),
         }
     }
 }
@@ -140,6 +178,7 @@ fn runtime_settings_payload(
     session_id: Option<&str>,
     behavior: &str,
     decision_trace_enabled: bool,
+    no_cache_enabled: bool,
 ) -> ZtokRuntimeSettingsPayload {
     ZtokRuntimeSettingsPayload {
         behavior: Some(behavior.to_string()),
@@ -149,7 +188,16 @@ fn runtime_settings_payload(
         decision_trace: DecisionTracePayload {
             enabled: Some(decision_trace_enabled),
         },
+        no_cache: NoCachePayload {
+            enabled: Some(no_cache_enabled),
+        },
     }
+}
+
+fn no_dedup_env_enabled() -> bool {
+    std::env::var(ZTOK_NO_DEDUP_ENV_VAR)
+        .ok()
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
 }
 
 pub(crate) fn session_cache_path_for_session_id(session_id: &str) -> Option<PathBuf> {
@@ -192,6 +240,7 @@ mod tests {
 
         assert!(settings.behavior.is_basic());
         assert!(!settings.decision_trace.enabled);
+        assert!(!settings.no_cache.enabled);
         assert!(
             settings
                 .session_cache
@@ -207,9 +256,22 @@ mod tests {
             Some("thread-3"),
             "enhanced",
             /*decision_trace_enabled*/ true,
+            /*no_cache_enabled*/ false,
         ));
 
         assert!(settings.decision_trace.enabled);
+    }
+
+    #[test]
+    fn no_cache_payload_disables_session_dedup() {
+        let settings = ZtokRuntimeSettings::from_payload(runtime_settings_payload(
+            Some("thread-4"),
+            "enhanced",
+            /*decision_trace_enabled*/ false,
+            /*no_cache_enabled*/ true,
+        ));
+
+        assert!(settings.no_cache.enabled);
     }
 
     #[test]

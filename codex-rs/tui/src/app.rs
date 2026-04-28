@@ -4304,6 +4304,22 @@ impl App {
         Ok(())
     }
 
+    async fn drain_startup_app_server_events(
+        &mut self,
+        tui: &mut tui::Tui,
+        app_server: &mut AppServerSession,
+    ) -> Result<()> {
+        tokio::task::yield_now().await;
+        for _ in 0..64 {
+            let Some(event) = app_server.try_next_event() else {
+                break;
+            };
+            self.handle_app_server_event(app_server, event).await;
+            self.drain_active_thread_events(tui).await?;
+        }
+        self.drain_active_thread_events(tui).await
+    }
+
     /// Returns `(closed_thread_id, primary_thread_id)` when a non-primary active
     /// thread has died and we should fail over to the primary thread.
     ///
@@ -4702,6 +4718,8 @@ impl App {
         let tui_events = tui.event_stream();
         tokio::pin!(tui_events);
 
+        app.drain_startup_app_server_events(tui, &mut app_server)
+            .await?;
         tui.frame_requester().schedule_frame();
         crate::tooltips::announcement::prewarm();
         app.refresh_startup_skills(&app_server);

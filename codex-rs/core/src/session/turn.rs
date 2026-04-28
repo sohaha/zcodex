@@ -1283,20 +1283,73 @@ async fn next_fallback_turn_context(
 }
 
 fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {
-    matches!(
-        err,
+    match err {
         CodexErr::Stream(_, _)
-            | CodexErr::UnexpectedStatus(_)
-            | CodexErr::InvalidRequest(_)
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::QuotaExceeded
-            | CodexErr::UsageNotIncluded
-            | CodexErr::ServerOverloaded
-            | CodexErr::ResponseStreamFailed(_)
-            | CodexErr::ConnectionFailed(_)
-            | CodexErr::InternalServerError
-            | CodexErr::Timeout
-    )
+        | CodexErr::UsageLimitReached(_)
+        | CodexErr::QuotaExceeded
+        | CodexErr::UsageNotIncluded
+        | CodexErr::ServerOverloaded
+        | CodexErr::ResponseStreamFailed(_)
+        | CodexErr::ConnectionFailed(_)
+        | CodexErr::InternalServerError
+        | CodexErr::Timeout => true,
+        CodexErr::UnexpectedStatus(err) => should_retry_with_fallback_status(err.status),
+        CodexErr::InvalidRequest(_) => false,
+        _ => false,
+    }
+}
+
+fn should_retry_with_fallback_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::REQUEST_TIMEOUT || status.is_server_error()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_retry_with_fallback_provider;
+    use super::should_retry_with_fallback_status;
+    use codex_protocol::error::CodexErr;
+    use codex_protocol::error::UnexpectedResponseError;
+
+    fn unexpected_status(status: reqwest::StatusCode) -> CodexErr {
+        CodexErr::UnexpectedStatus(UnexpectedResponseError {
+            status,
+            body: String::new(),
+            url: None,
+            cf_ray: None,
+            request_id: None,
+            identity_authorization_error: None,
+            identity_error_code: None,
+        })
+    }
+
+    #[test]
+    fn fallback_status_retries_only_transient_http_statuses() {
+        assert!(should_retry_with_fallback_status(
+            reqwest::StatusCode::BAD_GATEWAY
+        ));
+        assert!(should_retry_with_fallback_status(
+            reqwest::StatusCode::REQUEST_TIMEOUT
+        ));
+        assert!(!should_retry_with_fallback_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
+        assert!(!should_retry_with_fallback_status(
+            reqwest::StatusCode::NOT_FOUND
+        ));
+    }
+
+    #[test]
+    fn fallback_provider_does_not_hide_auth_or_invalid_request_failures() {
+        assert!(!should_retry_with_fallback_provider(&unexpected_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        )));
+        assert!(!should_retry_with_fallback_provider(&unexpected_status(
+            reqwest::StatusCode::NOT_FOUND
+        )));
+        assert!(!should_retry_with_fallback_provider(
+            &CodexErr::InvalidRequest("bad request".to_string())
+        ));
+    }
 }
 
 #[expect(

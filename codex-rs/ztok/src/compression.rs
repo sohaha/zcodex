@@ -29,6 +29,7 @@ pub(crate) enum CompressionOutputKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ExplicitFallbackReason {
     EmptySpecializedOutput,
+    DedupDisabledByUser,
     DedupDisabledNoSessionId,
     DedupCacheUnavailable,
     NearDuplicateLowConfidence,

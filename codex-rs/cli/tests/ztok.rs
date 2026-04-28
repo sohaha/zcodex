@@ -13,7 +13,8 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
         .env_remove("CODEX_THREAD_ID")
         .env_remove("CODEX_ZTOK_SESSION_ID")
         .env_remove("CODEX_ZTOK_BEHAVIOR")
-        .env_remove("CODEX_ZTOK_RUNTIME_SETTINGS");
+        .env_remove("CODEX_ZTOK_RUNTIME_SETTINGS")
+        .env_remove("CODEX_ZTOK_NO_DEDUP");
     Ok(cmd)
 }
 
@@ -943,6 +944,163 @@ fn ztok_cache_inspect_and_clear_specific_session() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn ztok_cache_expand_returns_original_snapshot_for_dedup_ref() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success();
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup"));
+    let dedup_ref = extract_dedup_ref(&second_assert.get_output().stdout);
+
+    let mut expand = codex_command(codex_home.path())?;
+    expand
+        .args([
+            "ztok",
+            "cache",
+            "expand",
+            "thread-ztok-expand-1",
+            &dedup_ref,
+        ])
+        .assert()
+        .success()
+        .stdout(contains("same\ncontent\n"));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_cache_expand_can_return_compressed_output() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-compressed-1")
+        .args([
+            "ztok",
+            "read",
+            file.to_string_lossy().as_ref(),
+            "--max-lines",
+            "2",
+        ])
+        .assert()
+        .success();
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-compressed-1")
+        .args([
+            "ztok",
+            "read",
+            file.to_string_lossy().as_ref(),
+            "--max-lines",
+            "2",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup"));
+    let dedup_ref = extract_dedup_ref(&second_assert.get_output().stdout);
+
+    let mut expand = codex_command(codex_home.path())?;
+    expand
+        .args([
+            "ztok",
+            "cache",
+            "expand",
+            "thread-ztok-expand-compressed-1",
+            &dedup_ref,
+            "--compressed",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("one").and(contains("省略 2 行（共 3 行）")));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_cache_expand_reports_missing_ref() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "ztok",
+        "cache",
+        "expand",
+        "thread-ztok-expand-missing-1",
+        "abcd1234",
+    ])
+    .assert()
+    .failure()
+    .stderr(contains("未找到匹配的 ztok dedup 引用"));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_no_cache_cli_disables_dedup_but_keeps_compression() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let raw_content = "{\"name\":\"alpha\",\"count\":2}\n";
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-no-cache-1")
+        .args(["ztok", "--no-cache", "json", "-"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-no-cache-1")
+        .args(["ztok", "--trace-decisions", "--no-cache", "json", "-"])
+        .write_stdin(raw_content)
+        .assert()
+        .success()
+        .stdout(contains("name: \"alpha\"").and(contains("[ztok dedup").not()));
+
+    let stderr = String::from_utf8_lossy(&second_assert.get_output().stderr);
+    assert!(stderr.contains("\"fallback\":\"dedup_disabled_by_user\""));
+    assert!(!stderr.contains(raw_content));
+
+    Ok(())
+}
+
+#[test]
+fn ztok_no_cache_env_disables_dedup() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "same\ncontent\n")?;
+
+    for _ in 0..2 {
+        let mut cmd = codex_command(codex_home.path())?;
+        cmd.env("CODEX_THREAD_ID", "thread-ztok-no-cache-env-1")
+            .env("CODEX_ZTOK_NO_DEDUP", "1")
+            .args(["ztok", "read", file.to_string_lossy().as_ref()])
+            .assert()
+            .success()
+            .stdout(contains("same").and(contains("[ztok dedup").not()));
+    }
+
+    Ok(())
+}
+
 #[cfg(unix)]
 fn make_ztok_alias(codex_home: &Path) -> Result<PathBuf> {
     let alias = codex_home.join("ztok");
@@ -991,6 +1149,20 @@ fn assert_version_contains(codex_home: &Path, args: &[&str]) -> Result<()> {
     let mut cmd = codex_command(codex_home)?;
     cmd.args(args).assert().success().stdout(contains("ztok "));
     Ok(())
+}
+
+fn extract_dedup_ref(output: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(output);
+    let marker = "[ztok dedup ";
+    let start = stdout
+        .find(marker)
+        .unwrap_or_else(|| panic!("missing dedup marker in stdout:\n{stdout}"))
+        + marker.len();
+    let end = stdout[start..]
+        .find(']')
+        .unwrap_or_else(|| panic!("unterminated dedup marker in stdout:\n{stdout}"))
+        + start;
+    stdout[start..end].to_string()
 }
 
 fn create_fake_bin_dir(codex_home: &TempDir) -> Result<PathBuf> {
@@ -1164,7 +1336,12 @@ fn ztok_help_exposes_codex_curated_command_surface() -> Result<()> {
         ),
         (
             vec!["ztok", "cache", "--help"],
-            vec!["inspect", "clear", "管理指定 session 的 ztok cache"],
+            vec![
+                "inspect",
+                "expand",
+                "clear",
+                "管理指定 session 的 ztok cache",
+            ],
             vec!["rewrite"],
         ),
         (

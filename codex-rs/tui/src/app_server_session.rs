@@ -355,6 +355,10 @@ impl AppServerSession {
         self.client.next_event().await
     }
 
+    pub(crate) fn try_next_event(&mut self) -> Option<AppServerEvent> {
+        self.client.try_next_event()
+    }
+
     pub(crate) async fn start_thread(&mut self, config: &Config) -> Result<AppServerStartedThread> {
         self.start_thread_with_session_start_source(config, /*session_start_source*/ None)
             .await

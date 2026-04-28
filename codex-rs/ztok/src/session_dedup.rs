@@ -87,6 +87,10 @@ fn dedup_output_with_runtime_settings(
         return result;
     }
 
+    if runtime_settings.no_cache.enabled {
+        return with_additional_fallback(result, ExplicitFallbackReason::DedupDisabledByUser);
+    }
+
     if result.output_kind != CompressionOutputKind::Full {
         return result;
     }

@@ -57,6 +57,7 @@ case "${1:-}" in
 [mise] `build` 会运行构建脚本自身的回归检查：
   - build-paths.sh
   - build-release.sh
+  - deps-ubuntu-macos-arm64.sh
 EOF
       exit 0
     fi
@@ -67,6 +68,7 @@ EOF
     fi
     bash "$script_dir/tests/build-paths.sh"
     bash "$script_dir/tests/build-release.sh"
+    bash "$script_dir/tests/deps-ubuntu-macos-arm64.sh"
     exit 0
     ;;
   tldr)

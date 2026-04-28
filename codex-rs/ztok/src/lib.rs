@@ -130,6 +130,10 @@ struct Cli {
     #[arg(long = "trace-decisions", global = true)]
     trace_decisions: bool,
 
+    /// 本次调用禁用 session dedup cache，但保留正常压缩
+    #[arg(long = "no-cache", global = true)]
+    no_cache: bool,
+
     /// 显示帮助信息
     #[arg(short = 'h', long = "help", action = clap::ArgAction::Help, global = true)]
     help: Option<bool>,
@@ -622,6 +626,16 @@ enum CacheCommands {
     Inspect {
         /// session id（通常等于 CODEX_THREAD_ID）
         session_id: String,
+    },
+    /// 展开指定 session cache 中的 ztok dedup 引用
+    Expand {
+        /// session id（通常等于 CODEX_THREAD_ID）
+        session_id: String,
+        /// dedup 引用前缀，例如 abcdef12 或完整 "[ztok dedup abcdef12]" 行
+        ref_prefix: String,
+        /// 输出压缩后的正文，而不是原始 snapshot
+        #[arg(long)]
+        compressed: bool,
     },
     /// 清空指定 session cache
     Clear {
@@ -1167,6 +1181,9 @@ fn run_cli(cli: Cli) -> Result<()> {
     if cli.trace_decisions {
         settings::apply_decision_trace_override(true)?;
     }
+    if cli.no_cache {
+        settings::apply_no_cache_override(true)?;
+    }
 
     match cli.command {
         Commands::Ls { args } => {
@@ -1475,6 +1492,13 @@ fn run_cli(cli: Cli) -> Result<()> {
         Commands::Cache { command } => match command {
             CacheCommands::Inspect { session_id } => {
                 session_cache_cmd::inspect(&session_id)?;
+            }
+            CacheCommands::Expand {
+                session_id,
+                ref_prefix,
+                compressed,
+            } => {
+                session_cache_cmd::expand(&session_id, &ref_prefix, compressed)?;
             }
             CacheCommands::Clear { session_id } => {
                 session_cache_cmd::clear(&session_id)?;

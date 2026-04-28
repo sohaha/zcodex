@@ -120,6 +120,7 @@ const fn decision_label(result: &CompressionResult) -> &'static str {
 const fn fallback_label(reason: ExplicitFallbackReason) -> &'static str {
     match reason {
         ExplicitFallbackReason::EmptySpecializedOutput => "empty_specialized_output",
+        ExplicitFallbackReason::DedupDisabledByUser => "dedup_disabled_by_user",
         ExplicitFallbackReason::DedupDisabledNoSessionId => "dedup_disabled_no_session_id",
         ExplicitFallbackReason::DedupCacheUnavailable => "dedup_cache_unavailable",
         ExplicitFallbackReason::NearDuplicateLowConfidence => "near_duplicate_low_confidence",

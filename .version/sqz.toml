@@ -1,5 +1,5 @@
-version = "main"
+version = "1.0.9"
 source = "https://github.com/ojuschugh1/sqz"
-upstream_ref = "main"
-upstream_commit = "1ad85d92e3ab5dce6e80887e1cf7e42923df8457"
+upstream_ref = "v1.0.9"
+upstream_commit = "26a48bc5e910f92df01738742cdee9de15224587"
 integration_mode = "selective-reference"

@@ -754,6 +754,11 @@ impl InProcessAppServerClient {
         self.event_rx.recv().await
     }
 
+    /// Returns the next queued in-process event without waiting.
+    pub fn try_next_event(&mut self) -> Option<InProcessServerEvent> {
+        self.event_rx.try_recv().ok()
+    }
+
     /// Shuts down worker and in-process runtime with bounded wait.
     ///
     /// If graceful shutdown exceeds timeout, the worker task is aborted to
@@ -907,6 +912,13 @@ impl AppServerClient {
         match self {
             Self::InProcess(client) => client.next_event().await.map(Into::into),
             Self::Remote(client) => client.next_event().await,
+        }
+    }
+
+    pub fn try_next_event(&mut self) -> Option<AppServerEvent> {
+        match self {
+            Self::InProcess(client) => client.try_next_event().map(Into::into),
+            Self::Remote(client) => client.try_next_event(),
         }
     }
 

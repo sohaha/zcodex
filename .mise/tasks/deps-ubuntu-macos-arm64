@@ -39,8 +39,12 @@ resolve_default_sdk_source() {
   local metadata
 
   metadata="$(curl_metadata "$sdk_index_url")"
-  sdk_url="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_url":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
-  sdk_sha256="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_sha256sum":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
+  sdk_url="$(
+    awk -F'"' '/"github_download_url"[[:space:]]*:/ { print $4; exit }' <<<"$metadata"
+  )"
+  sdk_sha256="$(
+    awk -F'"' '/"github_download_sha256sum"[[:space:]]*:/ { print $4; exit }' <<<"$metadata"
+  )"
 
   if [ -z "$sdk_url" ] || [ -z "$sdk_sha256" ]; then
     die "[mise] 无法从默认 SDK 索引解析下载地址或校验值: $sdk_index_url"

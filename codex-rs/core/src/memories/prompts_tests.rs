@@ -177,4 +177,7 @@ fn build_ztok_tool_developer_instructions_renders_embedded_template() {
         )
     );
     assert!(instructions.contains("`codex ztok shell bash -lc '<command>'`"));
+    assert!(instructions.contains("`codex ztok cache expand <session-id> <ref>`"));
+    assert!(instructions.contains("`codex ztok --no-cache ...`"));
+    assert!(instructions.contains("`CODEX_ZTOK_NO_DEDUP=1`"));
 }

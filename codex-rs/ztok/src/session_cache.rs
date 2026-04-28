@@ -28,6 +28,15 @@ pub(crate) struct SessionCacheCandidateRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionCacheExpandRow {
+    pub fingerprint: String,
+    pub source_name: String,
+    pub snapshot: String,
+    pub output: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SessionCacheSummary {
     pub session_id: String,
     pub path: PathBuf,
@@ -112,6 +121,35 @@ impl SessionCacheStore {
             candidates.push(row?);
         }
         Ok(candidates)
+    }
+
+    pub(crate) fn expand_rows_by_prefix(
+        &self,
+        fingerprint_prefix: &str,
+        limit: usize,
+    ) -> Result<Vec<SessionCacheExpandRow>> {
+        let like_pattern = format!("{fingerprint_prefix}%");
+        let mut statement = self.connection.prepare(
+            "SELECT fingerprint, source_name, snapshot, output, created_at
+             FROM session_cache
+             WHERE fingerprint LIKE ?1
+             ORDER BY created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![like_pattern, limit as i64], |row| {
+            Ok(SessionCacheExpandRow {
+                fingerprint: row.get(0)?,
+                source_name: row.get(1)?,
+                snapshot: row.get(2)?,
+                output: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut matches = Vec::new();
+        for row in rows {
+            matches.push(row?);
+        }
+        Ok(matches)
     }
 
     pub(crate) fn store_snapshot(
@@ -420,6 +458,63 @@ mod tests {
         assert_eq!(summary.entry_count, 1);
         assert_eq!(summary.oldest_entry_at, Some(42));
         assert_eq!(summary.newest_entry_at, Some(42));
+    }
+
+    #[test]
+    fn expand_rows_by_prefix_returns_snapshot_and_output() {
+        let temp = TempDir::new().expect("temp dir");
+        let path = temp.path().join(".ztok-cache").join("thread-expand.sqlite");
+        let cache = SessionCacheStore::open(&path).expect("open cache");
+        cache
+            .insert_row_for_test(TestSessionCacheRow {
+                fingerprint: "abcdef123456",
+                source_name: "alpha.txt",
+                output_signature: "read:none",
+                snapshot: "raw alpha",
+                output: "compressed alpha",
+                simhash: "00",
+                created_at: 42,
+            })
+            .expect("insert row");
+
+        assert_eq!(
+            cache
+                .expand_rows_by_prefix("abcdef12", 6)
+                .expect("expand row"),
+            vec![SessionCacheExpandRow {
+                fingerprint: "abcdef123456".to_string(),
+                source_name: "alpha.txt".to_string(),
+                snapshot: "raw alpha".to_string(),
+                output: "compressed alpha".to_string(),
+                created_at: 42,
+            }]
+        );
+    }
+
+    #[test]
+    fn expand_rows_by_prefix_returns_multiple_matches_for_ambiguous_prefix() {
+        let temp = TempDir::new().expect("temp dir");
+        let path = temp
+            .path()
+            .join(".ztok-cache")
+            .join("thread-ambiguous.sqlite");
+        let cache = SessionCacheStore::open(&path).expect("open cache");
+        for (fingerprint, created_at) in [("abcd1111", 1), ("abcd2222", 2)] {
+            cache
+                .insert_row_for_test(TestSessionCacheRow {
+                    fingerprint,
+                    source_name: "alpha.txt",
+                    output_signature: "read:none",
+                    snapshot: "raw alpha",
+                    output: "compressed alpha",
+                    simhash: "00",
+                    created_at,
+                })
+                .expect("insert row");
+        }
+
+        let rows = cache.expand_rows_by_prefix("abcd", 6).expect("expand rows");
+        assert_eq!(rows.len(), 2);
     }
 
     #[test]
