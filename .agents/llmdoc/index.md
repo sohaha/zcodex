@@ -26,8 +26,9 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 
 ## 最近三天反思
-- 时间窗按当前日期 `2026-04-27` 计算，覆盖 `2026-04-25` 至 `2026-04-27`。
+- 时间窗按当前日期 `2026-04-28` 计算，覆盖 `2026-04-26` 至 `2026-04-28`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-28-cli-provider-empty-value-selection-must-preserve-config-override-priority.md`：`-P` 这类带值 flag 改为可空值时，要同时区分未传、空值和实际值；空值触发交互式 provider 选择时仍必须保留显式 `-c model_provider=...` 的优先级，并用 TUI parser 与顶层 `codex` parser 双层测试锁住。
 - `.agents/llmdoc/memory/reflections/2026-04-27-cli-shared-options-localization-must-live-in-utils-cli-source.md`：CLI 外壳级 help 本地化不会覆盖 `SharedCliOptions` 的正文说明；共享参数汉化必须回到 `codex-rs/utils/cli/src/shared_options.rs`，并用顶层 help 断言同时锁中文出现与旧英文消失。
 - `.agents/llmdoc/memory/reflections/2026-04-27-cyber-reroute-warning-must-use-runtime-models-and-avoid-stale-recovery-copy.md`：安全降级 warning 若把原模型、目标模型或恢复入口写死，就会在实际切到 `glm/glm-4.7` 之类目标时显示错误文案；模型名必须取运行时值，非稳定恢复文案应直接删掉。
 - `.agents/llmdoc/memory/reflections/2026-04-27-websocket-wrapped-429-must-preserve-retryable-semantics.md`：Responses WebSocket 的 wrapped `status=429` error 若一律降格成 `TransportError::Http(429)`，会在 `api_bridge`/`core` 链路里丢掉 retryable 语义；应保留普通 rate-limit 429 的流式重连语义，仅让 `usage_limit_reached` / `usage_not_included` 继续走终止型 429。
