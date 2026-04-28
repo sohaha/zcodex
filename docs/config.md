@@ -131,6 +131,34 @@ behavior = "enhanced"
 behavior = "basic"
 ```
 
+## ZTLDR
+
+`ztldr` 的用户配置边界不同于 `ztok`：当前 `~/.codex/config.toml` 没有 `ztldr` / `tldr` 专用配置表，也没有可持久化的全局 ztldr 开关。daemon、semantic 和 session 参数来自项目根目录下的 `.codex/tldr.toml`。
+
+最小示例：
+
+```toml
+[daemon]
+auto_start = true
+socket_mode = "auto"
+
+[semantic]
+enabled = true
+model = "bge-m3"
+auto_reindex_threshold = 20
+ignore = ["generated.rs"]
+
+[semantic.embedding]
+enabled = true
+dimensions = 64
+
+[session]
+dirty_file_threshold = 20
+idle_timeout_secs = 1800
+```
+
+完整命令、配置字段和 MCP 边界见 [`docs/ztldr.md`](./ztldr.md)。
+
 ## Notify
 
 当 agent 完成一个 turn 时，Codex 可以运行一个通知 hook。最新的通知相关配置以配置参考为准：
