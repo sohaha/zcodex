@@ -1349,18 +1349,28 @@ mod tests {
             .await
             .expect("thread/start should succeed");
 
-        let event = client
-            .try_next_event()
-            .expect("startup warning should be buffered before thread/start returns");
-        let InProcessServerEvent::ServerNotification(ServerNotification::Warning(warning)) = event
-        else {
-            panic!("expected startup warning notification");
-        };
-        assert_eq!(
-            warning.thread_id.as_deref(),
-            Some(response.thread.id.as_str())
+        let mut warning_messages = Vec::new();
+        let mut found_startup_warning = false;
+        for _ in 0..64 {
+            let Some(event) = client.try_next_event() else {
+                break;
+            };
+            if let InProcessServerEvent::ServerNotification(ServerNotification::Warning(warning)) =
+                event
+            {
+                warning_messages.push(warning.message.clone());
+                if warning.thread_id.as_deref() == Some(response.thread.id.as_str())
+                    && warning.message.contains("child_agents_md")
+                {
+                    found_startup_warning = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_startup_warning,
+            "startup warning should be buffered before thread/start returns; saw warnings: {warning_messages:?}"
         );
-        assert!(warning.message.contains("child_agents_md"));
 
         client.shutdown().await.expect("shutdown should complete");
         let _ = std::fs::remove_dir_all(codex_home);
