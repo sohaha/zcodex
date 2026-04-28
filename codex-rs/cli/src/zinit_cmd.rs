@@ -3,6 +3,8 @@ use anyhow::Result;
 use anyhow::bail;
 use clap::Parser;
 use clap::Subcommand;
+use codex_native_tldr::semantic::SemanticConfig;
+use codex_native_tldr::semantic::warm_embedding_model;
 #[cfg(unix)]
 use std::ffi::CStr;
 #[cfg(unix)]
@@ -27,6 +29,10 @@ pub struct ZinitCli {
     #[arg(long = "target-dir", value_name = "目录")]
     target_dir: Option<PathBuf>,
 
+    /// 预下载并初始化指定的 ztldr embedding 模型；不传则只准备 ONNX Runtime。
+    #[arg(long = "model", value_name = "模型")]
+    model: Option<String>,
+
     #[command(subcommand)]
     subcommand: Option<ZinitSubcommand>,
 }
@@ -39,11 +45,15 @@ enum ZinitSubcommand {
 
 pub async fn run_zinit_command(cli: ZinitCli) -> Result<()> {
     match cli.subcommand.unwrap_or(ZinitSubcommand::Ztldr) {
-        ZinitSubcommand::Ztldr => run_ztldr_init(cli.check, cli.target_dir).await,
+        ZinitSubcommand::Ztldr => run_ztldr_init(cli.check, cli.target_dir, cli.model).await,
     }
 }
 
-async fn run_ztldr_init(check_only: bool, target_dir: Option<PathBuf>) -> Result<()> {
+async fn run_ztldr_init(
+    check_only: bool,
+    target_dir: Option<PathBuf>,
+    model: Option<String>,
+) -> Result<()> {
     let install_target = resolve_install_target(target_dir)?;
     let target_dir = install_target
         .dylib_path
@@ -57,6 +67,7 @@ async fn run_ztldr_init(check_only: bool, target_dir: Option<PathBuf>) -> Result
             "ztldr 环境已就绪：{}",
             check.path.as_deref().unwrap_or(&dylib_path).display()
         );
+        warm_optional_model(model)?;
         return Ok(());
     }
 
@@ -79,6 +90,7 @@ async fn run_ztldr_init(check_only: bool, target_dir: Option<PathBuf>) -> Result
     let check = check_onnxruntime(&dylib_path);
     if check.ready {
         println!("ztldr 环境已就绪：{}", dylib_path.display());
+        warm_optional_model(model)?;
         return Ok(());
     }
 
@@ -88,6 +100,17 @@ async fn run_ztldr_init(check_only: bool, target_dir: Option<PathBuf>) -> Result
             .reason
             .unwrap_or_else(|| dylib_path.display().to_string())
     );
+}
+
+fn warm_optional_model(model: Option<String>) -> Result<()> {
+    let Some(model) = model else {
+        return Ok(());
+    };
+    let dimensions = SemanticConfig::default().embedding_dimensions();
+    println!("正在预热 ztldr embedding 模型：{model}");
+    warm_embedding_model(&model, dimensions)?;
+    println!("ztldr embedding 模型已就绪：{model}");
+    Ok(())
 }
 
 #[derive(Debug)]

@@ -56,6 +56,16 @@ pub struct SemanticConfig {
     pub ignore: Vec<String>,
 }
 
+pub const SUPPORTED_SEMANTIC_MODELS: &[&str] = &[
+    "minilm",
+    "all-minilm-l6-v2",
+    "bge-small-en-v1.5",
+    "bge-base-en-v1.5",
+    "bge-m3",
+    "jina-code",
+    "jina-embeddings-v2-base-code",
+];
+
 impl Default for SemanticConfig {
     fn default() -> Self {
         Self {
@@ -68,6 +78,25 @@ impl Default for SemanticConfig {
             ignore: Vec::new(),
         }
     }
+}
+
+pub fn warm_embedding_model(model: &str, dimensions: usize) -> Result<()> {
+    validate_semantic_model(model)?;
+    let embedder = SemanticEmbedder::new(model.to_string());
+    embedder
+        .embed_query("ztldr semantic model warmup", dimensions)
+        .with_context(|| format!("warm semantic embedding model `{model}`"))?;
+    Ok(())
+}
+
+pub fn validate_semantic_model(model: &str) -> Result<()> {
+    if SUPPORTED_SEMANTIC_MODELS.contains(&model) {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "unsupported semantic embedding model `{model}`; supported models: {}",
+        SUPPORTED_SEMANTIC_MODELS.join(", ")
+    );
 }
 
 impl SemanticConfig {
@@ -1361,6 +1390,7 @@ mod tests {
     use super::embedder::set_test_embedding_failure;
     use super::reset_semantic_index_build_count;
     use super::semantic_index_build_count;
+    use super::validate_semantic_model;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -1384,6 +1414,25 @@ mod tests {
         let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
         assert!(indexer.is_enabled());
         assert!(indexer.describe().contains("enabled"));
+    }
+
+    #[test]
+    fn semantic_model_validation_accepts_supported_aliases() {
+        validate_semantic_model("bge-m3").expect("default model should be supported");
+        validate_semantic_model("jina-code").expect("alias should be supported");
+    }
+
+    #[test]
+    fn semantic_model_validation_rejects_unknown_models() {
+        let error =
+            validate_semantic_model("unknown-model").expect_err("unknown model should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported semantic embedding model")
+        );
+        assert!(error.to_string().contains("bge-m3"));
     }
 
     #[test]

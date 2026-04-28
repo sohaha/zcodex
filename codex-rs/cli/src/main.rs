@@ -3150,7 +3150,7 @@ mod tests {
 
     #[test]
     fn zinit_parses_as_top_level_command() {
-        let cli = MultitoolCli::try_parse_from(["codex", "zinit", "--check"])
+        let cli = MultitoolCli::try_parse_from(["codex", "zinit", "--check", "--model", "bge-m3"])
             .expect("parse should succeed");
         assert!(matches!(cli.subcommand, Some(Subcommand::Zinit(_))));
     }
