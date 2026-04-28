@@ -1263,7 +1263,7 @@ impl BottomPane {
             if let Some(status) = &self.status {
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
             }
-            if self.buddy.is_visible() && self.status.is_none() {
+            if self.buddy.is_visible() {
                 if let Some(delay) = self.buddy.next_redraw_in() {
                     self.request_redraw_in(delay);
                 }
@@ -1890,7 +1890,7 @@ mod tests {
     }
 
     #[test]
-    fn buddy_is_hidden_while_status_indicator_is_visible() {
+    fn buddy_remains_visible_while_status_indicator_is_visible() {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let mut pane = BottomPane::new(BottomPaneParams {
@@ -1910,7 +1910,7 @@ mod tests {
         let _ = pane.show_buddy("codex-home::project");
 
         let height = pane.desired_height(width);
-        assert_eq!(height, status_only_height);
+        assert!(height > status_only_height);
 
         let area = Rect::new(0, 0, width, height);
         let rendered = render_snapshot(&pane, area);
@@ -1920,8 +1920,12 @@ mod tests {
             "expected status indicator to remain visible: {rendered:?}"
         );
         assert!(
-            !rendered.contains("坐 立 不 安") && !rendered.contains('★'),
-            "expected buddy to stay out of the composer surface while status is visible: {rendered:?}"
+            rendered.contains("坐 立 不 安") || rendered.contains('★'),
+            "expected buddy to remain visible while status is visible: {rendered:?}"
+        );
+        assert_snapshot!(
+            "buddy_and_status_visible_snapshot",
+            render_snapshot(&pane, area)
         );
     }
 
