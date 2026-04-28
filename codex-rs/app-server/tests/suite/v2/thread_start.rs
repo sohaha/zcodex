@@ -20,6 +20,7 @@ use codex_app_server_protocol::ThreadStartedNotification;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadStatusChangedNotification;
 use codex_app_server_protocol::TurnEnvironmentParams;
+use codex_app_server_protocol::WarningNotification;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_core::config::set_project_trust_level;
 use codex_core::config_loader::project_trust_key;
@@ -196,6 +197,47 @@ async fn thread_start_rejects_unknown_environment_as_invalid_request() -> Result
     assert_eq!(error.id, RequestId::Integer(request_id));
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     assert_eq!(error.error.message, "unknown turn environment id `missing`");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_start_buffers_startup_warnings_before_response() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+
+    let codex_home = TempDir::new()?;
+    create_config_toml_without_approval_policy(codex_home.path(), &server.uri())?;
+    let config_path = codex_home.path().join("config.toml");
+    let mut config_toml = std::fs::read_to_string(&config_path)?;
+    config_toml.push_str("\n[features]\nchild_agents_md = true\n");
+    std::fs::write(&config_path, config_toml)?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_thread_start_request(ThreadStartParams::default())
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(response)?;
+
+    let pending_methods = mcp.pending_notification_methods();
+    assert!(
+        pending_methods.iter().any(|method| method == "warning"),
+        "startup warning should be buffered before thread/start response; pending methods: {pending_methods:?}",
+    );
+
+    let notification = mcp
+        .read_stream_until_notification_message("warning")
+        .await?;
+    let warning: WarningNotification =
+        serde_json::from_value(notification.params.expect("warning params"))?;
+    assert_eq!(warning.thread_id.as_deref(), Some(thread.id.as_str()));
+    assert!(warning.message.contains("child_agents_md"));
 
     Ok(())
 }

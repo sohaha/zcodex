@@ -2865,6 +2865,7 @@ impl CodexMessageProcessor {
                     request_id.connection_id,
                     "thread",
                 );
+                tokio::task::yield_now().await;
 
                 listener_task_context
                     .thread_watch_manager
