@@ -15,10 +15,10 @@ done_when = "`features.zcontext` 稳定默认开启，`[features] zcontext = fal
 validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-features`，再运行覆盖配置默认值和 CLI/profile disable 的定向 `codex-core` 测试；修改配置 schema 后运行 `cd codex-rs && just write-config-schema`"
 regress_by = "cd codex-rs && just fmt && just fix -p codex-features；若 `codex-core` 配置代码有改动，再运行 `just fix -p codex-core`"
 regress_timing = "before_fanout"
-status = "blocked"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "BLOCKED：功能实现与定向验证基本完成，但 spec-reviewer 门禁未通过，因为历史提交 `660d12c20 docs(zcontext): add Feature::ZContext as stable default-enabled gate` 混入了非 a1 文件：`.agents/llmdoc/index.md`、`.agents/llmdoc/memory/reflections/2026-04-28-ztok-sqz-selective-expand-no-cache-verification.md`、`codex-rs/core/src/session/turn.rs`。修正该提交边界需要用户明确授权改写/拆分既有提交；当前不能擅自 amend/reset。已验证：`just write-config-schema`、`just fmt`、`cargo test -p codex-features`、`cargo test -p codex-core --lib zcontext -- --nocapture`、独立锁域 `CARGO_HOME=/tmp/codex-a1-cargo-home CARGO_TARGET_DIR=/tmp/codex-a1-target-2 cargo test -p codex-core --lib context_hooks -- --nocapture` 均通过。当前还存在已暂存的 a1 fixture 修复 `codex-rs/core/src/config/config_tests.rs`，以及大量非 a1 并行改动，提交前必须精准隔离。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "DONE：`features.zcontext` 稳定默认开启、feature/profile/CLI disable、空 `[context_hooks]` 默认启用、schema 文案和持久化关闭路径均已覆盖。用户明确要求不改写既有 git log，因此历史提交 `660d12c20` 中的非 a1 文件边界作为已接受事实保留，不再阻塞下游。已验证：`just write-config-schema`、`just fmt`、`cargo test -p codex-features`、`cargo test -p codex-core --lib zcontext -- --nocapture`、独立锁域 `CARGO_HOME=/tmp/codex-a1-cargo-home CARGO_TARGET_DIR=/tmp/codex-a1-target-2 cargo test -p codex-core --lib context_hooks -- --nocapture`、`just fix -p codex-features`、`just fix -p codex-core` 均通过。注意：`just fix -p codex-core` 在已有非 a1 脏文件 `codex-rs/core/src/tools/handlers/tldr.rs` 上应用了 clippy fix，该文件不属于 a1，后续提交必须继续精准隔离。"
 
 [[issue]]
 id = "a2"

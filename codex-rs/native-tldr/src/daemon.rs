@@ -1862,6 +1862,7 @@ pub async fn query_daemon(
 mod tests {
     use super::DAEMON_HEAVY_IO_TIMEOUT;
     use super::DAEMON_IO_TIMEOUT;
+    use super::DAEMON_UNRESPONSIVE_MARKER;
     use super::PROJECT_ARTIFACT_DIR_NAME;
     use super::TldrDaemon;
     use super::TldrDaemonCommand;

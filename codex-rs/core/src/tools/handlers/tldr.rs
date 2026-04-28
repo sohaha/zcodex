@@ -531,8 +531,8 @@ fn tldr_error_payload(
         "project": project,
         "error": error,
     });
-    if error.contains(DAEMON_UNRESPONSIVE_MARKER) {
-        if let Some(payload_object) = payload.as_object_mut() {
+    if error.contains(DAEMON_UNRESPONSIVE_MARKER)
+        && let Some(payload_object) = payload.as_object_mut() {
             payload_object.insert(
                 "structuredFailure".to_string(),
                 json!({
@@ -553,7 +553,6 @@ fn tldr_error_payload(
             );
             return payload;
         }
-    }
     if let Some(project_root) = project
         .map(PathBuf::from)
         .filter(|_| error.contains("native-tldr daemon is unavailable for"))
@@ -2296,8 +2295,7 @@ mod tests {
                 let project = project.clone();
                 Box::pin(async move {
                     Err(anyhow::anyhow!(
-                        "{} for {project}: read timeout for /tmp/daemon.sock",
-                        DAEMON_UNRESPONSIVE_MARKER
+                        "{DAEMON_UNRESPONSIVE_MARKER} for {project}: read timeout for /tmp/daemon.sock"
                     ))
                 })
             },
