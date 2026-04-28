@@ -168,6 +168,7 @@ use ratatui::widgets::Wrap;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::future::pending;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -207,10 +208,18 @@ use self::startup_prompts::*;
 
 const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器以继续。";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
+const STARTUP_APP_SERVER_EVENT_DRAIN_IDLE_TIMEOUT: Duration = Duration::from_millis(15);
+const STARTUP_APP_SERVER_EVENT_DRAIN_MAX_WAIT: Duration = Duration::from_millis(80);
 
 enum ThreadInteractiveRequest {
     Approval(ApprovalRequest),
     McpServerElicitation(McpServerElicitationFormRequest),
+}
+
+enum StartupDrainEvent {
+    AppServer(codex_app_server_client::AppServerEvent),
+    ActiveThread(ThreadBufferedEvent),
+    ActiveThreadDisconnected,
 }
 
 fn app_server_request_id_to_mcp_request_id(
@@ -4309,13 +4318,48 @@ impl App {
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
     ) -> Result<()> {
-        tokio::task::yield_now().await;
-        for _ in 0..64 {
-            let Some(event) = app_server.try_next_event() else {
-                break;
-            };
-            self.handle_app_server_event(app_server, event).await;
+        let drain_deadline = Instant::now() + STARTUP_APP_SERVER_EVENT_DRAIN_MAX_WAIT;
+        loop {
+            while let Some(event) = app_server.try_next_event() {
+                self.handle_app_server_event(app_server, event).await;
+                self.drain_active_thread_events(tui).await?;
+            }
             self.drain_active_thread_events(tui).await?;
+
+            let remaining = drain_deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let idle_timeout = remaining.min(STARTUP_APP_SERVER_EVENT_DRAIN_IDLE_TIMEOUT);
+            match tokio::time::timeout(idle_timeout, async {
+                tokio::select! {
+                    event = app_server.next_event() => event.map(StartupDrainEvent::AppServer),
+                    event = async {
+                        match self.active_thread_rx.as_mut() {
+                            Some(rx) => match rx.recv().await {
+                                Some(event) => Some(StartupDrainEvent::ActiveThread(event)),
+                                None => Some(StartupDrainEvent::ActiveThreadDisconnected),
+                            },
+                            None => pending().await,
+                        }
+                    } => event,
+                }
+            })
+            .await
+            {
+                Ok(Some(StartupDrainEvent::AppServer(event))) => {
+                    self.handle_app_server_event(app_server, event).await;
+                    self.drain_active_thread_events(tui).await?;
+                }
+                Ok(Some(StartupDrainEvent::ActiveThread(event))) => {
+                    self.handle_thread_event_now(event);
+                    self.drain_active_thread_events(tui).await?;
+                }
+                Ok(Some(StartupDrainEvent::ActiveThreadDisconnected)) => {
+                    self.clear_active_thread().await;
+                }
+                Ok(None) | Err(_) => break,
+            }
         }
         self.drain_active_thread_events(tui).await
     }

@@ -1570,6 +1570,21 @@ pub fn read_live_pid(pid_path: &Path) -> Option<bool> {
     Some(pid_is_alive(pid))
 }
 
+pub fn daemon_error_is_unresponsive(error: &anyhow::Error) -> bool {
+    error.to_string().contains(DAEMON_UNRESPONSIVE_MARKER)
+}
+
+pub fn cleanup_unresponsive_daemon_artifacts(project_root: &Path) -> Result<bool> {
+    let pid_path = pid_path_for_project(project_root);
+    let socket_path = socket_path_for_project(project_root);
+    let health = daemon_health(project_root)?;
+    if health.should_cleanup_artifacts() {
+        cleanup_daemon_artifacts(&socket_path, &pid_path);
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 #[cfg(not(unix))]
 fn pid_is_alive(pid: i32) -> bool {
     let _ = pid;
@@ -1799,6 +1814,11 @@ fn cleanup_stale_pid_file(pid_path: &Path) {
     {
         let _ = err;
     }
+}
+
+fn cleanup_daemon_artifacts(socket_path: &Path, pid_path: &Path) {
+    cleanup_stale_socket(socket_path);
+    cleanup_stale_pid_file(pid_path);
 }
 
 fn daemon_unavailable(err: &std::io::Error) -> bool {
@@ -2187,6 +2207,56 @@ mod tests {
         );
 
         std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
+
+    #[test]
+    fn daemon_error_is_unresponsive_matches_marker() {
+        let error = anyhow::anyhow!("{DAEMON_UNRESPONSIVE_MARKER} for /tmp/project");
+
+        assert!(super::daemon_error_is_unresponsive(&error));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_unresponsive_daemon_artifacts_cleans_stale_socket() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("missing-pid-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        std::fs::write(&socket_path, "").expect("socket artifact should be written");
+
+        let cleaned = super::cleanup_unresponsive_daemon_artifacts(&project_root)
+            .expect("stale socket cleanup should succeed");
+
+        assert!(cleaned);
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_unresponsive_daemon_artifacts_preserves_live_pid_artifacts() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("live-pid-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        std::fs::write(&socket_path, "").expect("socket artifact should be written");
+        std::fs::write(&pid_path, std::process::id().to_string())
+            .expect("pid artifact should be written");
+
+        let cleaned = super::cleanup_unresponsive_daemon_artifacts(&project_root)
+            .expect("live pid should be inspected successfully");
+
+        assert!(!cleaned);
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
+        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+        std::fs::remove_file(&pid_path).expect("pid should be cleaned up");
     }
 
     #[cfg(unix)]

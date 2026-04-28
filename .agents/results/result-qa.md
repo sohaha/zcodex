@@ -1,97 +1,82 @@
 # QA Review
 
-- status: WARNING
-- summary: 对 `zteam` 工作台、`/zteam start`、`/zteam attach`、`/zteam relay` 相关变更做了定向审查。发现 1 个已验证的中等级回归风险和 2 个低等级可用性/覆盖缺口。自动化验证方面，`cargo` 初次运行被环境里的 `CARGO_INCREMENTAL` + `sccache` 组合阻断；在 `env -u CARGO_INCREMENTAL` 下，`cargo check -p codex-tui --tests` 通过，`cargo nextest run -p codex-tui zteam` 通过（36 passed, 1687 skipped）。`cargo insta` 未安装，无法用 `pending-snapshots` 做额外快照巡检。
-- files changed:
-  - `/workspace/codex-rs/tui/src/zteam.rs`
-  - `/workspace/codex-rs/tui/src/zteam/view.rs`
-  - `/workspace/codex-rs/tui/src/zteam/worker_source.rs`
-  - `/workspace/codex-rs/tui/src/slash_command.rs`
-  - `/workspace/codex-rs/tui/src/chatwidget/tests/slash_commands.rs`
-  - `/workspace/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_empty_view.snap`
-  - `/workspace/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_active_view.snap`
-  - `/workspace/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_reattach_required_view.snap`
-  - `/workspace/codex-rs/tui/src/chatwidget/snapshots/codex_tui__chatwidget__tests__zteam_workbench_partial_registration_view.snap`
+- Status: FAIL
+- Summary: 审查 `HEAD~1..HEAD` 后确认一处高严重度回归：`InProcessAppServerClient` 现在会在客户端层直接拒绝 `ChatgptAuthTokensRefresh` server request，但嵌入式 TUI 正是通过这条 in-process 路径运行，并且现有 TUI 逻辑明确把该请求视为可处理请求而非 unsupported。结果是 ChatGPT token 过期后的刷新流程在 embedded TUI 中会被短路，无法到达 UI 处理层。
+- Files changed:
+  - `.agents/issues/2026-04-28-context-hooks-architecture.toml`
+  - `.agents/llmdoc/index.md`
+  - `.agents/llmdoc/memory/reflections/2026-04-28-auth-401-should-fallback-without-retrying-the-same-provider.md`
+  - `codex-rs/app-server-client/src/lib.rs`
+  - `codex-rs/app-server/src/codex_message_processor.rs`
+  - `codex-rs/app-server/src/in_process.rs`
+  - `codex-rs/cli/tests/ztok.rs`
+  - `codex-rs/core/src/codex_thread.rs`
+  - `codex-rs/core/src/config/config_tests.rs`
+  - `codex-rs/core/src/memories/prompts_tests.rs`
+  - `codex-rs/core/src/session/mod.rs`
+  - `codex-rs/core/src/session/turn.rs`
+  - `codex-rs/core/src/tools/handlers/tldr.rs`
+  - `codex-rs/core/templates/compact/ztok.md`
+  - `codex-rs/core/tests/suite/websocket_fallback.rs`
+  - `codex-rs/mcp-server/src/tldr_tool.rs`
+  - `codex-rs/native-tldr/src/daemon.rs`
+  - `codex-rs/native-tldr/src/semantic.rs`
+  - `codex-rs/native-tldr/src/semantic/embedder.rs`
+  - `codex-rs/ztok/src/lib.rs`
+  - `codex-rs/ztok/src/session_cache_cmd.rs`
+  - `codex-rs/ztok/src/settings.rs`
+- Acceptance criteria checklist:
+  - [x] 已审查 `HEAD~1..HEAD` 的变更文件与关键调用点。
+  - [x] 已给出带 `file:line` 的已验证 findings。
+  - [x] 未修改源码。
+  - [x] 已记录自动化验证的实际覆盖与受限项。
 
-## Acceptance Criteria Checklist
-
-- [x] 已审查指定范围内的全部相关改动
-- [x] 结论包含带 `file:line` 的已验证 findings
-- [x] 已检查用户可见行为、文案契约、测试/快照覆盖与回归风险
-- [x] 已运行定向自动化验证并记录受限项
-
-## Review Result: WARNING
+## Review Result: FAIL
 
 ### CRITICAL
-- 无
+- None.
 
 ### HIGH
-- 无
+- `codex-rs/app-server-client/src/lib.rs:298` — `forward_ready_in_process_event()` 会把 `ServerRequest::ChatgptAuthTokensRefresh` 直接失败返回，而不是转发给 in-process 客户端。这个假设和现有产品面冲突：embedded TUI 通过 `InProcessAppServerClient::start` 启动 app-server（`codex-rs/tui/src/lib.rs:271`），并且其请求管理器明确把 `ChatgptAuthTokensRefresh` 视为正常可处理请求（`codex-rs/tui/src/app/app_server_requests.rs:690`）。当前改动会让 token 过期后的刷新流程在 embedded TUI 中被客户端层短路，用户无法完成 auth 恢复。 — remediation code:
+```rust
+// codex-rs/app-server-client/src/lib.rs
+// 不要在共享 in-process client 层拒绝 ChatgptAuthTokensRefresh；
+// 让它和其它 ServerRequest 一样继续转发给上层消费。
+forward_in_process_event(event_tx, skipped_events, event, |request| {
+    let _ = request_sender.fail_server_request(
+        request.id().clone(),
+        JSONRPCErrorError {
+            code: -32001,
+            message: "in-process app-server event queue is full".to_string(),
+            data: None,
+        },
+    );
+})
+.await
+```
 
 ### MEDIUM
-- `codex-rs/tui/src/zteam/worker_source.rs:77` — legacy fallback 现在只接受 `slot.display_name()` 或 `slot.task_name()` 的精确匹配，之前显式兼容的旧昵称别名（例如 frontend 的 `前端`/`android`/`android frontend`，backend 的 `server`）已被移除。`/zteam attach` 和 loaded auto-restore 都先经过 `local_thread_matches_slot()` 再筛选线程，所以缺少 `agent_path` 的旧 worker 线程会直接从恢复候选里消失，现有会话无法再附着或恢复。`worker_source.rs:155-176` 里的新测试已经把这个回归固化成当前行为。修复代码：
-```rust
-fn slot_matches_legacy_agent_nickname(slot: WorkerSlot, agent_nickname: &str) -> bool {
-    let nickname = agent_nickname.trim();
-    nickname == slot.display_name()
-        || nickname.eq_ignore_ascii_case(slot.task_name())
-        || matches!(
-            slot,
-            WorkerSlot::Frontend
-                if nickname == "前端"
-                    || nickname.eq_ignore_ascii_case("android")
-                    || nickname.eq_ignore_ascii_case("android frontend")
-        )
-        || matches!(
-            slot,
-            WorkerSlot::Backend
-                if nickname == "后端" || nickname.eq_ignore_ascii_case("server")
-        )
-}
-```
+- None.
 
 ### LOW
-- `codex-rs/tui/src/zteam/view.rs:202` — 工作台底部快捷提示删掉了 root -> worker 的主分派语法，只保留了 `status/start/attach/relay`。但真正从主线程给 worker 派任务的命令仍是 `/zteam <frontend|backend> <任务>`，契约还写在 `codex-rs/tui/src/zteam.rs:726`，执行入口也还在 `codex-rs/tui/src/app.rs:2123`。结果是用户进入工作台、看到“worker 已就绪”后，界面上反而没有下一步分派命令。修复代码：
-```rust
-Paragraph::new(Line::from(vec![
-    "Esc 关闭".dim(),
-    " · ".dim(),
-    "/zteam status".cyan(),
-    " 查看状态".dim(),
-    " · ".dim(),
-    "/zteam <worker> <任务>".cyan(),
-    " 分派任务".dim(),
-    " · ".dim(),
-    "/zteam relay".cyan(),
-    " 协作中转".dim(),
-]))
-```
+- None.
 
-- `codex-rs/tui/src/app.rs:10543` — 当前 `app.rs` 的 `test_zteam_thread()` helper 强制给恢复候选塞入 `agent_path: Some(...)`，因此 app 层没有任何集成用例覆盖“`agent_path` 缺失、只能靠 legacy nickname/role 识别”的 `/zteam attach` 或 loaded auto-restore 场景。`chatwidget` 新增的快照只覆盖了工作台渲染，不覆盖恢复链路；这也是上面的兼容性回归没有在 app 级测试里暴露的直接原因。补测代码：
-```rust
-fn legacy_zteam_thread(
-    thread_id: ThreadId,
-    parent_thread_id: ThreadId,
-    nickname: &str,
-    role: &str,
-) -> Thread {
-    Thread {
-        source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-            parent_thread_id,
-            depth: 1,
-            parent_model: None,
-            agent_path: None,
-            agent_nickname: Some(nickname.to_string()),
-            agent_role: Some(role.to_string()),
-        }).into(),
-        agent_nickname: Some(nickname.to_string()),
-        agent_role: Some(role.to_string()),
-        ..test_zteam_thread(thread_id, parent_thread_id, WorkerSlot::Backend, ThreadStatus::Idle, 10)
-    }
-}
-```
+## Verification Notes
 
-## Notes
+- 代码审读证据：
+  - `codex-rs/app-server-client/src/lib.rs:298-316` 新增了对 `ChatgptAuthTokensRefresh` 的共享拒绝分支。
+  - `codex-rs/tui/src/lib.rs:271-289` 证明 embedded TUI 生产路径使用 `InProcessAppServerClient::start`。
+  - `codex-rs/tui/src/app/app_server_requests.rs:690-703` 证明 TUI 现有逻辑预期该请求会到达 UI 层处理，而不是被底层判为 unsupported。
+- 自动化命令：
+  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-app-server-client in_process_thread_start_buffers_startup_warning_before_response -- --exact'`
+    - 结果：20 分钟超时，未形成可用结论。
+  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-native-tldr query_daemon_read_timeout_reports_unresponsive_daemon --lib -- --exact'`
+    - 结果：crate 完成编译，但 `--exact` 过滤未命中测试名，0 tests run。
+  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-native-tldr semantic_index_batches_document_embedding_generation --lib -- --exact'`
+    - 结果：crate 完成编译，但 `--exact` 过滤未命中测试名，0 tests run。
+- 工具受限：
+  - `ztldr change-impact / warm / status` 均返回 `structuredFailure: tool_error`，原因为 native-tldr socket `read timeout`，因此本次结构影响分析退回到 `git diff + 调用点审读`。
 
-- 这轮快照改动是合理同步的：空态、活动态、待再附着态都已更新，并新增了 `zteam_workbench_partial_registration_view`。
-- 自动化命令需显式去掉 `CARGO_INCREMENTAL`，否则当前环境里的 `sccache` 会在依赖编译阶段直接失败，和本次代码无关。
+## Residual Risk
+
+- 除上述高严重度回归外，其余改动未发现已验证的中等级以上问题，但 `app-server-client` / `core` 相关定向测试本次未能完整跑通，仍存在未被自动化覆盖的残余风险。

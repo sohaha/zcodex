@@ -11,6 +11,8 @@ use crate::tools::rewrite::should_auto_warm_tldr;
 use anyhow::Result;
 use codex_native_tldr::daemon::DAEMON_UNRESPONSIVE_MARKER;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::cleanup_unresponsive_daemon_artifacts;
+use codex_native_tldr::daemon::daemon_error_is_unresponsive;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::lock_path_for_project;
@@ -112,7 +114,12 @@ impl ToolHandler for TldrHandler {
             &turn,
             args,
             problem_kind,
-            &|project_root, command| Box::pin(query_daemon(project_root, command)),
+            &|project_root, command| {
+                Box::pin(query_daemon_with_unresponsive_cleanup(
+                    project_root,
+                    command,
+                ))
+            },
             &|project_root| Box::pin(async move { ensure_daemon_running(project_root).await }),
         )
         .await
@@ -532,8 +539,9 @@ fn tldr_error_payload(
         "error": error,
     });
     if error.contains(DAEMON_UNRESPONSIVE_MARKER)
-        && let Some(payload_object) = payload.as_object_mut() {
-            payload_object.insert(
+        && let Some(payload_object) = payload.as_object_mut()
+    {
+        payload_object.insert(
                 "structuredFailure".to_string(),
                 json!({
                     "error_type": "daemon_unhealthy",
@@ -542,17 +550,17 @@ fn tldr_error_payload(
                     "retry_hint": "restart the native-tldr daemon or retry after the current background index finishes",
                 }),
             );
-            payload_object.insert(
-                "degradedMode".to_string(),
-                json!({
-                    "is_degraded": true,
-                    "mode": "unresponsive",
-                    "fallback_path": "none",
-                    "reason": "daemon pid/socket exist but the daemon did not return a response",
-                }),
-            );
-            return payload;
-        }
+        payload_object.insert(
+            "degradedMode".to_string(),
+            json!({
+                "is_degraded": true,
+                "mode": "unresponsive",
+                "fallback_path": "none",
+                "reason": "daemon pid/socket exist but the daemon did not return a response",
+            }),
+        );
+        return payload;
+    }
     if let Some(project_root) = project
         .map(PathBuf::from)
         .filter(|_| error.contains("native-tldr daemon is unavailable for"))
@@ -609,6 +617,20 @@ fn output_reports_real_daemon_success(output: &FunctionToolOutput) -> bool {
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     Ok(ensure_daemon_running_detailed(project_root).await?.ready)
+}
+
+async fn query_daemon_with_unresponsive_cleanup(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
+    match query_daemon(project_root, command).await {
+        Ok(response) => Ok(response),
+        Err(err) if daemon_error_is_unresponsive(&err) => {
+            cleanup_unresponsive_daemon_artifacts(project_root)?;
+            Err(err)
+        }
+        Err(err) => Err(err),
+    }
 }
 
 async fn ensure_daemon_running_detailed(project_root: &Path) -> Result<DaemonReadyResult> {
