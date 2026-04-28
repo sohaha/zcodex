@@ -214,13 +214,14 @@ impl BuddyWidget {
             "紧凑"
         };
         let shiny = if bones.shiny { "，闪亮" } else { "" };
+        let visual_trait = bones.rarity.visual_trait();
         let personality = self
             .soul
             .as_ref()
             .map(|soul| format!(" 性格：{}。", soul.personality))
             .unwrap_or_default();
         let message = format!(
-            "小伙伴状态：{} {}（{visibility}，{display_mode}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
+            "小伙伴状态：{} {}（{visibility}，{display_mode}{shiny}，{}，{}眼，{visual_trait}，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),

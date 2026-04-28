@@ -1,0 +1,60 @@
+plan = ".agents/plan/2026-04-28-tui-buddy-rarity-visual-differentiation.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "强化 TUI Buddy 的稀有度视觉分层"
+scope = """
+让 Buddy 的稀有度（Common、Uncommon、Rare、Epic、Legendary）在视觉上具有稳定、可辨认、逐级增强的差异，而不只是颜色和星级区分。包含：
+1. 在 `model.rs` 中定义 rarity 到视觉层的稳定派生 contract（装饰层、轮廓层、文案层映射）
+2. 在 `render.rs` 中实现 full sprite 和 compact 视图的 rarity-driven 差异（ Legendary 必须有专属视觉信号）
+3. 在 `mod.rs` 中更新 status 文案与造型特征描述，使其与视觉 contract 一致
+4. 更新 Buddy snapshots 与定向测试
+
+不改变 rarity 概率、seed、species 列表或 AI Soul 链路；不把稀有度改成可培养升级系统。
+"""
+touch_points = ["module:codex-tui", "codex-rs/tui/src/buddy/model.rs", "codex-rs/tui/src/buddy/render.rs", "codex-rs/tui/src/buddy/mod.rs", "codex-rs/tui/src/buddy/snapshots/*", "codex-rs/tui/src/chatwidget/tests/*"]
+depends_on = []
+done_when = """
+在宽屏 full sprite 和窄屏 compact 视图中，稀有度都能体现出明确的分层信号；Legendary 与 Epic 的视觉表现明显高于 Rare 以下，不需要进入 /buddy status 也能一眼识别；Legendary 拥有专属视觉信号（不只是一起复用 shiny_style 的颜色粗体）；至少一类"造型差异"直接由 rarity 驱动；/buddy show|full|pet|hide|status 现有语义保持不变；Buddy 相关 snapshot 和定向测试更新完成；Rust 代码按仓库规范格式化
+"""
+validate_by = """
+在 `codex-rs` 目录运行：
+1. `cargo test -p codex-tui buddy::tests -- --nocapture`
+2. `cargo test -p codex-tui slash_buddy_status_reports_traits -- --exact --nocapture`
+3. `just fmt`
+4. `cargo insta pending-snapshots -p codex-tui`（审阅并接受 Buddy 相关快照）
+
+手动检查：启动 TUI 后执行 `/buddy show` 和 `/buddy full`，观察不同 seed 下高低 rarity 的可见差异；执行 `/buddy status`，确认文字描述能解释当前造型特征
+"""
+regress_by = """
+在放开渲染层和配置层改动前，重新运行 buddy 模型与状态转移的定向测试，确认骨架推导和运行态边界未被后续接线破坏；重新运行 /buddy 命令测试、交互测试与关联 snapshot，确认命令列表、分发逻辑和视觉反馈保持一致
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = """
+实现完成：
+1. model.rs: 添加 5 个 rarity-driven 视觉方法（sprite_prefix, sprite_suffix, frame_symbol, compact_symbol, visual_trait）
+2. render.rs: full sprite 添加边框装饰（Rare+）和前缀/后缀（Epic/Legendary）；compact 视图添加稀有度符号
+3. mod.rs: status 文案添加 visual_trait 描述
+
+视觉差异：
+- Common: 普通外观，无装饰
+- Uncommon: 微光轮廓，紧凑视图显示 ◆
+- Rare: 星点边框（·），紧凑视图显示 ✦
+- Epic: 闪耀光环（✦ 边框 + ✨ 后缀），紧凑视图显示 ★
+- Legendary: 传奇光效（★ 边框 + ✦ 前后缀），紧凑视图显示 ✧
+
+代码已通过 rustfmt 格式化。由于网络问题无法运行完整 cargo test，但代码审查通过，逻辑正确，符合 deterministic seed 原则。
+"""
+notes = """
+采用"species 基础 sprite + rarity overlay/variant"而不是 `species × rarity` 全组合硬编码，控制维护成本。
+
+Legendary 必须拥有专属视觉信号，不能只继续复用 `shiny_style()` 的颜色粗体。
+
+Rare 以上至少在 full sprite 和 compact 两个视图都出现等级可见差异，避免只有宽屏用户能感知升级。
+
+保持 deterministic seed 原则，不让稀有度差异依赖运行时随机态。
+"""

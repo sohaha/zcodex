@@ -66,11 +66,51 @@ fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<
         ]));
     }
 
-    for sprite_line in sprite_lines(bones, state.frame()) {
+    // 添加稀有度边框装饰（Rare 及以上）
+    if let Some(symbol) = bones.rarity.frame_symbol() {
         lines.push(Line::from(vec![
             "  ".into(),
-            Span::styled(sprite_line, rarity_style(bones)),
+            Span::styled(
+                format!("  {symbol}     {symbol}"),
+                rarity_style(bones).dim(),
+            ),
         ]));
+
+        for sprite_line in sprite_lines(bones, state.frame()) {
+            let prefix = bones.rarity.sprite_prefix().unwrap_or("");
+            let suffix = bones.rarity.sprite_suffix().unwrap_or("");
+            let styled_prefix = Span::styled(prefix.to_string(), shiny_style());
+            let styled_suffix = Span::styled(suffix.to_string(), shiny_style());
+            lines.push(Line::from(vec![
+                "  ".into(),
+                styled_prefix,
+                Span::styled(sprite_line, rarity_style(bones)),
+                styled_suffix,
+            ]));
+        }
+
+        // 闭合边框
+        lines.push(Line::from(vec![
+            "  ".into(),
+            Span::styled(
+                format!("  {symbol}     {symbol}"),
+                rarity_style(bones).dim(),
+            ),
+        ]));
+    } else {
+        // 无边框时的渲染
+        for sprite_line in sprite_lines(bones, state.frame()) {
+            let prefix = bones.rarity.sprite_prefix().unwrap_or("");
+            let suffix = bones.rarity.sprite_suffix().unwrap_or("");
+            let styled_prefix = Span::styled(prefix.to_string(), shiny_style());
+            let styled_suffix = Span::styled(suffix.to_string(), shiny_style());
+            lines.push(Line::from(vec![
+                "  ".into(),
+                styled_prefix,
+                Span::styled(sprite_line, rarity_style(bones)),
+                styled_suffix,
+            ]));
+        }
     }
 
     lines.push(render_identity_line(bones, name, state));
@@ -87,11 +127,15 @@ fn render_narrow_line(
         let quip = truncate_with_ellipsis(text, NARROW_QUIP_CAP as u16);
         format!("\"{quip}\"")
     } else {
+        let compact_symbol = bones.rarity.compact_symbol();
         let shiny = if bones.shiny { " *" } else { "" };
+        let symbol_sep = if compact_symbol.is_empty() { "" } else { " " };
         format!(
-            "{} {}{} {}",
+            "{} {}{}{}{} {}",
             name,
             bones.rarity.stars(),
+            symbol_sep,
+            compact_symbol,
             shiny,
             bones.species.label()
         )
@@ -123,6 +167,17 @@ fn render_narrow_line(
         spans.push(name.to_string().cyan().bold());
         spans.push(" ".into());
         spans.push(bones.rarity.stars_span());
+
+        // 添加稀有度符号
+        let compact_symbol = bones.rarity.compact_symbol();
+        if !compact_symbol.is_empty() {
+            spans.push(" ".into());
+            spans.push(Span::styled(
+                compact_symbol.to_string(),
+                rarity_style(bones),
+            ));
+        }
+
         if bones.shiny {
             spans.push(Span::styled(" *", shiny_style()));
         }

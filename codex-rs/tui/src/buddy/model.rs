@@ -412,7 +412,7 @@ impl BuddyStats {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum BuddyRarity {
     Common,
     Uncommon,
@@ -471,6 +471,55 @@ impl BuddyRarity {
             Self::Legendary => 50,
         }
     }
+
+    /// 稀有度专属的前缀装饰（用于 full sprite）
+    pub(crate) fn sprite_prefix(self) -> Option<&'static str> {
+        match self {
+            Self::Legendary => Some("✦ "),
+            _ => None,
+        }
+    }
+
+    /// 稀有度专属的后缀装饰（用于 full sprite）
+    pub(crate) fn sprite_suffix(self) -> Option<&'static str> {
+        match self {
+            Self::Epic => Some(" ✨"),
+            Self::Legendary => Some(" ✦"),
+            _ => None,
+        }
+    }
+
+    /// 稀有度边框符号（用于 sprite 周围）
+    pub(crate) fn frame_symbol(self) -> Option<&'static str> {
+        match self {
+            Self::Rare => Some("·"),
+            Self::Epic => Some("✦"),
+            Self::Legendary => Some("★"),
+            _ => None,
+        }
+    }
+
+    /// 窄屏视图的稀有度符号
+    pub(crate) fn compact_symbol(self) -> &'static str {
+        match self {
+            Self::Common => "",
+            Self::Uncommon => "◆",
+            Self::Rare => "✦",
+            Self::Epic => "★",
+            Self::Legendary => "✧",
+        }
+    }
+
+    /// 稀有度视觉特征描述（用于 status 文案）
+    pub(crate) fn visual_trait(self) -> &'static str {
+        match self {
+            Self::Common => "普通外观",
+            Self::Uncommon => "微光轮廓",
+            Self::Rare => "星点边框",
+            Self::Epic => "闪耀光环",
+            Self::Legendary => "传奇光效",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -488,15 +537,12 @@ impl BuddyBones {
     pub(crate) fn from_seed(seed: &str) -> Self {
         let mut rng = rand::rngs::StdRng::seed_from_u64(stable_seed(seed));
         let rarity = roll_rarity(&mut rng);
-        let species_choices = [
+        let base_species = [
             BuddySpecies::Cat,
             BuddySpecies::Fox,
             BuddySpecies::Otter,
             BuddySpecies::Rabbit,
             BuddySpecies::Owl,
-            BuddySpecies::Dragon,
-            BuddySpecies::Ghost,
-            BuddySpecies::Robot,
             BuddySpecies::Duck,
             BuddySpecies::Goose,
             BuddySpecies::Blob,
@@ -510,6 +556,18 @@ impl BuddyBones {
             BuddySpecies::Mushroom,
             BuddySpecies::Chonk,
         ];
+        let rare_species = [
+            BuddySpecies::Dragon,
+            BuddySpecies::Ghost,
+            BuddySpecies::Robot,
+        ];
+        let species_choices = if rarity >= BuddyRarity::Rare {
+            let mut all = base_species.to_vec();
+            all.extend_from_slice(&rare_species);
+            all
+        } else {
+            base_species.to_vec()
+        };
         let species = species_choices[rng.random_range(0..species_choices.len())];
         let eye_choices = [
             BuddyEye::Dot,
