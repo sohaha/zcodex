@@ -67,8 +67,10 @@ pub struct Cli {
     #[arg(
         short = 'P',
         long = "provider",
+        num_args = 0..=1,
+        default_missing_value = "",
         value_name = "PROVIDER",
-        help = "快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，优先级低于显式的 `-c model_provider=...`。"
+        help = "快捷设置 model_provider，等价于 `-c model_provider=<PROVIDER>`，不传 PROVIDER 时手动选择可用渠道，优先级低于显式的 `-c model_provider=...`。"
     )]
     pub provider: Option<String>,
 
@@ -213,4 +215,31 @@ fn mark_tui_args(cmd: clap::Command) -> clap::Command {
     cmd.mut_arg("dangerously_bypass_approvals_and_sandbox", |arg| {
         arg.conflicts_with("approval_policy")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn provider_flag_without_value_is_empty_override_request() {
+        let cli = Cli::try_parse_from(["codex", "-P"]).expect("parse should succeed");
+
+        assert_eq!(cli.provider, Some(String::new()));
+    }
+
+    #[test]
+    fn omitted_provider_flag_has_no_override() {
+        let cli = Cli::try_parse_from(["codex"]).expect("parse should succeed");
+
+        assert_eq!(cli.provider, None);
+    }
+
+    #[test]
+    fn provider_flag_with_value_keeps_provider_id() {
+        let cli = Cli::try_parse_from(["codex", "-P", "ollama"]).expect("parse should succeed");
+
+        assert_eq!(cli.provider, Some("ollama".to_string()));
+    }
 }

@@ -44,6 +44,8 @@ use codex_exec_server::ExecServerRuntimePaths;
 use codex_login::AuthConfig;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::enforce_login_restrictions;
+use codex_model_provider_info::built_in_model_providers;
+use codex_model_provider_info::merge_configured_model_providers;
 use codex_otel::PostHogClient;
 use codex_otel::posthog_events::{self};
 use codex_protocol::ThreadId;
@@ -161,6 +163,7 @@ mod npm_registry;
 pub(crate) mod onboarding;
 mod oss_selection;
 mod pager_overlay;
+mod provider_selection;
 pub(crate) mod public_widgets;
 mod render;
 mod resize_reflow_cap;
@@ -708,6 +711,14 @@ fn federation_params_from_cli(cli: &Cli) -> Option<FederationThreadStartParams> 
     })
 }
 
+fn has_explicit_model_provider_override(raw_overrides: &[String]) -> bool {
+    raw_overrides.iter().any(|raw_override| {
+        raw_override
+            .split_once('=')
+            .is_some_and(|(key, _)| key.trim() == "model_provider")
+    })
+}
+
 pub async fn run_main(
     mut cli: Cli,
     arg0_paths: Arg0DispatchPaths,
@@ -754,11 +765,21 @@ pub async fn run_main(
             .push("web_search=\"live\"".to_string());
     }
 
-    // When using `--oss`, let the bootstrapper pick the model (defaulting to
-    // gpt-oss:20b) and ensure it is present locally. Also, force the built‑in
-    // Inject `-P` / `--provider` as a low-priority model_provider override.
-    // Prepend so that any explicit `-c model_provider=...` appended later wins.
-    if let Some(provider) = &cli.provider {
+    let manual_provider_selection_requested = cli
+        .provider
+        .as_deref()
+        .is_some_and(|provider| provider.trim().is_empty())
+        && !has_explicit_model_provider_override(&cli.config_overrides.raw_overrides);
+
+    // Inject `-P <PROVIDER>` / `--provider <PROVIDER>` as a low-priority
+    // model_provider override. Prepend so that any explicit
+    // `-c model_provider=...` appended later wins.
+    if let Some(provider) = cli
+        .provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+    {
         cli.config_overrides
             .raw_overrides
             .insert(0, format!("model_provider={provider}"));
@@ -838,6 +859,30 @@ pub async fn run_main(
         chatgpt_base_url,
     );
 
+    let manual_model_provider_override = if manual_provider_selection_requested && !cli.oss {
+        let openai_base_url = config_toml
+            .openai_base_url
+            .clone()
+            .filter(|value| !value.is_empty());
+        let providers = merge_configured_model_providers(
+            built_in_model_providers(openai_base_url),
+            config_toml.model_providers.clone(),
+        )
+        .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidData, message))?;
+        let profile = config_toml.get_config_profile(cli.config_profile.clone())?;
+        let current_provider_id = profile
+            .model_provider
+            .as_deref()
+            .or(config_toml.model_provider.as_deref())
+            .unwrap_or("openai");
+        Some(
+            provider_selection::select_model_provider(&providers, Some(current_provider_id))
+                .await?,
+        )
+    } else {
+        None
+    };
+
     let model_provider_override = if cli.oss {
         let resolved = resolve_oss_provider(
             cli.oss_provider.as_deref(),
@@ -856,7 +901,7 @@ pub async fn run_main(
             Some(provider)
         }
     } else {
-        None
+        manual_model_provider_override
     };
 
     // When using `--oss`, let the bootstrapper pick the model based on selected provider
@@ -1875,6 +1920,22 @@ mod tests {
             Arc::new(EnvironmentManager::default_for_tests()),
         )
         .await
+    }
+
+    #[test]
+    fn explicit_model_provider_override_detection_matches_only_model_provider_key() {
+        assert!(has_explicit_model_provider_override(&[
+            "model_provider=ollama".to_string()
+        ]));
+        assert!(has_explicit_model_provider_override(&[
+            " model_provider = ollama".to_string()
+        ]));
+        assert!(!has_explicit_model_provider_override(&[
+            "profile.model_provider=ollama".to_string()
+        ]));
+        assert!(!has_explicit_model_provider_override(&[
+            "model=codex-mini-latest".to_string()
+        ]));
     }
 
     #[test]

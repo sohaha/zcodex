@@ -2043,6 +2043,14 @@ mod tests {
         )
     }
 
+    #[test]
+    fn root_provider_flag_without_value_reaches_tui_cli() {
+        let cli = MultitoolCli::try_parse_from(["codex", "-P"]).expect("parse");
+
+        assert_eq!(cli.interactive.provider, Some(String::new()));
+        assert_matches!(cli.subcommand, None);
+    }
+
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
