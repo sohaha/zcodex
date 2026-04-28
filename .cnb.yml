@@ -74,7 +74,7 @@ $:
           - /root/.cache:copy-on-write
       env:
         CARGO_TARGET_DIR: /workspace/.cargo-target
-        CARGO_INCREMENTAL: "1"
+        CARGO_INCREMENTAL: "0"
         RUSTC_WRAPPER: sccache
         SCCACHE_DIR: /workspace/.cache/sccache
         SCCACHE_CACHE_SIZE: 50G
@@ -103,13 +103,16 @@ $:
               apt-get install -y mold
             fi
             if ! command -v sccache >/dev/null 2>&1; then
-              cargo install sccache nextest
+              cargo install sccache || unset RUSTC_WRAPPER
+            fi
+            if ! command -v cargo-nextest >/dev/null 2>&1; then
+              cargo install cargo-nextest || true
             fi
             mkdir -p /workspace/.cargo-target /workspace/.cache/sccache
         - name: build
           script: |
             set -eu
-            mise run build &
+            /root/.local/bin/mise run build &
       # endStages:
       #   - name: backup codex home
       #     script: |

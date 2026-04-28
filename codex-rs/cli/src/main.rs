@@ -868,6 +868,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             exec_cli
                 .shared
                 .inherit_exec_root_options(&interactive.shared);
+            if let Some(provider) = interactive.provider.as_deref() {
+                inject_provider_override(&mut exec_cli.config_overrides, provider);
+            }
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
@@ -882,6 +885,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             )?;
             let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
             exec_cli.command = Some(ExecCommand::Review(review_args));
+            if let Some(provider) = interactive.provider.as_deref() {
+                inject_provider_override(&mut exec_cli.config_overrides, provider);
+            }
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
@@ -1639,6 +1645,17 @@ fn prepend_config_flags(
     subcommand_config_overrides
         .raw_overrides
         .splice(0..0, cli_config_overrides.raw_overrides);
+}
+
+/// Inject a `-P` / `--provider` value from the root-level interactive CLI into a
+/// subcommand's config overrides as `model_provider=<provider>`. Prepended so
+/// any explicit `-c model_provider=...` appended later takes precedence.
+fn inject_provider_override(subcommand_config_overrides: &mut CliConfigOverrides, provider: &str) {
+    if !provider.is_empty() {
+        subcommand_config_overrides
+            .raw_overrides
+            .insert(0, format!("model_provider={provider}"));
+    }
 }
 
 fn reject_remote_mode_for_subcommand(

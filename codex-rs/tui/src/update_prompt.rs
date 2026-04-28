@@ -203,7 +203,7 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push(
             Line::from(vec![
                 "更新日志：".dim(),
-                "https://github.com/openai/codex/releases/latest"
+                "https://github.com/sohaha/zcodex/releases/latest"
                     .dim()
                     .underlined(),
             ])

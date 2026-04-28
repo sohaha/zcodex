@@ -61,7 +61,7 @@ impl Default for SemanticConfig {
         Self {
             enabled: true,
             feature_gate: "semantic-embed".to_string(),
-            model: "minilm".to_string(),
+            model: "bge-m3".to_string(),
             auto_reindex_threshold: 20,
             embedding_enabled: SemanticEmbeddingConfig::default().enabled,
             embedding: SemanticEmbeddingConfig::default(),

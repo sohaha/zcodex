@@ -18,9 +18,10 @@ const DEFAULT_SKILL_METADATA_CHAR_BUDGET: usize = 8_000;
 const SKILL_METADATA_CONTEXT_WINDOW_PERCENT: usize = 2;
 const SKILL_DESCRIPTION_TRUNCATION_WARNING_THRESHOLD_CHARS: usize = 10;
 const APPROX_BYTES_PER_TOKEN: usize = 4;
-pub const SKILL_DESCRIPTION_TRUNCATED_WARNING_PREFIX: &str = "Warning: Exceeded skills context budget. Loaded skill descriptions were truncated by an average of";
+pub const SKILL_DESCRIPTION_TRUNCATED_WARNING_PREFIX: &str =
+    "警告：超出技能上下文预算。已加载的技能描述平均被截断";
 pub const SKILL_DESCRIPTIONS_REMOVED_WARNING_PREFIX: &str =
-    "Warning: Exceeded skills context budget. All skill descriptions were removed and";
+    "警告：超出技能上下文预算。所有技能描述已被移除";
 pub const SKILLS_INTRO_WITH_ABSOLUTE_PATHS: &str = "A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and file path so you can open the source for full instructions when using a specific skill.";
 pub const SKILLS_INTRO_WITH_ALIASES: &str = "A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.";
 pub const SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS: &str = r###"- Discovery: The list above is the skills available in this session (name + description + file path). Skill bodies live on disk at the listed paths.
@@ -210,28 +211,16 @@ fn build_available_skills_from_lines(
 
     let (skill_lines, report) = render_skill_lines_from_lines(skill_lines, total_count, budget);
     let warning_message = if report.omitted_count > 0 {
-        let skill_word = if report.omitted_count == 1 {
-            "skill"
-        } else {
-            "skills"
-        };
-        let verb = if report.omitted_count == 1 {
-            "was"
-        } else {
-            "were"
-        };
         Some(format!(
-            "{} {} additional {} {} not included in the model-visible skills list.",
+            "{}，并且还有{}个额外技能未被包含在模型可见的技能列表中。",
             budget_warning_prefix(budget, SKILL_DESCRIPTIONS_REMOVED_WARNING_PREFIX),
-            report.omitted_count,
-            skill_word,
-            verb
+            report.omitted_count
         ))
     } else if report.average_truncated_description_chars()
         > SKILL_DESCRIPTION_TRUNCATION_WARNING_THRESHOLD_CHARS
     {
         Some(format!(
-            "{} {} characters per skill.",
+            "{}，平均每个技能{}个字符。",
             budget_warning_prefix(budget, SKILL_DESCRIPTION_TRUNCATED_WARNING_PREFIX),
             report.average_truncated_description_chars()
         ))
@@ -275,11 +264,9 @@ fn record_available_skills_side_effects(
 
 fn budget_warning_prefix(budget: SkillMetadataBudget, prefix: &str) -> String {
     match budget {
-        SkillMetadataBudget::Tokens(_) => prefix.replacen(
-            "Exceeded skills context budget.",
-            "Exceeded skills context budget of 2%.",
-            1,
-        ),
+        SkillMetadataBudget::Tokens(_) => {
+            prefix.replacen("超出技能上下文预算。", "超出技能上下文预算 2%。", 1)
+        }
         SkillMetadataBudget::Characters(_) => prefix.to_string(),
     }
 }
@@ -1066,7 +1053,7 @@ mod tests {
         assert_eq!(
             rendered.warning_message,
             Some(
-                "Warning: Exceeded skills context budget. Loaded skill descriptions were truncated by an average of 14 characters per skill."
+                "警告：超出技能上下文预算。已加载的技能描述平均被截断，平均每个技能14个字符。"
                     .to_string()
             )
         );
@@ -1116,7 +1103,7 @@ mod tests {
         assert_eq!(
             rendered.warning_message,
             Some(
-                "Warning: Exceeded skills context budget. All skill descriptions were removed and 2 additional skills were not included in the model-visible skills list."
+                "警告：超出技能上下文预算。所有技能描述已被移除，并且还有2个额外技能未被包含在模型可见的技能列表中。"
                     .to_string()
             )
         );
@@ -1145,7 +1132,7 @@ mod tests {
         assert_eq!(
             rendered.warning_message,
             Some(
-                "Warning: Exceeded skills context budget. All skill descriptions were removed and 1 additional skill was not included in the model-visible skills list."
+                "警告：超出技能上下文预算。所有技能描述已被移除，并且还有1个额外技能未被包含在模型可见的技能列表中。"
                     .to_string()
             )
         );

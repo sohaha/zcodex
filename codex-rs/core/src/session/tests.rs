@@ -5293,7 +5293,7 @@ fn emit_thread_start_skill_metrics_records_enabled_kept_and_truncated_values() {
     assert_eq!(
         rendered.warning_message,
         Some(
-            "Warning: Exceeded skills context budget. All skill descriptions were removed and 1 additional skill was not included in the model-visible skills list."
+            "警告：超出技能上下文预算。所有技能描述已被移除，并且还有1个额外技能未被包含在模型可见的技能列表中。"
                 .to_string()
         )
     );

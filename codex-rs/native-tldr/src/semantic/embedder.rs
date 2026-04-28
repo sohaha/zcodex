@@ -250,6 +250,7 @@ fn embedding_model(model: &str) -> Result<EmbeddingModel> {
         "minilm" | "all-minilm-l6-v2" => Ok(EmbeddingModel::AllMiniLML6V2),
         "bge-small-en-v1.5" => Ok(EmbeddingModel::BGESmallENV15),
         "bge-base-en-v1.5" => Ok(EmbeddingModel::BGEBaseENV15),
+        "bge-m3" => Ok(EmbeddingModel::BGEM3),
         "jina-code" | "jina-embeddings-v2-base-code" => {
             Ok(EmbeddingModel::JinaEmbeddingsV2BaseCode)
         }
