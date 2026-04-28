@@ -1,0 +1,161 @@
+plan = ".agents/plan/2026-04-28-context-hooks-architecture.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 zcontext Feature Gate 与草稿边界基线"
+scope = """
+建立 `features.zcontext` 作为 zcontext 全功能总开关，并修正 `[context_hooks]` 默认启用语义。
+包含 `Feature::ZContext` 注册、默认开启、profile 与 CLI disable 路径、配置 schema 更新、当前未完成草稿 diff 分类，以及官方上游热点文件薄接线边界审查。
+不在本 issue 中实现 session 事件记录、snapshot 注入、ctx 工具、治理命令或路由提示。
+"""
+touch_points = ["module:codex-features", "module:codex-core", "module:codex-context-hooks", "path:codex-rs/features/src/lib.rs", "path:codex-rs/features/src/tests.rs", "path:codex-rs/core/src/config/**", "path:codex-rs/core/config.schema.json", "path:codex-rs/context-hooks/**"]
+depends_on = []
+done_when = "`features.zcontext` 稳定默认开启，`[features] zcontext = false`、profile 关闭、`codex --disable zcontext` 与 `codex features disable zcontext` 都能关闭该 feature；未配置或空 `[context_hooks]` 不会关闭 zcontext；当前草稿改动已被分类，提交边界不包含无关 zinit、shutdown rollout、native-tldr 等改动"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-features`，再运行覆盖配置默认值和 CLI/profile disable 的定向 `codex-core` 测试；修改配置 schema 后运行 `cd codex-rs && just write-config-schema`"
+regress_by = "cd codex-rs && just fmt && just fix -p codex-features；若 `codex-core` 配置代码有改动，再运行 `just fix -p codex-core`"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "当前会话 capability 适配：已使用 `llmdoc` 加载仓库知识与 `cadence-issue-generation` 规则；未派发 subagent，因为 Cadence lifecycle 规定 Codex 中没有用户显式授权时不派发子代理；未调用 ztldr，因为本阶段事实源来自指定计划文件和 Cadence 模板，结构代码检索不会提高 issue 拆分质量。执行时先保护现有 `codex-rs/features/src/lib.rs` 脏改动边界，只纳入与本任务直接相关的 hunks。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "实现 session 事件模型、脱敏与记录"
+scope = """
+在本地-owned `codex-context-hooks` 中建立结构化 session 事件模型、统一脱敏、markdown 展示格式、URI 构造和 zmemory 写入参数构造。
+接入 `PostToolUse`、`UserPromptSubmit`、turn/session lifecycle 以及本地 multi-agent/subagent 事件的薄 seam，覆盖工具成功/失败、用户决策、文件编辑、git 操作、错误与子会话状态。
+不在本 issue 中实现 resume/compact snapshot 注入、ctx 执行工具、stats/doctor/purge 或输出压缩路由。
+"""
+touch_points = ["module:codex-context-hooks", "module:codex-core", "module:codex-zmemory", "path:codex-rs/context-hooks/src/event_recorder.rs", "path:codex-rs/context-hooks/src/**", "path:codex-rs/core/src/hook_runtime.rs", "path:codex-rs/core/src/**/agent*.rs", "path:codex-rs/zmemory/src/tool_api.rs"]
+depends_on = ["a1"]
+done_when = "启用 zcontext 时，成功/失败工具调用、用户关键指令、文件编辑、git 操作、错误、子会话派工/完成/失败都形成可搜索的 `session://...` 记录；记录在截断前完成脱敏，已知 token/key/secret/password/header、URL userinfo/query 与 Authorization/Bearer 样本不会进入记录；`features.zcontext = false` 时无写入；zmemory 写失败只产生可观察 warning，不改变工具输出"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-context-hooks`；再运行覆盖 zcontext on/off 与 PostToolUse/UserPromptSubmit 接线的定向 `codex-core` 测试"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core zcontext`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-core zcontext`"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时不要把事件分类、脱敏、格式化或排序逻辑写进 `codex-core`；`core` 只允许传递 runtime facts 并调用窄入口。现有草稿若仍先 pretty-print 原始输入/输出再截断，必须改为先脱敏再截断。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "实现 session-scoped 检索与 snapshot 注入"
+scope = """
+实现当前 session 范围内的事件查询/读取、snapshot builder、优先级排序、token budget 裁剪、stable marker/title，并接入 resume 与 compact/pre-compact 相邻 seam。
+snapshot 只注入结构化摘要和按需查询提示，包含当前任务、最近用户决策、文件/命令状态、子代理状态、错误与修复状态，以及可搜索入口。
+不在本 issue 中注入 raw event dump，不实现 ctx 工具注册，也不实现 stats/doctor/purge。
+"""
+touch_points = ["module:codex-context-hooks", "module:codex-core", "module:codex-zmemory", "path:codex-rs/context-hooks/src/snapshot.rs", "path:codex-rs/core/src/hook_runtime.rs", "path:codex-rs/core/src/compact_remote.rs", "path:codex-rs/zmemory/src/service/search.rs", "path:codex-rs/zmemory/src/service/**"]
+depends_on = ["a1", "a2"]
+done_when = "已有当前 session events 时，resume/compact 后模型可见 history 包含小型结构化 snapshot；无 events、zmemory 读取失败或索引损坏时不注入且不阻断会话；测试证明 snapshot 只读取当前 session，不通过全域 `Export(domain = \"session\")` 再内存过滤"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-context-hooks snapshot` 和 session/ctx scope 相关 `codex-zmemory` 定向测试；再运行覆盖 resume/compact 注入的 `codex-core` 定向测试"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-zmemory`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-zmemory`"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时必须修正现有 `snapshot.rs` 全域导出草稿；优先给 `zmemory` 增加 scoped search/read 能力，而不是在 snapshot builder 内全量过滤。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "实现 ctx 执行工具与大输出索引摘要"
+scope = """
+实现 `ctx_execute`、`ctx_execute_file`、`ctx_batch_execute` 的 tool spec 与 handler，让模型通过现有 shell/unified exec 路径执行命令并将大输出写入 zcontext 索引，只向模型回传压缩摘要、状态和可检索引用。
+执行型 ctx 工具必须复用现有 approval、sandbox、timeout、输出截断和失败可见机制；批量执行是主路径，单次执行是辅助路径。
+不在本 issue 中实现外部 fetch、最终 stats/doctor/purge，也不新建第二套权限模型或隐藏执行路径。
+"""
+touch_points = ["module:codex-tools", "module:codex-core", "module:codex-context-hooks", "module:codex-zmemory", "path:codex-rs/tools/src/tool_registry_plan.rs", "path:codex-rs/tools/src/tool_registry_plan_types.rs", "path:codex-rs/core/src/tools/**", "path:codex-rs/context-hooks/src/**", "path:codex-rs/utils/output-truncation/src/lib.rs"]
+depends_on = ["a1", "a2", "a3"]
+done_when = "启用 zcontext 时，模型可调用 `ctx_execute`、`ctx_execute_file`、`ctx_batch_execute`；命令执行不旁路 approval/sandbox/timeout；大输出默认进入 zcontext 索引并只回传摘要；失败命令结果可见且按批量策略处理；`features.zcontext = false` 时这些工具不注册"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tools`；再运行覆盖 ctx 工具注册、feature off 隐藏和现有 exec handler 复用的 `codex-core` 定向测试"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-tools`；若 shell/unified exec 共享路径有改动，再运行相关 `codex-core` 工具测试"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时优先复用现有 `ShellHandler` / `UnifiedExecHandler` / tool runtime；禁止为了 ctx 工具新增隐藏命令执行通道。若与 `ztok` / native-tldr 能力重叠，ctx 工具只负责执行、索引和检索大输出，不重复造结构化代码理解工具。"
+
+[[issue]]
+id = "a5"
+sequence = 50
+title = "实现 ctx 索引、搜索与受策略约束的 fetch"
+scope = """
+实现 `ctx_index`、`ctx_search` 和后续 `ctx_fetch_and_index`，补齐 source-scoped search、空库/空结果提示、外部 fetch policy 复用和 `ctx://...` / `batch://...` 数据域边界。
+该 issue 负责让已执行或显式索引的内容可被按源、session 和查询条件找回。
+不在本 issue 中实现执行型 ctx 工具的权限模型，也不绕过现有 web/network policy。
+"""
+touch_points = ["module:codex-tools", "module:codex-zmemory", "module:codex-context-hooks", "module:codex-core", "path:codex-rs/tools/src/**", "path:codex-rs/zmemory/src/service/search.rs", "path:codex-rs/zmemory/src/service/create.rs", "path:codex-rs/core/src/tools/**", "path:docs/zmemory.md"]
+depends_on = ["a1", "a3", "a4"]
+done_when = "启用 zcontext 时，模型可以用 `ctx_index` 写入可检索内容、用 `ctx_search` 按 source/session 查询，并在允许网络策略下用 `ctx_fetch_and_index` 拉取并索引内容；空库、空结果和失败均有明确可见提示；`features.zcontext = false` 时相关工具和路由提示不可见"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-zmemory` 和 `cargo nextest run -p codex-tools`；若本地未安装 cargo-nextest，则分别改为对应 `cargo test -p`"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-zmemory`；若涉及网络/fetch policy 接线，再运行覆盖该策略的 `codex-core` 定向测试"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时不要新增旁路 SQLite；优先扩展 `zmemory` URI scope 与 search/read 能力。`ctx_fetch_and_index` 必须服从现有 web/network policy，不能成为默认首批闭环的阻塞点。"
+
+[[issue]]
+id = "a6"
+sequence = 60
+title = "补齐 zcontext stats、doctor、purge 与 insight 治理面"
+scope = """
+提供 `zcontext stats`、`zcontext doctor`、`zcontext purge` 或等价内置工具/CLI 入口，暴露启用状态、数据库/索引状态、hooks/compact 接线状态、当前 session 写入数量、最近错误、写入耗时、snapshot 事件数、token 裁剪、脱敏命中和 ctx 工具节省估算。
+包含安全清理 `session://...` / `ctx://...` 数据的能力，以及结构化 insight 输出。
+不直接对齐 `context-mode` 的插件自修复 `ctx_upgrade`，也不提供本地 Web UI。
+"""
+touch_points = ["module:codex-zmemory", "module:codex-context-hooks", "module:codex-tools", "path:codex-rs/zmemory/src/**", "path:codex-rs/context-hooks/src/**", "path:codex-rs/cli/src/**", "path:docs/**"]
+depends_on = ["a2", "a3", "a4", "a5"]
+done_when = "用户能确认 zcontext 是否启用、数据库/索引是否可用、hooks/compact 接线是否生效、当前 session 写入数量和最近错误；用户能安全清理 `session://...` / `ctx://...` 数据；`features.zcontext = false` 时治理入口显示 disabled 或不注册，且不会触发读写"
+validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-zmemory`，并运行覆盖 zcontext stats/doctor/purge 工具或 CLI 入口的定向测试"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-zmemory`；若 CLI 命令面有改动，再运行相关 CLI help/dispatch 测试"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时优先扩展现有 `zmemory doctor/stats` 和 CLI/tool registry 形态；治理面必须可观察、可清理、可关闭，避免默认开启后成为黑盒。"
+
+[[issue]]
+id = "a7"
+sequence = 70
+title = "注入 zcontext 输出压缩与工具路由策略"
+scope = """
+提供 feature-gated 的 zcontext routing instructions、ctx 工具优先级提示、输出压缩指令，并明确与 `ztok`、prompt 注入和现有输出截断的边界。
+启用时引导模型优先用 ctx 工具处理大输出、用搜索按需取细节，并减少低价值冗余输出。
+不破坏 Codex 既有交互风格、安全/审批说明、不可逆操作提示或用户困惑场景下的必要解释。
+"""
+touch_points = ["module:codex-core", "module:codex-tools", "module:codex-context-hooks", "path:codex-rs/core/src/**/prompt*", "path:codex-rs/core/src/tools/**", "path:codex-rs/tools/src/**", "path:codex-rs/ztok/**"]
+depends_on = ["a1", "a4", "a5"]
+done_when = "启用 zcontext 时，模型可见的路由提示明确推荐 ctx 工具处理大输出、搜索按需取细节和保持低冗余输出；关闭 zcontext 后这些提示完全消失；安全警告、审批语义和用户困惑场景仍保留必要解释"
+validate_by = "优先运行覆盖 prompt/tool routing 注入的 `codex-core` 定向测试；若改动影响工具 schema 或 registry，再运行 `cd codex-rs && cargo nextest run -p codex-tools`"
+regress_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-core zcontext`；若本地未安装 cargo-nextest，则改为 `cargo test -p codex-core zcontext`"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行时保持提示短小、可测试、feature-gated。若已有 Embedded ZTOK 或 `codex-caveman` 原则可复用，只引用和收敛边界，不复制一套永久 prompt。"
+
+[[issue]]
+id = "a8"
+sequence = 80
+title = "完成 zcontext 文档、技能治理与最终收口"
+scope = """
+补齐用户配置说明、context-mode parity 表、默认开启与关闭方式、数据位置与清理方式、`[context_hooks]` 子配置边界、上游解耦原则、本地分叉复用路径、未对齐能力和必要技能说明。
+包含 `docs/` 更新、`.codex/skills/upgrade-rtk/SKILL.md` 中与 zcontext/session continuity/ztok-rtk 升级边界相关的指引更新，以及最终阶段验证与回归记录。
+不新增新的运行时功能；如果发现前序实现合同不完整，应回到对应 issue 修正，而不是在文档 issue 中用说明掩盖。
+"""
+touch_points = ["path:docs/**", "path:.codex/skills/upgrade-rtk/SKILL.md", "path:.agents/llmdoc/**", "path:codex-rs/core/config.schema.json"]
+depends_on = ["a1", "a2", "a3", "a4", "a5", "a6", "a7"]
+done_when = "文档说明 `features.zcontext` 默认开启、关闭方式、`[context_hooks]` 子配置、数据域、限制、清理方式、上游解耦原则、本地分叉复用路径和未对齐能力；定向测试通过；已明确未覆盖的全量验证与剩余风险；必要的 llmdoc 更新建议已形成"
+validate_by = "回读更新后的 `docs/`、`.codex/skills/upgrade-rtk/SKILL.md` 与 schema；运行所有受影响 crate 的定向测试，并运行 `cd codex-rs && just fmt`；若配置 schema 变化，确认 `just write-config-schema` 已执行"
+regress_by = "在所有前序 issue 完成后，优先运行各受影响 crate 的定向回归；若 common、core 或 protocol 被改动且局部验证已通过，再征求用户确认后运行更完整的 `just test` 或 `cargo nextest run`"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "非简单任务结束后应评估是否执行 `llmdoc-update`：本计划涉及 zcontext 架构、feature gate、zmemory/session continuity 和工具路由边界，若实现阶段沉淀出稳定经验，应主动更新 llmdoc。"

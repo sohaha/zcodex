@@ -77,6 +77,8 @@ pub enum Feature {
     ShellTool,
     /// Enable Claude-style lifecycle hooks loaded from hooks.json files.
     CodexHooks,
+    /// Enable built-in zcontext session continuity and context-saving behavior.
+    ZContext,
 
     // Experimental
     /// Enable JavaScript code mode backed by the in-process V8 runtime.
@@ -745,6 +747,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::CodexHooks,
         key: "codex_hooks",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::ZContext,
+        key: "zcontext",
         stage: Stage::Stable,
         default_enabled: true,
     },
