@@ -1015,6 +1015,27 @@ pub struct ZmemoryToml {
     pub namespace: Option<String>,
 }
 
+/// Ztldr subsystem settings in TOML format.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ZtldrToml {
+    /// Enables ztldr's global runtime behavior. Defaults to false.
+    pub enabled: Option<bool>,
+    /// Selects where ztldr writes generated artifacts. Defaults to `temp`.
+    pub artifact_location: Option<ZtldrArtifactLocation>,
+}
+
+/// Location for generated ztldr artifacts.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ZtldrArtifactLocation {
+    /// Store artifacts under the default runtime/temp directory.
+    #[default]
+    Temp,
+    /// Store artifacts under the current project root's `.tldr` directory.
+    Project,
+}
+
 /// Ztok subsystem settings in TOML format.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]

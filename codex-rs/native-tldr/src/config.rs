@@ -1,18 +1,35 @@
-use crate::TldrConfig;
 use crate::daemon::DaemonConfig;
 use crate::semantic::SemanticConfig;
 use crate::session::SessionConfig;
+use crate::TldrConfig;
+use crate::ZtldrArtifactLocation;
+use crate::ZtldrConfig;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 use std::path::Path;
+use std::path::PathBuf;
 use std::time::Duration;
+
+const CONFIG_TOML_FILE: &str = "config.toml";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct TldrConfigFile {
     pub daemon: Option<TldrDaemonConfigFile>,
     pub semantic: Option<TldrSemanticConfigFile>,
     pub session: Option<TldrSessionConfigFile>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct GlobalConfigFile {
+    pub ztldr: Option<GlobalZtldrConfigFile>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GlobalZtldrConfigFile {
+    pub enabled: Option<bool>,
+    pub artifact_location: Option<ZtldrArtifactLocation>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -43,7 +60,17 @@ pub struct TldrSessionConfigFile {
 }
 
 pub fn load_tldr_config(project_root: &Path) -> Result<TldrConfig> {
+    let codex_home = default_codex_home();
+    load_tldr_config_with_codex_home(project_root, codex_home.as_deref())
+}
+
+fn load_tldr_config_with_codex_home(
+    project_root: &Path,
+    codex_home: Option<&Path>,
+) -> Result<TldrConfig> {
     let mut config = TldrConfig::for_project(project_root.to_path_buf());
+    config.ztldr = load_global_ztldr_config_from_codex_home(codex_home)?;
+
     let config_path = project_root.join(".codex").join("tldr.toml");
     if !config_path.exists() {
         return Ok(config);
@@ -65,6 +92,42 @@ pub fn load_tldr_config(project_root: &Path) -> Result<TldrConfig> {
     }
 
     Ok(config)
+}
+
+pub(crate) fn load_global_ztldr_config() -> Result<ZtldrConfig> {
+    let codex_home = default_codex_home();
+    load_global_ztldr_config_from_codex_home(codex_home.as_deref())
+}
+
+fn load_global_ztldr_config_from_codex_home(codex_home: Option<&Path>) -> Result<ZtldrConfig> {
+    let Some(codex_home) = codex_home else {
+        return Ok(ZtldrConfig::default());
+    };
+    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    if !config_path.exists() {
+        return Ok(ZtldrConfig::default());
+    }
+
+    let file = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("read Codex config {}", config_path.display()))?;
+    let parsed: GlobalConfigFile = toml::from_str(&file)
+        .with_context(|| format!("parse Codex config {}", config_path.display()))?;
+
+    let ztldr = parsed.ztldr.unwrap_or_default();
+    Ok(ZtldrConfig {
+        enabled: ztldr.enabled.unwrap_or(false),
+        artifact_location: ztldr.artifact_location.unwrap_or_default(),
+    })
+}
+
+fn default_codex_home() -> Option<PathBuf> {
+    if let Some(codex_home) = std::env::var_os("CODEX_HOME") {
+        return Some(PathBuf::from(codex_home));
+    }
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .map(|home| home.join(".codex"))
 }
 
 fn apply_daemon_config(config: &mut DaemonConfig, file: TldrDaemonConfigFile) {
@@ -111,14 +174,18 @@ fn apply_session_config(config: &mut SessionConfig, file: TldrSessionConfigFile)
 
 #[cfg(test)]
 mod tests {
-    use super::load_tldr_config;
+    use super::load_global_ztldr_config_from_codex_home;
+    use super::load_tldr_config_with_codex_home;
+    use crate::ZtldrArtifactLocation;
+    use crate::ZtldrConfig;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
 
     #[test]
     fn load_tldr_config_uses_defaults_when_file_is_missing() {
         let tempdir = tempdir().expect("tempdir should exist");
-        let config = load_tldr_config(tempdir.path()).expect("config should load");
+        let config =
+            load_tldr_config_with_codex_home(tempdir.path(), None).expect("config should load");
 
         assert!(config.daemon.auto_start);
         assert_eq!(config.daemon.socket_mode, "auto");
@@ -127,6 +194,76 @@ mod tests {
         assert!(config.semantic.embedding.enabled);
         assert!(config.semantic.embedding_enabled);
         assert_eq!(config.session.dirty_file_threshold, 20);
+        assert_eq!(config.ztldr, ZtldrConfig::default());
+    }
+
+    #[test]
+    fn load_global_ztldr_config_defaults_to_disabled_temp_artifacts() {
+        let codex_home = tempdir().expect("codex home should exist");
+
+        let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
+            .expect("global ztldr config should load");
+
+        assert_eq!(config, ZtldrConfig::default());
+        assert!(!config.uses_project_artifacts());
+    }
+
+    #[test]
+    fn load_global_ztldr_config_reads_enabled_and_artifact_location() {
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nenabled = true\nartifact_location = \"project\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
+            .expect("global ztldr config should load");
+
+        assert_eq!(
+            config,
+            ZtldrConfig {
+                enabled: true,
+                artifact_location: ZtldrArtifactLocation::Project,
+            }
+        );
+        assert!(config.uses_project_artifacts());
+    }
+
+    #[test]
+    fn load_global_ztldr_config_enabled_gate_controls_project_artifacts() {
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nenabled = false\nartifact_location = \"project\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
+            .expect("global ztldr config should load");
+
+        assert_eq!(config.artifact_location, ZtldrArtifactLocation::Project);
+        assert!(!config.uses_project_artifacts());
+    }
+
+    #[test]
+    fn load_tldr_config_applies_global_ztldr_settings() {
+        let project = tempdir().expect("project should exist");
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nenabled = true\nartifact_location = \"project\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_tldr_config_with_codex_home(project.path(), Some(codex_home.path()))
+            .expect("config should load");
+
+        assert!(config.ztldr.enabled);
+        assert_eq!(
+            config.ztldr.artifact_location,
+            ZtldrArtifactLocation::Project
+        );
     }
 
     #[test]
@@ -158,7 +295,8 @@ idle_timeout_secs = 42
         )
         .expect("config file should write");
 
-        let config = load_tldr_config(tempdir.path()).expect("config should load");
+        let config =
+            load_tldr_config_with_codex_home(tempdir.path(), None).expect("config should load");
         assert!(!config.daemon.auto_start);
         assert_eq!(config.daemon.socket_mode, "manual");
         assert!(config.semantic.enabled);

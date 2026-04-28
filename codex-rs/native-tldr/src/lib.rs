@@ -66,6 +66,7 @@ pub struct TldrConfig {
     pub session: SessionConfig,
     pub daemon: DaemonConfig,
     pub semantic: SemanticConfig,
+    pub ztldr: ZtldrConfig,
 }
 
 impl TldrConfig {
@@ -75,6 +76,7 @@ impl TldrConfig {
             session: SessionConfig::default(),
             daemon: DaemonConfig::default(),
             semantic: SemanticConfig::default(),
+            ztldr: ZtldrConfig::default(),
         }
     }
 
@@ -88,6 +90,35 @@ impl TldrConfig {
             session_idle_timeout_secs: self.session.idle_timeout.as_secs(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ZtldrConfig {
+    pub enabled: bool,
+    pub artifact_location: ZtldrArtifactLocation,
+}
+
+impl Default for ZtldrConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            artifact_location: ZtldrArtifactLocation::Temp,
+        }
+    }
+}
+
+impl ZtldrConfig {
+    pub fn uses_project_artifacts(&self) -> bool {
+        self.enabled && matches!(self.artifact_location, ZtldrArtifactLocation::Project)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ZtldrArtifactLocation {
+    #[default]
+    Temp,
+    Project,
 }
 
 #[derive(Debug)]

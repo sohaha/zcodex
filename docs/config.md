@@ -133,9 +133,17 @@ behavior = "basic"
 
 ## ZTLDR
 
-`ztldr` 的用户配置边界不同于 `ztok`：当前 `~/.codex/config.toml` 没有 `ztldr` / `tldr` 专用配置表，也没有可持久化的全局 ztldr 开关。daemon、semantic 和 session 参数来自项目根目录下的 `.codex/tldr.toml`。
+`ztldr` 的用户配置边界不同于 `ztok`：`~/.codex/config.toml` 中的 `[ztldr]` 只提供全局开关与产物位置选择；daemon、semantic 和 session 参数仍来自项目根目录下的 `.codex/tldr.toml`。
 
-最小示例：
+```toml
+[ztldr]
+enabled = true
+artifact_location = "project"
+```
+
+`enabled` 是总开关，默认 `false`。`artifact_location` 支持 `"temp"` 和 `"project"`，默认 `"temp"`；只有同时设置 `enabled = true` 且 `artifact_location = "project"` 时，ztldr 的本地产物才会写入项目根目录下的 `.tldr/`，例如 semantic cache 会落在 `.tldr/cache/semantic/`。其他情况下继续使用默认 runtime/temp artifact 目录。
+
+`.codex/tldr.toml` 最小示例：
 
 ```toml
 [daemon]

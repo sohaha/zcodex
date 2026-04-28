@@ -63,6 +63,7 @@ const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
 const UNIX_SOCKET_PATH_MAX_BYTES: usize = 103;
 #[cfg(unix)]
 const UNIX_TEMP_ARTIFACT_ROOT: &str = "/tmp";
+const PROJECT_ARTIFACT_DIR_NAME: &str = ".tldr";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -1183,10 +1184,50 @@ fn daemon_launch_lock_file_name(project_hash: &str) -> String {
 }
 
 fn daemon_artifact_dir_for_project_hash(project_root: &Path, project_hash: &str) -> PathBuf {
-    daemon_artifact_scope_dir(project_root, project_hash).join(project_hash)
+    daemon_artifact_dir_for_project_hash_with_project_artifacts(
+        project_root,
+        project_hash,
+        project_artifacts_enabled_from_global_config(),
+    )
 }
 
 fn daemon_artifact_scope_dir(_project_root: &Path, project_hash: &str) -> PathBuf {
+    daemon_artifact_scope_dir_with_project_artifacts(
+        _project_root,
+        project_hash,
+        project_artifacts_enabled_from_global_config(),
+    )
+}
+
+fn daemon_artifact_dir_for_project_hash_with_project_artifacts(
+    project_root: &Path,
+    project_hash: &str,
+    project_artifacts_enabled: bool,
+) -> PathBuf {
+    let scope_dir = daemon_artifact_scope_dir_with_project_artifacts(
+        project_root,
+        project_hash,
+        project_artifacts_enabled,
+    );
+    if project_artifacts_enabled {
+        scope_dir
+    } else {
+        scope_dir.join(project_hash)
+    }
+}
+
+fn daemon_artifact_scope_dir_with_project_artifacts(
+    project_root: &Path,
+    project_hash: &str,
+    project_artifacts_enabled: bool,
+) -> PathBuf {
+    if project_artifacts_enabled {
+        return project_root.join(PROJECT_ARTIFACT_DIR_NAME);
+    }
+    runtime_daemon_artifact_scope_dir(project_hash)
+}
+
+fn runtime_daemon_artifact_scope_dir(project_hash: &str) -> PathBuf {
     #[cfg(unix)]
     {
         let uid = unsafe { libc::geteuid() };
@@ -1198,6 +1239,12 @@ fn daemon_artifact_scope_dir(_project_root: &Path, project_hash: &str) -> PathBu
     {
         daemon_artifact_scope_dir_for_runtime_dir(None)
     }
+}
+
+fn project_artifacts_enabled_from_global_config() -> bool {
+    crate::config::load_global_ztldr_config()
+        .map(|config| config.uses_project_artifacts())
+        .unwrap_or(false)
 }
 
 fn daemon_temp_artifact_scope_dir() -> PathBuf {
@@ -1706,12 +1753,15 @@ pub async fn query_daemon(
 mod tests {
     use super::DAEMON_HEAVY_IO_TIMEOUT;
     use super::DAEMON_IO_TIMEOUT;
+    use super::PROJECT_ARTIFACT_DIR_NAME;
     use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    use super::daemon_artifact_dir_for_project_hash_with_project_artifacts;
     #[cfg(unix)]
     use super::daemon_artifact_scope_dir_for_project_hash;
     use super::daemon_artifact_scope_dir_for_runtime_dir;
+    use super::daemon_artifact_scope_dir_with_project_artifacts;
     use super::daemon_health;
     use super::daemon_lock_is_held;
     use super::daemon_project_hash;
@@ -2706,28 +2756,20 @@ mod tests {
     fn daemon_artifact_paths_are_scoped_under_runtime_root() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("scoped-artifact-project");
-        let socket_path = socket_path_for_project(&project_root);
-        let pid_path = pid_path_for_project(&project_root);
-        let lock_path = lock_path_for_project(&project_root);
-
-        let artifact_dir = socket_path
-            .parent()
-            .expect("socket path should have artifact dir");
-        assert_eq!(
-            artifact_dir,
-            pid_path.parent().expect("pid path should have parent")
+        let project_hash = daemon_project_hash(&project_root);
+        let artifact_dir = daemon_artifact_dir_for_project_hash_with_project_artifacts(
+            &project_root,
+            &project_hash,
+            false,
         );
+        let scope_dir =
+            daemon_artifact_scope_dir_with_project_artifacts(&project_root, &project_hash, false);
+
         assert_eq!(
             artifact_dir.file_name().and_then(|value| value.to_str()),
-            Some(daemon_project_hash(&project_root).as_str())
+            Some(project_hash.as_str())
         );
-        let scope_dir = artifact_dir
-            .parent()
-            .expect("artifact dir should have scope dir");
-        assert_eq!(
-            scope_dir,
-            lock_path.parent().expect("lock path should have scope dir")
-        );
+        assert_eq!(artifact_dir.parent(), Some(scope_dir.as_path()));
 
         #[cfg(unix)]
         {
@@ -2752,6 +2794,24 @@ mod tests {
                 Some(std::ffi::OsStr::new("codex-native-tldr"))
             );
         }
+    }
+
+    #[test]
+    fn daemon_artifact_dir_can_use_project_root_tldr_dir() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("project-artifact-project");
+        let project_hash = "abc123ef";
+
+        let artifact_dir = daemon_artifact_dir_for_project_hash_with_project_artifacts(
+            &project_root,
+            project_hash,
+            true,
+        );
+        let scope_dir =
+            daemon_artifact_scope_dir_with_project_artifacts(&project_root, project_hash, true);
+
+        assert_eq!(artifact_dir, project_root.join(PROJECT_ARTIFACT_DIR_NAME));
+        assert_eq!(scope_dir, artifact_dir);
     }
 
     #[cfg(unix)]

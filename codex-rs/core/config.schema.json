@@ -2708,6 +2708,44 @@
       },
       "type": "object"
     },
+    "ZtldrArtifactLocation": {
+      "description": "Location for generated ztldr artifacts.",
+      "oneOf": [
+        {
+          "description": "Store artifacts under the default runtime/temp directory.",
+          "enum": [
+            "temp"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Store artifacts under the current project root's `.tldr` directory.",
+          "enum": [
+            "project"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ZtldrToml": {
+      "additionalProperties": false,
+      "description": "Ztldr subsystem settings in TOML format.",
+      "properties": {
+        "artifact_location": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ZtldrArtifactLocation"
+            }
+          ],
+          "description": "Selects where ztldr writes generated artifacts. Defaults to `temp`."
+        },
+        "enabled": {
+          "description": "Enables ztldr's global runtime behavior. Defaults to false.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "ZtokBehavior": {
       "description": "Controls whether `ztok` uses the default enhanced compression stack or a reduced compatibility behavior.",
       "enum": [
@@ -3592,6 +3630,14 @@
         }
       ],
       "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
+    },
+    "ztldr": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ZtldrToml"
+        }
+      ],
+      "description": "Ztldr subsystem settings."
     },
     "ztok": {
       "allOf": [

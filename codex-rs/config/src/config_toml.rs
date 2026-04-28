@@ -31,6 +31,7 @@ use crate::types::Tui;
 use crate::types::UriBasedFileOpener;
 use crate::types::WindowsToml;
 use crate::types::ZmemoryToml;
+use crate::types::ZtldrToml;
 use crate::types::ZtokToml;
 use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
@@ -356,6 +357,8 @@ pub struct ConfigToml {
 
     /// Memories subsystem settings.
     pub memories: Option<MemoriesToml>,
+    /// Ztldr subsystem settings.
+    pub ztldr: Option<ZtldrToml>,
     /// Ztok subsystem settings.
     pub ztok: Option<ZtokToml>,
     /// Zmemory subsystem settings.
