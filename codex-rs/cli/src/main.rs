@@ -55,6 +55,7 @@ mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 mod zfeder_cmd;
+mod zinit_cmd;
 mod zmemory_cmd;
 mod zmemory_compat_server;
 
@@ -64,6 +65,7 @@ use crate::responses_cmd::ResponsesCommand;
 use crate::responses_cmd::run_responses_command;
 use crate::tldr_cmd::TldrCli;
 use crate::zfeder_cmd::ZfederCli;
+use crate::zinit_cmd::ZinitCli;
 use crate::zmemory_cmd::ZmemoryCli;
 use crate::zmemory_cmd::run_zmemory_command;
 
@@ -145,6 +147,9 @@ enum Subcommand {
     /// 运行原生 TLDR 代码上下文分析命令。
     #[clap(name = "ztldr")]
     Tldr(TldrCli),
+
+    /// 初始化本地特性所需的运行环境。
+    Zinit(ZinitCli),
 
     /// 管理本地 zmemory 长期记忆。
     Zmemory(ZmemoryCli),
@@ -958,6 +963,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 "ztldr",
             )?;
             tldr_cmd::run_tldr_command(tldr_cli).await?;
+        }
+        Some(Subcommand::Zinit(zinit_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "zinit",
+            )?;
+            zinit_cmd::run_zinit_command(zinit_cli).await?;
         }
         Some(Subcommand::Zmemory(zmemory_cli)) => {
             reject_remote_mode_for_subcommand(
@@ -3070,6 +3083,13 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(["codex", "ztldr", "daemon", "status"])
             .expect("parse should succeed");
         assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
+    }
+
+    #[test]
+    fn zinit_parses_as_top_level_command() {
+        let cli = MultitoolCli::try_parse_from(["codex", "zinit", "--check"])
+            .expect("parse should succeed");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Zinit(_))));
     }
 
     #[test]
