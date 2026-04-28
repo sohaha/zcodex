@@ -870,16 +870,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "exec",
             )?;
-            exec_cli
-                .shared
-                .inherit_exec_root_options(&interactive.shared);
-            if let Some(provider) = interactive.provider.as_deref() {
-                inject_provider_override(&mut exec_cli.config_overrides, provider);
-            }
-            prepend_config_flags(
-                &mut exec_cli.config_overrides,
-                root_config_overrides.clone(),
-            );
+            prepare_exec_cli_for_subcommand(&mut exec_cli, &interactive, root_config_overrides);
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
@@ -890,13 +881,13 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             )?;
             let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
             exec_cli.command = Some(ExecCommand::Review(review_args));
-            if let Some(provider) = interactive.provider.as_deref() {
-                inject_provider_override(&mut exec_cli.config_overrides, provider);
-            }
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
                 root_config_overrides.clone(),
             );
+            if let Some(provider) = interactive.provider.as_deref() {
+                inject_provider_override(&mut exec_cli.config_overrides, provider);
+            }
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::McpServer) => {
@@ -1671,6 +1662,20 @@ fn inject_provider_override(subcommand_config_overrides: &mut CliConfigOverrides
     }
 }
 
+fn prepare_exec_cli_for_subcommand(
+    exec_cli: &mut ExecCli,
+    interactive: &TuiCli,
+    root_config_overrides: CliConfigOverrides,
+) {
+    exec_cli
+        .shared
+        .inherit_exec_root_options(&interactive.shared);
+    prepend_config_flags(&mut exec_cli.config_overrides, root_config_overrides);
+    if let Some(provider) = interactive.provider.as_deref() {
+        inject_provider_override(&mut exec_cli.config_overrides, provider);
+    }
+}
+
 fn reject_remote_mode_for_subcommand(
     remote: Option<&str>,
     remote_auth_token_env: Option<&str>,
@@ -2079,6 +2084,64 @@ mod tests {
 
         assert_eq!(cli.interactive.provider, Some(String::new()));
         assert_matches!(cli.subcommand, None);
+    }
+
+    fn prepared_exec_from_args(args: &[&str]) -> ExecCli {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let MultitoolCli {
+            mut interactive,
+            subcommand,
+            feature_toggles: _,
+            remote: _,
+        } = cli;
+        let root_overrides = std::mem::take(&mut interactive.config_overrides);
+
+        let Subcommand::Exec(mut exec_cli) = subcommand.expect("exec present") else {
+            unreachable!()
+        };
+
+        prepare_exec_cli_for_subcommand(&mut exec_cli, &interactive, root_overrides);
+        exec_cli
+    }
+
+    #[test]
+    fn root_provider_flag_is_forwarded_to_exec_as_model_provider_override() {
+        let exec_cli = prepared_exec_from_args(&["codex", "-P", "zenmux", "exec"]);
+
+        assert_eq!(
+            exec_cli.config_overrides.raw_overrides,
+            vec!["model_provider=zenmux".to_string()]
+        );
+    }
+
+    #[test]
+    fn root_config_model_provider_override_is_forwarded_to_exec() {
+        let exec_cli = prepared_exec_from_args(&["codex", "-c", "model_provider=zenmux", "exec"]);
+
+        assert_eq!(
+            exec_cli.config_overrides.raw_overrides,
+            vec!["model_provider=zenmux".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_model_provider_override_wins_over_root_provider_flag() {
+        let exec_cli = prepared_exec_from_args(&[
+            "codex",
+            "-P",
+            "zenmux",
+            "exec",
+            "-c",
+            "model_provider=openai",
+        ]);
+
+        assert_eq!(
+            exec_cli.config_overrides.raw_overrides,
+            vec![
+                "model_provider=zenmux".to_string(),
+                "model_provider=openai".to_string()
+            ]
+        );
     }
 
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
