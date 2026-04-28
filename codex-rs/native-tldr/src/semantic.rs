@@ -85,7 +85,7 @@ pub fn warm_embedding_model(model: &str, dimensions: usize) -> Result<()> {
     let embedder = SemanticEmbedder::new(model.to_string());
     embedder
         .embed_query("ztldr semantic model warmup", dimensions)
-        .with_context(|| format!("warm semantic embedding model `{model}`"))?;
+        .with_context(|| format!("预热语义嵌入模型 `{model}`"))?;
     Ok(())
 }
 
@@ -94,7 +94,7 @@ pub fn validate_semantic_model(model: &str) -> Result<()> {
         return Ok(());
     }
     anyhow::bail!(
-        "unsupported semantic embedding model `{model}`; supported models: {}",
+        "不支持语义嵌入模型 `{model}`；支持的模型：{}",
         SUPPORTED_SEMANTIC_MODELS.join(", ")
     );
 }
@@ -174,7 +174,7 @@ impl SemanticReindexReport {
             started_at,
             finished_at,
             message: format!(
-                "semantic phase-2 reindex completed: {indexed_units} units across {indexed_files} files"
+                "语义 phase-2 重新索引完成：{indexed_files} 个文件，共 {indexed_units} 个单元"
             ),
             embedding_enabled,
             embedding_dimensions,
@@ -196,7 +196,7 @@ impl SemanticReindexReport {
             truncated: false,
             started_at: now,
             finished_at: now,
-            message: format!("semantic phase-2 reindex failed: {}", error.into()),
+            message: format!("语义 phase-2 重新索引失败：{}", error.into()),
             embedding_enabled,
             embedding_dimensions,
         }
@@ -329,7 +329,7 @@ pub struct SemanticIndex {
     pub source_fingerprint: String,
 }
 
-/// Semantic indexer with persisted local cache for embedding units and vectors.
+/// 带本地持久化缓存的语义索引器，用于缓存嵌入单元和向量。
 #[derive(Debug, Clone)]
 pub struct SemanticIndexer {
     config: SemanticConfig,
@@ -356,11 +356,11 @@ impl SemanticIndexer {
 
     pub fn describe(&self) -> String {
         format!(
-            "semantic {} threshold={}, feature_gate={}",
+            "语义索引{} threshold={}, feature_gate={}",
             if self.is_enabled() {
-                "enabled"
+                "已启用"
             } else {
-                "disabled"
+                "已禁用"
             },
             self.config.auto_reindex_threshold,
             self.config.feature_gate
@@ -375,7 +375,7 @@ impl SemanticIndexer {
         for pattern in DEFAULT_IGNORE {
             builder
                 .add_line(None, pattern)
-                .with_context(|| format!("add default ignore pattern {pattern}"))?;
+                .with_context(|| format!("添加默认忽略模式 {pattern}"))?;
         }
         let ignore_file = project_root.join(".tldrignore");
         if ignore_file.exists() {
@@ -388,11 +388,11 @@ impl SemanticIndexer {
             }
             builder
                 .add_line(None, trimmed)
-                .with_context(|| format!("add tldr ignore pattern {trimmed}"))?;
+                .with_context(|| format!("添加 tldr 忽略模式 {trimmed}"))?;
         }
         builder
             .build()
-            .with_context(|| format!("build ignore matcher for {}", project_root.display()))
+            .with_context(|| format!("为 {} 构建忽略匹配器", project_root.display()))
     }
 
     fn disabled_response(&self, query: String) -> SemanticSearchResponse {
@@ -403,8 +403,7 @@ impl SemanticIndexer {
             truncated: false,
             matches: Vec::new(),
             embedding_used: false,
-            message: "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
-                .to_string(),
+            message: "语义搜索已禁用；请在 .codex/tldr.toml 中启用 [semantic].enabled".to_string(),
         }
     }
 
@@ -467,7 +466,7 @@ impl SemanticIndexer {
                 .unwrap_or_else(|_| path.clone());
             units.extend(
                 extract_units(&relative_path, language, &contents)
-                    .with_context(|| format!("extract units from {}", relative_path.display()))?,
+                    .with_context(|| format!("从 {} 提取单元", relative_path.display()))?,
             );
         }
 
@@ -536,7 +535,7 @@ impl SemanticIndexer {
                 Vec::new(),
                 SemanticReindexReport::failed(
                     languages,
-                    "semantic reindexing is disabled in config",
+                    "配置已禁用语义重新索引",
                     self.config.embedding_enabled(),
                     self.config.embedding_dimensions(),
                 ),
@@ -610,7 +609,7 @@ impl SemanticIndexer {
                 Vec::new(),
                 SemanticReindexReport::failed(
                     languages.to_vec(),
-                    "semantic reindexing is disabled in config",
+                    "配置已禁用语义重新索引",
                     self.config.embedding_enabled(),
                     self.config.embedding_dimensions(),
                 ),
@@ -621,7 +620,7 @@ impl SemanticIndexer {
                 Vec::new(),
                 SemanticReindexReport::skipped(
                     Vec::new(),
-                    "no semantic sources were marked dirty",
+                    "没有标记为脏的语义源文件",
                     self.config.embedding_enabled(),
                     self.config.embedding_dimensions(),
                 ),
@@ -679,7 +678,7 @@ impl SemanticIndexer {
             {
                 Ok(vector) => (Some(vector), true),
                 Err(error) if embedder::is_embedding_backend_unavailable(&error) => (None, false),
-                Err(error) => return Err(error).context("embed semantic search query"),
+                Err(error) => return Err(error).context("嵌入语义搜索查询"),
             }
         } else {
             (None, false)
@@ -731,7 +730,7 @@ impl SemanticIndexer {
             truncated,
             matches,
             embedding_used,
-            message: format!("semantic search returned {result_count} matches"),
+            message: format!("语义搜索返回 {result_count} 个匹配项"),
         })
     }
 
@@ -780,7 +779,7 @@ fn collect_embedding_units(
             .map(Path::to_path_buf)
             .unwrap_or(path.clone());
         let file_units = extract_units(&relative_path, language, &contents)
-            .with_context(|| format!("extract units from {}", relative_path.display()))?;
+            .with_context(|| format!("从 {} 提取单元", relative_path.display()))?;
         if file_units.is_empty() {
             units.push(file_level_unit(relative_path, language, &contents));
         } else {
@@ -967,14 +966,14 @@ fn build_unit(
     EmbeddingUnit {
         dependencies,
         cfg_summary: format!(
-            "{} lines sampled; {} outgoing calls",
+            "采样 {} 行；{} 个出站调用",
             code_preview.lines().count(),
             calls.len()
         ),
         dfg_summary: if code_preview.contains("let ") || code_preview.contains("const ") {
-            "contains local assignments".to_string()
+            "包含局部赋值".to_string()
         } else {
-            "no obvious local assignments in preview".to_string()
+            "预览中没有明显的局部赋值".to_string()
         },
         path,
         language,
@@ -1413,7 +1412,7 @@ mod tests {
     fn semantic_config_with_enabled_toggle() {
         let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
         assert!(indexer.is_enabled());
-        assert!(indexer.describe().contains("enabled"));
+        assert!(indexer.describe().contains("已启用"));
     }
 
     #[test]
@@ -1427,11 +1426,7 @@ mod tests {
         let error =
             validate_semantic_model("unknown-model").expect_err("unknown model should fail");
 
-        assert!(
-            error
-                .to_string()
-                .contains("unsupported semantic embedding model")
-        );
+        assert!(error.to_string().contains("不支持语义嵌入模型"));
         assert!(error.to_string().contains("bge-m3"));
     }
 
@@ -1459,8 +1454,8 @@ mod tests {
             calls: vec!["validate".to_string()],
             called_by: vec!["router".to_string()],
             dependencies: vec!["src".to_string(), "lib.rs".to_string()],
-            cfg_summary: "1 lines sampled; 1 outgoing calls".to_string(),
-            dfg_summary: "contains local assignments".to_string(),
+            cfg_summary: "采样 1 行；1 个出站调用".to_string(),
+            dfg_summary: "包含局部赋值".to_string(),
             embedding_vector: None,
         }
         .build_embedding_text();
@@ -1474,7 +1469,7 @@ mod tests {
             "code: fn login() { validate(user); }",
             "calls: validate",
             "called_by: router",
-            "cfg: 1 lines sampled; 1 outgoing calls; dfg: contains local assignments; dependencies: src, lib.rs",
+            "cfg: 采样 1 行；1 个出站调用; dfg: 包含局部赋值; dependencies: src, lib.rs",
         ]
         .join("\n");
         assert_eq!(text, expected);
@@ -1505,7 +1500,7 @@ mod tests {
         assert_eq!(response.query, "login validate");
         assert_eq!(response.indexed_files, 1);
         assert_eq!(response.truncated, false);
-        assert_eq!(response.message, "semantic search returned 2 matches");
+        assert_eq!(response.message, "语义搜索返回 2 个匹配项");
         assert_eq!(response.matches.len(), 2);
         assert_eq!(response.matches[0].unit.symbol.as_deref(), Some("login"));
         assert_eq!(response.matches[0].path, PathBuf::from("src/lib.rs"));
@@ -1536,7 +1531,7 @@ mod tests {
         assert_eq!(response.matches, Vec::new());
         assert_eq!(
             response.message,
-            "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+            "语义搜索已禁用；请在 .codex/tldr.toml 中启用 [semantic].enabled"
         );
     }
 
@@ -1690,7 +1685,7 @@ fn log() {
 
         assert_eq!(response.embedding_used, false);
         assert!(!response.matches.is_empty());
-        assert_eq!(response.message, "semantic search returned 2 matches");
+        assert_eq!(response.message, "语义搜索返回 2 个匹配项");
     }
 
     #[test]

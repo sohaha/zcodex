@@ -472,7 +472,7 @@ mod tests {
 
         let indexer = engine.semantic_indexer();
         assert!(indexer.is_enabled());
-        assert!(indexer.describe().contains("enabled"));
+        assert!(indexer.describe().contains("已启用"));
     }
 
     #[test]
