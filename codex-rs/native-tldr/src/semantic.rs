@@ -66,6 +66,7 @@ pub const SUPPORTED_SEMANTIC_MODELS: &[&str] = &[
     "jina-code",
     "jina-embeddings-v2-base-code",
 ];
+const SEMANTIC_EMBEDDING_BATCH_SIZE: usize = 64;
 
 impl Default for SemanticConfig {
     fn default() -> Self {
@@ -789,29 +790,22 @@ fn collect_embedding_units(
     }
 
     let symbol_index = build_called_by_index(&units);
-    Ok(units
-        .into_iter()
-        .map(|mut unit| {
-            let mut called_by = Vec::new();
-            for key in symbol_lookup_keys(&unit) {
-                if let Some(callers) = symbol_index.get(key.as_str()) {
-                    for caller in callers {
-                        if !called_by.iter().any(|existing| existing == caller) {
-                            called_by.push(caller.clone());
-                        }
+    for unit in &mut units {
+        let mut called_by = Vec::new();
+        for key in symbol_lookup_keys(unit) {
+            if let Some(callers) = symbol_index.get(key.as_str()) {
+                for caller in callers {
+                    if !called_by.iter().any(|existing| existing == caller) {
+                        called_by.push(caller.clone());
                     }
                 }
             }
-            unit.called_by = called_by;
-            unit.embedding_vector = embedding_vector_for_text(
-                unit.build_embedding_text(),
-                embedding_enabled,
-                embedding_dims,
-                embedder,
-            );
-            unit
-        })
-        .collect())
+        }
+        unit.called_by = called_by;
+    }
+
+    attach_embedding_vectors(&mut units, embedding_enabled, embedding_dims, embedder);
+    Ok(units)
 }
 
 fn collect_source_files(
@@ -1330,20 +1324,29 @@ fn tokenize(query: &str) -> Vec<String> {
         .collect()
 }
 
-fn embedding_vector_for_text(
-    text: String,
+fn attach_embedding_vectors(
+    units: &mut [EmbeddingUnit],
     enabled: bool,
     dims: usize,
     embedder: &SemanticEmbedder,
-) -> Option<Vec<f32>> {
+) {
     if !enabled || dims == 0 {
-        return None;
+        return;
     }
-    let vector = embedder.embed_documents(&[text], dims).ok()?.pop()?;
-    if vector.iter().all(|&value| value == 0.0) {
-        None
-    } else {
-        Some(vector)
+
+    for chunk in units.chunks_mut(SEMANTIC_EMBEDDING_BATCH_SIZE) {
+        let texts = chunk
+            .iter()
+            .map(EmbeddingUnit::build_embedding_text)
+            .collect::<Vec<_>>();
+        let Ok(vectors) = embedder.embed_documents(&texts, dims) else {
+            continue;
+        };
+        for (unit, vector) in chunk.iter_mut().zip(vectors) {
+            if vector.iter().any(|&value| value != 0.0) {
+                unit.embedding_vector = Some(vector);
+            }
+        }
     }
 }
 
@@ -1387,7 +1390,9 @@ mod tests {
     use super::SemanticEmbeddingConfig;
     use super::SemanticIndexer;
     use super::SemanticSearchRequest;
+    use super::embedder::reset_test_embedding_call_count;
     use super::embedder::set_test_embedding_failure;
+    use super::embedder::test_embedding_call_count;
     use super::reset_semantic_index_build_count;
     use super::semantic_index_build_count;
     use super::validate_semantic_model;
@@ -1512,6 +1517,31 @@ mod tests {
             response.matches[1].unit.called_by,
             vec!["login".to_string()]
         );
+    }
+
+    #[test]
+    #[serial]
+    fn semantic_index_batches_document_embedding_generation() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        let source = (0..70)
+            .map(|index| format!("fn handler_{index}() {{}}\n"))
+            .collect::<String>();
+        std::fs::write(tempdir.path().join("src/lib.rs"), source)
+            .expect("fixture should be written");
+        reset_test_embedding_call_count();
+
+        let index = SemanticIndexer::new(SemanticConfig::default().with_enabled(true))
+            .build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("index should build");
+
+        assert_eq!(index.units.len(), 70);
+        assert_eq!(test_embedding_call_count(), 2);
+        assert!(index.units.iter().all(|unit| {
+            unit.embedding_vector
+                .as_ref()
+                .is_some_and(|vector| vector.len() == 64)
+        }));
     }
 
     #[test]

@@ -9,6 +9,7 @@ use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::resolve_tldr_project_root;
 use crate::tools::rewrite::should_auto_warm_tldr;
 use anyhow::Result;
+use codex_native_tldr::daemon::DAEMON_UNRESPONSIVE_MARKER;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -530,6 +531,29 @@ fn tldr_error_payload(
         "project": project,
         "error": error,
     });
+    if error.contains(DAEMON_UNRESPONSIVE_MARKER) {
+        if let Some(payload_object) = payload.as_object_mut() {
+            payload_object.insert(
+                "structuredFailure".to_string(),
+                json!({
+                    "error_type": "daemon_unhealthy",
+                    "reason": error,
+                    "retryable": true,
+                    "retry_hint": "restart the native-tldr daemon or retry after the current background index finishes",
+                }),
+            );
+            payload_object.insert(
+                "degradedMode".to_string(),
+                json!({
+                    "is_degraded": true,
+                    "mode": "unresponsive",
+                    "fallback_path": "none",
+                    "reason": "daemon pid/socket exist but the daemon did not return a response",
+                }),
+            );
+            return payload;
+        }
+    }
     if let Some(project_root) = project
         .map(PathBuf::from)
         .filter(|_| error.contains("native-tldr daemon is unavailable for"))
@@ -2249,6 +2273,49 @@ mod tests {
             "daemon_unavailable"
         );
         assert_eq!(payload["degradedMode"]["mode"], "diagnostic_only");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_classifies_unresponsive_daemon() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project = tempdir.path().display().to_string();
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Status,
+                project: Some(project.clone()),
+                language: None,
+                symbol: None,
+                query: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            &move |_project_root, _command| {
+                let project = project.clone();
+                Box::pin(async move {
+                    Err(anyhow::anyhow!(
+                        "{} for {project}: read timeout for /tmp/daemon.sock",
+                        DAEMON_UNRESPONSIVE_MARKER
+                    ))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should return tool output");
+
+        assert_eq!(output.success, Some(false));
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+        assert!(text.contains("structured failure: daemon_unhealthy"));
+        assert_eq!(
+            payload["structuredFailure"]["error_type"],
+            "daemon_unhealthy"
+        );
+        assert_eq!(payload["structuredFailure"]["retryable"], true);
+        assert_eq!(payload["degradedMode"]["mode"], "unresponsive");
     }
 
     #[tokio::test]

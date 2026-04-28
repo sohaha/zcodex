@@ -1,4 +1,5 @@
 use anyhow::Result;
+use codex_native_tldr::daemon::DAEMON_UNRESPONSIVE_MARKER;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -273,6 +274,23 @@ fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
                 "mode": "unavailable",
                 "fallback_path": "none",
                 "reason": "daemon-only action requires a live daemon"
+            }
+        }));
+    }
+
+    if text.contains(DAEMON_UNRESPONSIVE_MARKER) {
+        return Some(serde_json::json!({
+            "structuredFailure": {
+                "error_type": "daemon_unhealthy",
+                "reason": text,
+                "retryable": true,
+                "retry_hint": "restart the native-tldr daemon or retry after the current background index finishes"
+            },
+            "degradedMode": {
+                "is_degraded": true,
+                "mode": "unresponsive",
+                "fallback_path": "none",
+                "reason": "daemon pid/socket exist but the daemon did not return a response"
             }
         }));
     }

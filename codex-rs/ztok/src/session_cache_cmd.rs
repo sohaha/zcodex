@@ -7,8 +7,9 @@ use anyhow::bail;
 const EXPAND_MIN_PREFIX_LEN: usize = 4;
 const EXPAND_AMBIGUITY_LIMIT: usize = 6;
 
-pub(crate) fn inspect(session_id: &str) -> Result<()> {
-    let cache_path = session_cache_path(session_id)?;
+pub(crate) fn inspect(session_id: Option<&str>) -> Result<()> {
+    let session_id = resolve_session_id(session_id)?;
+    let cache_path = session_cache_path(&session_id)?;
     let summary = session_cache::inspect_session_cache(&cache_path)?;
 
     println!("session: {}", summary.session_id);
@@ -43,8 +44,9 @@ pub(crate) fn inspect(session_id: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn expand(session_id: &str, ref_prefix: &str, compressed: bool) -> Result<()> {
-    let cache_path = session_cache_path(session_id)?;
+pub(crate) fn expand(session_id: Option<&str>, ref_prefix: &str, compressed: bool) -> Result<()> {
+    let session_id = resolve_session_id(session_id)?;
+    let cache_path = session_cache_path(&session_id)?;
     let prefix = normalize_ref_prefix(ref_prefix)?;
     let cache = session_cache::SessionCacheStore::open(&cache_path)?;
     let rows = cache.expand_rows_by_prefix(&prefix, EXPAND_AMBIGUITY_LIMIT)?;
@@ -52,7 +54,7 @@ pub(crate) fn expand(session_id: &str, ref_prefix: &str, compressed: bool) -> Re
         if rows.is_empty() {
             bail!(
                 "未找到匹配的 ztok dedup 引用：session={} prefix={prefix}",
-                session_id.trim()
+                session_id
             );
         }
         let matches = rows
@@ -71,31 +73,52 @@ pub(crate) fn expand(session_id: &str, ref_prefix: &str, compressed: bool) -> Re
     Ok(())
 }
 
-pub(crate) fn clear(session_id: &str) -> Result<()> {
-    let cache_path = session_cache_path(session_id)?;
+pub(crate) fn clear(session_id: Option<&str>) -> Result<()> {
+    let session_id = resolve_session_id(session_id)?;
+    let cache_path = session_cache_path(&session_id)?;
     if session_cache::clear_session_cache(&cache_path)? {
         println!(
             "已清空 session cache: {} ({})",
-            session_id.trim(),
+            session_id,
             cache_path.display()
         );
     } else {
         println!(
             "session cache 不存在: {} ({})",
-            session_id.trim(),
+            session_id,
             cache_path.display()
         );
     }
     Ok(())
 }
 
-fn session_cache_path(session_id: &str) -> Result<std::path::PathBuf> {
-    let session_id = session_id.trim();
-    if session_id.is_empty() {
-        bail!("无法解析 session cache 路径，session id 不能为空");
+fn resolve_session_id(session_id: Option<&str>) -> Result<String> {
+    if let Some(session_id) = sanitize_session_id(session_id) {
+        return Ok(session_id.to_string());
     }
+    if let Some(session_id) = settings::runtime_settings().session_cache.session_id {
+        return Ok(session_id);
+    }
+    bail!(
+        "无法解析当前 ztok session id；请传入 session id，或通过 codex ztok 在有效 CODEX_THREAD_ID 会话中运行"
+    );
+}
+
+fn session_cache_path(session_id: &str) -> Result<std::path::PathBuf> {
+    let Some(session_id) = sanitize_session_id(Some(session_id)) else {
+        bail!("无法解析 session cache 路径，session id 不能为空");
+    };
     settings::session_cache_path_for_session_id(session_id)
         .with_context(|| format!("无法解析 session cache 路径，session id 不能为空：{session_id}"))
+}
+
+fn sanitize_session_id(session_id: Option<&str>) -> Option<&str> {
+    let session_id = session_id?.trim();
+    if session_id.is_empty() {
+        None
+    } else {
+        Some(session_id)
+    }
 }
 
 fn normalize_ref_prefix(value: &str) -> Result<String> {
@@ -125,6 +148,14 @@ mod tests {
     fn empty_session_id_is_rejected() {
         let err = session_cache_path("   ").expect_err("empty session id should fail");
         assert!(err.to_string().contains("session id 不能为空"));
+    }
+
+    #[test]
+    fn explicit_session_id_takes_precedence() {
+        assert_eq!(
+            resolve_session_id(Some("  thread-explicit  ")).unwrap(),
+            "thread-explicit"
+        );
     }
 
     #[test]

@@ -18,7 +18,8 @@ For compound shell syntax, wrap a real shell, for example:
 `{{ logical_launcher_invocation }} ztok shell bash -lc '<command>'`
 
 If a prior output is `[ztok dedup <ref>]` and the full body is needed, use
-`{{ logical_launcher_invocation }} ztok cache expand <session-id> <ref>`.
+`{{ logical_launcher_invocation }} ztok cache expand <ref>`; it defaults to
+the current session.
 
 To temporarily disable session dedup while keeping compression, use
 `{{ logical_launcher_invocation }} ztok --no-cache ...` or set

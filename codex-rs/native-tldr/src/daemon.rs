@@ -59,6 +59,7 @@ use tokio::net::UnixStream;
 const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(1);
 const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
+pub const DAEMON_UNRESPONSIVE_MARKER: &str = "native-tldr daemon is unresponsive";
 #[cfg(unix)]
 const UNIX_SOCKET_PATH_MAX_BYTES: usize = 103;
 #[cfg(unix)]
@@ -1130,9 +1131,9 @@ fn spawn_background_reindex(
 ) {
     let embedding_enabled = engine.config().semantic.embedding_enabled;
     let embedding_dimensions = engine.config().semantic.embedding.dimensions;
-    tokio::spawn(async move {
+    tokio::task::spawn_blocking(move || {
         let result = engine.semantic_reindex_languages(&languages);
-        let mut guard = session.lock().await;
+        let mut guard = session.blocking_lock();
         match result {
             Ok(report) => {
                 guard.record_reindex_attempt(report.clone());
@@ -1726,20 +1727,33 @@ async fn query_daemon_with_timeout(
     };
 
     let (reader, mut writer) = tokio::io::split(stream);
-    timeout(
-        io_timeout,
-        writer.write_all(format!("{}\n", serde_json::to_string(command)?).as_bytes()),
-    )
-    .await
-    .with_context(|| format!("write timeout for {}", socket_path.display()))?
-    .with_context(|| format!("write daemon command to {}", socket_path.display()))?;
+    let command_line = format!("{}\n", serde_json::to_string(command)?);
+    match timeout(io_timeout, writer.write_all(command_line.as_bytes())).await {
+        Ok(result) => {
+            result.with_context(|| format!("write daemon command to {}", socket_path.display()))?
+        }
+        Err(_) => {
+            return Err(daemon_unresponsive_error(
+                project_root,
+                &socket_path,
+                "write",
+            ));
+        }
+    }
 
     let mut lines = BufReader::new(reader).lines();
-    let Some(line) = timeout(io_timeout, lines.next_line())
-        .await
-        .with_context(|| format!("read timeout for {}", socket_path.display()))?
-        .with_context(|| format!("read daemon response from {}", socket_path.display()))?
-    else {
+    let line = match timeout(io_timeout, lines.next_line()).await {
+        Ok(result) => result
+            .with_context(|| format!("read daemon response from {}", socket_path.display()))?,
+        Err(_) => {
+            return Err(daemon_unresponsive_error(
+                project_root,
+                &socket_path,
+                "read",
+            ));
+        }
+    };
+    let Some(line) = line else {
         maybe_cleanup_unavailable_daemon(project_root, &socket_path, &pid_path);
         return Ok(None);
     };
@@ -1747,6 +1761,18 @@ async fn query_daemon_with_timeout(
     let response = serde_json::from_str(&line)
         .with_context(|| format!("decode daemon response from {}", socket_path.display()))?;
     Ok(Some(response))
+}
+
+fn daemon_unresponsive_error(
+    project_root: &Path,
+    socket_path: &Path,
+    operation: &str,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{DAEMON_UNRESPONSIVE_MARKER} for {}: {operation} timeout for {}",
+        project_root.display(),
+        socket_path.display()
+    )
 }
 
 fn maybe_cleanup_unavailable_daemon(project_root: &Path, socket_path: &Path, pid_path: &Path) {
@@ -2117,6 +2143,45 @@ mod tests {
 
         assert!(
             error.to_string().contains("decode daemon response from"),
+            "unexpected error: {error}"
+        );
+
+        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_read_timeout_reports_unresponsive_daemon() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("unresponsive-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client should connect");
+            let (reader, _writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let _ = lines.next_line().await.expect("request should be readable");
+            sleep(Duration::from_millis(200)).await;
+        });
+
+        let error = query_daemon_with_timeout(
+            &project_root,
+            &TldrDaemonCommand::Ping,
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        )
+        .await
+        .expect_err("unresponsive daemon should error");
+        server.abort();
+
+        assert!(
+            error.to_string().contains(DAEMON_UNRESPONSIVE_MARKER),
             "unexpected error: {error}"
         );
 

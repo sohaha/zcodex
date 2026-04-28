@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use codex_app_server::in_process::DEFAULT_IN_PROCESS_CHANNEL_CAPACITY;
+use codex_app_server::in_process::InProcessClientSender;
 pub use codex_app_server::in_process::InProcessServerEvent;
 use codex_app_server::in_process::InProcessStartArgs;
 use codex_app_server_protocol::ClientInfo;
@@ -288,6 +289,62 @@ where
     }
 }
 
+async fn forward_ready_in_process_event(
+    request_sender: &InProcessClientSender,
+    event_tx: &mpsc::Sender<InProcessServerEvent>,
+    skipped_events: &mut usize,
+    event: InProcessServerEvent,
+) -> ForwardEventResult {
+    if let InProcessServerEvent::ServerRequest(ServerRequest::ChatgptAuthTokensRefresh {
+        request_id,
+        ..
+    }) = &event
+    {
+        let send_result = request_sender.fail_server_request(
+            request_id.clone(),
+            JSONRPCErrorError {
+                code: -32000,
+                message:
+                    "chatgpt auth token refresh is not supported for in-process app-server clients"
+                        .to_string(),
+                data: None,
+            },
+        );
+        if let Err(err) = send_result {
+            warn!("failed to reject unsupported chatgpt auth token refresh request: {err}");
+        }
+        return ForwardEventResult::Continue;
+    }
+
+    forward_in_process_event(event_tx, skipped_events, event, |request| {
+        let _ = request_sender.fail_server_request(
+            request.id().clone(),
+            JSONRPCErrorError {
+                code: -32001,
+                message: "in-process app-server event queue is full".to_string(),
+                data: None,
+            },
+        );
+    })
+    .await
+}
+
+async fn drain_ready_in_process_events(
+    handle: &mut codex_app_server::in_process::InProcessClientHandle,
+    request_sender: &InProcessClientSender,
+    event_tx: &mpsc::Sender<InProcessServerEvent>,
+    skipped_events: &mut usize,
+) -> bool {
+    while let Some(event) = handle.try_next_event() {
+        match forward_ready_in_process_event(request_sender, event_tx, skipped_events, event).await
+        {
+            ForwardEventResult::Continue => {}
+            ForwardEventResult::DisableStream => return false,
+        }
+    }
+    true
+}
+
 /// Layered error for [`InProcessAppServerClient::request_typed`].
 ///
 /// This keeps transport failures, server-side JSON-RPC failures, and response
@@ -447,6 +504,11 @@ enum ClientCommand {
     },
 }
 
+struct RequestCompletion {
+    response_tx: oneshot::Sender<IoResult<RequestResult>>,
+    result: IoResult<RequestResult>,
+}
+
 /// Async facade over the in-process app-server runtime.
 ///
 /// This type owns a worker task that bridges between:
@@ -497,18 +559,26 @@ impl InProcessAppServerClient {
         let worker_handle = tokio::spawn(async move {
             let mut event_stream_enabled = true;
             let mut skipped_events = 0usize;
+            let (request_completion_tx, mut request_completion_rx) =
+                mpsc::channel::<RequestCompletion>(channel_capacity);
             loop {
                 tokio::select! {
                     command = command_rx.recv() => {
                         match command {
                             Some(ClientCommand::Request { request, response_tx }) => {
                                 let request_sender = request_sender.clone();
+                                let request_completion_tx = request_completion_tx.clone();
                                 // Request waits happen on a detached task so
                                 // this loop can keep draining runtime events
                                 // while the request is blocked on client input.
                                 tokio::spawn(async move {
                                     let result = request_sender.request(*request).await;
-                                    let _ = response_tx.send(result);
+                                    let _ = request_completion_tx
+                                        .send(RequestCompletion {
+                                            response_tx,
+                                            result,
+                                        })
+                                        .await;
                                 });
                             }
                             Some(ClientCommand::Notify {
@@ -546,45 +616,30 @@ impl InProcessAppServerClient {
                             }
                         }
                     }
+                    completion = request_completion_rx.recv() => {
+                        let Some(completion) = completion else {
+                            break;
+                        };
+                        if event_stream_enabled {
+                            event_stream_enabled = drain_ready_in_process_events(
+                                &mut handle,
+                                &request_sender,
+                                &event_tx,
+                                &mut skipped_events,
+                            )
+                            .await;
+                        }
+                        let _ = completion.response_tx.send(completion.result);
+                    }
                     event = handle.next_event(), if event_stream_enabled => {
                         let Some(event) = event else {
                             break;
                         };
-                        if let InProcessServerEvent::ServerRequest(
-                            ServerRequest::ChatgptAuthTokensRefresh { request_id, .. }
-                        ) = &event
-                        {
-                            let send_result = request_sender.fail_server_request(
-                                request_id.clone(),
-                                JSONRPCErrorError {
-                                    code: -32000,
-                                    message: "chatgpt auth token refresh is not supported for in-process app-server clients".to_string(),
-                                    data: None,
-                                },
-                            );
-                            if let Err(err) = send_result {
-                                warn!(
-                                    "failed to reject unsupported chatgpt auth token refresh request: {err}"
-                                );
-                            }
-                            continue;
-                        }
-
-                        match forward_in_process_event(
+                        match forward_ready_in_process_event(
+                            &request_sender,
                             &event_tx,
                             &mut skipped_events,
                             event,
-                            |request| {
-                                let _ = request_sender.fail_server_request(
-                                    request.id().clone(),
-                                    JSONRPCErrorError {
-                                        code: -32001,
-                                        message: "in-process app-server event queue is full"
-                                            .to_string(),
-                                        data: None,
-                                    },
-                                );
-                            },
                         )
                         .await
                         {
@@ -992,9 +1047,22 @@ mod tests {
         session_source: SessionSource,
         channel_capacity: usize,
     ) -> InProcessAppServerClient {
+        start_test_client_with_config_and_capacity(
+            session_source,
+            Arc::new(build_test_config().await),
+            channel_capacity,
+        )
+        .await
+    }
+
+    async fn start_test_client_with_config_and_capacity(
+        session_source: SessionSource,
+        config: Arc<Config>,
+        channel_capacity: usize,
+    ) -> InProcessAppServerClient {
         InProcessAppServerClient::start(InProcessClientStartArgs {
             arg0_paths: Arg0DispatchPaths::default(),
-            config: Arc::new(build_test_config().await),
+            config,
             cli_overrides: Vec::new(),
             loader_overrides: LoaderOverrides::default(),
             cloud_requirements: CloudRequirementsLoader::default(),
@@ -1015,6 +1083,17 @@ mod tests {
 
     async fn start_test_client(session_source: SessionSource) -> InProcessAppServerClient {
         start_test_client_with_capacity(session_source, DEFAULT_IN_PROCESS_CHANNEL_CAPACITY).await
+    }
+
+    fn unique_test_codex_home() -> std::path::PathBuf {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock should be after UNIX epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "codex-app-server-client-test-{}-{now}",
+            std::process::id()
+        ))
     }
 
     async fn start_test_remote_server<F, Fut>(handler: F) -> String
@@ -1239,6 +1318,52 @@ mod tests {
             assert_eq!(parsed.thread.source, expected_source);
             client.shutdown().await.expect("shutdown should complete");
         }
+    }
+
+    #[tokio::test]
+    async fn in_process_thread_start_buffers_startup_warning_before_response() {
+        let codex_home = unique_test_codex_home();
+        std::fs::create_dir_all(&codex_home).expect("test codex home should be created");
+        std::fs::write(
+            codex_home.join("config.toml"),
+            "[features]\nchild_agents_md = true\n",
+        )
+        .expect("test config should be written");
+        let config = ConfigBuilder::default()
+            .codex_home(codex_home.clone())
+            .build()
+            .await
+            .expect("test config should load");
+        let mut client = start_test_client_with_config_and_capacity(
+            SessionSource::Cli,
+            Arc::new(config),
+            DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
+        )
+        .await;
+
+        let response: ThreadStartResponse = client
+            .request_typed(ClientRequest::ThreadStart {
+                request_id: RequestId::Integer(22),
+                params: ThreadStartParams::default(),
+            })
+            .await
+            .expect("thread/start should succeed");
+
+        let event = client
+            .try_next_event()
+            .expect("startup warning should be buffered before thread/start returns");
+        let InProcessServerEvent::ServerNotification(ServerNotification::Warning(warning)) = event
+        else {
+            panic!("expected startup warning notification");
+        };
+        assert_eq!(
+            warning.thread_id.as_deref(),
+            Some(response.thread.id.as_str())
+        );
+        assert!(warning.message.contains("child_agents_md"));
+
+        client.shutdown().await.expect("shutdown should complete");
+        let _ = std::fs::remove_dir_all(codex_home);
     }
 
     #[tokio::test]

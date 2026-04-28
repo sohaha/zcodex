@@ -66,6 +66,7 @@ impl SemanticEmbedder {
     ) -> Result<Vec<Vec<f32>>> {
         #[cfg(test)]
         {
+            TEST_EMBEDDING_CALL_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             maybe_fail_test_embedding()?;
             Ok(inputs
                 .iter()
@@ -371,6 +372,19 @@ fn hash_token(token: &str) -> usize {
 
 #[cfg(test)]
 static TEST_EMBEDDING_FAILURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+#[cfg(test)]
+static TEST_EMBEDDING_CALL_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn reset_test_embedding_call_count() {
+    TEST_EMBEDDING_CALL_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub(crate) fn test_embedding_call_count() -> usize {
+    TEST_EMBEDDING_CALL_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
 
 #[cfg(test)]
 pub(crate) fn set_test_embedding_failure(message: Option<&str>) {

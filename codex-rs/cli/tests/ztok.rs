@@ -1034,6 +1034,39 @@ fn ztok_cache_expand_can_return_compressed_output() -> Result<()> {
 }
 
 #[test]
+fn ztok_cache_expand_defaults_to_current_session() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "current\nsession\n")?;
+
+    let mut first = codex_command(codex_home.path())?;
+    first
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-current-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success();
+
+    let mut second = codex_command(codex_home.path())?;
+    let second_assert = second
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-current-1")
+        .args(["ztok", "read", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("[ztok dedup"));
+    let dedup_ref = extract_dedup_ref(&second_assert.get_output().stdout);
+
+    let mut expand = codex_command(codex_home.path())?;
+    expand
+        .env("CODEX_THREAD_ID", "thread-ztok-expand-current-1")
+        .args(["ztok", "cache", "expand", &dedup_ref])
+        .assert()
+        .success()
+        .stdout(contains("current\nsession\n"));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_cache_expand_reports_missing_ref() -> Result<()> {
     let codex_home = TempDir::new()?;
 

@@ -625,14 +625,14 @@ enum CacheCommands {
     /// 查看指定 session cache 的状态与统计
     Inspect {
         /// session id（通常等于 CODEX_THREAD_ID）
-        session_id: String,
+        session_id: Option<String>,
     },
     /// 展开指定 session cache 中的 ztok dedup 引用
     Expand {
-        /// session id（通常等于 CODEX_THREAD_ID）
-        session_id: String,
-        /// dedup 引用前缀，例如 abcdef12 或完整 "[ztok dedup abcdef12]" 行
-        ref_prefix: String,
+        /// 当前 session 的 dedup 引用前缀，或显式 session id
+        session_or_ref: String,
+        /// 显式 session id 模式下的 dedup 引用前缀
+        ref_prefix: Option<String>,
         /// 输出压缩后的正文，而不是原始 snapshot
         #[arg(long)]
         compressed: bool,
@@ -640,7 +640,7 @@ enum CacheCommands {
     /// 清空指定 session cache
     Clear {
         /// session id（通常等于 CODEX_THREAD_ID）
-        session_id: String,
+        session_id: Option<String>,
     },
 }
 
@@ -954,7 +954,11 @@ fn first_subcommand_index(args: &[OsString]) -> Option<usize> {
             }
             if matches!(
                 arg.as_ref(),
-                "-v" | "--verbose" | "--ultra-compact" | "--skip-env"
+                "-v" | "--verbose"
+                    | "--ultra-compact"
+                    | "--skip-env"
+                    | "--trace-decisions"
+                    | "--no-cache"
             ) || is_global_short_flag_cluster(arg.as_ref())
             {
                 continue;
@@ -1491,17 +1495,21 @@ fn run_cli(cli: Cli) -> Result<()> {
 
         Commands::Cache { command } => match command {
             CacheCommands::Inspect { session_id } => {
-                session_cache_cmd::inspect(&session_id)?;
+                session_cache_cmd::inspect(session_id.as_deref())?;
             }
             CacheCommands::Expand {
-                session_id,
+                session_or_ref,
                 ref_prefix,
                 compressed,
             } => {
-                session_cache_cmd::expand(&session_id, &ref_prefix, compressed)?;
+                if let Some(ref_prefix) = ref_prefix {
+                    session_cache_cmd::expand(Some(&session_or_ref), &ref_prefix, compressed)?;
+                } else {
+                    session_cache_cmd::expand(None, &session_or_ref, compressed)?;
+                }
             }
             CacheCommands::Clear { session_id } => {
-                session_cache_cmd::clear(&session_id)?;
+                session_cache_cmd::clear(session_id.as_deref())?;
             }
         },
 
@@ -2109,6 +2117,7 @@ mod tests {
     fn test_rewrite_grep_option_first_args_preserves_global_flags() {
         let args = vec![
             OsString::from("--verbose"),
+            OsString::from("--no-cache"),
             OsString::from("grep"),
             OsString::from("-RInE"),
             OsString::from("needle"),
@@ -2121,6 +2130,7 @@ mod tests {
             rewritten,
             vec![
                 OsString::from("--verbose"),
+                OsString::from("--no-cache"),
                 OsString::from("grep"),
                 OsString::from("needle"),
                 OsString::from("."),

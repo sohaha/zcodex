@@ -736,6 +736,10 @@ impl Codex {
         Ok(event)
     }
 
+    pub fn try_next_event(&self) -> Option<Event> {
+        self.rx_event.try_recv().ok()
+    }
+
     pub async fn steer_input(
         &self,
         input: Vec<UserInput>,

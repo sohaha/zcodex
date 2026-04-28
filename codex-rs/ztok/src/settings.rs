@@ -20,6 +20,7 @@ pub(crate) struct ZtokRuntimeSettings {
 
 #[derive(Debug, Clone)]
 pub(crate) struct SessionCacheSettings {
+    pub session_id: Option<String>,
     pub db_path: Option<PathBuf>,
 }
 
@@ -141,7 +142,10 @@ impl ZtokRuntimeSettings {
             .and_then(session_cache_path_for_session_id);
         Self {
             behavior: ZtokBehavior::from_value(payload.behavior.as_deref()),
-            session_cache: SessionCacheSettings { db_path },
+            session_cache: SessionCacheSettings {
+                session_id,
+                db_path,
+            },
             near_dedup: NearDedupSettings {
                 text: NearDuplicateConfig::default(),
             },
@@ -163,6 +167,7 @@ impl ZtokRuntimeSettings {
         Self {
             behavior,
             session_cache: SessionCacheSettings {
+                session_id: None,
                 db_path: cache_path,
             },
             near_dedup: NearDedupSettings {
@@ -241,6 +246,10 @@ mod tests {
         assert!(settings.behavior.is_basic());
         assert!(!settings.decision_trace.enabled);
         assert!(!settings.no_cache.enabled);
+        assert_eq!(
+            settings.session_cache.session_id.as_deref(),
+            Some("thread-1")
+        );
         assert!(
             settings
                 .session_cache

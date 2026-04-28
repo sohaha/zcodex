@@ -298,6 +298,11 @@ impl InProcessClientHandle {
         self.event_rx.recv().await
     }
 
+    /// Returns the next queued server event without waiting.
+    pub fn try_next_event(&mut self) -> Option<InProcessServerEvent> {
+        self.event_rx.try_recv().ok()
+    }
+
     /// Requests runtime shutdown and waits for worker termination.
     ///
     /// Shutdown is bounded by internal timeouts and may abort background tasks

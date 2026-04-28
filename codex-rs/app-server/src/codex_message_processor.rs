@@ -2598,6 +2598,57 @@ impl CodexMessageProcessor {
         }
     }
 
+    async fn drain_queued_thread_events(
+        listener_task_context: ListenerTaskContext,
+        thread_id: ThreadId,
+        thread: Arc<CodexThread>,
+        thread_state: Arc<Mutex<ThreadState>>,
+        api_version: ApiVersion,
+    ) {
+        for _ in 0..64 {
+            let Some(event) = thread.try_next_event() else {
+                break;
+            };
+
+            let raw_events_enabled = {
+                let mut thread_state = thread_state.lock().await;
+                thread_state.track_current_turn_event(&event.id, &event.msg);
+                thread_state.experimental_raw_events
+            };
+            if let EventMsg::RawResponseItem(_) = &event.msg
+                && !raw_events_enabled
+            {
+                continue;
+            }
+
+            let subscribed_connection_ids = listener_task_context
+                .thread_state_manager
+                .subscribed_connection_ids(thread_id)
+                .await;
+            let thread_outgoing = ThreadScopedOutgoingMessageSender::new(
+                listener_task_context.outgoing.clone(),
+                subscribed_connection_ids,
+                thread_id,
+            );
+            apply_bespoke_event_handling(
+                event,
+                thread_id,
+                thread.clone(),
+                listener_task_context.thread_manager.clone(),
+                listener_task_context
+                    .general_analytics_enabled
+                    .then(|| listener_task_context.analytics_events_client.clone()),
+                thread_outgoing,
+                thread_state.clone(),
+                listener_task_context.thread_watch_manager.clone(),
+                api_version,
+                listener_task_context.fallback_model_provider.clone(),
+                listener_task_context.codex_home.as_path(),
+            )
+            .await;
+        }
+    }
+
     async fn request_trace_context(
         &self,
         request_id: &ConnectionRequestId,
@@ -2865,7 +2916,6 @@ impl CodexMessageProcessor {
                     request_id.connection_id,
                     "thread",
                 );
-                tokio::task::yield_now().await;
 
                 listener_task_context
                     .thread_watch_manager
@@ -8319,6 +8369,14 @@ impl CodexMessageProcessor {
             }
             thread_state.set_listener(cancel_tx, &conversation)
         };
+        Self::drain_queued_thread_events(
+            listener_task_context.clone(),
+            conversation_id,
+            conversation.clone(),
+            thread_state.clone(),
+            api_version,
+        )
+        .await;
         let ListenerTaskContext {
             outgoing,
             thread_manager,

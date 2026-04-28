@@ -754,6 +754,88 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn auth_failures_fallback_without_retrying_primary_sampling_request() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = wiremock::MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/messages$"))
+        .respond_with(ResponseTemplate::new(401).set_body_string("Invalid API Key"))
+        .expect(1)
+        .mount(&primary_server)
+        .await;
+
+    let fallback_server = wiremock::MockServer::start().await;
+    let fallback_response = mount_sse_once(
+        &fallback_server,
+        sse(vec![
+            ev_response_created("resp-fallback"),
+            ev_completed("resp-fallback"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let primary_base_url = primary_server.uri();
+        let fallback_base_url = format!("{}/v1", fallback_server.uri());
+        move |config| {
+            config.model_provider.base_url = Some(primary_base_url);
+            config.model_provider.wire_api = WireApi::Anthropic;
+            config.model_provider.supports_websockets = false;
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(5);
+            config.fallback_providers = vec![codex_core::config::FallbackProviderConfig {
+                provider_id: "fallback".to_string(),
+                provider: ModelProviderInfo {
+                    name: Some("fallback".to_string()),
+                    model: None,
+                    base_url: Some(fallback_base_url),
+                    env_key: None,
+                    model_catalog: None,
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    auth: None,
+                    aws: None,
+                    wire_api: WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: Some(0),
+                    stream_max_retries: Some(0),
+                    stream_idle_timeout_ms: None,
+                    retry_base_delay_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                    model_context_window: None,
+                    model_auto_compact_token_limit: None,
+                    max_output_tokens: None,
+                    skip_reasoning_popup: false,
+                    retry_429: true,
+                },
+                model: Some("fallback-model".to_string()),
+            }];
+        }
+    });
+    let test = builder.build(&primary_server).await?;
+
+    test.submit_turn("hello").await?;
+
+    let primary_http_attempts = primary_server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|req| req.method == Method::POST && req.url.path().ends_with("/messages"))
+        .count();
+
+    assert_eq!(primary_http_attempts, 1);
+    assert_eq!(fallback_response.requests().len(), 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

@@ -1300,12 +1300,16 @@ fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {
 }
 
 fn should_retry_with_fallback_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::UNAUTHORIZED || should_retry_sampling_status(status)
+}
+
+fn should_retry_sampling_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::REQUEST_TIMEOUT || status.is_server_error()
 }
 
 fn should_retry_sampling_request(err: &CodexErr) -> bool {
     match err {
-        CodexErr::UnexpectedStatus(err) => should_retry_with_fallback_status(err.status),
+        CodexErr::UnexpectedStatus(err) => should_retry_sampling_status(err.status),
         _ => err.is_retryable(),
     }
 }
@@ -1313,6 +1317,7 @@ fn should_retry_sampling_request(err: &CodexErr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::should_retry_sampling_request;
+    use super::should_retry_sampling_status;
     use super::should_retry_with_fallback_provider;
     use super::should_retry_with_fallback_status;
     use codex_protocol::error::CodexErr;
@@ -1331,7 +1336,10 @@ mod tests {
     }
 
     #[test]
-    fn fallback_status_retries_only_transient_http_statuses() {
+    fn fallback_status_allows_auth_and_transient_http_statuses() {
+        assert!(should_retry_with_fallback_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
         assert!(should_retry_with_fallback_status(
             reqwest::StatusCode::BAD_GATEWAY
         ));
@@ -1339,16 +1347,13 @@ mod tests {
             reqwest::StatusCode::REQUEST_TIMEOUT
         ));
         assert!(!should_retry_with_fallback_status(
-            reqwest::StatusCode::UNAUTHORIZED
-        ));
-        assert!(!should_retry_with_fallback_status(
             reqwest::StatusCode::NOT_FOUND
         ));
     }
 
     #[test]
-    fn fallback_provider_does_not_hide_auth_or_invalid_request_failures() {
-        assert!(!should_retry_with_fallback_provider(&unexpected_status(
+    fn fallback_provider_allows_auth_failures_but_not_404_or_invalid_request() {
+        assert!(should_retry_with_fallback_provider(&unexpected_status(
             reqwest::StatusCode::UNAUTHORIZED
         )));
         assert!(!should_retry_with_fallback_provider(&unexpected_status(
@@ -1356,6 +1361,22 @@ mod tests {
         )));
         assert!(!should_retry_with_fallback_provider(
             &CodexErr::InvalidRequest("bad request".to_string())
+        ));
+    }
+
+    #[test]
+    fn sampling_status_retries_only_transient_http_statuses() {
+        assert!(should_retry_sampling_status(
+            reqwest::StatusCode::BAD_GATEWAY
+        ));
+        assert!(should_retry_sampling_status(
+            reqwest::StatusCode::REQUEST_TIMEOUT
+        ));
+        assert!(!should_retry_sampling_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        ));
+        assert!(!should_retry_sampling_status(
+            reqwest::StatusCode::NOT_FOUND
         ));
     }
 
