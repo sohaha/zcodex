@@ -2697,6 +2697,23 @@ impl Session {
     }
 
     pub(crate) async fn persist_rollout_items(&self, items: &[RolloutItem]) {
+        if items.is_empty() {
+            return;
+        }
+        let event_persistence_mode = {
+            let state = self.state.lock().await;
+            if state.session_configuration.persist_extended_history {
+                codex_rollout::EventPersistenceMode::Extended
+            } else {
+                codex_rollout::EventPersistenceMode::Limited
+            }
+        };
+        if !items
+            .iter()
+            .any(|item| codex_rollout::should_persist_rollout_item(item, event_persistence_mode))
+        {
+            return;
+        }
         if let Some(live_thread) = self.live_thread()
             && let Err(e) = live_thread.append_items(items).await
         {

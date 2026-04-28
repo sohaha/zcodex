@@ -58,6 +58,7 @@ pub use patch::ZoffsecCleanOptions;
 pub use patch::ZoffsecCleanSummary;
 pub use patch::clean_zoffsec_rollout;
 pub use policy::EventPersistenceMode;
+pub use policy::is_persisted_response_item as should_persist_rollout_item;
 pub use policy::should_persist_response_item_for_memories;
 pub use recorder::RolloutRecorder;
 pub use recorder::RolloutRecorderParams;
