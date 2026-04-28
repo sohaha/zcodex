@@ -591,6 +591,7 @@ export ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$repo_root/.cache/zig-globa
 mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
 shared_target_dir="$repo_root/.cargo-target"
 default_cross_target_dir="$repo_root/.cargo-target-cross-macos-arm64"
+export CODEX_CARGO_LANE="${CODEX_CARGO_LANE:-macos-arm64-$(date -u +%Y%m%d%H%M%S)-$$}"
 if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
   default_cross_target_dir="$CARGO_TARGET_DIR"
 elif [ -n "${CARGO_TARGET_DIR:-}" ] && [ "$CARGO_TARGET_DIR" != "$shared_target_dir" ]; then

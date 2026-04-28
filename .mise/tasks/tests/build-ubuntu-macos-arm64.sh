@@ -28,9 +28,11 @@ run_tests() {
   local readonly_home
   local output_bin
   local rs_ext_args_file
+  local cargo_lane_file
   local cc_search_dirs_file
   local host_cc_search_dirs_file
   local rs_ext_args
+  local cargo_lane
   local cc_search_dirs
   local host_cc_search_dirs
   local output
@@ -45,6 +47,7 @@ run_tests() {
   readonly_home="$temp_root/readonly-home"
   output_bin="$sandbox_repo/test-target/aarch64-apple-darwin/release/codex"
   rs_ext_args_file="$temp_root/rs-ext-args"
+  cargo_lane_file="$temp_root/cargo-lane"
   cc_search_dirs_file="$temp_root/cc-search-dirs"
   host_cc_search_dirs_file="$temp_root/host-cc-search-dirs"
 
@@ -64,6 +67,27 @@ move_artifact_to_dist() {
 }
 
 print_artifact_size() {
+  :
+}
+EOF
+
+  cat >"$task_dir/lib-cargo-workspace-version" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_codex_release_version() {
+  printf '1.0.0\n'
+}
+
+strip_codex_release_version_args() {
+  printf '%s\0' "$@"
+}
+
+export_codex_release_version_if_present() {
+  :
+}
+
+activate_cargo_workspace_version_override() {
   :
 }
 EOF
@@ -99,6 +123,7 @@ EOF
 set -euo pipefail
 
 printf '%s\n' "$*" >"$TEST_RS_EXT_ARGS_FILE"
+printf '%s\n' "${CODEX_CARGO_LANE:-}" >"$TEST_CARGO_LANE_FILE"
 TARGET=aarch64-apple-darwin cc --print-search-dirs >"$TEST_CC_SEARCH_DIRS_FILE"
 TARGET=x86_64-unknown-linux-gnu cc --print-search-dirs >"$TEST_HOST_CC_SEARCH_DIRS_FILE"
 mkdir -p "$(dirname "$TEST_OUTPUT_BIN")"
@@ -201,6 +226,7 @@ EOF
   chmod +x \
     "$task_dir/build-ubuntu-macos-arm64" \
     "$task_dir/lib-artifact-size" \
+    "$task_dir/lib-cargo-workspace-version" \
     "$task_dir/lib-remote-ssh-target" \
     "$task_dir/lib-speed-first-build" \
     "$task_dir/lib-ubuntu-macos-arm64" \
@@ -223,6 +249,7 @@ EOF
       TEST_FAKE_ZIG="$fake_bin_dir/zig" \
       TEST_OUTPUT_BIN="$output_bin" \
       TEST_RS_EXT_ARGS_FILE="$rs_ext_args_file" \
+      TEST_CARGO_LANE_FILE="$cargo_lane_file" \
       TEST_CC_SEARCH_DIRS_FILE="$cc_search_dirs_file" \
       TEST_HOST_CC_SEARCH_DIRS_FILE="$host_cc_search_dirs_file" \
       CNB_REMOTE_SSH_HINT_FILE="$ssh_hint_file" \
@@ -230,6 +257,7 @@ EOF
   )"
 
   rs_ext_args="$(cat "$rs_ext_args_file")"
+  cargo_lane="$(cat "$cargo_lane_file")"
   cc_search_dirs="$(cat "$cc_search_dirs_file")"
   host_cc_search_dirs="$(cat "$host_cc_search_dirs_file")"
 
@@ -247,6 +275,11 @@ EOF
     "$rs_ext_args" \
     "--features codex-tui/realtime-webrtc-stub" \
     "build-ubuntu-macos-arm64 should enable the realtime stub on codex-tui instead of codex-cli"
+
+  assert_contains \
+    "$cargo_lane" \
+    "macos-arm64-" \
+    "build-ubuntu-macos-arm64 should isolate each default Cargo target lane to avoid stale artifact locks"
 
   assert_contains \
     "$cc_search_dirs" \
