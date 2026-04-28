@@ -1,9 +1,9 @@
-use crate::daemon::DaemonConfig;
-use crate::semantic::SemanticConfig;
-use crate::session::SessionConfig;
 use crate::TldrConfig;
 use crate::ZtldrArtifactLocation;
 use crate::ZtldrConfig;
+use crate::daemon::DaemonConfig;
+use crate::semantic::SemanticConfig;
+use crate::session::SessionConfig;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
@@ -25,11 +25,42 @@ struct GlobalConfigFile {
     pub ztldr: Option<GlobalZtldrConfigFile>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GlobalZtldrConfig {
+    pub enabled: Option<bool>,
+    pub artifact_location: Option<ZtldrArtifactLocation>,
+    pub onnxruntime: Option<bool>,
+    pub model: Option<String>,
+}
+
+impl Default for GlobalZtldrConfig {
+    fn default() -> Self {
+        Self {
+            enabled: None,
+            artifact_location: None,
+            onnxruntime: None,
+            model: None,
+        }
+    }
+}
+
+impl GlobalZtldrConfig {
+    fn into_runtime_or_default(self) -> ZtldrConfig {
+        ZtldrConfig {
+            enabled: self.enabled.unwrap_or(false),
+            artifact_location: self.artifact_location.unwrap_or_default(),
+            onnxruntime: self.onnxruntime.unwrap_or(true),
+        }
+    }
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GlobalZtldrConfigFile {
     pub enabled: Option<bool>,
     pub artifact_location: Option<ZtldrArtifactLocation>,
+    pub onnxruntime: Option<bool>,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -69,10 +100,20 @@ fn load_tldr_config_with_codex_home(
     codex_home: Option<&Path>,
 ) -> Result<TldrConfig> {
     let mut config = TldrConfig::for_project(project_root.to_path_buf());
-    config.ztldr = load_global_ztldr_config_from_codex_home(codex_home)?;
+    apply_global_ztldr_config(
+        &mut config,
+        load_global_ztldr_config_from_codex_home(codex_home)?,
+    );
+
+    let project_codex_config_path = project_root.join(".codex").join(CONFIG_TOML_FILE);
+    apply_global_ztldr_config(
+        &mut config,
+        load_global_ztldr_config_from_file(&project_codex_config_path)?,
+    );
 
     let config_path = project_root.join(".codex").join("tldr.toml");
     if !config_path.exists() {
+        apply_global_ztldr_runtime_config(&mut config);
         return Ok(config);
     }
 
@@ -90,22 +131,29 @@ fn load_tldr_config_with_codex_home(
     if let Some(session) = parsed.session {
         apply_session_config(&mut config.session, session);
     }
+    apply_global_ztldr_runtime_config(&mut config);
 
     Ok(config)
 }
 
-pub(crate) fn load_global_ztldr_config() -> Result<ZtldrConfig> {
+pub fn load_global_ztldr_config() -> Result<ZtldrConfig> {
     let codex_home = default_codex_home();
     load_global_ztldr_config_from_codex_home(codex_home.as_deref())
+        .map(GlobalZtldrConfig::into_runtime_or_default)
 }
 
-fn load_global_ztldr_config_from_codex_home(codex_home: Option<&Path>) -> Result<ZtldrConfig> {
+fn load_global_ztldr_config_from_codex_home(
+    codex_home: Option<&Path>,
+) -> Result<GlobalZtldrConfig> {
     let Some(codex_home) = codex_home else {
-        return Ok(ZtldrConfig::default());
+        return Ok(GlobalZtldrConfig::default());
     };
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    load_global_ztldr_config_from_file(&codex_home.join(CONFIG_TOML_FILE))
+}
+
+fn load_global_ztldr_config_from_file(config_path: &Path) -> Result<GlobalZtldrConfig> {
     if !config_path.exists() {
-        return Ok(ZtldrConfig::default());
+        return Ok(GlobalZtldrConfig::default());
     }
 
     let file = std::fs::read_to_string(&config_path)
@@ -114,9 +162,11 @@ fn load_global_ztldr_config_from_codex_home(codex_home: Option<&Path>) -> Result
         .with_context(|| format!("parse Codex config {}", config_path.display()))?;
 
     let ztldr = parsed.ztldr.unwrap_or_default();
-    Ok(ZtldrConfig {
-        enabled: ztldr.enabled.unwrap_or(false),
-        artifact_location: ztldr.artifact_location.unwrap_or_default(),
+    Ok(GlobalZtldrConfig {
+        enabled: ztldr.enabled,
+        artifact_location: ztldr.artifact_location,
+        onnxruntime: ztldr.onnxruntime,
+        model: ztldr.model,
     })
 }
 
@@ -172,6 +222,28 @@ fn apply_session_config(config: &mut SessionConfig, file: TldrSessionConfigFile)
     }
 }
 
+fn apply_global_ztldr_config(config: &mut TldrConfig, global: GlobalZtldrConfig) {
+    if let Some(enabled) = global.enabled {
+        config.ztldr.enabled = enabled;
+    }
+    if let Some(artifact_location) = global.artifact_location {
+        config.ztldr.artifact_location = artifact_location;
+    }
+    if let Some(onnxruntime) = global.onnxruntime {
+        config.ztldr.onnxruntime = onnxruntime;
+    }
+    if let Some(model) = global.model {
+        config.semantic.model = model;
+    }
+}
+
+fn apply_global_ztldr_runtime_config(config: &mut TldrConfig) {
+    if !config.ztldr.uses_onnxruntime() {
+        config.semantic.embedding.enabled = false;
+        config.semantic.embedding_enabled = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::load_global_ztldr_config_from_codex_home;
@@ -204,8 +276,12 @@ mod tests {
         let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
             .expect("global ztldr config should load");
 
-        assert_eq!(config, ZtldrConfig::default());
-        assert!(!config.uses_project_artifacts());
+        assert_eq!(
+            config.clone().into_runtime_or_default(),
+            ZtldrConfig::default()
+        );
+        assert_eq!(config.model, None);
+        assert!(!config.into_runtime_or_default().uses_project_artifacts());
     }
 
     #[test]
@@ -221,13 +297,21 @@ mod tests {
             .expect("global ztldr config should load");
 
         assert_eq!(
-            config,
+            config.clone().into_runtime_or_default(),
             ZtldrConfig {
                 enabled: true,
                 artifact_location: ZtldrArtifactLocation::Project,
+                onnxruntime: true,
             }
         );
-        assert!(config.uses_project_artifacts());
+        assert_eq!(config.model, None);
+        assert!(
+            config
+                .clone()
+                .into_runtime_or_default()
+                .uses_project_artifacts()
+        );
+        assert!(config.into_runtime_or_default().uses_onnxruntime());
     }
 
     #[test]
@@ -242,8 +326,45 @@ mod tests {
         let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
             .expect("global ztldr config should load");
 
-        assert_eq!(config.artifact_location, ZtldrArtifactLocation::Project);
-        assert!(!config.uses_project_artifacts());
+        assert_eq!(
+            config.artifact_location,
+            Some(ZtldrArtifactLocation::Project)
+        );
+        assert_eq!(
+            config.clone().into_runtime_or_default().artifact_location,
+            ZtldrArtifactLocation::Project
+        );
+        assert!(!config.into_runtime_or_default().uses_project_artifacts());
+    }
+
+    #[test]
+    fn load_global_ztldr_config_can_disable_onnxruntime() {
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nonnxruntime = false\n",
+        )
+        .expect("global config should write");
+
+        let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
+            .expect("global ztldr config should load");
+
+        assert!(!config.into_runtime_or_default().uses_onnxruntime());
+    }
+
+    #[test]
+    fn load_global_ztldr_config_reads_model() {
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nmodel = \"jina-code\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_global_ztldr_config_from_codex_home(Some(codex_home.path()))
+            .expect("global ztldr config should load");
+
+        assert_eq!(config.model.as_deref(), Some("jina-code"));
     }
 
     #[test]
@@ -264,6 +385,94 @@ mod tests {
             config.ztldr.artifact_location,
             ZtldrArtifactLocation::Project
         );
+        assert!(config.ztldr.uses_onnxruntime());
+    }
+
+    #[test]
+    fn load_tldr_config_applies_model_from_global_config() {
+        let project = tempdir().expect("project should exist");
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nmodel = \"jina-code\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_tldr_config_with_codex_home(project.path(), Some(codex_home.path()))
+            .expect("config should load");
+
+        assert_eq!(config.semantic.model, "jina-code");
+    }
+
+    #[test]
+    fn load_tldr_config_project_config_model_overrides_global_config_model() {
+        let project = tempdir().expect("project should exist");
+        let codex_dir = project.path().join(".codex");
+        std::fs::create_dir(&codex_dir).expect("project config dir should exist");
+        std::fs::write(
+            codex_dir.join("config.toml"),
+            "[ztldr]\nmodel = \"minilm\"\n",
+        )
+        .expect("project config should write");
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nmodel = \"jina-code\"\n",
+        )
+        .expect("global config should write");
+
+        let config = load_tldr_config_with_codex_home(project.path(), Some(codex_home.path()))
+            .expect("config should load");
+
+        assert_eq!(config.semantic.model, "minilm");
+    }
+
+    #[test]
+    fn load_tldr_config_tldr_toml_model_overrides_config_toml_model() {
+        let project = tempdir().expect("project should exist");
+        let codex_dir = project.path().join(".codex");
+        std::fs::create_dir(&codex_dir).expect("project config dir should exist");
+        std::fs::write(
+            codex_dir.join("config.toml"),
+            "[ztldr]\nmodel = \"minilm\"\n",
+        )
+        .expect("project config should write");
+        std::fs::write(
+            codex_dir.join("tldr.toml"),
+            "[semantic]\nmodel = \"jina-code\"\n",
+        )
+        .expect("project tldr config should write");
+
+        let config =
+            load_tldr_config_with_codex_home(project.path(), None).expect("config should load");
+
+        assert_eq!(config.semantic.model, "jina-code");
+    }
+
+    #[test]
+    fn load_tldr_config_global_onnxruntime_false_disables_embedding_backend() {
+        let project = tempdir().expect("project should exist");
+        let codex_dir = project.path().join(".codex");
+        std::fs::create_dir(&codex_dir).expect("project config dir should exist");
+        std::fs::write(
+            codex_dir.join("tldr.toml"),
+            "[semantic.embedding]\nenabled = true\ndimensions = 128\n",
+        )
+        .expect("project config should write");
+        let codex_home = tempdir().expect("codex home should exist");
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "[ztldr]\nonnxruntime = false\n",
+        )
+        .expect("global config should write");
+
+        let config = load_tldr_config_with_codex_home(project.path(), Some(codex_home.path()))
+            .expect("config should load");
+
+        assert!(!config.ztldr.uses_onnxruntime());
+        assert!(!config.semantic.embedding.enabled);
+        assert!(!config.semantic.embedding_enabled);
+        assert_eq!(config.semantic.embedding.dimensions, 128);
     }
 
     #[test]

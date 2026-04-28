@@ -1,3 +1,4 @@
+use crate::api::OnnxRuntimeStatus;
 use anyhow::Context;
 use anyhow::Result;
 #[cfg(not(test))]
@@ -12,10 +13,10 @@ use std::collections::BTreeMap;
 use std::ffi::CStr;
 #[cfg(unix)]
 use std::ffi::CString;
+use std::ffi::OsString;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-#[cfg(not(test))]
 use std::path::PathBuf;
 #[cfg(not(test))]
 use std::sync::Arc;
@@ -111,8 +112,11 @@ fn embed_with_fastembed(
             ensure_onnxruntime_dylib_loadable()?;
             let handle = Arc::new(FastembedHandle {
                 inner: Mutex::new(
-                    TextEmbedding::try_new(InitOptions::new(embedding_model(model)?))
-                        .context("initialize semantic embedding backend")?,
+                    TextEmbedding::try_new(
+                        InitOptions::new(embedding_model(model)?)
+                            .with_cache_dir(fastembed_cache_dir()?),
+                    )
+                    .context("initialize semantic embedding backend")?,
                 ),
             });
             guard.insert(model.to_string(), Arc::clone(&handle));
@@ -141,6 +145,87 @@ fn embed_with_fastembed(
 
 #[cfg(not(test))]
 static FASTEMBED_CACHE: OnceLock<Mutex<BTreeMap<String, Arc<FastembedHandle>>>> = OnceLock::new();
+
+#[cfg(not(test))]
+fn fastembed_cache_dir() -> Result<PathBuf> {
+    fastembed_cache_dir_from_env(std::env::var_os("HF_HOME"), default_home_dir())
+}
+
+fn fastembed_cache_dir_from_env(
+    hf_home: Option<OsString>,
+    home_dir: Option<PathBuf>,
+) -> Result<PathBuf> {
+    if let Some(path) = hf_home.filter(|value| !value.is_empty()).map(PathBuf::from) {
+        return Ok(path);
+    }
+
+    let home = home_dir.context("locate home directory for fastembed cache")?;
+    Ok(home.join(".codex").join("embed"))
+}
+
+#[cfg(not(test))]
+fn default_home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+}
+
+#[cfg(not(test))]
+pub(crate) fn onnx_runtime_status(embedding_enabled: bool) -> OnnxRuntimeStatus {
+    if !embedding_enabled {
+        return OnnxRuntimeStatus {
+            embedding_enabled,
+            checked: false,
+            loadable: false,
+            would_use: false,
+            dylib_path: None,
+            reason: Some("ONNX Runtime disabled by ztldr config".to_string()),
+        };
+    }
+
+    let path = resolved_onnxruntime_dylib_path();
+    match ensure_onnxruntime_dylib_loadable_at(&path) {
+        Ok(()) => OnnxRuntimeStatus {
+            embedding_enabled,
+            checked: true,
+            loadable: true,
+            would_use: embedding_enabled,
+            dylib_path: Some(path.display().to_string()),
+            reason: None,
+        },
+        Err(err) => OnnxRuntimeStatus {
+            embedding_enabled,
+            checked: true,
+            loadable: false,
+            would_use: false,
+            dylib_path: Some(path.display().to_string()),
+            reason: Some(err.to_string()),
+        },
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn onnx_runtime_status(embedding_enabled: bool) -> OnnxRuntimeStatus {
+    if !embedding_enabled {
+        return OnnxRuntimeStatus {
+            embedding_enabled,
+            checked: false,
+            loadable: false,
+            would_use: false,
+            dylib_path: None,
+            reason: Some("ONNX Runtime disabled by ztldr config".to_string()),
+        };
+    }
+
+    OnnxRuntimeStatus {
+        embedding_enabled,
+        checked: false,
+        loadable: false,
+        would_use: false,
+        dylib_path: None,
+        reason: Some("test embedding backend does not load ONNX Runtime".to_string()),
+    }
+}
 
 #[cfg(not(test))]
 fn ensure_onnxruntime_dylib_loadable() -> Result<()> {
@@ -331,8 +416,11 @@ fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
+    use super::fastembed_cache_dir_from_env;
     use super::normalize;
     use pretty_assertions::assert_eq;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
 
     #[test]
     fn normalize_preserves_zero_vector() {
@@ -342,6 +430,30 @@ mod tests {
     #[test]
     fn normalize_scales_non_zero_vector() {
         assert_eq!(normalize(vec![0.0, 5.0]), vec![0.0, 1.0]);
+    }
+
+    #[test]
+    fn fastembed_cache_dir_prefers_hf_home() {
+        assert_eq!(
+            fastembed_cache_dir_from_env(
+                Some(OsString::from("/tmp/hf-cache")),
+                Some(PathBuf::from("/home/tester")),
+            )
+            .expect("cache dir should resolve"),
+            PathBuf::from("/tmp/hf-cache")
+        );
+    }
+
+    #[test]
+    fn fastembed_cache_dir_defaults_to_codex_embed_under_home() {
+        assert_eq!(
+            fastembed_cache_dir_from_env(
+                Some(OsString::new()),
+                Some(PathBuf::from("/home/tester")),
+            )
+            .expect("cache dir should resolve"),
+            PathBuf::from("/home/tester/.codex/embed")
+        );
     }
 
     #[cfg(unix)]

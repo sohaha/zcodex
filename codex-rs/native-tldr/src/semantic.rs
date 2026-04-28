@@ -7,6 +7,7 @@ use crate::semantic_cache;
 use anyhow::Context;
 use anyhow::Result;
 use embedder::SemanticEmbedder;
+pub(crate) use embedder::onnx_runtime_status;
 use ignore::gitignore::Gitignore;
 use ignore::gitignore::GitignoreBuilder;
 use serde::Deserialize;
@@ -71,7 +72,7 @@ impl Default for SemanticConfig {
         Self {
             enabled: true,
             feature_gate: "semantic-embed".to_string(),
-            model: "bge-m3".to_string(),
+            model: "minilm".to_string(),
             auto_reindex_threshold: 20,
             embedding_enabled: SemanticEmbeddingConfig::default().enabled,
             embedding: SemanticEmbeddingConfig::default(),

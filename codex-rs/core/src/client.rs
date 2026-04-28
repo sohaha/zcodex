@@ -23,6 +23,7 @@
 //! WebSocket prewarm is treated as the first websocket connection attempt for a turn. If it
 //! fails, normal stream retry/fallback logic handles recovery on the same turn.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
@@ -76,6 +77,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::Verbosity as VerbosityConfig;
+use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
@@ -85,6 +87,8 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout_trace::CompactionTraceContext;
 use codex_rollout_trace::InferenceTraceAttempt;
 use codex_rollout_trace::InferenceTraceContext;
+use codex_tools::ToolSpec;
+use codex_tools::create_apply_patch_json_tool;
 use codex_tools::create_tools_json_for_responses_api;
 use eventsource_stream::Event;
 use eventsource_stream::EventStreamError;
@@ -120,7 +124,6 @@ use codex_model_provider::create_model_provider;
 use codex_model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
-use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
 use codex_response_debug_context::extract_response_debug_context;
 use codex_response_debug_context::extract_response_debug_context_from_api_error;
@@ -165,6 +168,7 @@ struct ModelClientState {
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
     disable_websockets: AtomicBool,
+    disable_responses_custom_apply_patch: AtomicBool,
     cached_websocket_session: StdMutex<WebsocketSession>,
 }
 
@@ -329,6 +333,7 @@ impl ModelClient {
                 include_timing_metrics,
                 beta_features_header,
                 disable_websockets: AtomicBool::new(false),
+                disable_responses_custom_apply_patch: AtomicBool::new(false),
                 cached_websocket_session: StdMutex::new(WebsocketSession::default()),
             }),
         }
@@ -847,6 +852,59 @@ impl Drop for ModelClientSession {
     }
 }
 
+fn prompt_has_freeform_apply_patch_tool(prompt: &Prompt) -> bool {
+    prompt.tools.iter().any(|tool| {
+        matches!(
+            tool,
+            ToolSpec::Freeform(tool) if tool.name == "apply_patch"
+        )
+    })
+}
+
+fn downgrade_freeform_apply_patch_tools(tools: &[ToolSpec]) -> Vec<ToolSpec> {
+    tools
+        .iter()
+        .map(|tool| match tool {
+            ToolSpec::Freeform(tool) if tool.name == "apply_patch" => {
+                create_apply_patch_json_tool()
+            }
+            _ => tool.clone(),
+        })
+        .collect()
+}
+
+fn responses_provider_rejected_custom_tool_message(message: &str) -> bool {
+    message.contains("unknown variant")
+        && message.contains("custom")
+        && message.contains("expected")
+        && message.contains("function")
+        && message.contains("tools[")
+        && message.contains(".type")
+}
+
+fn responses_provider_rejected_custom_tool(err: &ApiError) -> bool {
+    let message = match err {
+        ApiError::InvalidRequest { message } => Some(message.as_str()),
+        ApiError::Transport(TransportError::Http { status, body, .. })
+            if *status == HttpStatusCode::BAD_REQUEST =>
+        {
+            body.as_deref()
+        }
+        _ => None,
+    };
+
+    message.is_some_and(responses_provider_rejected_custom_tool_message)
+}
+
+fn responses_stream_rejected_custom_tool(err: &CodexErr) -> bool {
+    match err {
+        CodexErr::InvalidRequest(message) | CodexErr::Stream(message, _) => {
+            responses_provider_rejected_custom_tool_message(message)
+        }
+        _ => false,
+    }
+}
+
 impl ModelClientSession {
     pub(crate) fn responses_websocket_enabled(&self) -> bool {
         self.client.responses_websocket_enabled()
@@ -867,6 +925,58 @@ impl ModelClientSession {
             .set_connection_reused(/*connection_reused*/ false);
     }
 
+    fn effective_responses_prompt<'a>(&self, prompt: &'a Prompt) -> Cow<'a, Prompt> {
+        if self
+            .client
+            .state
+            .disable_responses_custom_apply_patch
+            .load(Ordering::Relaxed)
+            && prompt_has_freeform_apply_patch_tool(prompt)
+        {
+            let mut downgraded_prompt = prompt.clone();
+            downgraded_prompt.tools = downgrade_freeform_apply_patch_tools(&prompt.tools);
+            Cow::Owned(downgraded_prompt)
+        } else {
+            Cow::Borrowed(prompt)
+        }
+    }
+
+    fn should_retry_without_freeform_apply_patch(&self, err: &ApiError, prompt: &Prompt) -> bool {
+        !self
+            .client
+            .state
+            .disable_responses_custom_apply_patch
+            .load(Ordering::Relaxed)
+            && prompt_has_freeform_apply_patch_tool(prompt)
+            && responses_provider_rejected_custom_tool(err)
+    }
+
+    pub(crate) fn should_retry_without_freeform_apply_patch_stream_error(
+        &self,
+        err: &CodexErr,
+        prompt: &Prompt,
+    ) -> bool {
+        !self
+            .client
+            .state
+            .disable_responses_custom_apply_patch
+            .load(Ordering::Relaxed)
+            && prompt_has_freeform_apply_patch_tool(prompt)
+            && responses_stream_rejected_custom_tool(err)
+    }
+
+    fn remember_responses_custom_apply_patch_unsupported(&self) {
+        self.client
+            .state
+            .disable_responses_custom_apply_patch
+            .store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn disable_responses_custom_apply_patch(&mut self) {
+        self.remember_responses_custom_apply_patch_unsupported();
+        self.reset_websocket_session();
+    }
+
     fn build_responses_request(
         &self,
         provider: &codex_api::Provider,
@@ -876,6 +986,7 @@ impl ModelClientSession {
         summary: ReasoningSummaryConfig,
         service_tier: Option<ServiceTier>,
     ) -> Result<ResponsesApiRequest> {
+        let prompt = self.effective_responses_prompt(prompt);
         let instructions = &prompt.base_instructions.text;
         let input = prompt.get_formatted_input();
         let tools = create_tools_json_for_responses_api(&prompt.tools)?;
@@ -1278,6 +1389,14 @@ impl ModelClientSession {
                     );
                     return Ok(stream);
                 }
+                Err(err) if self.should_retry_without_freeform_apply_patch(&err, prompt) => {
+                    warn!(
+                        provider = ?self.client.state.provider.info().name,
+                        "responses provider rejected custom tool type; retrying with function apply_patch"
+                    );
+                    self.remember_responses_custom_apply_patch_unsupported();
+                    continue;
+                }
                 Err(ApiError::Transport(
                     unauthorized_transport @ TransportError::Http { status, .. },
                 )) if status == StatusCode::UNAUTHORIZED => {
@@ -1364,7 +1483,7 @@ impl ModelClientSession {
                 ws_payload.generate = Some(false);
             }
 
-            match self
+            let websocket_connection_result = self
                 .websocket_connection(WebsocketConnectParams {
                     session_telemetry,
                     api_provider: client_setup.api_provider,
@@ -1376,8 +1495,8 @@ impl ModelClientSession {
                         RESPONSES_ENDPOINT,
                     ),
                 })
-                .await
-            {
+                .await;
+            match websocket_connection_result {
                 Ok(_) => {}
                 Err(ApiError::Transport(TransportError::Http { status, .. }))
                     if status == StatusCode::UPGRADE_REQUIRED =>
@@ -1397,7 +1516,17 @@ impl ModelClientSession {
                     );
                     continue;
                 }
-                Err(err) => return Err(map_api_error(err)),
+                Err(err) => {
+                    if self.should_retry_without_freeform_apply_patch(&err, prompt) {
+                        warn!(
+                            provider = ?self.client.state.provider.info().name,
+                            "responses websocket provider rejected custom tool type; retrying with function apply_patch"
+                        );
+                        self.disable_responses_custom_apply_patch();
+                        continue;
+                    }
+                    return Err(map_api_error(err));
+                }
             }
 
             let ws_request = self.prepare_websocket_request(ws_payload, &request);
@@ -1416,14 +1545,25 @@ impl ModelClientSession {
                         "websocket connection is unavailable".to_string(),
                     ))
                 })?;
-            let stream_result = websocket_connection
+            let stream_result = match websocket_connection
                 .stream_request(ws_request, self.websocket_session.connection_reused())
                 .await
-                .map_err(|err| {
+            {
+                Ok(stream_result) => stream_result,
+                Err(err) if self.should_retry_without_freeform_apply_patch(&err, prompt) => {
+                    warn!(
+                        provider = ?self.client.state.provider.info().name,
+                        "responses websocket stream rejected custom tool type; retrying with function apply_patch"
+                    );
+                    self.disable_responses_custom_apply_patch();
+                    continue;
+                }
+                Err(err) => {
                     let err = map_api_error(err);
                     inference_trace_attempt.record_failed(&err);
-                    err
-                })?;
+                    return Err(err);
+                }
+            };
             let (stream, last_request_rx) = map_response_stream(
                 stream_result,
                 session_telemetry.clone(),

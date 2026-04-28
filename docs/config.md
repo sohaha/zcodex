@@ -133,15 +133,17 @@ behavior = "basic"
 
 ## ZTLDR
 
-`ztldr` 的用户配置边界不同于 `ztok`：`~/.codex/config.toml` 中的 `[ztldr]` 只提供全局开关与产物位置选择；daemon、semantic 和 session 参数仍来自项目根目录下的 `.codex/tldr.toml`。
+`ztldr` 的用户配置边界不同于 `ztok`：`~/.codex/config.toml` 或项目 `.codex/config.toml` 中的 `[ztldr]` 提供全局开关、产物位置选择和语义模型默认值；daemon、semantic 和 session 参数仍来自项目根目录下的 `.codex/tldr.toml`。
 
 ```toml
 [ztldr]
 enabled = true
 artifact_location = "project"
+onnxruntime = false
+model = "jina-code"
 ```
 
-`enabled` 是总开关，默认 `false`。`artifact_location` 支持 `"temp"` 和 `"project"`，默认 `"temp"`；只有同时设置 `enabled = true` 且 `artifact_location = "project"` 时，ztldr 的本地产物才会写入项目根目录下的 `.tldr/`，例如 semantic cache 会落在 `.tldr/cache/semantic/`。其他情况下继续使用默认 runtime/temp artifact 目录。
+`enabled` 是总开关，默认 `false`。`artifact_location` 支持 `"temp"` 和 `"project"`，默认 `"temp"`；只有同时设置 `enabled = true` 且 `artifact_location = "project"` 时，ztldr 的本地产物才会写入项目根目录下的 `.tldr/`，例如 semantic cache 会落在 `.tldr/cache/semantic/`。`onnxruntime` 默认 `true`；设置为 `false` 后，ztldr 会全局关闭 ONNX Runtime backed embedding，不加载 ONNX Runtime，不预热 embedding 模型，并退回无 dense embedding 的语义索引路径。`model` 用作语义嵌入模型的默认值；若 `.codex/tldr.toml` 同时配置 `[semantic].model`，以 `.codex/tldr.toml` 为准。其他情况下继续使用默认 runtime/temp artifact 目录。
 
 `.codex/tldr.toml` 最小示例：
 

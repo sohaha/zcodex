@@ -236,6 +236,16 @@ pub struct DiagnosticToolStatus {
     pub available: bool,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OnnxRuntimeStatus {
+    pub embedding_enabled: bool,
+    pub checked: bool,
+    pub loadable: bool,
+    pub would_use: bool,
+    pub dylib_path: Option<String>,
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DiagnosticItem {
     pub path: String,
@@ -285,6 +295,8 @@ pub struct DoctorRequest {
 pub struct DoctorResponse {
     #[serde(default)]
     pub tools: Vec<DiagnosticToolStatus>,
+    #[serde(default)]
+    pub onnx_runtime: OnnxRuntimeStatus,
     pub message: String,
 }
 

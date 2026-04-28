@@ -2185,6 +2185,7 @@ async fn try_run_sampling_request(
     let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
     let mut assistant_message_stream_parsers = AssistantMessageStreamParsers::new(plan_mode);
     let mut plan_mode_state = plan_mode.then(|| PlanModeStreamState::new(&turn_context.sub_id));
+    let mut can_retry_custom_apply_patch_stream_error = true;
     let receiving_span = trace_span!("receiving_stream");
     let outcome: CodexResult<SamplingRequestResult> = loop {
         let handle_responses = trace_span!(
@@ -2207,6 +2208,32 @@ async fn try_run_sampling_request(
 
         let event = match event {
             Some(Ok(event)) => event,
+            Some(Err(err))
+                if can_retry_custom_apply_patch_stream_error
+                    && client_session
+                        .should_retry_without_freeform_apply_patch_stream_error(&err, prompt) =>
+            {
+                warn!(
+                    provider = ?turn_context.provider.info().name,
+                    "responses stream rejected custom tool type after request start; retrying with function apply_patch"
+                );
+                client_session.disable_responses_custom_apply_patch();
+                stream = client_session
+                    .stream(
+                        prompt,
+                        &turn_context.model_info,
+                        &turn_context.session_telemetry,
+                        turn_context.reasoning_effort,
+                        turn_context.reasoning_summary,
+                        turn_context.config.service_tier,
+                        turn_metadata_header,
+                        &inference_trace,
+                    )
+                    .instrument(trace_span!("stream_request"))
+                    .or_cancel(&cancellation_token)
+                    .await??;
+                continue;
+            }
             Some(Err(err)) => break Err(err),
             None => {
                 break Err(CodexErr::Stream(
@@ -2220,6 +2247,17 @@ async fn try_run_sampling_request(
             .session_telemetry
             .record_responses(&handle_responses, &event);
         record_turn_ttft_metric(&turn_context, &event).await;
+
+        if !matches!(
+            event,
+            ResponseEvent::Created
+                | ResponseEvent::ServerModel(_)
+                | ResponseEvent::ServerReasoningIncluded(_)
+                | ResponseEvent::RateLimits(_)
+                | ResponseEvent::ModelsEtag(_)
+        ) {
+            can_retry_custom_apply_patch_stream_error = false;
+        }
 
         match event {
             ResponseEvent::Created => {}

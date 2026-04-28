@@ -435,6 +435,9 @@ pub enum TldrDaemonSubcommand {
     /// 清空 dirty 文件集合并返回 session 快照。
     Warm,
 
+    /// 显式重建当前项目的语义索引。
+    Reindex,
+
     /// 返回当前 session 快照。
     Snapshot,
 
@@ -991,6 +994,7 @@ async fn run_doctor_command(cmd: TldrDoctorCommand) -> Result<()> {
     let payload = json!({
         "action": "doctor",
         "project": project_root,
+        "onnxRuntime": response.onnx_runtime,
         "doctor": response,
     });
     if cmd.json {
@@ -1376,7 +1380,20 @@ fn render_doctor_response_text(response: &DoctorResponse) -> Vec<String> {
         format!("已检查工具数：{}", response.tools.len()),
         format!("可用工具数：{available_tools}"),
         format!("消息：{}", response.message),
+        format!("语义嵌入启用：{}", response.onnx_runtime.embedding_enabled),
+        format!("语义嵌入已检测：{}", response.onnx_runtime.checked),
+        format!("语义嵌入可加载：{}", response.onnx_runtime.loadable),
+        format!("语义嵌入将用于：{}", response.onnx_runtime.would_use),
     ];
+    if let Some(path) = response.onnx_runtime.dylib_path.as_deref() {
+        lines.push(format!("语义嵌入动态库路径：{path}"));
+    }
+    if let Some(reason) = response.onnx_runtime.reason.as_deref() {
+        lines.push(format!(
+            "语义嵌入原因：{}",
+            render_semantic_runtime_reason(reason)
+        ));
+    }
     for tool in &response.tools {
         lines.push(format!("工具 {}：{}", tool.tool, tool.available));
     }
@@ -1402,6 +1419,15 @@ fn render_search_response_text(
         lines.push(format!("消息：{message}"));
     }
     lines
+}
+
+fn render_semantic_runtime_reason(reason: &str) -> String {
+    reason
+        .replace(
+            "semantic embedding backend requires ONNX Runtime dylib",
+            "语义嵌入后端需要可加载的运行库",
+        )
+        .replace("ONNX Runtime", "语义嵌入运行库")
 }
 
 fn render_semantic_response_text(
@@ -1500,6 +1526,7 @@ fn daemon_action_and_command(
         }
         TldrDaemonSubcommand::Ping => ("ping", TldrDaemonCommand::Ping),
         TldrDaemonSubcommand::Warm => ("warm", TldrDaemonCommand::Warm),
+        TldrDaemonSubcommand::Reindex => ("reindex", TldrDaemonCommand::Reindex),
         TldrDaemonSubcommand::Snapshot => ("snapshot", TldrDaemonCommand::Snapshot),
         TldrDaemonSubcommand::Status => ("status", TldrDaemonCommand::Status),
         TldrDaemonSubcommand::Notify { path } => {
@@ -2026,6 +2053,7 @@ mod output_tests {
     use super::daemon_action_and_command;
     use super::render_analysis_response_text;
     use super::render_diagnostics_response_text;
+    use super::render_doctor_response_text;
     use super::render_importers_response_text;
     use super::render_imports_response_text;
     use super::render_search_response_text;
@@ -2043,6 +2071,8 @@ mod output_tests {
     use codex_native_tldr::api::DiagnosticSeverity;
     use codex_native_tldr::api::DiagnosticToolStatus;
     use codex_native_tldr::api::DiagnosticsResponse;
+    use codex_native_tldr::api::DoctorResponse;
+    use codex_native_tldr::api::OnnxRuntimeStatus;
     use codex_native_tldr::lang_support::LanguageRegistry;
     use codex_native_tldr::lang_support::SupportedLanguage;
     use codex_native_tldr::semantic::EmbeddingUnit;
@@ -2631,6 +2661,17 @@ mod output_tests {
     }
 
     #[test]
+    fn daemon_action_and_command_maps_reindex() {
+        let (action, command) = daemon_action_and_command(&TldrDaemonSubcommand::Reindex);
+
+        assert_eq!(action, "reindex");
+        assert_eq!(
+            command,
+            codex_native_tldr::daemon::TldrDaemonCommand::Reindex
+        );
+    }
+
+    #[test]
     fn render_semantic_response_text_lists_match_details() {
         let lines = render_semantic_response_text(
             SupportedLanguage::Rust,
@@ -2717,6 +2758,41 @@ mod output_tests {
         assert!(
             lines.contains(&"src/main.rs:7:3 错误 cargo-check [E0609] unknown field".to_string())
         );
+    }
+
+    #[test]
+    fn render_doctor_response_text_includes_onnx_runtime_status() {
+        let lines = render_doctor_response_text(&DoctorResponse {
+            tools: Vec::new(),
+            onnx_runtime: OnnxRuntimeStatus {
+                embedding_enabled: true,
+                checked: true,
+                loadable: false,
+                would_use: false,
+                dylib_path: Some("/tmp/libonnxruntime.so".to_string()),
+                reason: Some("missing dylib".to_string()),
+            },
+            message: "doctor found 0 available tools".to_string(),
+        });
+
+        assert!(lines.contains(&"语义嵌入启用：true".to_string()));
+        assert!(lines.contains(&"语义嵌入可加载：false".to_string()));
+        assert!(lines.contains(&"语义嵌入将用于：false".to_string()));
+        assert!(lines.contains(&"语义嵌入动态库路径：/tmp/libonnxruntime.so".to_string()));
+        assert!(lines.contains(&"语义嵌入原因：missing dylib".to_string()));
+    }
+
+    #[test]
+    fn render_semantic_runtime_reason_hides_runtime_branding() {
+        let reason = super::render_semantic_runtime_reason(
+            "semantic embedding backend requires ONNX Runtime dylib `libonnxruntime.so` to be loadable",
+        );
+
+        assert_eq!(
+            reason,
+            "语义嵌入后端需要可加载的运行库 `libonnxruntime.so` to be loadable"
+        );
+        assert!(!reason.contains("ONNX Runtime"));
     }
 }
 
@@ -4329,6 +4405,7 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Importers { .. } => "importers",
                         TldrDaemonCommand::Search { .. } => "search",
                         TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
+                        TldrDaemonCommand::Reindex => "reindex",
                         TldrDaemonCommand::Shutdown => "shutdown",
                     };
                     let response = TldrDaemonResponse {
@@ -4433,6 +4510,7 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Importers { .. } => "importers",
                         TldrDaemonCommand::Search { .. } => "search",
                         TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
+                        TldrDaemonCommand::Reindex => "reindex",
                         TldrDaemonCommand::Shutdown => "shutdown",
                     };
                     let response = TldrDaemonResponse {

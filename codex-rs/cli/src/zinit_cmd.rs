@@ -3,6 +3,10 @@ use anyhow::Result;
 use anyhow::bail;
 use clap::Parser;
 use clap::Subcommand;
+use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::query_daemon;
+use codex_native_tldr::load_global_ztldr_config;
+use codex_native_tldr::semantic::SUPPORTED_SEMANTIC_MODELS;
 use codex_native_tldr::semantic::SemanticConfig;
 use codex_native_tldr::semantic::warm_embedding_model;
 #[cfg(unix)]
@@ -29,9 +33,18 @@ pub struct ZinitCli {
     #[arg(long = "target-dir", value_name = "目录")]
     target_dir: Option<PathBuf>,
 
-    /// 预下载并初始化指定的 ztldr embedding 模型；不传则只准备 ONNX Runtime。
-    #[arg(long = "model", value_name = "模型")]
+    #[arg(
+        long = "model",
+        value_name = "模型",
+        value_parser = clap::builder::PossibleValuesParser::new(SUPPORTED_SEMANTIC_MODELS),
+        help = "预下载并初始化指定的 ztldr embedding 模型；默认使用 ztldr 默认模型。",
+        long_help = zinit_model_help()
+    )]
     model: Option<String>,
+
+    /// 只准备 ONNX Runtime，不预热 embedding 模型。
+    #[arg(long = "no-model", default_value_t = false, conflicts_with = "model")]
+    no_model: bool,
 
     #[command(subcommand)]
     subcommand: Option<ZinitSubcommand>,
@@ -44,16 +57,40 @@ enum ZinitSubcommand {
 }
 
 pub async fn run_zinit_command(cli: ZinitCli) -> Result<()> {
+    let check_only = cli.check;
+    let explicit_model = cli.model.is_some();
+    let onnxruntime_enabled = load_global_ztldr_config()?.uses_onnxruntime();
+    let model = model_to_warm(cli.no_model, onnxruntime_enabled, cli.model);
     match cli.subcommand.unwrap_or(ZinitSubcommand::Ztldr) {
-        ZinitSubcommand::Ztldr => run_ztldr_init(cli.check, cli.target_dir, cli.model).await,
+        ZinitSubcommand::Ztldr => {
+            let outcome =
+                run_ztldr_init(check_only, cli.target_dir, model, onnxruntime_enabled).await?;
+            maybe_refresh_running_ztldr_daemon(check_only, explicit_model, &outcome).await?;
+            Ok(())
+        }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ZtldrInitOutcome {
+    installed_onnxruntime: bool,
+    warmed_model: Option<String>,
 }
 
 async fn run_ztldr_init(
     check_only: bool,
     target_dir: Option<PathBuf>,
     model: Option<String>,
-) -> Result<()> {
+    onnxruntime_enabled: bool,
+) -> Result<ZtldrInitOutcome> {
+    if !onnxruntime_enabled {
+        println!("ONNX Runtime 已由 [ztldr].onnxruntime = false 关闭，跳过安装和模型预热。");
+        return Ok(ZtldrInitOutcome {
+            installed_onnxruntime: false,
+            warmed_model: None,
+        });
+    }
+
     let install_target = resolve_install_target(target_dir)?;
     let target_dir = install_target
         .dylib_path
@@ -63,17 +100,17 @@ async fn run_ztldr_init(
     let dylib_path = install_target.dylib_path;
     let check = check_onnxruntime(&dylib_path);
     if check.ready {
-        println!(
-            "ztldr 环境已就绪：{}",
-            check.path.as_deref().unwrap_or(&dylib_path).display()
-        );
-        warm_optional_model(model)?;
-        return Ok(());
+        println!("推理环境已就绪");
+        let warmed_model = warm_optional_model(model)?;
+        return Ok(ZtldrInitOutcome {
+            installed_onnxruntime: false,
+            warmed_model,
+        });
     }
 
     if check_only {
         bail!(
-            "ztldr 环境缺少 ONNX Runtime 动态库：{}",
+            "环境缺少 ONNX Runtime 动态库：{}",
             check
                 .reason
                 .unwrap_or_else(|| dylib_path.display().to_string())
@@ -81,17 +118,17 @@ async fn run_ztldr_init(
     }
 
     let package = OnnxRuntimePackage::for_current_platform()?;
-    println!(
-        "ztldr 环境缺少 ONNX Runtime，正在安装 {}...",
-        package.asset_name
-    );
+    println!("环境缺少 ONNX Runtime，正在安装 {}...", package.asset_name);
     install_onnxruntime(package, &target_dir).await?;
 
     let check = check_onnxruntime(&dylib_path);
     if check.ready {
-        println!("ztldr 环境已就绪：{}", dylib_path.display());
-        warm_optional_model(model)?;
-        return Ok(());
+        println!("推理环境已就绪");
+        let warmed_model = warm_optional_model(model)?;
+        return Ok(ZtldrInitOutcome {
+            installed_onnxruntime: true,
+            warmed_model,
+        });
     }
 
     bail!(
@@ -102,15 +139,99 @@ async fn run_ztldr_init(
     );
 }
 
-fn warm_optional_model(model: Option<String>) -> Result<()> {
+fn warm_optional_model(model: Option<String>) -> Result<Option<String>> {
     let Some(model) = model else {
-        return Ok(());
+        return Ok(None);
     };
     let dimensions = SemanticConfig::default().embedding_dimensions();
-    println!("正在预热 ztldr embedding 模型：{model}");
+    println!("正在预热模型：{model}");
     warm_embedding_model(&model, dimensions)?;
-    println!("ztldr embedding 模型已就绪：{model}");
+    println!("模型已就绪：{model}");
+    Ok(Some(model))
+}
+
+fn default_semantic_model() -> String {
+    SemanticConfig::default().model
+}
+
+fn zinit_model_help() -> String {
+    format!(
+        "预下载并初始化指定的 ztldr embedding 模型；默认使用 ztldr 默认模型。可选模型：{}。",
+        SUPPORTED_SEMANTIC_MODELS.join(", ")
+    )
+}
+
+fn model_to_warm(
+    no_model: bool,
+    onnxruntime_enabled: bool,
+    model: Option<String>,
+) -> Option<String> {
+    (!no_model && onnxruntime_enabled).then(|| model.unwrap_or_else(default_semantic_model))
+}
+
+async fn maybe_refresh_running_ztldr_daemon(
+    check_only: bool,
+    explicit_model: bool,
+    outcome: &ZtldrInitOutcome,
+) -> Result<()> {
+    if !should_refresh_daemon_index(check_only, explicit_model, outcome) {
+        return Ok(());
+    }
+
+    let Some(project_root) = current_git_root().await else {
+        println!("当前目录不是 Git 仓库，跳过 ztldr daemon 索引刷新。");
+        return Ok(());
+    };
+
+    let response = match query_daemon(&project_root, &TldrDaemonCommand::Reindex).await {
+        Ok(response) => response,
+        Err(err) => {
+            eprintln!("ztldr daemon 索引刷新失败：{err}");
+            return Ok(());
+        }
+    };
+    let Some(response) = response else {
+        println!("当前 Git 仓库没有运行中的 ztldr daemon，跳过索引刷新。");
+        return Ok(());
+    };
+
+    if let Some(report) = response.reindex_report {
+        println!("{}", report.message);
+    } else {
+        println!("{}", response.message);
+    }
     Ok(())
+}
+
+fn should_refresh_daemon_index(
+    check_only: bool,
+    explicit_model: bool,
+    outcome: &ZtldrInitOutcome,
+) -> bool {
+    !check_only
+        && outcome.warmed_model.is_some()
+        && (outcome.installed_onnxruntime || explicit_model)
+}
+
+async fn current_git_root() -> Option<PathBuf> {
+    let output = match Command::new("git")
+        .arg("rev-parse")
+        .arg("--show-toplevel")
+        .output()
+        .await
+    {
+        Ok(output) => output,
+        Err(err) => {
+            eprintln!("检测当前 Git 仓库失败，跳过 ztldr daemon 索引刷新：{err}");
+            return None;
+        }
+    };
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let root = stdout.lines().next().filter(|line| !line.is_empty())?;
+    Some(PathBuf::from(root))
 }
 
 #[derive(Debug)]
@@ -497,5 +618,80 @@ mod tests {
             target.dylib_path,
             PathBuf::from("/custom-dir").join(default_onnxruntime_dylib_name())
         );
+    }
+
+    #[test]
+    fn default_model_matches_tldr_semantic_default() {
+        assert_eq!(default_semantic_model(), "minilm");
+    }
+
+    #[test]
+    fn model_to_warm_respects_global_onnxruntime_switch() {
+        assert_eq!(
+            model_to_warm(
+                /*no_model*/ false, /*onnxruntime_enabled*/ true, None
+            ),
+            Some("minilm".to_string())
+        );
+        assert_eq!(
+            model_to_warm(
+                /*no_model*/ false,
+                /*onnxruntime_enabled*/ true,
+                Some("jina-code".to_string()),
+            ),
+            Some("jina-code".to_string())
+        );
+        assert_eq!(
+            model_to_warm(
+                /*no_model*/ false,
+                /*onnxruntime_enabled*/ false,
+                Some("jina-code".to_string()),
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn daemon_refresh_runs_after_first_install_with_model() {
+        assert!(should_refresh_daemon_index(
+            /*check_only*/ false,
+            /*explicit_model*/ false,
+            &ZtldrInitOutcome {
+                installed_onnxruntime: true,
+                warmed_model: Some("minilm".to_string()),
+            },
+        ));
+    }
+
+    #[test]
+    fn daemon_refresh_runs_for_explicit_model() {
+        assert!(should_refresh_daemon_index(
+            /*check_only*/ false,
+            /*explicit_model*/ true,
+            &ZtldrInitOutcome {
+                installed_onnxruntime: false,
+                warmed_model: Some("jina-code".to_string()),
+            },
+        ));
+    }
+
+    #[test]
+    fn daemon_refresh_skips_check_only_and_no_model() {
+        assert!(!should_refresh_daemon_index(
+            /*check_only*/ true,
+            /*explicit_model*/ true,
+            &ZtldrInitOutcome {
+                installed_onnxruntime: true,
+                warmed_model: Some("minilm".to_string()),
+            },
+        ));
+        assert!(!should_refresh_daemon_index(
+            /*check_only*/ false,
+            /*explicit_model*/ true,
+            &ZtldrInitOutcome {
+                installed_onnxruntime: true,
+                warmed_model: None,
+            },
+        ));
     }
 }

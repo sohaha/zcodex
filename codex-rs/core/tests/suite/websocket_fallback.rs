@@ -519,6 +519,115 @@ async fn request_fallback_emits_warning_event_without_warning_item() -> Result<(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn custom_tool_rejection_retries_same_provider_before_request_fallback() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = responses::start_mock_server().await;
+    let primary_mock = mount_sse_sequence(
+        &primary_server,
+        vec![
+            sse(vec![json!({
+                "type": "response.failed",
+                "response": {
+                    "id": "resp-1",
+                    "error": {
+                        "type": "invalid_request_error",
+                        "message": "Failed to deserialize the JSON body into the target type: tools[4].type: unknown variant 'custom', expected 'function'"
+                    }
+                }
+            })]),
+            sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+        ],
+    )
+    .await;
+
+    let fallback_server = responses::start_mock_server().await;
+    let fallback_mock = mount_sse_once(
+        &fallback_server,
+        sse(vec![
+            ev_response_created("resp-fallback"),
+            ev_completed("resp-fallback"),
+        ]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let primary_base_url = format!("{}/v1", primary_server.uri());
+        let fallback_base_url = format!("{}/v1", fallback_server.uri());
+        move |config| {
+            config.include_apply_patch_tool = true;
+            config.model_provider.base_url = Some(primary_base_url);
+            config.model_provider.wire_api = WireApi::Responses;
+            config.model_provider.supports_websockets = false;
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+            config.fallback_providers = vec![codex_core::config::FallbackProviderConfig {
+                provider_id: "fallback".to_string(),
+                provider: ModelProviderInfo {
+                    name: Some("fallback".to_string()),
+                    model: None,
+                    base_url: Some(fallback_base_url),
+                    env_key: None,
+                    model_catalog: None,
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    auth: None,
+                    aws: None,
+                    wire_api: WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: Some(0),
+                    stream_max_retries: Some(0),
+                    stream_idle_timeout_ms: None,
+                    retry_base_delay_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                    model_context_window: None,
+                    model_auto_compact_token_limit: None,
+                    max_output_tokens: None,
+                    skip_reasoning_popup: false,
+                    retry_429: true,
+                },
+                model: Some("fallback-model".to_string()),
+            }];
+        }
+    });
+    let test = builder.build(&primary_server).await?;
+
+    test.submit_turn("hello").await?;
+
+    assert_eq!(primary_mock.requests().len(), 2);
+    assert_eq!(fallback_mock.requests().len(), 0);
+
+    let primary_requests = primary_mock.requests();
+    let first_body: Value = primary_requests[0].body_json();
+    let second_body: Value = primary_requests[1].body_json();
+    let first_apply_patch_type = first_body["tools"]
+        .as_array()
+        .and_then(|tools| {
+            tools
+                .iter()
+                .find(|tool| tool["name"].as_str() == Some("apply_patch"))
+        })
+        .and_then(|tool| tool["type"].as_str());
+    let second_apply_patch_type = second_body["tools"]
+        .as_array()
+        .and_then(|tools| {
+            tools
+                .iter()
+                .find(|tool| tool["name"].as_str() == Some("apply_patch"))
+        })
+        .and_then(|tool| tool["type"].as_str());
+
+    assert_eq!(first_apply_patch_type, Some("custom"));
+    assert_eq!(second_apply_patch_type, Some("function"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

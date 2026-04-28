@@ -1,2 +1,4 @@
 [zmemory]
 path = "/workspace/.agents/memory.db"
+
+artifact_location = "project"

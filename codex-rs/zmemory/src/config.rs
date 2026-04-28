@@ -10,7 +10,7 @@ pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
 pub const DEFAULT_NAMESPACE: &str = "";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
-const DEFAULT_VALID_DOMAINS: &[&str] = &["core", "project", "notes"];
+const DEFAULT_VALID_DOMAINS: &[&str] = &["core", "project", "notes", "session"];
 const DEFAULT_CORE_MEMORY_URIS: &[&str] = &[
     "core://agent/coding_operating_manual",
     "core://my_user/coding_preferences",

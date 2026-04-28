@@ -756,6 +756,29 @@
       },
       "type": "object"
     },
+    "ContextHooksToml": {
+      "additionalProperties": false,
+      "description": "Context-aware session hook settings in TOML format.",
+      "properties": {
+        "enabled": {
+          "description": "Enable built-in PostToolUse recording and SessionStart snapshot injection.",
+          "type": "boolean"
+        },
+        "max_events_per_snapshot": {
+          "description": "Maximum number of recorded events included in a snapshot.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "snapshot_token_budget": {
+          "description": "Token budget for generated session snapshots.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "ExternalConfigMigrationPrompts": {
       "additionalProperties": false,
       "description": "Settings for notices we display to users via the tui and app-server clients (primarily the Codex IDE extension). NOTE: these are different from notifications - notices are warnings, NUX screens, acknowledgements, etc.",
@@ -1423,6 +1446,11 @@
         "requires_openai_auth": {
           "default": false,
           "description": "Does this provider require an OpenAI API Key or ChatGPT login token? If true, user is presented with login screen on first run, and login preference and token/key are stored in auth.json. If false (which is the default), login screen is skipped, and API key (if needed) comes from the \"env_key\" environment variable.",
+          "type": "boolean"
+        },
+        "retry_429": {
+          "default": true,
+          "description": "When true, HTTP 429 (Too Many Requests) responses will be retried with exponential backoff, up to the provider's `request_max_retries` limit. Defaults to true because provider-side rate limits are usually transient and should be retried like 5xx responses.",
           "type": "boolean"
         },
         "retry_base_delay_ms": {
@@ -2742,6 +2770,14 @@
         "enabled": {
           "description": "Enables ztldr's global runtime behavior. Defaults to false.",
           "type": "boolean"
+        },
+        "model": {
+          "description": "Default semantic embedding model. Project `.codex/tldr.toml` overrides this.",
+          "type": "string"
+        },
+        "onnxruntime": {
+          "description": "Enables the ONNX Runtime backed embedding backend. Defaults to true.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -2865,6 +2901,14 @@
     "compact_prompt": {
       "description": "Compact prompt used for history compaction.",
       "type": "string"
+    },
+    "context_hooks": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContextHooksToml"
+        }
+      ],
+      "description": "Built-in context-aware session hook settings."
     },
     "default_permissions": {
       "description": "Default named permissions profile to apply from the `[permissions]` table.",

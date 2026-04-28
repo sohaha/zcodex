@@ -15,6 +15,7 @@ codex ztldr change-impact --project /path/to/repo --language rust path/to/file.r
 codex ztldr semantic --project /path/to/repo --language rust "where is config loaded"
 codex ztldr diagnostics --project /path/to/repo path/to/file.rs
 codex ztldr daemon --project /path/to/repo status
+codex ztldr daemon --project /path/to/repo reindex
 ```
 
 支持的分析类子命令包括：
@@ -37,7 +38,9 @@ codex ztldr daemon --project /path/to/repo status
 - `diagnostics`：运行语言诊断工具集合。
 - `doctor`：探测诊断工具可用性。
 
-Daemon 子命令包括 `start`、`stop`、`ping`、`warm`、`snapshot`、`status` 和 `notify <path>`。
+Daemon 子命令包括 `start`、`stop`、`ping`、`warm`、`reindex`、`snapshot`、`status` 和 `notify <path>`。`warm` 会预热 daemon 缓存并在 dirty 阈值触发时重建索引；`reindex` 会显式请求运行中的 daemon 立即重建当前项目语义索引。
+
+`codex zinit ztldr` 首次安装 ONNX Runtime 并预热默认模型后，会检测当前目录所在 Git 仓库是否已有运行中的 ztldr daemon；如果存在，会向该 daemon 发送 `reindex` 请求。显式传入 `codex zinit --model <模型> ztldr` 时也会执行同样的运行中 daemon 检测与索引重建请求。该检测不会自动启动 daemon。若全局 `[ztldr].onnxruntime = false`，`zinit` 会跳过 ONNX Runtime 安装和模型预热。
 
 ## 语言与降级
 
@@ -53,11 +56,13 @@ Daemon 子命令包括 `start`、`stop`、`ping`、`warm`、`snapshot`、`status
 [ztldr]
 enabled = true
 artifact_location = "project"
+onnxruntime = false
+model = "jina-code"
 ```
 
-`enabled` 是总开关，默认 `false`。`artifact_location` 支持 `"temp"` 和 `"project"`，默认 `"temp"`。只有同时设置 `enabled = true` 且 `artifact_location = "project"` 时，ztldr 的本地产物才会写入当前项目根目录下的 `.tldr/`，对齐上游 `llm-tldr` 的项目内产物路径；典型路径包括 `.tldr/cache/semantic/`。其他情况下继续使用默认 runtime/temp artifact 目录。
+`enabled` 是总开关，默认 `false`。`artifact_location` 支持 `"temp"` 和 `"project"`，默认 `"temp"`。只有同时设置 `enabled = true` 且 `artifact_location = "project"` 时，ztldr 的本地产物才会写入当前项目根目录下的 `.tldr/`，对齐上游 `llm-tldr` 的项目内产物路径；典型路径包括 `.tldr/cache/semantic/`。`onnxruntime` 默认 `true`；设置为 `false` 后，ztldr 会全局关闭 ONNX Runtime backed embedding，不加载 ONNX Runtime，不预热 embedding 模型，并退回无 dense embedding 的语义索引路径。`model` 用作语义嵌入模型的默认值，优先级低于 `.codex/tldr.toml` 的 `[semantic].model`。其他情况下继续使用默认 runtime/temp artifact 目录。
 
-`ztldr` 的 daemon、semantic 和 session 参数来自项目根目录下的 `.codex/tldr.toml`。如果该文件不存在，Codex 使用内置默认值。
+`ztldr` 的 daemon、semantic 和 session 参数来自项目根目录下的 `.codex/tldr.toml`。如果该文件不存在，Codex 使用内置默认值和 `[ztldr]` 中的全局语义模型默认值。
 
 `.codex/tldr.toml` 示例：
 
@@ -86,7 +91,7 @@ idle_timeout_secs = 1800
 - `[daemon].auto_start`：查询 daemon 时是否允许自动启动；默认 `true`。
 - `[daemon].socket_mode`：daemon socket 模式；默认 `"auto"`。
 - `[semantic].enabled`：是否启用语义索引能力；默认 `true`。
-- `[semantic].model`：语义嵌入模型；默认 `"bge-m3"`。支持的模型包括 `minilm`、`all-minilm-l6-v2`、`bge-small-en-v1.5`、`bge-base-en-v1.5`、`bge-m3`、`jina-code`、`jina-embeddings-v2-base-code`。
+- `[semantic].model`：语义嵌入模型；默认 `"minilm"`。支持的模型包括 `minilm`、`all-minilm-l6-v2`、`bge-small-en-v1.5`、`bge-base-en-v1.5`、`bge-m3`、`jina-code`、`jina-embeddings-v2-base-code`。如果 `[ztldr].model` 也存在，则 `.codex/tldr.toml` 的 `[semantic].model` 优先。
 - `[semantic].auto_reindex_threshold`：dirty 文件达到多少时触发自动重建索引；默认 `20`。
 - `[semantic].ignore`：语义索引忽略模式列表；默认空列表。
 - `[semantic.embedding].enabled`：是否启用 embedding；默认 `true`。

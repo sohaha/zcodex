@@ -24,6 +24,56 @@ pub struct ZmemoryToml {
     pub namespace: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ContextHooksToml {
+    pub enabled: Option<bool>,
+    pub snapshot_token_budget: Option<usize>,
+    pub max_events_per_snapshot: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContextHooksConfig {
+    pub enabled: bool,
+    pub snapshot_token_budget: usize,
+    pub max_events_per_snapshot: usize,
+}
+
+impl ContextHooksConfig {
+    pub fn from_toml(toml: Option<ContextHooksToml>) -> Self {
+        let defaults = codex_context_hooks::ContextHooksSettings::default();
+        let Some(toml) = toml else {
+            return Self {
+                enabled: false,
+                snapshot_token_budget: defaults.snapshot_token_budget,
+                max_events_per_snapshot: defaults.max_events_per_snapshot,
+            };
+        };
+        Self {
+            enabled: toml.enabled.unwrap_or(false),
+            snapshot_token_budget: toml
+                .snapshot_token_budget
+                .unwrap_or(defaults.snapshot_token_budget),
+            max_events_per_snapshot: toml
+                .max_events_per_snapshot
+                .unwrap_or(defaults.max_events_per_snapshot),
+        }
+    }
+
+    pub fn to_context_hooks_settings(&self) -> codex_context_hooks::ContextHooksSettings {
+        codex_context_hooks::ContextHooksSettings {
+            snapshot_token_budget: self.snapshot_token_budget,
+            max_events_per_snapshot: self.max_events_per_snapshot,
+        }
+    }
+}
+
+impl Default for ContextHooksConfig {
+    fn default() -> Self {
+        Self::from_toml(None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZmemoryConfig {
     pub path: Option<PathBuf>,

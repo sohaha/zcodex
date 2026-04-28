@@ -517,10 +517,12 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
                     }
                   }
                 },
+                "onnxRuntime": { "$ref": "#/$defs/onnxRuntimeStatus" },
                 "doctor": {
                   "type": "object",
                   "properties": {
                     "message": { "type": "string" },
+                    "onnx_runtime": { "$ref": "#/$defs/onnxRuntimeStatus" },
                     "tools": {
                       "type": "array",
                       "items": {
@@ -545,7 +547,27 @@ static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match ser
                 "project",
                 "message",
                 "tools",
+                "onnxRuntime",
                 "doctor"
+              ]
+            },
+            "onnxRuntimeStatus": {
+              "type": "object",
+              "properties": {
+                "embedding_enabled": { "type": "boolean" },
+                "checked": { "type": "boolean" },
+                "loadable": { "type": "boolean" },
+                "would_use": { "type": "boolean" },
+                "dylib_path": { "type": ["string", "null"] },
+                "reason": { "type": ["string", "null"] }
+              },
+              "required": [
+                "embedding_enabled",
+                "checked",
+                "loadable",
+                "would_use",
+                "dylib_path",
+                "reason"
               ]
             },
             "daemonResult": {
@@ -1903,6 +1925,7 @@ fn run_doctor_tool(project_root: &Path, args: &TldrToolCallParam) -> Result<Tldr
         "language": args.language.map(SupportedLanguage::from).map(SupportedLanguage::as_str),
         "message": response.message,
         "tools": response.tools,
+        "onnxRuntime": response.onnx_runtime,
         "doctor": response,
     });
     let text = structured_content["message"]

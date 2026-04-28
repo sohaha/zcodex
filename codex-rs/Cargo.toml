@@ -29,6 +29,7 @@ members = [
     "collaboration-mode-templates",
     "connectors",
     "config",
+    "context-hooks",
     "device-key",
     "shell-command",
     "shell-escalation",
@@ -141,6 +142,7 @@ codex-code-mode = { path = "code-mode" }
 codex-collaboration-mode-templates = { path = "collaboration-mode-templates" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
+codex-context-hooks = { path = "context-hooks" }
 codex-core = { path = "core" }
 codex-core-plugins = { path = "core-plugins" }
 codex-core-skills = { path = "core-skills" }

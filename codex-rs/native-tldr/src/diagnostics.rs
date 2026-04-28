@@ -5,6 +5,7 @@ use crate::api::DiagnosticsRequest;
 use crate::api::DiagnosticsResponse;
 use crate::api::DoctorRequest;
 use crate::api::DoctorResponse;
+use crate::api::OnnxRuntimeStatus;
 use crate::lang_support::SupportedLanguage;
 use anyhow::Context;
 use anyhow::Result;
@@ -86,7 +87,10 @@ pub(crate) fn collect_diagnostics(
     })
 }
 
-pub(crate) fn doctor_tools(request: DoctorRequest) -> DoctorResponse {
+pub(crate) fn doctor_tools(
+    request: DoctorRequest,
+    onnx_runtime: OnnxRuntimeStatus,
+) -> DoctorResponse {
     let mut tools = [
         "cargo",
         "cargo-clippy",
@@ -126,6 +130,7 @@ pub(crate) fn doctor_tools(request: DoctorRequest) -> DoctorResponse {
     };
     DoctorResponse {
         tools,
+        onnx_runtime,
         message: format!("doctor found {available} available tools{install_hint}"),
     }
 }
@@ -214,11 +219,14 @@ mod tests {
 
     #[test]
     fn doctor_reports_known_tool_entries() {
-        let response = doctor_tools(DoctorRequest {
-            language: None,
-            only_tools: Vec::new(),
-            include_install_hints: true,
-        });
+        let response = doctor_tools(
+            DoctorRequest {
+                language: None,
+                only_tools: Vec::new(),
+                include_install_hints: true,
+            },
+            Default::default(),
+        );
         assert!(response.tools.iter().any(|tool| tool.tool == "cargo"));
         assert!(response.tools.iter().any(|tool| tool.tool == "python3"));
     }

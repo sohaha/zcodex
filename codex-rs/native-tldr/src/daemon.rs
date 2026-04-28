@@ -106,6 +106,7 @@ pub enum TldrDaemonCommand {
     Semantic {
         request: SemanticSearchRequest,
     },
+    Reindex,
     Notify {
         path: PathBuf,
     },
@@ -438,6 +439,10 @@ impl TldrDaemon {
                     daemon_status: None,
                     reindex_report: None,
                 })
+            }
+            TldrDaemonCommand::Reindex => {
+                let mut session = self.session.lock().await;
+                reindex_project_with_session(&mut session, &self.engine)
             }
         }
     }
@@ -788,6 +793,10 @@ async fn handle_with_session(
                 reindex_report: None,
             })
         }
+        TldrDaemonCommand::Reindex => {
+            let mut guard = session.lock().await;
+            reindex_project_with_session(&mut guard, engine)
+        }
     }
 }
 
@@ -1038,6 +1047,79 @@ fn warm_with_reindex(session: &mut Session, engine: &TldrEngine) -> WarmOutcome 
                 }
             }
         }
+    }
+}
+
+fn reindex_project_with_session(
+    session: &mut Session,
+    engine: &TldrEngine,
+) -> Result<TldrDaemonResponse> {
+    let embedding_enabled = engine.config().semantic.embedding_enabled;
+    let embedding_dimensions = engine.config().semantic.embedding.dimensions;
+    if session.background_reindex_in_progress() {
+        let report = SemanticReindexReport::skipped(
+            Vec::new(),
+            "background semantic reindex already in progress",
+            embedding_enabled,
+            embedding_dimensions,
+        );
+        session.record_reindex_attempt(report.clone());
+        return Ok(reindex_response(report));
+    }
+
+    let languages = match engine.project_languages() {
+        Ok(languages) => languages,
+        Err(err) => {
+            let report = SemanticReindexReport::failed(
+                Vec::new(),
+                err.to_string(),
+                embedding_enabled,
+                embedding_dimensions,
+            );
+            session.record_reindex_attempt(report.clone());
+            return Ok(reindex_response(report));
+        }
+    };
+    if languages.is_empty() {
+        let report = SemanticReindexReport::skipped(
+            Vec::new(),
+            "reindex skipped: no supported source languages found",
+            embedding_enabled,
+            embedding_dimensions,
+        );
+        session.record_reindex_attempt(report.clone());
+        return Ok(reindex_response(report));
+    }
+
+    let report = match engine.semantic_reindex_languages(&languages) {
+        Ok(report) => report,
+        Err(err) => SemanticReindexReport::failed(
+            languages,
+            err.to_string(),
+            embedding_enabled,
+            embedding_dimensions,
+        ),
+    };
+    session.record_reindex_attempt(report.clone());
+    if report.is_completed() {
+        session.complete_reindex(report.clone());
+    }
+    Ok(reindex_response(report))
+}
+
+fn reindex_response(report: SemanticReindexReport) -> TldrDaemonResponse {
+    TldrDaemonResponse {
+        status: "ok".to_string(),
+        message: report.message.clone(),
+        analysis: None,
+        imports: None,
+        importers: None,
+        search: None,
+        diagnostics: None,
+        semantic: None,
+        snapshot: None,
+        daemon_status: None,
+        reindex_report: Some(report),
     }
 }
 
@@ -1613,7 +1695,8 @@ fn io_timeout_for_command(command: &TldrDaemonCommand) -> Duration {
         | TldrDaemonCommand::Importers { .. }
         | TldrDaemonCommand::Search { .. }
         | TldrDaemonCommand::Diagnostics { .. }
-        | TldrDaemonCommand::Semantic { .. } => DAEMON_HEAVY_IO_TIMEOUT,
+        | TldrDaemonCommand::Semantic { .. }
+        | TldrDaemonCommand::Reindex => DAEMON_HEAVY_IO_TIMEOUT,
     }
 }
 
@@ -2276,6 +2359,32 @@ mod tests {
         assert!(snapshot.last_query_at.is_some());
         assert_eq!(snapshot.last_reindex, warm.reindex_report);
         assert_eq!(snapshot.last_reindex_attempt, warm.reindex_report);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reindex_skips_when_project_has_no_supported_sources() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        let daemon = TldrDaemon::from_config(config);
+
+        let response = daemon
+            .handle_command(TldrDaemonCommand::Reindex)
+            .await
+            .expect("reindex should succeed");
+        let report = response
+            .reindex_report
+            .expect("reindex response should include report");
+
+        assert_eq!(
+            report.status,
+            crate::semantic::SemanticReindexStatus::Skipped
+        );
+        assert_eq!(report.languages, Vec::new());
+        assert_eq!(
+            response.message,
+            "reindex skipped: no supported source languages found"
+        );
     }
 
     #[tokio::test]
@@ -3238,6 +3347,10 @@ mod tests {
         );
         assert_eq!(
             io_timeout_for_command(&TldrDaemonCommand::Warm),
+            DAEMON_HEAVY_IO_TIMEOUT
+        );
+        assert_eq!(
+            io_timeout_for_command(&TldrDaemonCommand::Reindex),
             DAEMON_HEAVY_IO_TIMEOUT
         );
         assert_eq!(

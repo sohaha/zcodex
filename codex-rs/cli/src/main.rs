@@ -2423,6 +2423,20 @@ mod tests {
     }
 
     #[test]
+    fn zinit_help_lists_supported_embedding_models() {
+        let rendered = localized_multitool_command()
+            .try_get_matches_from(["codex", "zinit", "--help"])
+            .expect_err("help should short-circuit")
+            .to_string();
+        let help = localize_help_output(rendered);
+
+        assert!(help.contains("可选模型："), "{help}");
+        for model in codex_native_tldr::semantic::SUPPORTED_SEMANTIC_MODELS {
+            assert!(help.contains(model), "{help}");
+        }
+    }
+
+    #[test]
     fn resume_short_alias_r_parses() {
         let cli = MultitoolCli::try_parse_from(["codex", "r", "--last"]).expect("parse");
         assert!(matches!(cli.subcommand, Some(Subcommand::Resume(_))));
@@ -3150,9 +3164,17 @@ mod tests {
 
     #[test]
     fn zinit_parses_as_top_level_command() {
-        let cli = MultitoolCli::try_parse_from(["codex", "zinit", "--check", "--model", "bge-m3"])
+        let cli = MultitoolCli::try_parse_from(["codex", "zinit", "--check", "--model", "minilm"])
             .expect("parse should succeed");
         assert!(matches!(cli.subcommand, Some(Subcommand::Zinit(_))));
+    }
+
+    #[test]
+    fn zinit_no_model_conflicts_with_model() {
+        let parse_result =
+            MultitoolCli::try_parse_from(["codex", "zinit", "--model", "minilm", "--no-model"]);
+
+        assert!(parse_result.is_err());
     }
 
     #[test]

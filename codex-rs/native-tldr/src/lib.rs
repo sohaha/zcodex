@@ -33,6 +33,7 @@ use crate::api::ImportsRequest;
 use crate::api::ImportsResponse;
 use crate::api::SearchRequest;
 use crate::api::SearchResponse;
+pub use crate::config::load_global_ztldr_config;
 pub use crate::config::load_tldr_config;
 use crate::daemon::DaemonConfig;
 use crate::daemon::TldrDaemonConfigSummary;
@@ -96,6 +97,7 @@ impl TldrConfig {
 pub struct ZtldrConfig {
     pub enabled: bool,
     pub artifact_location: ZtldrArtifactLocation,
+    pub onnxruntime: bool,
 }
 
 impl Default for ZtldrConfig {
@@ -103,6 +105,7 @@ impl Default for ZtldrConfig {
         Self {
             enabled: false,
             artifact_location: ZtldrArtifactLocation::Temp,
+            onnxruntime: true,
         }
     }
 }
@@ -110,6 +113,10 @@ impl Default for ZtldrConfig {
 impl ZtldrConfig {
     pub fn uses_project_artifacts(&self) -> bool {
         self.enabled && matches!(self.artifact_location, ZtldrArtifactLocation::Project)
+    }
+
+    pub fn uses_onnxruntime(&self) -> bool {
+        self.onnxruntime
     }
 }
 
@@ -309,7 +316,9 @@ impl TldrEngine {
     }
 
     pub fn doctor(&self, request: DoctorRequest) -> DoctorResponse {
-        doctor_tools(request)
+        let onnx_runtime =
+            crate::semantic::onnx_runtime_status(self.config.semantic.embedding_enabled());
+        doctor_tools(request, onnx_runtime)
     }
 }
 

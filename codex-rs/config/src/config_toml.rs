@@ -13,6 +13,7 @@ use crate::types::AppsConfigToml;
 use crate::types::AuthCredentialsStoreMode;
 use crate::types::BuddyReactionStrategy;
 use crate::types::BuddySoul;
+use crate::types::ContextHooksToml;
 use crate::types::FeedbackConfigToml;
 use crate::types::History;
 use crate::types::MarketplaceConfig;
@@ -363,6 +364,8 @@ pub struct ConfigToml {
     pub ztok: Option<ZtokToml>,
     /// Zmemory subsystem settings.
     pub zmemory: Option<ZmemoryToml>,
+    /// Built-in context-aware session hook settings.
+    pub context_hooks: Option<ContextHooksToml>,
 
     /// When true, show the buddy/companion agent in the TUI.
     pub tui_show_buddy: Option<bool>,

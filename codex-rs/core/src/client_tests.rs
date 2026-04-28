@@ -1,23 +1,30 @@
 use super::AuthRequestTelemetryContext;
 use super::ModelClient;
+use super::ModelClientSession;
 use super::PendingUnauthorizedRetry;
+use super::Prompt;
 use super::UnauthorizedRecoveryExecution;
 use super::X_CODEX_INSTALLATION_ID_HEADER;
 use super::X_CODEX_PARENT_THREAD_ID_HEADER;
 use super::X_CODEX_TURN_METADATA_HEADER;
 use super::X_CODEX_WINDOW_ID_HEADER;
 use super::X_OPENAI_SUBAGENT_HEADER;
+use codex_api::ApiError;
+use codex_api::TransportError;
 use codex_app_server_protocol::AuthMode;
 use codex_model_provider::BearerAuthProvider;
 use codex_model_provider_info::WireApi;
 use codex_model_provider_info::create_oss_provider_with_base_url;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
+use codex_protocol::error::CodexErr;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_tools::create_apply_patch_freeform_tool;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::sync::atomic::Ordering;
 
 fn test_model_client(session_source: SessionSource) -> ModelClient {
     let provider = create_oss_provider_with_base_url("https://example.com/v1", WireApi::Responses);
@@ -169,4 +176,88 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     assert!(auth_context.retry_after_unauthorized);
     assert_eq!(auth_context.recovery_mode, Some("managed"));
     assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
+}
+
+fn unsupported_custom_tool_error() -> ApiError {
+    ApiError::Transport(TransportError::Http {
+        status: http::StatusCode::BAD_REQUEST,
+        url: Some("https://example.com/v1/responses".to_string()),
+        headers: None,
+        body: Some(
+            "Failed to deserialize the JSON body into the target type: tools[4].type: unknown variant 'custom', expected 'function'"
+                .to_string(),
+        ),
+    })
+}
+
+fn apply_patch_prompt() -> Prompt {
+    Prompt {
+        tools: vec![create_apply_patch_freeform_tool()],
+        ..Prompt::default()
+    }
+}
+
+#[test]
+fn responses_custom_tool_rejection_triggers_local_retry_gate() {
+    let client = test_model_client(SessionSource::Cli);
+    let session = client.new_session();
+
+    assert!(session.should_retry_without_freeform_apply_patch(
+        &unsupported_custom_tool_error(),
+        &apply_patch_prompt(),
+    ));
+}
+
+#[test]
+fn responses_stream_custom_tool_rejection_triggers_local_retry_gate() {
+    let client = test_model_client(SessionSource::Cli);
+    let session = client.new_session();
+
+    assert!(session.should_retry_without_freeform_apply_patch_stream_error(
+        &CodexErr::InvalidRequest(
+            "Failed to deserialize the JSON body into the target type: tools[4].type: unknown variant 'custom', expected 'function'"
+                .to_string(),
+        ),
+        &apply_patch_prompt(),
+    ));
+}
+
+#[test]
+fn responses_request_downgrades_apply_patch_after_learning_custom_tools_are_unsupported() {
+    let client = test_model_client(SessionSource::Cli);
+    let mut session: ModelClientSession = client.new_session();
+    session.disable_responses_custom_apply_patch();
+
+    assert!(
+        session
+            .client
+            .state
+            .disable_responses_custom_apply_patch
+            .load(Ordering::Relaxed)
+    );
+
+    let request = session
+        .build_responses_request(
+            &session
+                .client
+                .state
+                .provider
+                .info()
+                .to_api_provider(/*auth_mode*/ None)
+                .expect("provider config should convert"),
+            &apply_patch_prompt(),
+            &test_model_info(),
+            /*effort*/ None,
+            codex_protocol::config_types::ReasoningSummary::Auto,
+            /*service_tier*/ None,
+        )
+        .expect("responses request should build");
+
+    assert_eq!(
+        request
+            .tools
+            .first()
+            .expect("apply_patch tool should exist")["type"],
+        json!("function")
+    );
 }

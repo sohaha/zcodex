@@ -1,6 +1,8 @@
 use crate::agents_md::AgentsMdManager;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
+use crate::config::types::ContextHooksConfig;
+use crate::config::types::ContextHooksToml;
 use crate::config::types::ZmemoryToml;
 use crate::config::types::ZtokConfig;
 use crate::config_loader::CloudRequirementsLoader;
@@ -498,6 +500,8 @@ pub struct Config {
     pub ztok: ZtokConfig,
     /// Zmemory persistent-memory settings.
     pub zmemory: ZmemoryConfig,
+    /// Built-in context-aware session hook settings.
+    pub context_hooks: ContextHooksConfig,
 
     pub tui_show_buddy: bool,
 
@@ -2529,6 +2533,13 @@ impl Config {
                 core_memory_uris: z.core_memory_uris,
                 namespace: z.namespace,
             })),
+            context_hooks: ContextHooksConfig::from_toml(
+                cfg.context_hooks.clone().map(|context_hooks| ContextHooksToml {
+                    enabled: context_hooks.enabled,
+                    snapshot_token_budget: context_hooks.snapshot_token_budget,
+                    max_events_per_snapshot: context_hooks.max_events_per_snapshot,
+                }),
+            ),
             tui_show_buddy: cfg.tui_show_buddy.unwrap_or(true),
             tui_buddy_soul: cfg.tui_buddy_soul,
             tui_buddy_reactions_enabled: cfg.tui_buddy_reactions_enabled.unwrap_or(true),

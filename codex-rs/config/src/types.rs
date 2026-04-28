@@ -1023,6 +1023,10 @@ pub struct ZtldrToml {
     pub enabled: Option<bool>,
     /// Selects where ztldr writes generated artifacts. Defaults to `temp`.
     pub artifact_location: Option<ZtldrArtifactLocation>,
+    /// Enables the ONNX Runtime backed embedding backend. Defaults to true.
+    pub onnxruntime: Option<bool>,
+    /// Default semantic embedding model. Project `.codex/tldr.toml` overrides this.
+    pub model: Option<String>,
 }
 
 /// Location for generated ztldr artifacts.
@@ -1034,6 +1038,18 @@ pub enum ZtldrArtifactLocation {
     Temp,
     /// Store artifacts under the current project root's `.tldr` directory.
     Project,
+}
+
+/// Context-aware session hook settings in TOML format.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ContextHooksToml {
+    /// Enable built-in PostToolUse recording and SessionStart snapshot injection.
+    pub enabled: Option<bool>,
+    /// Token budget for generated session snapshots.
+    pub snapshot_token_budget: Option<usize>,
+    /// Maximum number of recorded events included in a snapshot.
+    pub max_events_per_snapshot: Option<usize>,
 }
 
 /// Ztok subsystem settings in TOML format.
