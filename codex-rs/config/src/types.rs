@@ -1045,6 +1045,7 @@ pub enum ZtldrArtifactLocation {
 #[schemars(deny_unknown_fields)]
 pub struct ContextHooksToml {
     /// Enable built-in PostToolUse recording and SessionStart snapshot injection.
+    /// Defaults to true; use `[features] zcontext = false` to disable all zcontext behavior.
     pub enabled: Option<bool>,
     /// Token budget for generated session snapshots.
     pub snapshot_token_budget: Option<usize>,

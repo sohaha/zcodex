@@ -44,13 +44,13 @@ impl ContextHooksConfig {
         let defaults = codex_context_hooks::ContextHooksSettings::default();
         let Some(toml) = toml else {
             return Self {
-                enabled: false,
+                enabled: true,
                 snapshot_token_budget: defaults.snapshot_token_budget,
                 max_events_per_snapshot: defaults.max_events_per_snapshot,
             };
         };
         Self {
-            enabled: toml.enabled.unwrap_or(false),
+            enabled: toml.enabled.unwrap_or(true),
             snapshot_token_budget: toml
                 .snapshot_token_budget
                 .unwrap_or(defaults.snapshot_token_budget),

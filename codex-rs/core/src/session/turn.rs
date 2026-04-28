@@ -1162,7 +1162,7 @@ async fn run_sampling_request(
             continue;
         }
 
-        if !err.is_retryable() {
+        if !should_retry_sampling_request(&err) {
             return Err(err);
         }
 
@@ -1303,8 +1303,16 @@ fn should_retry_with_fallback_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::REQUEST_TIMEOUT || status.is_server_error()
 }
 
+fn should_retry_sampling_request(err: &CodexErr) -> bool {
+    match err {
+        CodexErr::UnexpectedStatus(err) => should_retry_with_fallback_status(err.status),
+        _ => err.is_retryable(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::should_retry_sampling_request;
     use super::should_retry_with_fallback_provider;
     use super::should_retry_with_fallback_status;
     use codex_protocol::error::CodexErr;
@@ -1349,6 +1357,19 @@ mod tests {
         assert!(!should_retry_with_fallback_provider(
             &CodexErr::InvalidRequest("bad request".to_string())
         ));
+    }
+
+    #[test]
+    fn sampling_request_retries_only_transient_http_statuses() {
+        assert!(should_retry_sampling_request(&unexpected_status(
+            reqwest::StatusCode::BAD_GATEWAY
+        )));
+        assert!(!should_retry_sampling_request(&unexpected_status(
+            reqwest::StatusCode::UNAUTHORIZED
+        )));
+        assert!(!should_retry_sampling_request(&unexpected_status(
+            reqwest::StatusCode::NOT_FOUND
+        )));
     }
 }
 

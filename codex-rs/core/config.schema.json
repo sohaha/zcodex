@@ -660,6 +660,9 @@
             },
             "workspace_owner_usage_nudge": {
               "type": "boolean"
+            },
+            "zcontext": {
+              "type": "boolean"
             }
           },
           "type": "object"
@@ -761,7 +764,7 @@
       "description": "Context-aware session hook settings in TOML format.",
       "properties": {
         "enabled": {
-          "description": "Enable built-in PostToolUse recording and SessionStart snapshot injection.",
+          "description": "Enable built-in PostToolUse recording and SessionStart snapshot injection. Defaults to true; use `[features] zcontext = false` to disable all zcontext behavior.",
           "type": "boolean"
         },
         "max_events_per_snapshot": {
@@ -3209,6 +3212,9 @@
           "type": "boolean"
         },
         "workspace_owner_usage_nudge": {
+          "type": "boolean"
+        },
+        "zcontext": {
           "type": "boolean"
         }
       },

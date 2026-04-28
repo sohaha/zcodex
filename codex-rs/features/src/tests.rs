@@ -79,6 +79,14 @@ fn guardian_approval_is_stable_and_enabled_by_default() {
 }
 
 #[test]
+fn zcontext_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::ZContext.stage(), Stage::Stable);
+    assert_eq!(Feature::ZContext.default_enabled(), true);
+    assert_eq!(feature_for_key("zcontext"), Some(Feature::ZContext));
+    assert!(Features::with_defaults().enabled(Feature::ZContext));
+}
+
+#[test]
 fn external_migration_is_experimental_and_disabled_by_default() {
     let spec = Feature::ExternalMigration.info();
     let stage = spec.stage;

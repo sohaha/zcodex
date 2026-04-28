@@ -28,6 +28,7 @@
 ## 最近三天反思
 - 时间窗按当前日期 `2026-04-28` 计算，覆盖 `2026-04-26` 至 `2026-04-28`。
 - 更早的历史反思直接到 `.agents/llmdoc/memory/reflections/` 按日期文件名检索。
+- `.agents/llmdoc/memory/reflections/2026-04-28-ztok-sqz-selective-expand-no-cache-verification.md`：选择性吸收 `sqz` 的 `cache expand` / `--no-cache` 行为时，要同步 runtime、Embedded ZTOK 提示词和 `.version/sqz.toml`，并在 dirty monorepo 中用独立 `CARGO_TARGET_DIR` 做定向验证，避免共享 target 锁竞争或无关 `core` 配置漂移污染结论。
 - `.agents/llmdoc/memory/reflections/2026-04-28-ztok-rtk-baseline-can-advance-with-intentional-runtime-divergence.md`：升级 `upgrade-rtk` 时，如果上游新版本只改 hook/discover/meta 或会削弱本地 `ztok` 压缩合同，可以在审计后只推进 RTK baseline；不要用上游简化 `curl` 覆盖本地 fetcher compression、内部 URL 保真、session dedup 与 trace redaction，也不要顺手推进未采用的新 `sqz` 基线。
 - `.agents/llmdoc/memory/reflections/2026-04-28-rollout-persistence-should-prefilter-nonpersistent-events-before-live-writer-lookup.md`：shutdown 后的非持久化事件不应先查 live rollout writer；`Session::persist_rollout_items()` 要复用 rollout policy 预过滤，测试应断言不再出现 `failed to record rollout items` 日志，而不是断言 `ShutdownComplete` 落盘。
 - `.agents/llmdoc/memory/reflections/2026-04-28-responses-custom-tool-provider-compat-must-retry-at-stream-consumer-boundary.md`：Responses 兼容 provider 对 `apply_patch` 的 `type=custom` 拒绝可能在流内部才变成 `CodexErr::InvalidRequest`；同 provider 自愈必须同时覆盖 request 建立点和 `ResponseStream` 消费边界，且能力学习要来自 provider 实际报错，不要根据官方域名/URL 猜测。

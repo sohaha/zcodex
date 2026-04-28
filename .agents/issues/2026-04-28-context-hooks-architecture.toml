@@ -15,7 +15,7 @@ done_when = "`features.zcontext` 稳定默认开启，`[features] zcontext = fal
 validate_by = "优先运行 `cd codex-rs && cargo nextest run -p codex-features`，再运行覆盖配置默认值和 CLI/profile disable 的定向 `codex-core` 测试；修改配置 schema 后运行 `cd codex-rs && just write-config-schema`"
 regress_by = "cd codex-rs && just fmt && just fix -p codex-features；若 `codex-core` 配置代码有改动，再运行 `just fix -p codex-core`"
 regress_timing = "before_fanout"
-status = "todo"
+status = "in_progress"
 validate_status = "not_run"
 regress_status = "not_run"
 notes = "当前会话 capability 适配：已使用 `llmdoc` 加载仓库知识与 `cadence-issue-generation` 规则；未派发 subagent，因为 Cadence lifecycle 规定 Codex 中没有用户显式授权时不派发子代理；未调用 ztldr，因为本阶段事实源来自指定计划文件和 Cadence 模板，结构代码检索不会提高 issue 拆分质量。执行时先保护现有 `codex-rs/features/src/lib.rs` 脏改动边界，只纳入与本任务直接相关的 hunks。"

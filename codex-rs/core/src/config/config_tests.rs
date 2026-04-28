@@ -32,6 +32,7 @@ use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::AppToolApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::BundledSkillsConfig;
+use codex_config::types::ContextHooksToml;
 use codex_config::types::FeedbackConfigToml;
 use codex_config::types::HistoryPersistence;
 use codex_config::types::McpServerEnvVar;
@@ -2303,6 +2304,126 @@ async fn feature_table_overrides_legacy_flags() -> std::io::Result<()> {
 }
 
 #[tokio::test]
+async fn zcontext_feature_defaults_to_enabled_and_can_be_disabled() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let default_config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(default_config.features.enabled(Feature::ZContext));
+
+    let cfg = ConfigToml {
+        features: Some(FeaturesToml::from(BTreeMap::from([(
+            "zcontext".to_string(),
+            false,
+        )]))),
+        ..Default::default()
+    };
+
+    let disabled_config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(!disabled_config.features.enabled(Feature::ZContext));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zcontext_profile_disable_overrides_default() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"profile = "no_context"
+
+[profiles.no_context.features]
+zcontext = false
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    assert!(!config.features.enabled(Feature::ZContext));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zcontext_cli_disable_override_turns_feature_off() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .cli_overrides(vec![(
+            "features.zcontext".to_string(),
+            TomlValue::Boolean(false),
+        )])
+        .build()
+        .await?;
+
+    assert!(!config.features.enabled(Feature::ZContext));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_hooks_default_and_empty_table_stay_enabled() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let default_config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(default_config.context_hooks.enabled);
+
+    let config_with_empty_context_hooks = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            context_hooks: Some(ContextHooksToml::default()),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+    assert!(config_with_empty_context_hooks.context_hooks.enabled);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_hooks_enabled_false_is_explicit_subconfig_disable() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            context_hooks: Some(ContextHooksToml {
+                enabled: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert!(!config.context_hooks.enabled);
+    assert!(config.features.enabled(Feature::ZContext));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn legacy_toggles_map_to_features() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
@@ -3713,6 +3834,29 @@ async fn set_feature_enabled_persists_feature_disable_in_profile() -> anyhow::Re
             .as_ref()
             .and_then(|features| features.entries().get("guardian_approval").copied()),
         None,
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_feature_enabled_persists_default_enabled_zcontext_disable() -> anyhow::Result<()> {
+    let codex_home = TempDir::new()?;
+
+    ConfigEditsBuilder::new(codex_home.path())
+        .set_feature_enabled("zcontext", /*enabled*/ false)
+        .apply()
+        .await?;
+
+    let serialized = tokio::fs::read_to_string(codex_home.path().join(CONFIG_TOML_FILE)).await?;
+    let parsed: ConfigToml = toml::from_str(&serialized)?;
+
+    assert_eq!(
+        parsed
+            .features
+            .as_ref()
+            .and_then(|features| features.entries().get("zcontext").copied()),
+        Some(false),
     );
 
     Ok(())

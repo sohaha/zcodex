@@ -3194,7 +3194,7 @@ mod tests {
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
             enable: vec!["web_search_request".to_string()],
-            disable: vec!["unified_exec".to_string()],
+            disable: vec!["unified_exec".to_string(), "zcontext".to_string()],
         };
         let overrides = toggles.to_overrides().expect("valid features");
         assert_eq!(
@@ -3202,6 +3202,7 @@ mod tests {
             vec![
                 "features.web_search_request=true".to_string(),
                 "features.unified_exec=false".to_string(),
+                "features.zcontext=false".to_string(),
             ]
         );
     }
