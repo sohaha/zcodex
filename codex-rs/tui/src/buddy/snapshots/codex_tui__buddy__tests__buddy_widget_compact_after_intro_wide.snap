@@ -1,6 +1,6 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 474
+assertion_line: 480
 expression: snapshot_buffer(&buf)
 ---
-(o_o) Gloop ★
+~(o_o)~ Inky ★

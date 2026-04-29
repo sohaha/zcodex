@@ -490,10 +490,455 @@ seed → BuddyBones::from_seed()
 
 ### 可执行任务拆分（供下一阶段参考）
 
-1. **model.rs**: 扩展 `BuddyRarity` 方法（aura_lines, compact_prefix, compact_suffix, identity_badge, 更新 frame_symbol/visual_trait）
-2. **render.rs**: 新增 `render_aura_line()` + `rarity_frame_style()`，修改 `render_wide_lines()` 渲染顺序
-3. **render.rs**: 修改 `render_narrow_line()` 支持 Legendary 包裹符
-4. **render.rs**: 修改 `render_identity_line()` 追加 badge
-5. **mod.rs**: 新增 4 个 rarity-specific snapshot 测试
-6. **验证**: `cargo nextest run -p codex-tui` → review snapshot → `cargo insta accept -p codex-tui` → `just fmt`
-7. **可选**: `just fix -p codex-tui` 确认无 clippy 警告
+## 执行计划详案
+
+### 任务依赖关系图
+
+```
+Task 1: model.rs BuddyRarity 扩展
+  │
+  ├─ 1.1 新增 aura_lines() 方法
+  ├─ 1.2 新增 compact_prefix() 方法
+  ├─ 1.3 新增 compact_suffix() 方法
+  ├─ 1.4 新增 identity_badge() 方法
+  ├─ 1.5 扩展 frame_symbol() 支持 Uncommon → "~"
+  └─ 1.6 更新 visual_trait() 文案
+        │
+        ▼
+Task 2: render.rs 渲染管线增强
+  │
+  ├─ 2.1 新增 rarity_frame_style() 函数
+  │     依赖: Task 1
+  ├─ 2.2 修改 render_wide_lines() 渲染顺序
+  │     依赖: Task 1, Task 2.1
+  ├─ 2.3 修改 render_narrow_line() 支持 Legendary 包裹
+  │     依赖: Task 1
+  └─ 2.4 修改 render_identity_line() 追加 badge
+        依赖: Task 1
+              │
+              ▼
+Task 3: 测试与 snapshot 验证
+  │
+  ├─ 3.1 新增 4 个 rarity-specific snapshot 测试
+  ├─ 3.2 运行 cargo nextest run -p codex-tui
+  ├─ 3.3 review *.snap.new 文件
+  └─ 3.4 cargo insta accept -p codex-tui
+              │
+              ▼
+Task 4: 格式化与 lint
+  │
+  ├─ 4.1 just fmt
+  └─ 4.2 just fix -p codex-tui (如需)
+```
+
+### 详细实施步骤
+
+#### Task 1: model.rs — BuddyRarity 扩展
+
+**文件**: `codex-rs/tui/src/buddy/model.rs` (L416-530 BuddyRarity impl 块)
+
+**1.1 新增 `aura_lines()` 方法**
+
+在 `frame_symbol()` 方法之后添加：
+
+```rust
+/// 稀有度专属光晕行（用于 full sprite 上下）
+pub(crate) fn aura_lines(self) -> Option<(&'static str, &'static str)> {
+    match self {
+        Self::Epic => Some(("  ✧   ✧   ✧  ", "")),
+        Self::Legendary => Some((" ✦  ✦  ✦ ", " ✦  ✦  ✦ ")),
+        _ => None,
+    }
+}
+```
+
+**1.2 新增 `compact_prefix()` 方法**
+
+```rust
+/// 窄屏视图中 name 前的包裹符
+pub(crate) fn compact_prefix(self) -> &'static str {
+    match self {
+        Self::Legendary => "✧ ",
+        _ => "",
+    }
+}
+```
+
+**1.3 新增 `compact_suffix()` 方法**
+
+```rust
+/// 窄屏视图中 species 后的尾缀
+pub(crate) fn compact_suffix(self) -> &'static str {
+    match self {
+        Self::Legendary => " ✦",
+        _ => "",
+    }
+}
+```
+
+**1.4 新增 `identity_badge()` 方法**
+
+```rust
+/// identity line 尾部额外标签
+pub(crate) fn identity_badge(self) -> Option<&'static str> {
+    match self {
+        Self::Epic => Some("✨"),
+        Self::Legendary => Some("✦✦✦"),
+        _ => None,
+    }
+}
+```
+
+**1.5 扩展 `frame_symbol()` 支持 Uncommon**
+
+当前（L493-499）Uncommon 返回 `None`，修改为返回 `Some("~")`：
+
+```rust
+pub(crate) fn frame_symbol(self) -> Option<&'static str> {
+    match self {
+        Self::Uncommon => Some("~"),
+        Self::Rare => Some("·"),
+        Self::Epic => Some("✦"),
+        Self::Legendary => Some("★"),
+    }
+}
+```
+
+**1.6 更新 `visual_trait()` 文案**
+
+```rust
+pub(crate) fn visual_trait(self) -> &'static str {
+    match self {
+        Self::Common => "朴素本色",
+        Self::Uncommon => "柔和波纹",
+        Self::Rare => "星点边框",
+        Self::Epic => "星光点缀",
+        Self::Legendary => "炫目光辉",
+    }
+}
+```
+
+**Task 1 验收**: `cargo check -p codex-tui` 编译通过。
+
+---
+
+#### Task 2: render.rs — 渲染管线增强
+
+**文件**: `codex-rs/tui/src/buddy/render.rs`
+
+**2.1 新增 `rarity_frame_style()` 函数**
+
+在 `rarity_style()` 函数附近（约 L648）添加：
+
+```rust
+/// 边框行的样式，颜色匹配稀有度
+fn rarity_frame_style(bones: &BuddyBones) -> Style {
+    let base = match bones.rarity {
+        BuddyRarity::Common => Style::default(),
+        BuddyRarity::Uncommon => Style::default().green(),
+        BuddyRarity::Rare => Style::default().cyan(),
+        BuddyRarity::Epic => Style::default().magenta(),
+        BuddyRarity::Legendary => shiny_style(),
+    };
+    if bones.shiny { base.bold() } else { base }
+}
+```
+
+**2.2 修改 `render_wide_lines()` 渲染顺序**
+
+当前代码结构（L59-110），按以下顺序重组：
+
+```
+1. pet_burst_frame (如有)
+2. frame 上边框 (frame_symbol)
+3. aura 上行 (Epic+ 或 Legendary)
+4. sprite 行 (带 prefix/suffix)
+5. aura 下行 (仅 Legendary)
+6. frame 下边框
+7. identity_line (带 badge)
+```
+
+核心变化点：
+- 在边框分支内，`frame_symbol` 存在时先插入 `aura_top` 行（如有），再插入 sprite 行，再插入 `aura_bottom` 行（如有且非空）
+- 边框样式从 `rarity_style(bones).dim()` 改为 `rarity_frame_style(bones).dim()`（更少冲突但更一致）
+- 无边框分支保持不变（Common 仍然无装饰）
+
+**2.3 修改 `render_narrow_line()` 支持 Legendary 包裹**
+
+当前 `label` 构建（L135-148），修改为：
+
+```rust
+let compact_prefix = bones.rarity.compact_prefix();
+let compact_suffix = bones.rarity.compact_suffix();
+let compact_symbol = bones.rarity.compact_symbol();
+let shiny = if bones.shiny { " *" } else { "" };
+let symbol_sep = if compact_symbol.is_empty() { "" } else { " " };
+format!(
+    "{}{}{}{}{}{}{}{} {}",
+    compact_prefix,
+    name,
+    bones.rarity.stars(),
+    symbol_sep,
+    compact_symbol,
+    shiny,
+    compact_suffix,
+    bones.species.label()
+)
+```
+
+同时，compact_symbol 渲染逻辑（L163-171）需跳过 Legendary（已用 prefix/suffix 替代）：
+
+```rust
+let compact_symbol = bones.rarity.compact_symbol();
+if !compact_symbol.is_empty() && bones.rarity.compact_prefix().is_empty() {
+    spans.push(" ".into());
+    spans.push(Span::styled(compact_symbol.to_string(), rarity_style(bones)));
+}
+```
+
+**2.4 修改 `render_identity_line()` 追加 badge**
+
+当前代码（L273-276），在 shiny 判断之后追加：
+
+```rust
+if let Some(badge) = bones.rarity.identity_badge() {
+    spans.push(" ".into());
+    spans.push(Span::styled(badge, shiny_style()));
+}
+```
+
+**Task 2 验收**: `cargo check -p codex-tui` 编译通过。
+
+---
+
+#### Task 3: 测试与 snapshot 验证
+
+**文件**: `codex-rs/tui/src/buddy/mod.rs` (tests 模块)
+
+**3.1 新增 4 个 snapshot 测试**
+
+参考现有 `goose_buddy_full_snapshot` 模式（L486-502），新增：
+
+- `uncommon_buddy_full_snapshot` — 强制 rarity=Uncommon，宽屏
+- `epic_buddy_full_snapshot` — 强制 rarity=Epic，宽屏
+- `legendary_buddy_full_snapshot` — 强制 rarity=Legendary，宽屏
+- `legendary_buddy_narrow_snapshot` — 强制 rarity=Legendary，窄屏
+
+每个测试用 `BuddyBones::from_seed("codex-home::project")` 构造后手动设置 `bones.rarity`。
+
+**3.2 运行测试**
+
+```bash
+cd codex-rs && cargo nextest run -p codex-tui
+```
+
+**3.3 review snapshot**
+
+```bash
+cargo insta pending-snapshots -p codex-tui
+```
+
+逐个检查 `.snap.new` 内容是否符合预期。
+
+**3.4 接受 snapshot**
+
+确认无误后：
+
+```bash
+cargo insta accept -p codex-tui
+```
+
+**Task 3 验收**: 所有测试绿，snapshot 已 accept。
+
+---
+
+#### Task 4: 格式化与 lint
+
+```bash
+cd codex-rs && just fmt
+cd codex-rs && just fix -p codex-tui
+```
+
+**Task 4 验收**: 无 clippy 警告。
+
+---
+
+### 回滚边界
+
+- **回滚粒度**: 每个 task 可独立回滚
+- **安全回滚点**: Task 1 完成后、Task 3 完成后
+- **注意**: Task 2-3 存在耦合（snapshot 变化是预期行为），若 Task 2 导致现有 snapshot 以外的渲染异常，需整体回滚 Task 1-2
+- **不回滚条件**: 新增 4 个 snapshot 是预期新增；现有 8 个 snapshot 的变化是预期行为（因为 rarity 方法扩展会影响已有 seed 对应的 buddy 渲染）
+
+---
+
+### 验收标准汇总
+
+| 步骤 | 验收条件 | 命令 |
+|------|----------|------|
+| Task 1 | 编译通过 | `cargo check -p codex-tui` |
+| Task 2 | 编译通过 | `cargo check -p codex-tui` |
+| Task 3 | 测试全绿，snapshot 已 accept | `cargo nextest run -p codex-tui` |
+| Task 4 | 无 clippy 警告 | `just fix -p codex-tui` |
+
+### 出口条件
+
+- 所有 4 个验收条件满足
+- 8 个现有 snapshot 更新 + 4 个新增 snapshot 已 accept
+- 无遗留 clippy 警告
+- 代码已格式化
+
+---
+
+## Worker 定义
+
+### Worker 概览
+
+基于已有实施计划中的 4 个 Task，定义 3 种 Worker 类型。每种 Worker 可被独立派发、独立验收。
+
+| Worker 类型 | 职责 | 对应 Task | 输入文件 | 输出文件 |
+|-------------|------|-----------|----------|----------|
+| `model-worker` | 扩展 `BuddyRarity` 的数据方法 | Task 1 | `model.rs` | `model.rs` |
+| `render-worker` | 增强渲染管线的视觉分层 | Task 2 | `model.rs`, `render.rs` | `render.rs` |
+| `test-worker` | 补充 snapshot 测试并验证 | Task 3 + Task 4 | `model.rs`, `render.rs`, `mod.rs` | `mod.rs`, `snapshots/*` |
+
+### Worker 1: `model-worker`
+
+**职责**：扩展 `BuddyRarity` 枚举的数据方法，新增 aura 渲染、compact 前后缀、identity badge 等稳定派生信息。
+
+**输入**：
+- `codex-rs/tui/src/buddy/model.rs` — 当前 `BuddyRarity` 定义（L416-512）
+- 计划中的 Task 1 规格（新增 7 个方法 + 1 个 visual_trait 改写）
+
+**输出**：
+- 修改后的 `model.rs`，包含以下新增方法：
+  - `aura_top() -> Option<&'static str>` — Rare 以下 None，Epic 返回 `Some("·  ✦  ·")`，Legendary 返回 `Some("✧ ✦ ✧ ✦ ✧")`
+  - `aura_bottom() -> Option<&'static str>` — 仅 Legendary 返回 `Some("✦ · ★ · ✦")`
+  - `compact_prefix() -> &'static str` — 仅 Legendary 返回 `"✧"`，其他空串
+  - `compact_suffix() -> &'static str` — 仅 Legendary 返回 `"✧"`，其他空串
+  - `identity_badge() -> Option<&'static str>` — Epic 返回 `Some("★")`，Legendary 返回 `Some("✦")`
+  - `frame_style() -> Style` — 返回对应稀有度的 Style（无 bones 依赖，仅基于 self）
+  - `visual_trait()` 改写 — 更新描述文案
+
+**验收条件**：
+- `cargo check -p codex-tui` 编译通过
+- 所有新方法为 `pub(crate)` 且在 `impl BuddyRarity` 块内
+- 不修改 `BuddyBones` 结构体字段或 `from_seed` 逻辑
+- 不引入新依赖
+
+**交接格式**：修改后的 `model.rs` 文件，供 `render-worker` 和 `test-worker` 调用新增方法。
+
+**预估复杂度**：低（纯数据方法，无渲染逻辑）
+
+---
+
+### Worker 2: `render-worker`
+
+**职责**：修改 `render.rs` 中的 `render_wide_lines()`、`render_narrow_line()`、`render_identity_line()`，使稀有度差异在终端视觉上逐级增强。
+
+**输入**：
+- `codex-rs/tui/src/buddy/render.rs` — 当前渲染管线
+- `codex-rs/tui/src/buddy/model.rs` — 由 `model-worker` 扩展后的 `BuddyRarity` 新方法
+- 计划中的 Task 2 规格（4 个子步骤）
+
+**输出**：
+- 修改后的 `render.rs`，包含以下渲染增强：
+  - **2.1** 新增 `rarity_frame_style(bones: &BuddyBones) -> Style` 函数（在 `rarity_style()` 附近）
+  - **2.2** `render_wide_lines()` 重构渲染顺序：pet_burst → frame 上边框 → aura_top → sprite 行 → aura_bottom → frame 下边框 → identity_line
+  - **2.3** `render_narrow_line()` 支持 Legendary compact_prefix/suffix 包裹，非 Legendary 保持现有行为
+  - **2.4** `render_identity_line()` 追加 rarity badge（Epic/Legendary）
+
+**验收条件**：
+- `cargo check -p codex-tui` 编译通过
+- Common 级别无任何新增视觉元素（无边框、无 aura、无 badge）
+- Rare 及以上有边框（由现有 `frame_symbol()` 驱动）
+- Epic 有 aura_top 行 + identity badge
+- Legendary 有 aura_top + aura_bottom + identity badge + compact 前后缀
+- 不修改 `sprite_lines()`、`mini_face()`、`render_bubble()` 等无关函数
+- 不修改 `chatwidget.rs` 或 `bottom_pane/mod.rs`
+
+**交接格式**：修改后的 `render.rs` 文件。`test-worker` 需要此文件来生成正确的 snapshot。
+
+**依赖**：必须在 `model-worker` 完成后执行（需要新增的 `BuddyRarity` 方法）。
+
+**预估复杂度**：中（涉及 3 个渲染函数的结构性修改）
+
+---
+
+### Worker 3: `test-worker`
+
+**职责**：新增稀有度分层 snapshot 测试，更新受影响的现有 snapshot，运行格式化和 lint。
+
+**输入**：
+- `codex-rs/tui/src/buddy/mod.rs` — 现有测试模块（L383 起）
+- `codex-rs/tui/src/buddy/snapshots/` — 现有 8 个 snapshot 文件
+- `model.rs` 和 `render.rs` — 由前两个 worker 修改后的版本
+- 计划中的 Task 3 + Task 4 规格
+
+**输出**：
+- `mod.rs` 中新增 4 个 snapshot 测试函数：
+  - `uncommon_buddy_full_snapshot` — 强制 rarity=Uncommon，宽屏
+  - `epic_buddy_full_snapshot` — 强制 rarity=Epic，宽屏
+  - `legendary_buddy_full_snapshot` — 强制 rarity=Legendary，宽屏
+  - `legendary_buddy_narrow_snapshot` — 强制 rarity=Legendary，窄屏
+- 更新现有 8 个 snapshot（预期行为变化）
+- 新增 4 个 `.snap` 文件
+- 格式化和 lint 输出
+
+**验收条件**：
+- `cargo nextest run -p codex-tui` 全绿（或 `cargo test -p codex-tui`）
+- `cargo insta pending-snapshots -p codex-tui` 无待处理
+- `just fmt` 无变更
+- `just fix -p codex-tui` 无 clippy 警告
+- 现有测试（`bones_generation_is_stable`、`hidden_buddy_has_no_height`、`buddy_status_reports_peak_stat_and_visibility` 等）不受影响
+
+**交接格式**：最终可交付的代码状态。无需进一步交接。
+
+**依赖**：必须在 `model-worker` 和 `render-worker` 都完成后执行。
+
+**预估复杂度**：中（新增测试 + snapshot 审查 + 格式化/lint）
+
+---
+
+### 执行顺序与并行性
+
+```
+model-worker ──→ render-worker ──→ test-worker
+```
+
+- 严格串行：每个 worker 依赖前一个的输出
+- 不支持并行：render-worker 需要 model-worker 的新方法，test-worker 需要两者的完整渲染输出
+- 可选的快速验证点：model-worker 完成后先 `cargo check` 确认编译，再派发 render-worker
+
+### Worker 间数据契约
+
+**model → render**：
+- `BuddyRarity::aura_top() -> Option<&'static str>`
+- `BuddyRarity::aura_bottom() -> Option<&'static str>`
+- `BuddyRarity::compact_prefix() -> &'static str`
+- `BuddyRarity::compact_suffix() -> &'static str`
+- `BuddyRarity::identity_badge() -> Option<&'static str>`
+- `BuddyRarity::visual_trait() -> &'static str`（改写版）
+
+**render → test**：
+- 完整的渲染管线输出（通过 `render_wide_lines()` 和 `render_narrow_line()` 的函数签名不变）
+- snapshot 测试通过 `BuddyWidget` 公共 API 间接调用渲染，不直接依赖 render 函数签名
+
+### 回滚策略
+
+- `model-worker` 回滚：`git checkout -- codex-rs/tui/src/buddy/model.rs`
+- `render-worker` 回滚：`git checkout -- codex-rs/tui/src/buddy/render.rs`
+- `test-worker` 回滚：`git checkout -- codex-rs/tui/src/buddy/mod.rs codex-rs/tui/src/buddy/snapshots/`
+- 整体回滚：`git checkout -- codex-rs/tui/src/buddy/`
+
+### 当前代码基线摘要
+
+供 worker 上下文参考：
+- `BuddyRarity` 枚举：model.rs L416，5 个变体，已有 `label/stars/styled_span/stars_span/stat_floor/sprite_prefix/sprite_suffix/frame_symbol/compact_symbol/visual_trait` 共 10 个方法
+- `render_wide_lines()`：render.rs L59，当前逻辑为 pet_burst → frame 边框分支 → identity_line
+- `render_narrow_line()`：render.rs L122，当前逻辑为 label 构建 → face → spans 拼接
+- `render_identity_line()`：render.rs L260，当前逻辑为 name + stars + rarity label + species + mood
+- 现有 snapshot：8 个，位于 `codex-rs/tui/src/buddy/snapshots/`
+- 测试模块起始：mod.rs L383
+
+> Worker 定义完成。可通过 `codex mission continue` 推进到下一阶段。

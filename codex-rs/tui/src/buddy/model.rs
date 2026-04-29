@@ -516,8 +516,50 @@ impl BuddyRarity {
             Self::Common => "普通外观",
             Self::Uncommon => "微光轮廓",
             Self::Rare => "星点边框",
-            Self::Epic => "闪耀光环",
-            Self::Legendary => "传奇光效",
+            Self::Epic => "闪耀光环 + 专属标识",
+            Self::Legendary => "传奇光效 + 专属标识",
+        }
+    }
+
+    /// 稀有度专属的上方光晕行（用于 full sprite）
+    pub(crate) fn aura_top(self) -> Option<&'static str> {
+        match self {
+            Self::Epic => Some("  .  ✨  .  "),
+            Self::Legendary => Some(" ✧ ★  ✦  ★ ✧ "),
+            _ => None,
+        }
+    }
+
+    /// 稀有度专属的下方光晕行（用于 full sprite）
+    pub(crate) fn aura_bottom(self) -> Option<&'static str> {
+        match self {
+            Self::Legendary => Some(" ✧    ✦    ✧ "),
+            _ => None,
+        }
+    }
+
+    /// 窄屏视图的前缀包裹符号
+    pub(crate) fn compact_prefix(self) -> &'static str {
+        match self {
+            Self::Legendary => "「",
+            _ => "",
+        }
+    }
+
+    /// 窄屏视图的后缀包裹符号
+    pub(crate) fn compact_suffix(self) -> &'static str {
+        match self {
+            Self::Legendary => "」",
+            _ => "",
+        }
+    }
+
+    /// 身份标识徽章（用于 identity line）
+    pub(crate) fn identity_badge(self) -> Option<&'static str> {
+        match self {
+            Self::Epic => Some("◈"),
+            Self::Legendary => Some("✦"),
+            _ => None,
         }
     }
 }

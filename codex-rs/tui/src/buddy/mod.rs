@@ -557,4 +557,76 @@ mod tests {
         assert_ne!(first, second);
         assert_ne!(second, third);
     }
+
+    #[test]
+    fn uncommon_buddy_full_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("uncommon-test::project");
+        bones.rarity = model::BuddyRarity::Uncommon;
+        bones.species = model::BuddySpecies::Cat;
+        bones.name = "Mochi".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = true;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_uncommon_full", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn epic_buddy_full_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("epic-test::project");
+        bones.rarity = model::BuddyRarity::Epic;
+        bones.species = model::BuddySpecies::Dragon;
+        bones.name = "Cobalt".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = true;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_epic_full", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn legendary_buddy_full_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("legendary-test::project");
+        bones.rarity = model::BuddyRarity::Legendary;
+        bones.species = model::BuddySpecies::Fox;
+        bones.name = "Ember".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = true;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_legendary_full", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn legendary_buddy_narrow_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("legendary-narrow::project");
+        bones.rarity = model::BuddyRarity::Legendary;
+        bones.species = model::BuddySpecies::Fox;
+        bones.name = "Ember".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = false;
+
+        let width = 30;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_legendary_narrow", snapshot_buffer(&buf));
+    }
 }

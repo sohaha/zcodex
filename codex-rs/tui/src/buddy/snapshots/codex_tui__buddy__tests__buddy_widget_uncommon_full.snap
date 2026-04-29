@@ -1,0 +1,9 @@
+---
+source: tui/src/buddy/mod.rs
+assertion_line: 576
+expression: snapshot_buffer(&buf)
+---
+   /\_/\\
+  ( ^^ )
+   > ^ <
+  Mochi ★★ 少 见  猫  · 坐 立 不 安

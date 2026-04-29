@@ -1,8 +1,9 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 2091
+assertion_line: 1926
 expression: "render_snapshot(&pane, area)"
 ---
+• 处 理 中  (0s • esc 中 断 )                                    
   .--------------.                                          
   | 触 手 先 到 了 。  |                                          
   '--------------.                                          
@@ -11,9 +12,7 @@ expression: "render_snapshot(&pane, area)"
   ( ^^ )                                                    
   /\/\/\                                                    
   Inky ★ 常 见  章 鱼  · 坐 立 不 安                                
-• 排 队 的 后 续 消 息                                             
-  ↳ Queued follow-up question                               
-    ⌥ + ↑ 编 辑 上 一 条 排 队 消 息                                 
+                                                            
                                                             
 › 让  Codex 帮 你 做 任 何 事                                      
                                                             

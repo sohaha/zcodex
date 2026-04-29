@@ -1,0 +1,12 @@
+---
+source: tui/src/buddy/mod.rs
+assertion_line: 594
+expression: snapshot_buffer(&buf)
+---
+    .  ✨   .
+    ✦     ✦
+   /\_/\\    ✨
+  ( ^ ~ ^ )  ✨
+   \\_v_//   ✨
+    ✦     ✦
+  Cobalt ★★★★ 史 诗  龙  · 坐 立 不 安  ◈

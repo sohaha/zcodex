@@ -1,8 +1,9 @@
 ---
 source: tui/src/buddy/mod.rs
+assertion_line: 463
 expression: snapshot_buffer(&buf)
 ---
    .--.
   ( ^^ )
-   `--'
-  Gloop ★ 常 见  史 莱 姆  · 坐 立 不 安
+  /\/\/\
+  Inky ★ 常 见  章 鱼  · 坐 立 不 安

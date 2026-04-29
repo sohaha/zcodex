@@ -1,9 +1,9 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 446
+assertion_line: 452
 expression: snapshot_buffer(&buf)
 ---
-  .----------------.
-  | 软 软 滚 了 过 来 。  |
-  '----------------.
+  .--------------.
+  | 触 手 先 到 了 。  |
+  '--------------.
     \

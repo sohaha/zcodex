@@ -1,10 +1,12 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 491
+assertion_line: 500
 expression: snapshot_buffer(&buf)
 ---
+    ·     ·
     --(*)--
    (^>>)
     ||
   _(__)_
+    ·     ·
   Honk ★★★ 稀 有  鹅  · 坐 立 不 安

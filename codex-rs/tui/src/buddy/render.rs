@@ -59,6 +59,8 @@ pub(crate) fn render_lines(
 
 fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
+
+    // pet burst 心形
     if let Some(frame) = state.pet_burst_frame() {
         lines.push(Line::from(vec![
             "  ".into(),
@@ -66,7 +68,15 @@ fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<
         ]));
     }
 
-    // 添加稀有度边框装饰（Rare 及以上）
+    // 上方光晕（Epic 及以上）
+    if let Some(aura) = bones.rarity.aura_top() {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            Span::styled(aura.to_string(), rarity_style(bones).dim()),
+        ]));
+    }
+
+    // 边框上沿（Rare 及以上）
     if let Some(symbol) = bones.rarity.frame_symbol() {
         lines.push(Line::from(vec![
             "  ".into(),
@@ -75,21 +85,24 @@ fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<
                 rarity_style(bones).dim(),
             ),
         ]));
+    }
 
-        for sprite_line in sprite_lines(bones, state.frame()) {
-            let prefix = bones.rarity.sprite_prefix().unwrap_or("");
-            let suffix = bones.rarity.sprite_suffix().unwrap_or("");
-            let styled_prefix = Span::styled(prefix.to_string(), shiny_style());
-            let styled_suffix = Span::styled(suffix.to_string(), shiny_style());
-            lines.push(Line::from(vec![
-                "  ".into(),
-                styled_prefix,
-                Span::styled(sprite_line, rarity_style(bones)),
-                styled_suffix,
-            ]));
-        }
+    // sprite 行
+    for sprite_line in sprite_lines(bones, state.frame()) {
+        let prefix = bones.rarity.sprite_prefix().unwrap_or("");
+        let suffix = bones.rarity.sprite_suffix().unwrap_or("");
+        let styled_prefix = Span::styled(prefix.to_string(), shiny_style());
+        let styled_suffix = Span::styled(suffix.to_string(), shiny_style());
+        lines.push(Line::from(vec![
+            "  ".into(),
+            styled_prefix,
+            Span::styled(sprite_line, rarity_style(bones)),
+            styled_suffix,
+        ]));
+    }
 
-        // 闭合边框
+    // 边框下沿（Rare 及以上）
+    if let Some(symbol) = bones.rarity.frame_symbol() {
         lines.push(Line::from(vec![
             "  ".into(),
             Span::styled(
@@ -97,20 +110,14 @@ fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<
                 rarity_style(bones).dim(),
             ),
         ]));
-    } else {
-        // 无边框时的渲染
-        for sprite_line in sprite_lines(bones, state.frame()) {
-            let prefix = bones.rarity.sprite_prefix().unwrap_or("");
-            let suffix = bones.rarity.sprite_suffix().unwrap_or("");
-            let styled_prefix = Span::styled(prefix.to_string(), shiny_style());
-            let styled_suffix = Span::styled(suffix.to_string(), shiny_style());
-            lines.push(Line::from(vec![
-                "  ".into(),
-                styled_prefix,
-                Span::styled(sprite_line, rarity_style(bones)),
-                styled_suffix,
-            ]));
-        }
+    }
+
+    // 下方光晕（Legendary）
+    if let Some(aura) = bones.rarity.aura_bottom() {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            Span::styled(aura.to_string(), rarity_style(bones).dim()),
+        ]));
     }
 
     lines.push(render_identity_line(bones, name, state));
@@ -141,12 +148,14 @@ fn render_narrow_line(
         )
     };
     let face = mini_face(bones.species, state.frame());
-    let prefix = if state.pet_burst_frame().is_some() {
+    let pet_prefix = if state.pet_burst_frame().is_some() {
         "<3 "
     } else {
         ""
     };
-    let plain = format!("{prefix}{face} {label}");
+    let compact_pre = bones.rarity.compact_prefix();
+    let compact_suf = bones.rarity.compact_suffix();
+    let plain = format!("{pet_prefix}{face} {compact_pre}{label}{compact_suf}");
     let truncated = truncate_with_ellipsis(&plain, width);
     if truncated != plain {
         return Line::from(truncated);
@@ -161,6 +170,11 @@ fn render_narrow_line(
         rarity_style(bones).add_modifier(ratatui::style::Modifier::BOLD),
     ));
     spans.push(" ".into());
+    // Legendary 窄屏包裹前缀
+    let compact_pre = bones.rarity.compact_prefix();
+    if !compact_pre.is_empty() {
+        spans.push(Span::styled(compact_pre.to_string(), rarity_style(bones)));
+    }
     if let Some(text) = state.active_reaction_text() {
         spans.push(format!("\"{text}\"").italic());
     } else {
@@ -181,6 +195,11 @@ fn render_narrow_line(
         if bones.shiny {
             spans.push(Span::styled(" *", shiny_style()));
         }
+    }
+    // Legendary 窄屏包裹后缀
+    let compact_suf = bones.rarity.compact_suffix();
+    if !compact_suf.is_empty() {
+        spans.push(Span::styled(compact_suf.to_string(), rarity_style(bones)));
     }
     Line::from(spans)
 }
@@ -276,6 +295,11 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
     if bones.shiny {
         spans.push(" · ".dim());
         spans.push(Span::styled("闪亮", shiny_style()));
+    }
+    // Epic/Legendary 身份标识徽章
+    if let Some(badge) = bones.rarity.identity_badge() {
+        spans.push(" ".into());
+        spans.push(Span::styled(badge.to_string(), rarity_style(bones)));
     }
     Line::from(spans)
 }
