@@ -11,7 +11,6 @@ use crate::tools::rewrite::should_auto_warm_tldr;
 use anyhow::Result;
 use codex_native_tldr::daemon::DAEMON_UNRESPONSIVE_MARKER;
 use codex_native_tldr::daemon::TldrDaemonCommand;
-use codex_native_tldr::daemon::cleanup_unresponsive_daemon_artifacts;
 use codex_native_tldr::daemon::daemon_error_is_unresponsive;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -19,6 +18,7 @@ use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::daemon::terminate_unresponsive_daemon;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
@@ -115,10 +115,7 @@ impl ToolHandler for TldrHandler {
             args,
             problem_kind,
             &|project_root, command| {
-                Box::pin(query_daemon_with_unresponsive_cleanup(
-                    project_root,
-                    command,
-                ))
+                Box::pin(query_daemon_recovering_unresponsive(project_root, command))
             },
             &|project_root| Box::pin(async move { ensure_daemon_running(project_root).await }),
         )
@@ -619,15 +616,15 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     Ok(ensure_daemon_running_detailed(project_root).await?.ready)
 }
 
-async fn query_daemon_with_unresponsive_cleanup(
+async fn query_daemon_recovering_unresponsive(
     project_root: &Path,
     command: &TldrDaemonCommand,
 ) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
     match query_daemon(project_root, command).await {
         Ok(response) => Ok(response),
         Err(err) if daemon_error_is_unresponsive(&err) => {
-            cleanup_unresponsive_daemon_artifacts(project_root)?;
-            Err(err)
+            terminate_unresponsive_daemon(project_root).await?;
+            Ok(None)
         }
         Err(err) => Err(err),
     }

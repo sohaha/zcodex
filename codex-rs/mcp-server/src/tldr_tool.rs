@@ -1,7 +1,6 @@
 use anyhow::Result;
 use codex_native_tldr::daemon::DAEMON_UNRESPONSIVE_MARKER;
 use codex_native_tldr::daemon::TldrDaemonCommand;
-use codex_native_tldr::daemon::cleanup_unresponsive_daemon_artifacts;
 use codex_native_tldr::daemon::daemon_error_is_unresponsive;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -9,6 +8,7 @@ use codex_native_tldr::daemon::launch_lock_path_for_project as native_launch_loc
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::daemon::terminate_unresponsive_daemon;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::lifecycle::QueryHooksResult;
@@ -83,10 +83,7 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
     run_tldr_tool_with_mcp_hooks(
         args,
         |project_root, command| {
-            Box::pin(query_daemon_with_unresponsive_cleanup(
-                project_root,
-                command,
-            ))
+            Box::pin(query_daemon_recovering_unresponsive(project_root, command))
         },
         |project_root| Box::pin(ensure_daemon_running_detailed(project_root)),
     )
@@ -360,15 +357,15 @@ async fn ensure_daemon_running_detailed(project_root: &Path) -> Result<DaemonRea
         .await
 }
 
-async fn query_daemon_with_unresponsive_cleanup(
+async fn query_daemon_recovering_unresponsive(
     project_root: &Path,
     command: &TldrDaemonCommand,
 ) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
     match query_daemon(project_root, command).await {
         Ok(response) => Ok(response),
         Err(err) if daemon_error_is_unresponsive(&err) => {
-            cleanup_unresponsive_daemon_artifacts(project_root)?;
-            Err(err)
+            terminate_unresponsive_daemon(project_root).await?;
+            Ok(None)
         }
         Err(err) => Err(err),
     }

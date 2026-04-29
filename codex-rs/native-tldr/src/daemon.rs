@@ -45,6 +45,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::sync::Mutex;
+use tokio::time::sleep;
 use tokio::time::timeout;
 
 #[cfg(not(unix))]
@@ -1574,15 +1575,60 @@ pub fn daemon_error_is_unresponsive(error: &anyhow::Error) -> bool {
     error.to_string().contains(DAEMON_UNRESPONSIVE_MARKER)
 }
 
-pub fn cleanup_unresponsive_daemon_artifacts(project_root: &Path) -> Result<bool> {
+pub async fn terminate_unresponsive_daemon(project_root: &Path) -> Result<()> {
+    terminate_daemon_process(project_root, Duration::from_secs(3)).await
+}
+
+#[cfg(unix)]
+async fn terminate_daemon_process(project_root: &Path, wait_timeout: Duration) -> Result<()> {
     let pid_path = pid_path_for_project(project_root);
     let socket_path = socket_path_for_project(project_root);
-    let health = daemon_health(project_root)?;
-    if health.should_cleanup_artifacts() {
+    let pid = std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|value| value.trim().parse::<i32>().ok());
+    let Some(pid) = pid else {
         cleanup_daemon_artifacts(&socket_path, &pid_path);
-        return Ok(true);
+        return Ok(());
+    };
+    if !read_live_pid(&pid_path).unwrap_or(false) {
+        cleanup_daemon_artifacts(&socket_path, &pid_path);
+        return Ok(());
     }
-    Ok(false)
+
+    let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    if result != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error.into());
+        }
+    }
+
+    let start = Instant::now();
+    while start.elapsed() < wait_timeout {
+        if !read_live_pid(&pid_path).unwrap_or(false) {
+            cleanup_daemon_artifacts(&socket_path, &pid_path);
+            return Ok(());
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    anyhow::bail!("daemon process {pid} did not exit after SIGTERM")
+}
+
+#[cfg(not(unix))]
+async fn terminate_daemon_process(project_root: &Path, wait_timeout: Duration) -> Result<()> {
+    let socket_path = socket_path_for_project(project_root);
+    let pid_path = pid_path_for_project(project_root);
+    let _ = query_daemon(project_root, &TldrDaemonCommand::Shutdown).await;
+    let start = Instant::now();
+    while start.elapsed() < wait_timeout {
+        if !socket_path.exists() && !pid_path.exists() {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+    cleanup_daemon_artifacts(&socket_path, &pid_path);
+    Ok(())
 }
 
 #[cfg(not(unix))]
@@ -1604,6 +1650,10 @@ fn pid_is_alive(pid: i32) -> bool {
     if pid <= 0 {
         return false;
     }
+    #[cfg(target_os = "linux")]
+    if linux_pid_is_zombie(pid) {
+        return false;
+    }
     let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
     if result == 0 {
         true
@@ -1613,6 +1663,17 @@ fn pid_is_alive(pid: i32) -> bool {
             Some(libc::EPERM)
         )
     }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_pid_is_zombie(pid: i32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(") ")
+                .and_then(|(_, rest)| rest.chars().next())
+        })
+        == Some('Z')
 }
 
 fn build_daemon_status(
@@ -2217,8 +2278,8 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn cleanup_unresponsive_daemon_artifacts_cleans_stale_socket() {
+    #[tokio::test]
+    async fn terminate_unresponsive_daemon_cleans_missing_pid_artifacts() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("missing-pid-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
@@ -2227,17 +2288,17 @@ mod tests {
         create_artifact_parent(&socket_path);
         std::fs::write(&socket_path, "").expect("socket artifact should be written");
 
-        let cleaned = super::cleanup_unresponsive_daemon_artifacts(&project_root)
-            .expect("stale socket cleanup should succeed");
+        super::terminate_unresponsive_daemon(&project_root)
+            .await
+            .expect("missing pid cleanup should succeed");
 
-        assert!(cleaned);
         assert!(!socket_path.exists());
         assert!(!pid_path.exists());
     }
 
     #[cfg(unix)]
-    #[test]
-    fn cleanup_unresponsive_daemon_artifacts_preserves_live_pid_artifacts() {
+    #[tokio::test]
+    async fn terminate_unresponsive_daemon_stops_live_pid_and_cleans_artifacts() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("live-pid-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
@@ -2245,18 +2306,27 @@ mod tests {
         let pid_path = pid_path_for_project(&project_root);
         create_artifact_parent(&socket_path);
         create_artifact_parent(&pid_path);
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("sleep child should spawn");
         std::fs::write(&socket_path, "").expect("socket artifact should be written");
-        std::fs::write(&pid_path, std::process::id().to_string())
-            .expect("pid artifact should be written");
+        std::fs::write(&pid_path, child.id().to_string()).expect("pid artifact should be written");
 
-        let cleaned = super::cleanup_unresponsive_daemon_artifacts(&project_root)
-            .expect("live pid should be inspected successfully");
+        let result = super::terminate_unresponsive_daemon(&project_root).await;
+        if result.is_err() {
+            let _ = child.kill();
+        }
+        result.expect("live child should be terminated");
 
-        assert!(!cleaned);
-        assert!(socket_path.exists());
-        assert!(pid_path.exists());
-        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
-        std::fs::remove_file(&pid_path).expect("pid should be cleaned up");
+        assert!(
+            child
+                .try_wait()
+                .expect("child wait should succeed")
+                .is_some()
+        );
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
     }
 
     #[cfg(unix)]
