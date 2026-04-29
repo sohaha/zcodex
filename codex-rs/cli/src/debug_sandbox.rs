@@ -183,6 +183,7 @@ async fn run_command_under_sandbox(
                             timeout_ms: None,
                             use_private_desktop: config.permissions.windows_sandbox_private_desktop,
                             proxy_enforced: false,
+                            read_roots_include_platform_defaults: false,
                             read_roots_override: None,
                             write_roots_override: None,
                             deny_write_paths_override: &[],
@@ -347,6 +348,8 @@ async fn run_command_under_sandbox(
     handle_exit_status(status);
 }
 
+#[cfg(target_os = "windows")]
+use codex_utils_absolute_path::AbsolutePathBuf;
 #[cfg(target_os = "windows")]
 async fn run_command_under_windows_session(
     config: &Config,
