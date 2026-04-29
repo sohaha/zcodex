@@ -50,6 +50,7 @@ mod app_cmd;
 mod desktop_app;
 mod marketplace_cmd;
 mod mcp_cmd;
+mod mission_cmd;
 mod responses_cmd;
 mod tldr_cmd;
 #[cfg(not(windows))]
@@ -61,6 +62,8 @@ mod zmemory_compat_server;
 
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
+use crate::mission_cmd::MissionCli;
+use crate::mission_cmd::run_mission_command;
 use crate::responses_cmd::ResponsesCommand;
 use crate::responses_cmd::run_responses_command;
 use crate::tldr_cmd::TldrCli;
@@ -134,6 +137,9 @@ enum Subcommand {
 
     /// 管理 Codex 的外部 MCP 服务器。
     Mcp(McpCli),
+
+    /// 管理 Mission 工程工作流。
+    Mission(MissionCli),
 
     /// 运行 Token 优化的命令包装器。
     Ztok(ZtokArgs),
@@ -897,6 +903,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 "mcp-server",
             )?;
             codex_mcp_server::run_main(arg0_paths.clone(), root_config_overrides).await?;
+        }
+        Some(Subcommand::Mission(mission_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "mission",
+            )?;
+            run_mission_command(mission_cli).await?;
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             reject_remote_mode_for_subcommand(

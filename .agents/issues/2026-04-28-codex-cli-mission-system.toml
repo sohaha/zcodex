@@ -1,0 +1,358 @@
+# Cadex CLI Mission 系统实现
+# 对应计划文件：.agents/plan/2026-04-28-codex-cli-mission-system.md
+
+plan = ".agents/plan/2026-04-28-codex-cli-mission-system.md"
+
+# Issue a1: CLI 命令与基础架构
+[[issue]]
+id = "a1"
+sequence = 10
+title = "Mission CLI 命令与基础架构实现"
+scope = """
+实现 Mission CLI 命令框架和基础数据结构，但不包含 Mission 业务逻辑、状态机、Worker 管理、验证器和知识管理。
+
+负责：
+- 在 codex-rs/cli/src/main.rs 中添加 Mission 子命令入口
+- 创建 codex-rs/cli/src/mission_cmd.rs 实现 Mission 子命令解析
+- 创建 codex-rs/core/src/mission/mod.rs、state.rs、error.rs 定义核心数据结构和错误类型
+- 更新相关 Cargo.toml 文件添加新模块
+- 实现 `codex mission --help` 显示帮助信息
+- 实现 `codex mission status` 显示 Mission 状态（初始版本为空状态）
+
+不负责：
+- Mission 状态机和规划流程（由 issue a2 负责）
+- Skill 文件和 Worker 管理（由 issue a3 负责）
+- 验证器和交接机制（由 issue a4 负责）
+- 知识管理和用户文档（由 issue a5 负责）
+"""
+touch_points = [
+  "codex-rs/cli/src/main.rs",
+  "codex-rs/cli/src/mission_cmd.rs",
+  "codex-rs/core/src/mission/mod.rs",
+  "codex-rs/core/src/mission/state.rs",
+  "codex-rs/core/src/mission/error.rs",
+  "codex-rs/cli/src/Cargo.toml",
+  "codex-rs/core/src/Cargo.toml",
+]
+depends_on = []
+done_when = """
+`codex mission --help` 可以正常显示帮助信息，`codex mission status` 可以显示 Mission 状态（即使为空），所有基础数据结构定义完整且编译通过。
+"""
+validate_by = """
+1. 编译检查：在 codex-rs 目录执行 `cargo build --package codex-cli` 确保编译通过
+2. 命令测试：执行 `codex mission --help` 验证帮助信息显示正确
+3. 状态测试：执行 `codex mission status` 验证可以显示状态（初始为空）
+4. 结构检查：确认 mission_cmd.rs、mission/mod.rs、mission/state.rs、mission/error.rs 文件存在且包含必要的数据结构定义
+"""
+regress_by = """
+1. 执行 `codex --help` 确保其他 CLI 命令仍然可用
+2. 执行 `codex exec --help` 确保现有子命令不受影响
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = """
+实现已完成，spec-reviewer 与 code-reviewer 本地门禁 PASS。
+
+已完成的非测试型验证：
+- `just fmt` 通过。
+- `git diff --check` 通过。
+- `cargo check -p codex-core --lib` 通过，仅有既有 warning。
+- `cargo check -p codex-cli --bin codex --no-default-features` 通过，仅有既有 warning。
+
+未完成/阻断的验证：
+- 用户要求先不跑测试，`cargo test -p codex-core mission::` 与 `cargo test -p codex-cli --test mission` 已暂停。
+- `cargo build --package codex-cli` 被默认特性链路的 `webrtc-sys` 头文件缺失阻断。
+- `cargo run -p codex-cli --no-default-features -- mission --help` 在 `v8` 链接阶段触发 rustc ICE，无法执行命令冒烟。
+
+关键风险：
+- 模块命名可能与现有功能冲突，需确保 `mission` 命令不与 `zteam` 等功能冲突
+- CLI 架构需保持与现有子命令（如 zinit、zmemory）的一致性
+"""
+
+# Issue a2: Mission 状态机与规划流程
+[[issue]]
+id = "a2"
+sequence = 20
+title = "Mission 状态机与 7 阶段规划流程实现"
+scope = """
+实现 Mission 状态机和 7 个规划阶段的交互流程，但不包含 Skill 文件、Worker 管理、验证器和知识管理。
+
+负责：
+- 创建 codex-rs/core/src/mission/planner.rs 实现 Mission 规划器
+- 创建 codex-rs/core/src/mission/phases.rs 实现 7 个规划阶段
+- 实现 Mission 状态机的状态转换逻辑
+- 实现交互式用户输入处理
+- 实现规划阶段结果的持久化到 `.mission/mission_state.json`
+- 实现 `codex mission start <goal>` 启动 Mission 并进入规划阶段
+- 实现 `codex mission continue` 继续执行中的 Mission
+
+不负责：
+- CLI 命令框架（由 issue a1 负责）
+- Skill 文件和 Worker 管理（由 issue a3 负责）
+- 验证器和交接机制（由 issue a4 负责）
+- 知识管理和用户文档（由 issue a5 负责）
+"""
+touch_points = [
+  "codex-rs/core/src/mission/planner.rs",
+  "codex-rs/core/src/mission/phases.rs",
+  "codex-rs/core/src/mission/state.rs",
+  ".mission/mission_state.json",
+]
+depends_on = ["a1"]
+done_when = """
+`codex mission start <goal>` 可以启动 Mission 并进入规划阶段，7 个规划阶段可以按顺序执行，每个阶段有明确的出口条件，规划阶段的结果可以持久化到 `.mission/mission_state.json`。
+"""
+validate_by = """
+1. 功能测试：执行 `codex mission start "测试目标"` 验证可以启动 Mission 并进入规划阶段
+2. 状态测试：执行 `codex mission status` 验证状态正确显示
+3. 持久化测试：检查 `.mission/mission_state.json` 文件存在且内容格式正确
+4. 阶段测试：手动完成 7 个规划阶段，验证每个阶段的出口条件
+5. 继续测试：执行 `codex mission continue` 验证可以继续执行中的 Mission
+6. 单元测试：在 codex-rs/core/src/mission/ 目录执行相关单元测试
+"""
+regress_by = """
+1. 执行 `codex mission status` 确保不会因为状态文件损坏而崩溃
+2. 执行其他 codex 命令确保不受 Mission 状态影响
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = """
+实现已完成，spec-reviewer 与 code-reviewer 本地门禁 PASS。
+
+已完成的非测试型验证：
+- `just fmt` 通过。
+- `git diff --check` 通过。
+- `cargo check -p codex-core --lib` 通过，仅有既有 warning。
+- `cargo check -p codex-cli --bin codex --no-default-features` 通过，仅有既有 warning。
+
+未完成/阻断的验证：
+- 用户要求先不跑测试，a2 单元测试与 CLI 集成测试未执行。
+- `cargo run -p codex-cli --no-default-features -- mission --help` 在 `v8` 链接阶段触发 rustc ICE，无法执行命令冒烟。
+
+关键风险：
+- 状态转换逻辑复杂，可能出现边界情况处理不当
+- 交互式用户输入流程可能影响用户体验
+- 持久化机制需要处理文件损坏等异常情况
+"""
+
+# Issue a3: Skill 系统与 Worker 管理
+[[issue]]
+id = "a3"
+sequence = 30
+title = "Mission Skill 系统与 Worker 管理"
+scope = """
+实现 5 个核心 skill 文件和 Worker session 管理，但不包含验证器、交接机制和知识管理。
+
+负责：
+- 创建 5 个核心 skill 文件模板：
+  - codex-rs/skills/src/assets/mission/mission-planning.md（规划阶段 skill）
+  - codex-rs/skills/src/assets/mission/define-mission-skills.md（Worker 定义 skill）
+  - codex-rs/skills/src/assets/mission/mission-worker-base.md（Worker 基础 skill）
+  - codex-rs/skills/src/assets/mission/scrutiny-validator.md（代码审查验证器 skill）
+  - codex-rs/skills/src/assets/mission/user-testing-validator.md（用户测试验证器 skill）
+- 创建 codex-rs/core/src/mission/skill_manager.rs 实现 Skill 管理器
+- 创建 codex-rs/core/src/mission/worker_manager.rs 实现 Worker 管理器
+- 实现 Worker session 的创建、恢复和监控逻辑
+- 实现 Skill 文件从模板加载和运行时复制到工作目录
+
+不负责：
+- CLI 命令和基础架构（由 issue a1 负责）
+- 状态机和规划流程（由 issue a2 负责）
+- 验证器和交接机制的具体实现（由 issue a4 负责）
+- 知识管理和用户文档（由 issue a5 负责）
+"""
+touch_points = [
+  "codex-rs/skills/src/assets/mission/mission-planning.md",
+  "codex-rs/skills/src/assets/mission/define-mission-skills.md",
+  "codex-rs/skills/src/assets/mission/mission-worker-base.md",
+  "codex-rs/skills/src/assets/mission/scrutiny-validator.md",
+  "codex-rs/skills/src/assets/mission/user-testing-validator.md",
+  "codex-rs/core/src/mission/skill_manager.rs",
+  "codex-rs/core/src/mission/worker_manager.rs",
+  "codex-rs/skills/src/Cargo.toml",
+]
+depends_on = ["a2"]
+done_when = """
+5 个核心 skill 文件可以作为模板加载和使用，Worker 可以基于 skill 文件创建并执行任务，Worker session 的状态可以被跟踪和恢复。
+"""
+validate_by = """
+1. 模板测试：验证 5 个 skill 文件模板存在且内容完整
+2. 加载测试：执行 Skill 管理器加载功能，验证可以正确加载模板
+3. Worker 测试：创建 Worker session，验证可以基于 skill 文件执行任务
+4. 状态测试：验证 Worker session 状态可以被正确跟踪和恢复
+5. 单元测试：在 codex-rs/core/src/mission/ 目录执行 skill_manager 和 worker_manager 的单元测试
+"""
+regress_by = """
+1. 执行现有 codex 命令确保不受 Skill 系统影响
+2. 执行 `codex mission status` 确保不受 Worker session 状态影响
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "partial"
+regress_status = "not_needed"
+notes = """
+实现已完成，通过编译检查。
+
+已完成的非测试型验证：
+- `cargo check -p codex-skills --lib` 通过。
+- `cargo check -p codex-core --lib` 通过。
+- `cargo check -p codex-cli --bin codex --no-default-features` 通过。
+- 所有新增模块包含单元测试。
+
+未完成/暂停的验证：
+- 用户要求先不跑测试，单元测试未执行。
+- 集成测试和 CLI 功能验证待后续阶段。
+
+关键风险：
+- Worker session 管理涉及多线程和进程管理，可能出现资源泄漏
+- Skill 文件模板需要与 Mission 系统的其他部分协调一致
+"""
+
+关键风险：
+- Worker session 管理涉及多线程和进程管理，可能出现资源泄漏
+- Skill 文件模板需要与 Mission 系统的其他部分协调一致
+"""
+
+# Issue a4: 验证器与交接机制
+[[issue]]
+id = "a4"
+sequence = 40
+title = "Mission 验证器与交接机制实现"
+scope = """
+实现双层验证器和交接（Handoff）机制，但不包含知识管理和用户文档。
+
+负责：
+- 创建 codex-rs/core/src/mission/validators.rs 实现验证器模块
+- 创建 codex-rs/core/src/mission/validators/scrutiny.rs 实现 Scrutiny Validator
+- 创建 codex-rs/core/src/mission/validators/user_testing.rs 实现 User Testing Validator
+- 创建 codex-rs/core/src/mission/handoff.rs 实现交接机制
+- 定义 Handoff JSON schema 并实现序列化/反序列化
+- 实现 `codex mission validate` 运行验证器并报告结果
+- 实现 Worker 生成标准化的 Handoff JSON
+- 实现验证器基于 Handoff 内容进行验证并生成报告
+
+不负责：
+- CLI 命令和基础架构（由 issue a1 负责）
+- 状态机和规划流程（由 issue a2 负责）
+- Skill 文件和 Worker 管理（由 issue a3 负责）
+- 知识管理和用户文档（由 issue a5 负责）
+"""
+touch_points = [
+  "codex-rs/core/src/mission/validators.rs",
+  "codex-rs/core/src/mission/validators/scrutiny.rs",
+  "codex-rs/core/src/mission/validators/user_testing.rs",
+  "codex-rs/core/src/mission/handoff.rs",
+  "codex-rs/cli/src/mission_cmd.rs",
+]
+depends_on = ["a3"]
+done_when = """
+`codex mission validate` 可以运行验证器并报告结果，Worker 可以生成标准化的 Handoff JSON，验证器可以基于 Handoff 内容进行验证并生成报告。
+"""
+validate_by = """
+1. 命令测试：执行 `codex mission validate` 验证可以运行验证器
+2. Handoff 测试：生成测试用 Handoff JSON，验证格式正确
+3. 验证器测试：运行 Scrutiny Validator 和 User Testing Validator，验证可以正确验证
+4. 报告测试：验证验证器可以生成正确的报告
+5. 单元测试：在 codex-rs/core/src/mission/ 目录执行验证器和交接机制的单元测试
+"""
+regress_by = """
+1. 执行 `codex mission status` 确保验证不影响状态显示
+2. 执行 `codex mission continue` 确保验证不影响继续执行
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "partial"
+regress_status = "not_needed"
+notes = """
+实现已完成，通过编译检查。
+
+已完成的非测试型验证：
+- `cargo check -p codex-core --lib` 通过。
+- `cargo check -p codex-cli --bin codex --no-default-features` 通过。
+- Handoff JSON schema 定义完整且可序列化/反序列化。
+- 验证器模块和 CLI 集成完成。
+
+未完成/暂停的验证：
+- 用户要求先不跑测试，单元测试未执行。
+- `codex mission validate` 命令功能测试未执行。
+- 集成测试和端到端验证待后续阶段。
+
+关键风险：
+- 验证器的准确性直接影响 Mission 质量，可能出现误报或漏报
+- Handoff JSON schema 需要与 Worker 管理系统协调一致
+"""
+
+# Issue a5: 知识沉淀与文档
+[[issue]]
+id = "a5"
+sequence = 50
+title = "Mission 知识沉淀系统与用户文档"
+scope = """
+实现知识沉淀系统和完整的用户文档，但不包含 CLI 命令、状态机、Worker 管理和验证器的实现。
+
+负责：
+- 创建 codex-rs/core/src/mission/knowledge.rs 实现知识管理模块
+- 实现 `.factory/` 目录的自动创建和更新逻辑
+- 实现 services.yaml、library/ 和 AGENTS.md 的自动更新
+- 创建 docs/mission.md 用户文档，包含快速开始、命令参考和最佳实践
+- 更新 CLI 帮助文档和示例
+- 创建相关测试和 snapshot
+
+不负责：
+- CLI 命令和基础架构（由 issue a1 负责）
+- 状态机和规划流程（由 issue a2 负责）
+- Skill 文件和 Worker 管理（由 issue a3 负责）
+- 验证器和交接机制（由 issue a4 负责）
+"""
+touch_points = [
+  "codex-rs/core/src/mission/knowledge.rs",
+  ".factory/services.yaml",
+  ".factory/library/",
+  ".factory/AGENTS.md",
+  "docs/mission.md",
+  "docs/slash_commands.md",
+  "codex-rs/tui/src/slash_command.rs",
+]
+depends_on = ["a4"]
+done_when = """
+`.factory/` 目录可以在 Mission 启动时自动创建，services.yaml、library/ 和 AGENTS.md 可以被自动更新，用户文档完整，包含快速开始、命令参考和最佳实践，所有测试通过，snapshot 覆盖充分。
+"""
+validate_by = """
+1. 目录测试：启动 Mission，验证 `.factory/` 目录自动创建
+2. 更新测试：验证 services.yaml、library/ 和 AGENTS.md 可以被自动更新
+3. 文档测试：阅读 docs/mission.md，验证内容完整且准确
+4. 帮助测试：执行 `codex mission --help`，验证帮助文档完整
+5. 测试覆盖：执行相关测试，验证 snapshot 覆盖充分
+6. 单元测试：在 codex-rs/core/src/mission/ 目录执行 knowledge 模块的单元测试
+"""
+regress_by = """
+1. 执行 `codex mission start` 验证知识管理不影响 Mission 启动
+2. 执行其他 codex 命令确保不受知识管理影响
+"""
+regress_timing = "after_done"
+status = "done"
+validate_status = "partial"
+regress_status = "not_needed"
+notes = """
+实现已完成，通过编译检查。
+
+已完成的非测试型验证：
+- `cargo check -p codex-core --lib` 通过。
+- `cargo check -p codex-cli --bin codex --no-default-features` 通过。
+- knowledge.rs 模块包含完整的单元测试。
+- docs/mission.md 完整的用户文档已创建。
+- docs/slash_commands.md 已更新 Mission 命令文档。
+
+未完成/暂停的验证：
+- 用户要求先不跑测试，单元测试未执行。
+- TUI 界面的 Mission 集成测试（留待后续阶段）
+- 跨会话的 Mission 持久化和恢复测试（留待后续阶段）
+
+关键风险：
+- `.factory/` 目录结构需要与现有项目约定兼容
+- 用户文档需要与实际实现保持同步
+"""

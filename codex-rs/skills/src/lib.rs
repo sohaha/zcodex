@@ -8,17 +8,28 @@ use std::hash::Hasher;
 use thiserror::Error;
 
 const SYSTEM_SKILLS_DIR: Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/src/assets/samples");
+const MISSION_SKILLS_DIR: Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/src/assets/mission");
 
 const SYSTEM_SKILLS_DIR_NAME: &str = ".system";
+const MISSION_SKILLS_DIR_NAME: &str = "mission";
 const SKILLS_DIR_NAME: &str = "skills";
 const SYSTEM_SKILLS_MARKER_FILENAME: &str = ".codex-system-skills.marker";
+const MISSION_SKILLS_MARKER_FILENAME: &str = ".codex-mission-skills.marker";
 const SYSTEM_SKILLS_MARKER_SALT: &str = "v1";
+const MISSION_SKILLS_MARKER_SALT: &str = "v1";
 
 /// Returns the on-disk cache location for embedded system skills from an absolute CODEX_HOME.
 pub fn system_cache_root_dir(codex_home: &AbsolutePathBuf) -> AbsolutePathBuf {
     codex_home
         .join(SKILLS_DIR_NAME)
         .join(SYSTEM_SKILLS_DIR_NAME)
+}
+
+/// Returns the on-disk cache location for embedded mission skills from an absolute CODEX_HOME.
+pub fn mission_cache_root_dir(codex_home: &AbsolutePathBuf) -> AbsolutePathBuf {
+    codex_home
+        .join(SKILLS_DIR_NAME)
+        .join(MISSION_SKILLS_DIR_NAME)
 }
 
 /// Installs embedded system skills into `CODEX_HOME/skills/.system`.
@@ -55,6 +66,40 @@ pub fn install_system_skills(codex_home: &AbsolutePathBuf) -> Result<(), SystemS
     Ok(())
 }
 
+/// Installs embedded mission skills into `CODEX_HOME/skills/mission`.
+///
+/// Clears any existing mission skills directory first and then writes the embedded
+/// mission skills directory into place.
+///
+/// To avoid doing unnecessary work on every startup, a marker file is written
+/// with a fingerprint of the embedded directory. When the marker matches, the
+/// install is skipped.
+pub fn install_mission_skills(codex_home: &AbsolutePathBuf) -> Result<(), SystemSkillsError> {
+    let skills_root_dir = codex_home.join(SKILLS_DIR_NAME);
+    fs::create_dir_all(skills_root_dir.as_path())
+        .map_err(|source| SystemSkillsError::io("create skills root dir", source))?;
+
+    let dest_mission = mission_cache_root_dir(codex_home);
+
+    let marker_path = dest_mission.join(MISSION_SKILLS_MARKER_FILENAME);
+    let expected_fingerprint = embedded_mission_skills_fingerprint();
+    if dest_mission.as_path().is_dir()
+        && read_marker(&marker_path).is_ok_and(|marker| marker == expected_fingerprint)
+    {
+        return Ok(());
+    }
+
+    if dest_mission.as_path().exists() {
+        fs::remove_dir_all(dest_mission.as_path())
+            .map_err(|source| SystemSkillsError::io("remove existing mission skills dir", source))?;
+    }
+
+    write_embedded_dir(&MISSION_SKILLS_DIR, &dest_mission)?;
+    fs::write(marker_path.as_path(), format!("{expected_fingerprint}\n"))
+        .map_err(|source| SystemSkillsError::io("write mission skills marker", source))?;
+    Ok(())
+}
+
 fn read_marker(path: &AbsolutePathBuf) -> Result<String, SystemSkillsError> {
     Ok(fs::read_to_string(path.as_path())
         .map_err(|source| SystemSkillsError::io("read system skills marker", source))?
@@ -69,6 +114,20 @@ fn embedded_system_skills_fingerprint() -> String {
 
     let mut hasher = DefaultHasher::new();
     SYSTEM_SKILLS_MARKER_SALT.hash(&mut hasher);
+    for (path, contents_hash) in items {
+        path.hash(&mut hasher);
+        contents_hash.hash(&mut hasher);
+    }
+    format!("{:x}", hasher.finish())
+}
+
+fn embedded_mission_skills_fingerprint() -> String {
+    let mut items = Vec::new();
+    collect_fingerprint_items(&MISSION_SKILLS_DIR, &mut items);
+    items.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+
+    let mut hasher = DefaultHasher::new();
+    MISSION_SKILLS_MARKER_SALT.hash(&mut hasher);
     for (path, contents_hash) in items {
         path.hash(&mut hasher);
         contents_hash.hash(&mut hasher);
@@ -163,6 +222,28 @@ mod tests {
         assert!(
             paths
                 .binary_search_by(|probe| probe.as_str().cmp("skill-creator/scripts/init_skill.py"))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn mission_fingerprint_traverses_nested_entries() {
+        use super::MISSION_SKILLS_DIR;
+        use super::collect_fingerprint_items;
+
+        let mut items = Vec::new();
+        collect_fingerprint_items(&MISSION_SKILLS_DIR, &mut items);
+        let mut paths: Vec<String> = items.into_iter().map(|(path, _)| path).collect();
+        paths.sort_unstable();
+
+        assert!(
+            paths
+                .binary_search_by(|probe| probe.as_str().cmp("mission-planning.md"))
+                .is_ok()
+        );
+        assert!(
+            paths
+                .binary_search_by(|probe| probe.as_str().cmp("mission-worker-base.md"))
                 .is_ok()
         );
     }

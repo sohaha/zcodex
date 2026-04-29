@@ -1,59 +1,31 @@
 # QA Review
 
-- Status: FAIL
-- Summary: 审查 `HEAD~1..HEAD` 后确认一处高严重度回归：`InProcessAppServerClient` 现在会在客户端层直接拒绝 `ChatgptAuthTokensRefresh` server request，但嵌入式 TUI 正是通过这条 in-process 路径运行，并且现有 TUI 逻辑明确把该请求视为可处理请求而非 unsupported。结果是 ChatGPT token 过期后的刷新流程在 embedded TUI 中会被短路，无法到达 UI 处理层。
+- Status: PASS
+- Summary: 审查 `Mission CLI` 基础接线后，指定文件集内未发现已验证的安全、性能、可访问性或代码质量问题；`mission` 子命令入口、核心状态类型和空状态输出均与 issue `a1` 合同一致。
 - Files changed:
-  - `.agents/issues/2026-04-28-context-hooks-architecture.toml`
-  - `.agents/llmdoc/index.md`
-  - `.agents/llmdoc/memory/reflections/2026-04-28-auth-401-should-fallback-without-retrying-the-same-provider.md`
-  - `codex-rs/app-server-client/src/lib.rs`
-  - `codex-rs/app-server/src/codex_message_processor.rs`
-  - `codex-rs/app-server/src/in_process.rs`
-  - `codex-rs/cli/tests/ztok.rs`
-  - `codex-rs/core/src/codex_thread.rs`
-  - `codex-rs/core/src/config/config_tests.rs`
-  - `codex-rs/core/src/memories/prompts_tests.rs`
-  - `codex-rs/core/src/session/mod.rs`
-  - `codex-rs/core/src/session/turn.rs`
-  - `codex-rs/core/src/tools/handlers/tldr.rs`
-  - `codex-rs/core/templates/compact/ztok.md`
-  - `codex-rs/core/tests/suite/websocket_fallback.rs`
-  - `codex-rs/mcp-server/src/tldr_tool.rs`
-  - `codex-rs/native-tldr/src/daemon.rs`
-  - `codex-rs/native-tldr/src/semantic.rs`
-  - `codex-rs/native-tldr/src/semantic/embedder.rs`
-  - `codex-rs/ztok/src/lib.rs`
-  - `codex-rs/ztok/src/session_cache_cmd.rs`
-  - `codex-rs/ztok/src/settings.rs`
+  - `.agents/issues/2026-04-28-codex-cli-mission-system.toml`
+  - `codex-rs/cli/src/main.rs`
+  - `codex-rs/cli/src/mission_cmd.rs`
+  - `codex-rs/cli/tests/mission.rs`
+  - `codex-rs/core/src/lib.rs`
+  - `codex-rs/core/src/mission/mod.rs`
+  - `codex-rs/core/src/mission/state.rs`
+  - `codex-rs/core/src/mission/error.rs`
 - Acceptance criteria checklist:
-  - [x] 已审查 `HEAD~1..HEAD` 的变更文件与关键调用点。
-  - [x] 已给出带 `file:line` 的已验证 findings。
+  - [x] 已审查指定文件与相关 issue 合同。
+  - [x] 已核对 `main.rs` 子命令注册、dispatch 与 `core` 导出接线。
+  - [x] 已核对 `mission status` 空状态路径与基础状态结构定义。
+  - [x] 已核对 `mission --help` / `mission status` 的集成测试覆盖。
   - [x] 未修改源码。
-  - [x] 已记录自动化验证的实际覆盖与受限项。
+  - [x] 已记录自动化验证覆盖与受限项。
 
-## Review Result: FAIL
+## Review Result: PASS
 
 ### CRITICAL
 - None.
 
 ### HIGH
-- `codex-rs/app-server-client/src/lib.rs:298` — `forward_ready_in_process_event()` 会把 `ServerRequest::ChatgptAuthTokensRefresh` 直接失败返回，而不是转发给 in-process 客户端。这个假设和现有产品面冲突：embedded TUI 通过 `InProcessAppServerClient::start` 启动 app-server（`codex-rs/tui/src/lib.rs:271`），并且其请求管理器明确把 `ChatgptAuthTokensRefresh` 视为正常可处理请求（`codex-rs/tui/src/app/app_server_requests.rs:690`）。当前改动会让 token 过期后的刷新流程在 embedded TUI 中被客户端层短路，用户无法完成 auth 恢复。 — remediation code:
-```rust
-// codex-rs/app-server-client/src/lib.rs
-// 不要在共享 in-process client 层拒绝 ChatgptAuthTokensRefresh；
-// 让它和其它 ServerRequest 一样继续转发给上层消费。
-forward_in_process_event(event_tx, skipped_events, event, |request| {
-    let _ = request_sender.fail_server_request(
-        request.id().clone(),
-        JSONRPCErrorError {
-            code: -32001,
-            message: "in-process app-server event queue is full".to_string(),
-            data: None,
-        },
-    );
-})
-.await
-```
+- None.
 
 ### MEDIUM
 - None.
@@ -64,19 +36,22 @@ forward_in_process_event(event_tx, skipped_events, event, |request| {
 ## Verification Notes
 
 - 代码审读证据：
-  - `codex-rs/app-server-client/src/lib.rs:298-316` 新增了对 `ChatgptAuthTokensRefresh` 的共享拒绝分支。
-  - `codex-rs/tui/src/lib.rs:271-289` 证明 embedded TUI 生产路径使用 `InProcessAppServerClient::start`。
-  - `codex-rs/tui/src/app/app_server_requests.rs:690-703` 证明 TUI 现有逻辑预期该请求会到达 UI 层处理，而不是被底层判为 unsupported。
-- 自动化命令：
-  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-app-server-client in_process_thread_start_buffers_startup_warning_before_response -- --exact'`
-    - 结果：20 分钟超时，未形成可用结论。
-  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-native-tldr query_daemon_read_timeout_reports_unresponsive_daemon --lib -- --exact'`
-    - 结果：crate 完成编译，但 `--exact` 过滤未命中测试名，0 tests run。
-  - `codex ztok shell bash -lc 'env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER cargo test -p codex-native-tldr semantic_index_batches_document_embedding_generation --lib -- --exact'`
-    - 结果：crate 完成编译，但 `--exact` 过滤未命中测试名，0 tests run。
-- 工具受限：
-  - `ztldr change-impact / warm / status` 均返回 `structuredFailure: tool_error`，原因为 native-tldr socket `read timeout`，因此本次结构影响分析退回到 `git diff + 调用点审读`。
+  - `codex-rs/cli/src/main.rs:53`, `codex-rs/cli/src/main.rs:65-66`, `codex-rs/cli/src/main.rs:141-142`, `codex-rs/cli/src/main.rs:907-913` 已将 `mission` 子命令注册到顶层 CLI，并在非 remote 模式下分发到 `run_mission_command()`。
+  - `codex-rs/cli/src/mission_cmd.rs:10-26` 提供 `MissionCli`/`MissionSubcommand` 解析与 `status` 执行入口。
+  - `codex-rs/cli/src/mission_cmd.rs:29-50` 通过 `MissionStateStore` 输出空状态或活动状态；空状态输出路径符合 `.mission/mission_state.json` 合同。
+  - `codex-rs/core/src/lib.rs:45` 与 `codex-rs/core/src/mission/mod.rs:1-14` 已公开 Mission 模块及所需核心类型。
+  - `codex-rs/core/src/mission/state.rs:8-127` 定义了状态文件路径常量、`MissionStatus`、`MissionPhase`、`MissionState`、`MissionStatusReport` 和 `MissionStateStore`。
+  - `codex-rs/core/src/mission/error.rs:3-22` 定义了状态读取/解析错误类型与统一 `MissionResult`。
+  - `codex-rs/cli/tests/mission.rs:14-41` 覆盖了 `codex mission --help` 与空状态 `codex mission status` 两条合同路径。
+- Cargo manifest 审核：
+  - `codex-rs/core/Cargo.toml` 已包含 `serde`、`serde_json`、`thiserror`。
+  - `codex-rs/cli/Cargo.toml` 已包含 `clap`、`codex-core`、测试所需 `assert_cmd`/`predicates`/`tempfile`。
+  - 本次新增的是 crate 内模块文件与现有依赖的复用，不需要额外 `Cargo.toml` 变更。
+- 自动化验证：
+  - 提供方已给出 `cargo check -p codex-core --lib` 与 `cargo check -p codex-cli --bin codex --no-default-features` 通过的先验证据。
+  - 本地尝试串行复跑 `codex ztok shell bash -lc 'cd codex-rs && cargo check -p codex-core --lib'`，在 300 秒超时内未完成，未形成新的可用结论。
+  - 按任务约束未执行测试；同时尊重“先不跑测试”的明确要求。
 
 ## Residual Risk
 
-- 除上述高严重度回归外，其余改动未发现已验证的中等级以上问题，但 `app-server-client` / `core` 相关定向测试本次未能完整跑通，仍存在未被自动化覆盖的残余风险。
+- 本地未能在限定时间内复现 `cargo check` 成功结果，因此自动化证据主要依赖任务提供的先验证据与本次源码审读。

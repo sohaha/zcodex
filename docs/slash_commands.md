@@ -6,6 +6,68 @@ Codex CLI 的斜杠命令总览见官方文档：
 
 这个页面只补充当前仓库里新增或本地化的命令行为说明。
 
+## Mission
+
+`codex mission` 是 CLI 层的完整工程工作流系统，提供从规划到验证的 7 阶段流程。
+
+### 用法
+
+```text
+codex mission start <目标>
+codex mission status
+codex mission continue [--note <说明>]
+codex mission validate [OPTIONS]
+```
+
+### 命令说明
+
+- `codex mission start <目标>`
+  启动新的 Mission 并进入 7 阶段规划流程。
+  - **目标**：Mission 要完成的任务，应该具体、可验证、范围适当
+  - 示例：`codex mission start "实现用户登录功能"`
+
+- `codex mission status`
+  显示当前 Mission 状态。
+  - 显示 Mission 状态（planning/executing/completed/blocked）
+  - 显示当前目标和阶段
+  - 显示状态文件路径
+
+- `codex mission continue [--note <说明>]`
+  推进当前 Mission 到下一个规划阶段。
+  - `--note`：记录当前阶段的确认说明（可选）
+  - 示例：`codex mission continue --note "上下文收集完成"`
+
+- `codex mission validate [OPTIONS]`
+  运行验证器并报告结果。
+  - `--handoff <路径>`：指定 Handoff 文件（默认使用最新的）
+  - `--validator <类型>`：验证器类型（all/scrutiny/user-testing，默认 all）
+  - `--strict`：严格模式（任何问题都导致失败）
+  - `--output <格式>`：输出格式（markdown/json，默认 markdown）
+  - 示例：`codex mission validate --strict`
+
+### 7 个规划阶段
+
+1. **目标澄清**：明确目标、成功标准和非目标
+2. **上下文收集**：收集相关代码、文档和约束
+3. **约束确认**：确认安全、兼容性等约束条件
+4. **方案设计**：确定模块边界和数据流
+5. **执行计划**：拆解任务顺序和验收标准
+6. **Worker 定义**：定义需要的 Worker 类型
+7. **验证策略**：定义代码审查和测试策略
+
+### 与 ZTeam 的区别
+
+| 特性 | Mission | ZTeam |
+|------|---------|-------|
+| 用途 | 完整工程工作流 | 本地双 Worker 协作 |
+| 规划 | 7 阶段系统化规划 | 简化规划 |
+| 验证 | 双层验证机制 | 基础验证 |
+| 适用场景 | 复杂任务、新功能 | 快速协作、简单任务 |
+
+### 更多信息
+
+参见 [Mission 完整文档](mission.md)。
+
 ## ZTeam
 
 `/zteam` 是 TUI 内的本地协作入口。当前底层仍固定复用两个本地 worker，但推荐心智已经从“手动管理 frontend/backend 双 worker”切到“先给目标，再进入 ZTeam mission 协作”。

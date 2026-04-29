@@ -3,12 +3,16 @@ use std::path::Path;
 
 fn main() {
     let samples_dir = Path::new("src/assets/samples");
-    if !samples_dir.exists() {
-        return;
+    if samples_dir.exists() {
+        println!("cargo:rerun-if-changed={}", samples_dir.display());
+        visit_dir(samples_dir);
     }
 
-    println!("cargo:rerun-if-changed={}", samples_dir.display());
-    visit_dir(samples_dir);
+    let mission_dir = Path::new("src/assets/mission");
+    if mission_dir.exists() {
+        println!("cargo:rerun-if-changed={}", mission_dir.display());
+        visit_dir(mission_dir);
+    }
 }
 
 fn visit_dir(dir: &Path) {
