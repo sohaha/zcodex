@@ -15,7 +15,7 @@ fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
 async fn mission_help_renders() -> Result<()> {
     let codex_home = TempDir::new()?;
     codex_command(codex_home.path())?
-        .args(["mission", "--help"])
+        .args(["zmission", "--help"])
         .assert()
         .success()
         .stdout(
@@ -33,7 +33,7 @@ async fn mission_status_reports_empty_state() -> Result<()> {
     let workspace = TempDir::new()?;
     codex_command(codex_home.path())?
         .current_dir(workspace.path())
-        .args(["mission", "status"])
+        .args(["zmission", "status"])
         .assert()
         .success()
         .stdout(
@@ -62,7 +62,7 @@ async fn mission_start_and_continue_persist_state() -> Result<()> {
     codex_command(codex_home.path())?
         .current_dir(workspace.path())
         .env("OPENAI_API_KEY", "fake-key-for-test")
-        .args(["mission", "start", "--skip-git-repo-check", "测试目标"])
+        .args(["zmission", "start", "--skip-git-repo-check", "测试目标"])
         .assert()
         .stdout(
             predicate::str::contains("Mission 状态：planning")
@@ -74,7 +74,7 @@ async fn mission_start_and_continue_persist_state() -> Result<()> {
         .current_dir(workspace.path())
         .env("OPENAI_API_KEY", "fake-key-for-test")
         .args([
-            "mission",
+            "zmission",
             "continue",
             "--skip-git-repo-check",
             "--note",
@@ -89,7 +89,7 @@ async fn mission_start_and_continue_persist_state() -> Result<()> {
     // status 应独立于 exec，可以直接成功。
     codex_command(codex_home.path())?
         .current_dir(workspace.path())
-        .args(["mission", "status"])
+        .args(["zmission", "status"])
         .assert()
         .success()
         .stdout(

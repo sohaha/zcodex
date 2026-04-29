@@ -79,10 +79,7 @@ pub fn review_prompt(target: &ReviewTarget, cwd: &AbsolutePathBuf) -> anyhow::Re
                     [("sha", sha.as_str()), ("title", title.as_str())],
                 )
             } else {
-                render_review_prompt(
-                    &COMMIT_PROMPT_TEMPLATE,
-                    [("sha", sha.as_str())],
-                )
+                render_review_prompt(&COMMIT_PROMPT_TEMPLATE, [("sha", sha.as_str())])
             }
         }
         ReviewTarget::Custom { instructions } => {
@@ -93,7 +90,9 @@ pub fn review_prompt(target: &ReviewTarget, cwd: &AbsolutePathBuf) -> anyhow::Re
             return Ok(custom.to_string());
         }
     };
-    Ok(format!("{prompt}\n\nPrefer responding in Chinese (Simplified)."))
+    Ok(format!(
+        "{prompt}\n\nPrefer responding in Chinese (Simplified)."
+    ))
 }
 
 fn render_review_prompt<'a, const N: usize>(

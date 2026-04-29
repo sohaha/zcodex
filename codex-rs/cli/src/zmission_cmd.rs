@@ -16,21 +16,22 @@ use codex_core::mission::ValidatorConfig;
 use codex_exec::Cli as ExecCli;
 use codex_utils_cli::CliConfigOverrides;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
-#[command(bin_name = "codex mission")]
-pub struct MissionCli {
+#[command(bin_name = "codex zmission")]
+pub struct ZmissionCli {
     #[command(subcommand)]
-    pub subcommand: MissionSubcommand,
+    pub subcommand: ZmissionSubcommand,
 
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
 }
 
 #[derive(Debug, Subcommand)]
-pub enum MissionSubcommand {
+pub enum ZmissionSubcommand {
     /// 启动新的 Mission 并进入 7 阶段规划流程。
     Start(MissionStartCommand),
     /// 显示当前工作区的 Mission 状态。
@@ -120,20 +121,30 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-pub async fn run_mission_command(
-    cli: MissionCli,
+pub async fn run_zmission_command(
+    cli: ZmissionCli,
     arg0_paths: Arg0DispatchPaths,
     root_config_overrides: CliConfigOverrides,
 ) -> Result<()> {
     match cli.subcommand {
-        MissionSubcommand::Start(command) => {
+        ZmissionSubcommand::Start(command) => {
             start_mission(command, arg0_paths, root_config_overrides).await
         }
-        MissionSubcommand::Status => print_status(),
-        MissionSubcommand::Continue(command) => {
-            continue_mission(command, arg0_paths, root_config_overrides).await
+        ZmissionSubcommand::Status => print_status(),
+        ZmissionSubcommand::Continue(command) => {
+            let planner = planner_for_current_dir()?;
+            let step = planner.continue_planning(command.note)?;
+            print_planning_step(&step);
+            run_phases_loop(
+                step,
+                planner,
+                arg0_paths,
+                root_config_overrides,
+                command.skip_git_repo_check,
+            )
+            .await
         }
-        MissionSubcommand::Validate(command) => validate_mission(command),
+        ZmissionSubcommand::Validate(command) => validate_mission(command),
     }
 }
 
@@ -145,13 +156,84 @@ async fn start_mission(
     let planner = planner_for_current_dir()?;
     let step = planner.start(command.goal)?;
     print_planning_step(&step);
-    launch_exec_for_phase(
+    run_phases_loop(
         step,
+        planner,
         arg0_paths,
         root_config_overrides,
         command.skip_git_repo_check,
     )
     .await
+}
+
+/// 在当前阶段完成后自动提示用户继续下一阶段，直到规划完成。
+async fn run_phases_loop(
+    mut step: MissionPlanningStep,
+    planner: MissionPlanner,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+    skip_git_repo_check: bool,
+) -> Result<()> {
+    loop {
+        launch_exec_for_phase(
+            &step,
+            arg0_paths.clone(),
+            root_config_overrides.clone(),
+            skip_git_repo_check,
+        )
+        .await?;
+
+        let Some(definition) = step.definition else {
+            println!("\n规划阶段已完成，Mission 进入执行状态。");
+            println!(
+                "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
+                step.state.goal
+            );
+            return Ok(());
+        };
+
+        let next_phase = match definition.phase.next() {
+            Some(next) => next,
+            None => {
+                println!("\n规划阶段已完成，Mission 进入执行状态。");
+                println!(
+                    "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
+                    step.state.goal
+                );
+                return Ok(());
+            }
+        };
+
+        let next_def = codex_core::mission::phase_definition(next_phase);
+        println!("\n{}", "-".repeat(60));
+        println!(
+            "阶段 [{}] 已完成。下一阶段：{} ({})",
+            definition.phase.label(),
+            next_def.title,
+            next_phase.label(),
+        );
+        println!("提示：{}", next_def.prompt);
+        println!("{}", "-".repeat(60));
+
+        if !confirm_continue()? {
+            println!("已暂停。随时运行 `codex mission continue` 继续下一阶段。");
+            return Ok(());
+        }
+
+        let note = Some(format!("{} 阶段已完成，继续推进", definition.phase.label()));
+        step = planner.continue_planning(note)?;
+        print_planning_step(&step);
+    }
+}
+
+/// 询问用户是否继续下一阶段。
+fn confirm_continue() -> std::io::Result<bool> {
+    print!("\n继续下一阶段？[Y/n] ");
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let answer = input.trim();
+    Ok(answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes"))
 }
 
 fn print_status() -> Result<()> {
@@ -163,26 +245,9 @@ fn print_status() -> Result<()> {
     Ok(())
 }
 
-async fn continue_mission(
-    command: MissionContinueCommand,
-    arg0_paths: Arg0DispatchPaths,
-    root_config_overrides: CliConfigOverrides,
-) -> Result<()> {
-    let planner = planner_for_current_dir()?;
-    let step = planner.continue_planning(command.note)?;
-    print_planning_step(&step);
-    launch_exec_for_phase(
-        step,
-        arg0_paths,
-        root_config_overrides,
-        command.skip_git_repo_check,
-    )
-    .await
-}
-
 /// 为当前规划阶段构造 prompt，然后启动 agent session 来执行该阶段的分析。
 async fn launch_exec_for_phase(
-    step: MissionPlanningStep,
+    step: &MissionPlanningStep,
     arg0_paths: Arg0DispatchPaths,
     root_config_overrides: CliConfigOverrides,
     skip_git_repo_check: bool,
@@ -202,8 +267,7 @@ async fn launch_exec_for_phase(
          当前阶段：{title} ({phase})\n\
          阶段提示：{prompt_text}\n\
          出口条件：{exit_condition}\n\n\
-         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。\n\
-         用户将通过 `codex mission continue` 推进到下一阶段。",
+         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。",
         goal = step.state.goal,
         title = definition.title,
         phase = definition.phase.label(),
@@ -219,7 +283,6 @@ async fn launch_exec_for_phase(
     prepend_config_flags(&mut exec_cli.config_overrides, root_config_overrides);
     codex_exec::run_main(exec_cli, arg0_paths).await
 }
-
 fn validate_mission(command: MissionValidateCommand) -> Result<()> {
     let handoff = load_handoff(command.handoff.as_deref())?;
     let config = ValidatorConfig {

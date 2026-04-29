@@ -1,7 +1,7 @@
 {
-  "goal": "完善优化好宠物功能. .agents/plan/2026-04-28-tui-buddy-rarity-visual-differentiation.md",
-  "status": "executing",
-  "phase": null,
+  "goal": ".agents/plan/2026-04-28-context-hooks-architecture.md",
+  "status": "planning",
+  "phase": "plan",
   "completed_phases": [
     {
       "phase": "intent",
@@ -18,18 +18,6 @@
     {
       "phase": "architecture",
       "note": "architecture 阶段已确认"
-    },
-    {
-      "phase": "plan",
-      "note": "plan 阶段已确认"
-    },
-    {
-      "phase": "worker_definition",
-      "note": "worker_definition 阶段已确认"
-    },
-    {
-      "phase": "verification",
-      "note": "verification 阶段已确认"
     }
   ]
 }

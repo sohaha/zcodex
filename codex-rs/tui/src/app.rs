@@ -7260,34 +7260,6 @@ impl App {
         self.chat_widget.refresh_status_line();
     }
 
-    #[cfg(target_os = "windows")]
-    fn spawn_world_writable_scan(
-        cwd: AbsolutePathBuf,
-        env_map: std::collections::HashMap<String, String>,
-        logs_base_dir: AbsolutePathBuf,
-        sandbox_policy: codex_protocol::protocol::SandboxPolicy,
-        tx: AppEventSender,
-    ) {
-        tokio::task::spawn_blocking(move || {
-            let logs_base_dir_path = logs_base_dir.as_path();
-            let result = codex_windows_sandbox::apply_world_writable_scan_and_denies(
-                logs_base_dir_path,
-                cwd.as_path(),
-                &env_map,
-                &sandbox_policy,
-                Some(logs_base_dir_path),
-            );
-            if result.is_err() {
-                // Scan failed: warn without examples.
-                tx.send(AppEvent::OpenWorldWritableWarningConfirmation {
-                    preset: None,
-                    sample_paths: Vec::new(),
-                    extra_count: 0usize,
-                    failed_scan: true,
-                });
-            }
-        });
-    }
 }
 
 /// Collect every MCP server status needed for `/mcp` from the app-server by

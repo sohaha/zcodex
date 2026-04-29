@@ -50,7 +50,6 @@ mod app_cmd;
 mod desktop_app;
 mod marketplace_cmd;
 mod mcp_cmd;
-mod mission_cmd;
 mod responses_cmd;
 mod tldr_cmd;
 #[cfg(not(windows))]
@@ -59,11 +58,10 @@ mod zfeder_cmd;
 mod zinit_cmd;
 mod zmemory_cmd;
 mod zmemory_compat_server;
+mod zmission_cmd;
 
 use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
-use crate::mission_cmd::MissionCli;
-use crate::mission_cmd::run_mission_command;
 use crate::responses_cmd::ResponsesCommand;
 use crate::responses_cmd::run_responses_command;
 use crate::tldr_cmd::TldrCli;
@@ -71,6 +69,8 @@ use crate::zfeder_cmd::ZfederCli;
 use crate::zinit_cmd::ZinitCli;
 use crate::zmemory_cmd::ZmemoryCli;
 use crate::zmemory_cmd::run_zmemory_command;
+use crate::zmission_cmd::ZmissionCli;
+use crate::zmission_cmd::run_zmission_command;
 
 use codex_core::build_models_manager;
 use codex_core::clear_memory_roots_contents;
@@ -139,7 +139,8 @@ enum Subcommand {
     Mcp(McpCli),
 
     /// 管理 Mission 工程工作流。
-    Mission(MissionCli),
+    #[clap(name = "zmission")]
+    Zmission(ZmissionCli),
 
     /// 运行 Token 优化的命令包装器。
     Ztok(ZtokArgs),
@@ -904,14 +905,14 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             )?;
             codex_mcp_server::run_main(arg0_paths.clone(), root_config_overrides).await?;
         }
-        Some(Subcommand::Mission(mission_cli)) => {
+        Some(Subcommand::Zmission(zmission_cli)) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
                 root_remote_auth_token_env.as_deref(),
-                "mission",
+                "zmission",
             )?;
-            run_mission_command(
-                mission_cli,
+            run_zmission_command(
+                zmission_cli,
                 arg0_paths.clone(),
                 root_config_overrides.clone(),
             )
