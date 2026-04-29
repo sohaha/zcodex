@@ -90,8 +90,9 @@ pub fn install_mission_skills(codex_home: &AbsolutePathBuf) -> Result<(), System
     }
 
     if dest_mission.as_path().exists() {
-        fs::remove_dir_all(dest_mission.as_path())
-            .map_err(|source| SystemSkillsError::io("remove existing mission skills dir", source))?;
+        fs::remove_dir_all(dest_mission.as_path()).map_err(|source| {
+            SystemSkillsError::io("remove existing mission skills dir", source)
+        })?;
     }
 
     write_embedded_dir(&MISSION_SKILLS_DIR, &dest_mission)?;

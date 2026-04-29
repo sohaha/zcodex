@@ -2,9 +2,10 @@
 //!
 //! 负责管理 `.factory/` 目录的知识沉淀，包括服务、库和代理规范。
 
-use crate::mission::error::MissionError;
 use crate::mission::MissionResult;
-use serde::{Deserialize, Serialize};
+use crate::mission::error::MissionError;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -226,7 +227,8 @@ Mission 系统使用多个专门的 Worker 来完成不同的任务：
         })?;
 
         // 使用安全的文件名
-        let safe_name = name.as_ref()
+        let safe_name = name
+            .as_ref()
             .chars()
             .map(|c| match c {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c,
@@ -308,10 +310,11 @@ Mission 系统使用多个专门的 Worker 来完成不同的任务：
         }
 
         let mut categories = Vec::new();
-        let entries = fs::read_dir(&library_dir).map_err(|source| MissionError::ReadFactoryDir {
-            path: library_dir,
-            source,
-        })?;
+        let entries =
+            fs::read_dir(&library_dir).map_err(|source| MissionError::ReadFactoryDir {
+                path: library_dir,
+                source,
+            })?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -335,10 +338,11 @@ Mission 系统使用多个专门的 Worker 来完成不同的任务：
         }
 
         let mut entries = Vec::new();
-        let dir_entries = fs::read_dir(&category_dir).map_err(|source| MissionError::ReadFactoryDir {
-            path: category_dir,
-            source,
-        })?;
+        let dir_entries =
+            fs::read_dir(&category_dir).map_err(|source| MissionError::ReadFactoryDir {
+                path: category_dir,
+                source,
+            })?;
 
         for entry in dir_entries.flatten() {
             let path = entry.path();
@@ -372,10 +376,7 @@ Mission 系统使用多个专门的 Worker 来完成不同的任务：
         let file_name = format!("{}.md", name.as_ref());
         let path = self.library_dir().join(category.as_ref()).join(&file_name);
 
-        fs::read_to_string(&path).map_err(|source| MissionError::ReadFactoryFile {
-            path,
-            source,
-        })
+        fs::read_to_string(&path).map_err(|source| MissionError::ReadFactoryFile { path, source })
     }
 }
 
@@ -432,9 +433,10 @@ mod tests {
             .unwrap();
 
         assert!(path.exists());
-        assert!(path
-            .to_string_lossy()
-            .contains(".factory/library/patterns/test-pattern.md"));
+        assert!(
+            path.to_string_lossy()
+                .contains(".factory/library/patterns/test-pattern.md")
+        );
     }
 
     #[test]

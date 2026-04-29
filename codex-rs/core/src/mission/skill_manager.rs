@@ -2,8 +2,8 @@
 //!
 //! 负责从已安装的 mission skill 目录加载 skill 文件。
 
-use crate::mission::error::MissionError;
 use crate::mission::MissionResult;
+use crate::mission::error::MissionError;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -42,7 +42,8 @@ impl MissionSkillManager {
     /// * `codex_home` - CODEX_HOME 目录
     /// * `workspace` - 工作区目录
     pub fn new(codex_home: impl AsRef<Path>, workspace: impl AsRef<Path>) -> Self {
-        let source_dir = codex_home.as_ref()
+        let source_dir = codex_home
+            .as_ref()
             .join("skills")
             .join(MISSION_SKILLS_DIR_NAME);
 
@@ -100,18 +101,16 @@ impl MissionSkillManager {
 
         // 检查文件是否已存在且内容相同
         if dest_path.exists() {
-            let existing_content = fs::read_to_string(&dest_path).map_err(|source| {
-                MissionError::ReadSkillFile {
+            let existing_content =
+                fs::read_to_string(&dest_path).map_err(|source| MissionError::ReadSkillFile {
                     path: dest_path.clone(),
                     source,
-                }
-            })?;
-            let source_content = fs::read_to_string(&source_path).map_err(|source| {
-                MissionError::ReadSkillFile {
+                })?;
+            let source_content =
+                fs::read_to_string(&source_path).map_err(|source| MissionError::ReadSkillFile {
                     path: source_path.clone(),
                     source,
-                }
-            })?;
+                })?;
 
             if existing_content == source_content {
                 return Ok(());
@@ -146,10 +145,7 @@ impl MissionSkillManager {
     pub fn read_skill(&self, skill_name: &str) -> MissionResult<String> {
         let path = self.skill_path(skill_name)?;
 
-        fs::read_to_string(&path).map_err(|source| MissionError::ReadSkillFile {
-            path,
-            source,
-        })
+        fs::read_to_string(&path).map_err(|source| MissionError::ReadSkillFile { path, source })
     }
 
     /// 列出所有可用的 skill 文件。
@@ -208,7 +204,11 @@ mod tests {
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
         for skill_file in MISSION_SKILL_FILES {
-            fs::write(source_dir.join(skill_file), format!("Content of {skill_file}")).unwrap();
+            fs::write(
+                source_dir.join(skill_file),
+                format!("Content of {skill_file}"),
+            )
+            .unwrap();
         }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
@@ -228,7 +228,11 @@ mod tests {
         // 创建源目录和 skill 文件
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
-        fs::write(source_dir.join("mission-planning.md"), "Mission Planning Content").unwrap();
+        fs::write(
+            source_dir.join("mission-planning.md"),
+            "Mission Planning Content",
+        )
+        .unwrap();
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
         manager.install().unwrap();
@@ -246,7 +250,11 @@ mod tests {
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
         for skill_file in MISSION_SKILL_FILES {
-            fs::write(source_dir.join(skill_file), format!("Content of {skill_file}")).unwrap();
+            fs::write(
+                source_dir.join(skill_file),
+                format!("Content of {skill_file}"),
+            )
+            .unwrap();
         }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());

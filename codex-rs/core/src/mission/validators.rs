@@ -5,10 +5,12 @@
 mod scrutiny;
 mod user_testing;
 
-pub use scrutiny::{ScrutinyStatus, ScrutinyValidator};
 pub use scrutiny::ScrutinyReport;
-pub use user_testing::{TestingStatus, UserTestingValidator};
+pub use scrutiny::ScrutinyStatus;
+pub use scrutiny::ScrutinyValidator;
+pub use user_testing::TestingStatus;
 pub use user_testing::UserTestingReport;
+pub use user_testing::UserTestingValidator;
 
 use crate::mission::handoff::Handoff;
 

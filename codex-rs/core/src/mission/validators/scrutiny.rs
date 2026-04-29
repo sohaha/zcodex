@@ -2,9 +2,13 @@
 //!
 //! 通过静态分析验证代码质量。
 
-use crate::mission::handoff::{CodeReviewResult, Handoff, ReviewStatus};
-use crate::mission::validators::{Validator, ValidatorConfig};
-use serde::{Deserialize, Serialize};
+use crate::mission::handoff::CodeReviewResult;
+use crate::mission::handoff::Handoff;
+use crate::mission::handoff::ReviewStatus;
+use crate::mission::validators::Validator;
+use crate::mission::validators::ValidatorConfig;
+use serde::Deserialize;
+use serde::Serialize;
 
 /// Scrutiny 验证报告。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,21 +114,41 @@ impl ScrutinyValidator {
             "**Overall Status:** {}\n",
             report.overall_status.label()
         ));
-        output.push_str(&format!(
-            "**Issues Found:** {}\n",
-            report.issues.len()
-        ));
+        output.push_str(&format!("**Issues Found:** {}\n", report.issues.len()));
         output.push_str(&format!(
             "**Critical:** {}, **High:** {}, **Medium:** {}, **Low:** {}\n\n",
-            report.issues.iter().filter(|i| i.severity == Severity::Critical).count(),
-            report.issues.iter().filter(|i| i.severity == Severity::High).count(),
-            report.issues.iter().filter(|i| i.severity == Severity::Medium).count(),
-            report.issues.iter().filter(|i| i.severity == Severity::Low).count(),
+            report
+                .issues
+                .iter()
+                .filter(|i| i.severity == Severity::Critical)
+                .count(),
+            report
+                .issues
+                .iter()
+                .filter(|i| i.severity == Severity::High)
+                .count(),
+            report
+                .issues
+                .iter()
+                .filter(|i| i.severity == Severity::Medium)
+                .count(),
+            report
+                .issues
+                .iter()
+                .filter(|i| i.severity == Severity::Low)
+                .count(),
         ));
 
         // 按严重程度分组显示问题
-        for severity in [Severity::Critical, Severity::High, Severity::Medium, Severity::Low] {
-            let issues: Vec<_> = report.issues.iter()
+        for severity in [
+            Severity::Critical,
+            Severity::High,
+            Severity::Medium,
+            Severity::Low,
+        ] {
+            let issues: Vec<_> = report
+                .issues
+                .iter()
                 .filter(|i| i.severity == severity)
                 .collect();
 
@@ -140,7 +164,10 @@ impl ScrutinyValidator {
 
                     output.push_str(&format!("- **Problem:** {}\n", issue.description));
                     output.push_str(&format!("- **Impact:** {}\n", issue.impact));
-                    output.push_str(&format!("- **Recommendation:** {}\n\n", issue.recommendation));
+                    output.push_str(&format!(
+                        "- **Recommendation:** {}\n\n",
+                        issue.recommendation
+                    ));
                 }
             }
         }
@@ -232,9 +259,8 @@ impl Validator for ScrutinyValidator {
 
         // 检查文件变更
         if handoff.files_modified.is_empty() && handoff.files_created.is_empty() {
-            positive_findings.push(
-                "No file changes reported (configuration or documentation only)".to_string(),
-            );
+            positive_findings
+                .push("No file changes reported (configuration or documentation only)".to_string());
         } else {
             // 检查是否有大量文件变更（可能需要重构）
             let total_changes = handoff.files_modified.len() + handoff.files_created.len();
@@ -244,8 +270,10 @@ impl Validator for ScrutinyValidator {
                     severity: Severity::Medium,
                     location: None,
                     description: format!("{} files were changed", total_changes),
-                    impact: "May indicate need for refactoring or better separation of concerns".to_string(),
-                    recommendation: "Consider if changes can be split into smaller, focused PRs".to_string(),
+                    impact: "May indicate need for refactoring or better separation of concerns"
+                        .to_string(),
+                    recommendation: "Consider if changes can be split into smaller, focused PRs"
+                        .to_string(),
                 });
             } else {
                 positive_findings.push(format!(
@@ -284,7 +312,10 @@ impl Validator for ScrutinyValidator {
                 title: "Summary too brief".to_string(),
                 severity: Severity::Low,
                 location: None,
-                description: format!("Summary is only {} characters", handoff.salient_summary.len()),
+                description: format!(
+                    "Summary is only {} characters",
+                    handoff.salient_summary.len()
+                ),
                 impact: "May not capture key outcomes".to_string(),
                 recommendation: "Expand summary to better describe work done".to_string(),
             });
@@ -308,8 +339,14 @@ impl Validator for ScrutinyValidator {
         if issues.is_empty() {
             recommendations.push("No issues found. Code quality is good.".to_string());
         } else {
-            let critical_count = issues.iter().filter(|i| i.severity == Severity::Critical).count();
-            let high_count = issues.iter().filter(|i| i.severity == Severity::High).count();
+            let critical_count = issues
+                .iter()
+                .filter(|i| i.severity == Severity::Critical)
+                .count();
+            let high_count = issues
+                .iter()
+                .filter(|i| i.severity == Severity::High)
+                .count();
 
             if critical_count > 0 {
                 recommendations.push(format!(
@@ -336,7 +373,11 @@ impl Validator for ScrutinyValidator {
             }
         } else {
             if issues.iter().any(|i| i.severity == Severity::Critical)
-                || issues.iter().filter(|i| i.severity == Severity::High).count() > 2
+                || issues
+                    .iter()
+                    .filter(|i| i.severity == Severity::High)
+                    .count()
+                    > 2
             {
                 ScrutinyStatus::Failed
             } else if !issues.is_empty() {
@@ -387,7 +428,12 @@ mod tests {
         let report = validator.validate(&handoff);
 
         assert_eq!(report.overall_status, ScrutinyStatus::Failed);
-        assert!(report.issues.iter().any(|i| i.severity == Severity::Critical));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.severity == Severity::Critical)
+        );
     }
 
     #[test]

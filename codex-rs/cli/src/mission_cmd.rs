@@ -2,6 +2,7 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
+use codex_arg0::Arg0DispatchPaths;
 use codex_core::mission::Handoff;
 use codex_core::mission::MissionPlanner;
 use codex_core::mission::MissionPlanningStep;
@@ -12,6 +13,8 @@ use codex_core::mission::ScrutinyValidator;
 use codex_core::mission::UserTestingValidator;
 use codex_core::mission::Validator;
 use codex_core::mission::ValidatorConfig;
+use codex_exec::Cli as ExecCli;
+use codex_utils_cli::CliConfigOverrides;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -21,6 +24,9 @@ use std::path::PathBuf;
 pub struct MissionCli {
     #[command(subcommand)]
     pub subcommand: MissionSubcommand,
+
+    #[clap(flatten)]
+    pub config_overrides: CliConfigOverrides,
 }
 
 #[derive(Debug, Subcommand)]
@@ -37,6 +43,10 @@ pub enum MissionSubcommand {
 
 #[derive(Debug, Parser)]
 pub struct MissionStartCommand {
+    /// 跳过 Git 仓库检查。
+    #[arg(long = "skip-git-repo-check", default_value_t = false)]
+    pub skip_git_repo_check: bool,
+
     /// Mission 目标。
     #[arg(value_name = "目标")]
     pub goal: String,
@@ -44,6 +54,10 @@ pub struct MissionStartCommand {
 
 #[derive(Debug, Parser)]
 pub struct MissionContinueCommand {
+    /// 跳过 Git 仓库检查。
+    #[arg(long = "skip-git-repo-check", default_value_t = false)]
+    pub skip_git_repo_check: bool,
+
     /// 记录当前阶段的确认说明；省略时使用默认确认文本。
     #[arg(long, value_name = "说明")]
     pub note: Option<String>,
@@ -106,20 +120,38 @@ impl std::str::FromStr for OutputFormat {
     }
 }
 
-pub async fn run_mission_command(cli: MissionCli) -> Result<()> {
+pub async fn run_mission_command(
+    cli: MissionCli,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+) -> Result<()> {
     match cli.subcommand {
-        MissionSubcommand::Start(command) => start_mission(command),
+        MissionSubcommand::Start(command) => {
+            start_mission(command, arg0_paths, root_config_overrides).await
+        }
         MissionSubcommand::Status => print_status(),
-        MissionSubcommand::Continue(command) => continue_mission(command),
+        MissionSubcommand::Continue(command) => {
+            continue_mission(command, arg0_paths, root_config_overrides).await
+        }
         MissionSubcommand::Validate(command) => validate_mission(command),
     }
 }
 
-fn start_mission(command: MissionStartCommand) -> Result<()> {
+async fn start_mission(
+    command: MissionStartCommand,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+) -> Result<()> {
     let planner = planner_for_current_dir()?;
     let step = planner.start(command.goal)?;
-    print_planning_step(step);
-    Ok(())
+    print_planning_step(&step);
+    launch_exec_for_phase(
+        step,
+        arg0_paths,
+        root_config_overrides,
+        command.skip_git_repo_check,
+    )
+    .await
 }
 
 fn print_status() -> Result<()> {
@@ -131,11 +163,61 @@ fn print_status() -> Result<()> {
     Ok(())
 }
 
-fn continue_mission(command: MissionContinueCommand) -> Result<()> {
+async fn continue_mission(
+    command: MissionContinueCommand,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+) -> Result<()> {
     let planner = planner_for_current_dir()?;
     let step = planner.continue_planning(command.note)?;
-    print_planning_step(step);
-    Ok(())
+    print_planning_step(&step);
+    launch_exec_for_phase(
+        step,
+        arg0_paths,
+        root_config_overrides,
+        command.skip_git_repo_check,
+    )
+    .await
+}
+
+/// 为当前规划阶段构造 prompt，然后启动 agent session 来执行该阶段的分析。
+async fn launch_exec_for_phase(
+    step: MissionPlanningStep,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+    skip_git_repo_check: bool,
+) -> Result<()> {
+    let Some(definition) = step.definition else {
+        println!("规划阶段已完成，Mission 进入执行状态。");
+        println!(
+            "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
+            step.state.goal
+        );
+        return Ok(());
+    };
+
+    let prompt = format!(
+        "你正在执行一个 Mission 规划流程。\n\n\
+         Mission 目标：{goal}\n\n\
+         当前阶段：{title} ({phase})\n\
+         阶段提示：{prompt_text}\n\
+         出口条件：{exit_condition}\n\n\
+         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。\n\
+         用户将通过 `codex mission continue` 推进到下一阶段。",
+        goal = step.state.goal,
+        title = definition.title,
+        phase = definition.phase.label(),
+        prompt_text = definition.prompt,
+        exit_condition = definition.exit_condition,
+    );
+
+    let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
+    if skip_git_repo_check {
+        exec_cli.skip_git_repo_check = true;
+    }
+    exec_cli.prompt = Some(prompt);
+    prepend_config_flags(&mut exec_cli.config_overrides, root_config_overrides);
+    codex_exec::run_main(exec_cli, arg0_paths).await
 }
 
 fn validate_mission(command: MissionValidateCommand) -> Result<()> {
@@ -147,19 +229,23 @@ fn validate_mission(command: MissionValidateCommand) -> Result<()> {
 
     match command.validator {
         ValidatorType::All => {
-            // 运行所有验证器
             let scrutiny_validator = ScrutinyValidator::new(config.clone());
             let user_testing_validator = UserTestingValidator::new(config);
 
             let scrutiny_report = scrutiny_validator.validate(&handoff);
             let user_testing_report = user_testing_validator.validate(&handoff);
 
-            // 输出报告
             match command.output {
                 OutputFormat::Markdown => {
-                    println!("{}", scrutiny_validator.report_as_markdown(&scrutiny_report));
+                    println!(
+                        "{}",
+                        scrutiny_validator.report_as_markdown(&scrutiny_report)
+                    );
                     println!("\n---\n\n");
-                    println!("{}", user_testing_validator.report_as_markdown(&user_testing_report));
+                    println!(
+                        "{}",
+                        user_testing_validator.report_as_markdown(&user_testing_report)
+                    );
                 }
                 OutputFormat::Json => {
                     let output = serde_json::json!({
@@ -203,10 +289,9 @@ fn validate_mission(command: MissionValidateCommand) -> Result<()> {
 
 fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
     if let Some(path) = handoff_path {
-        // 从指定路径加载
-        Handoff::load_from(path).with_context(|| format!("无法加载 Handoff 文件: {}", path.display()))
+        Handoff::load_from(path)
+            .with_context(|| format!("无法加载 Handoff 文件: {}", path.display()))
     } else {
-        // 从 Mission 目录加载最新的 Handoff
         let workspace = current_workspace()?;
         let mission_dir = workspace.join(".mission").join("handoffs");
 
@@ -214,7 +299,6 @@ fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
             anyhow::bail!("Handoff 目录不存在: {}", mission_dir.display());
         }
 
-        // 查找最新的 Handoff 文件
         let mut handoffs: Vec<_> = fs::read_dir(&mission_dir)
             .with_context(|| format!("无法读取 Handoff 目录: {}", mission_dir.display()))?
             .flatten()
@@ -232,7 +316,6 @@ fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
             anyhow::bail!("未找到任何 Handoff 文件: {}", mission_dir.display());
         }
 
-        // 按修改时间排序，取最新的
         handoffs.sort_by_key(|path| {
             path.metadata()
                 .and_then(|m| m.modified())
@@ -240,9 +323,8 @@ fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
         });
 
         let latest_handoff = handoffs.last().unwrap();
-        Handoff::load_from(latest_handoff).with_context(|| {
-            format!("无法加载 Handoff 文件: {}", latest_handoff.display())
-        })
+        Handoff::load_from(latest_handoff)
+            .with_context(|| format!("无法加载 Handoff 文件: {}", latest_handoff.display()))
     }
 }
 
@@ -252,6 +334,10 @@ fn planner_for_current_dir() -> Result<MissionPlanner> {
 
 fn current_workspace() -> Result<PathBuf> {
     std::env::current_dir().context("无法读取当前工作目录")
+}
+
+fn prepend_config_flags(target: &mut CliConfigOverrides, source: CliConfigOverrides) {
+    target.raw_overrides.splice(0..0, source.raw_overrides);
 }
 
 fn print_empty_status(state_path: PathBuf) {
@@ -268,7 +354,7 @@ fn print_active_status(state_path: PathBuf, state: MissionState) {
     println!("状态文件：{}", state_path.display());
 }
 
-fn print_planning_step(step: MissionPlanningStep) {
+fn print_planning_step(step: &MissionPlanningStep) {
     println!("Mission 状态：{}", step.state.status.label());
     println!("目标：{}", step.state.goal);
     if let Some(definition) = step.definition {

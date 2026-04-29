@@ -2,9 +2,10 @@
 //!
 //! 定义 Worker 之间交接的标准格式和相关操作。
 
-use crate::mission::error::MissionError;
 use crate::mission::MissionResult;
-use serde::{Deserialize, Serialize};
+use crate::mission::error::MissionError;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -156,7 +157,11 @@ impl Handoff {
     }
 
     /// 添加文件创建。
-    pub fn add_file_creation(mut self, path: impl Into<String>, purpose: impl Into<String>) -> Self {
+    pub fn add_file_creation(
+        mut self,
+        path: impl Into<String>,
+        purpose: impl Into<String>,
+    ) -> Self {
         self.files_created.push(FileCreation {
             path: path.into(),
             purpose: purpose.into(),
@@ -207,14 +212,16 @@ impl Handoff {
         })?;
 
         let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
-        let filename = format!("{}-{}.{}", self.worker.replace('-', "_"), timestamp, HANDOFF_EXT);
+        let filename = format!(
+            "{}-{}.{}",
+            self.worker.replace('-', "_"),
+            timestamp,
+            HANDOFF_EXT
+        );
         let path = handoffs_dir.join(&filename);
 
-        let content = serde_json::to_string_pretty(self).map_err(|source| {
-            MissionError::SerializeHandoff {
-                source,
-            }
-        })?;
+        let content = serde_json::to_string_pretty(self)
+            .map_err(|source| MissionError::SerializeHandoff { source })?;
 
         fs::write(&path, content).map_err(|source| MissionError::WriteHandoff {
             path: path.clone(),
@@ -257,7 +264,10 @@ impl Handoff {
         if !self.files_modified.is_empty() {
             report.push_str("## Files Modified\n\n");
             for change in &self.files_modified {
-                report.push_str(&format!("- **{}**: {}\n", change.path, change.change_summary));
+                report.push_str(&format!(
+                    "- **{}**: {}\n",
+                    change.path, change.change_summary
+                ));
             }
             report.push('\n');
         }
@@ -273,20 +283,43 @@ impl Handoff {
         report.push_str("## Verification\n\n");
 
         report.push_str("### Code Review\n\n");
-        report.push_str(&format!("**Status:** {}\n", self.verification.code_review.status.label()));
-        report.push_str(&format!("**Issues Found:** {}\n", self.verification.code_review.issues_found));
-        report.push_str(&format!("**Issues Fixed:** {}\n", self.verification.code_review.issues_fixed));
-        report.push_str(&format!("**Findings:** {}\n\n", self.verification.code_review.findings));
+        report.push_str(&format!(
+            "**Status:** {}\n",
+            self.verification.code_review.status.label()
+        ));
+        report.push_str(&format!(
+            "**Issues Found:** {}\n",
+            self.verification.code_review.issues_found
+        ));
+        report.push_str(&format!(
+            "**Issues Fixed:** {}\n",
+            self.verification.code_review.issues_fixed
+        ));
+        report.push_str(&format!(
+            "**Findings:** {}\n\n",
+            self.verification.code_review.findings
+        ));
 
         report.push_str("### User Testing\n\n");
-        report.push_str(&format!("**Status:** {}\n", self.verification.user_testing.status.label()));
-        report.push_str(&format!("**Test Cases:** {}/{}\n",
+        report.push_str(&format!(
+            "**Status:** {}\n",
+            self.verification.user_testing.status.label()
+        ));
+        report.push_str(&format!(
+            "**Test Cases:** {}/{}\n",
             self.verification.user_testing.test_cases_passed,
-            self.verification.user_testing.test_cases_executed));
-        report.push_str(&format!("**Results:** {}\n\n", self.verification.user_testing.results));
+            self.verification.user_testing.test_cases_executed
+        ));
+        report.push_str(&format!(
+            "**Results:** {}\n\n",
+            self.verification.user_testing.results
+        ));
 
         if !self.verification.remaining_work.is_empty() {
-            report.push_str(&format!("### Remaining Work\n\n{}\n\n", self.verification.remaining_work));
+            report.push_str(&format!(
+                "### Remaining Work\n\n{}\n\n",
+                self.verification.remaining_work
+            ));
         }
 
         report.push_str("## Next Steps\n\n");

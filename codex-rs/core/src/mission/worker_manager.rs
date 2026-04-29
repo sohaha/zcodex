@@ -2,9 +2,10 @@
 //!
 //! 负责创建、恢复和监控 Worker session。
 
-use crate::mission::error::MissionError;
 use crate::mission::MissionResult;
-use serde::{Deserialize, Serialize};
+use crate::mission::error::MissionError;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -56,10 +57,7 @@ impl WorkerId {
 
     /// 获取 Worker 名称。
     pub fn name(&self) -> &str {
-        self.0
-            .rsplit('-')
-            .next()
-            .unwrap_or(&self.0)
+        self.0.rsplit('-').next().unwrap_or(&self.0)
     }
 
     /// 获取完整 ID 字符串。
@@ -148,9 +146,11 @@ impl WorkerManager {
         input: WorkerInput,
     ) -> MissionResult<WorkerSession> {
         let sessions_dir = self.sessions_dir();
-        fs::create_dir_all(&sessions_dir).map_err(|source| MissionError::CreateWorkerSessionDir {
-            path: sessions_dir.clone(),
-            source,
+        fs::create_dir_all(&sessions_dir).map_err(|source| {
+            MissionError::CreateWorkerSessionDir {
+                path: sessions_dir.clone(),
+                source,
+            }
         })?;
 
         // 生成 Worker ID
@@ -202,17 +202,12 @@ impl WorkerManager {
     fn save_session(&self, session: &WorkerSession) -> MissionResult<()> {
         let session_path = self.session_path(&session.id);
 
-        let content = serde_json::to_string_pretty(session).map_err(|source| {
-            MissionError::SerializeHandoff {
-                source,
-            }
-        })?;
+        let content = serde_json::to_string_pretty(session)
+            .map_err(|source| MissionError::SerializeHandoff { source })?;
 
-        fs::write(&session_path, content).map_err(|source| {
-            MissionError::WriteWorkerSession {
-                id: session.id.as_str().to_string(),
-                source,
-            }
+        fs::write(&session_path, content).map_err(|source| MissionError::WriteWorkerSession {
+            id: session.id.as_str().to_string(),
+            source,
         })
     }
 
@@ -225,12 +220,11 @@ impl WorkerManager {
         }
 
         let mut sessions = Vec::new();
-        let entries = fs::read_dir(&sessions_dir).map_err(|source| {
-            MissionError::ReadWorkerSession {
+        let entries =
+            fs::read_dir(&sessions_dir).map_err(|source| MissionError::ReadWorkerSession {
                 id: "<list>".to_string(),
                 source,
-            }
-        })?;
+            })?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -286,11 +280,8 @@ impl WorkerManager {
         let filename = format!("{}-{}.json", worker_id.as_str(), timestamp);
         let handoff_path = handoffs_dir.join(&filename);
 
-        let content = serde_json::to_string_pretty(handoff).map_err(|source| {
-            MissionError::SerializeHandoff {
-                source,
-            }
-        })?;
+        let content = serde_json::to_string_pretty(handoff)
+            .map_err(|source| MissionError::SerializeHandoff { source })?;
 
         fs::write(&handoff_path, content).map_err(|source| MissionError::WriteHandoff {
             path: handoff_path.clone(),
@@ -314,20 +305,10 @@ impl WorkerManager {
                 source,
             })?
             .flatten()
-            .filter(|entry| {
-                entry
-                    .path()
-                    .extension()
-                    .and_then(|s| s.to_str()) == Some("json")
-            })
+            .filter(|entry| entry.path().extension().and_then(|s| s.to_str()) == Some("json"))
             .collect();
 
-        handoffs.sort_by_key(|entry| {
-            entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-        });
+        handoffs.sort_by_key(|entry| entry.metadata().ok().and_then(|m| m.modified().ok()));
 
         if let Some(latest) = handoffs.last() {
             let content = fs::read_to_string(latest.path()).map_err(|source| {
@@ -337,12 +318,11 @@ impl WorkerManager {
                 }
             })?;
 
-            let handoff = serde_json::from_str(&content).map_err(|source| {
-                MissionError::ParseHandoff {
+            let handoff =
+                serde_json::from_str(&content).map_err(|source| MissionError::ParseHandoff {
                     path: latest.path().clone(),
                     source,
-                }
-            })?;
+                })?;
 
             Ok(Some(handoff))
         } else {

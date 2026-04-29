@@ -910,7 +910,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "mission",
             )?;
-            run_mission_command(mission_cli).await?;
+            run_mission_command(
+                mission_cli,
+                arg0_paths.clone(),
+                root_config_overrides.clone(),
+            )
+            .await?;
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             reject_remote_mode_for_subcommand(

@@ -74,6 +74,56 @@
     - 已使用 `using-cadence` / `cadence-planning` 约束规划阶段。
     - `ztldr` 适合结构搜索，但本轮调用出现 `structuredFailure/tool_error`，因此本计划后续不将其作为阻断依赖。
     - 其余技能对当前 Planning 的事实提炼没有额外实质收益，记为 `none-applicable`。
+ 
+## 约束确认（constraints 阶段产物）
+ 
+> 以下不变量由代码审查确认，后续实现阶段必须满足。
+ 
+### 确定性约束（INV-DET）
+ 
+1. **seed→rarity 不可变**：`roll_rarity()` 的概率分布（Common 60% / Uncommon 25% / Rare 10% / Epic 4% / Legendary 1%）和 `BuddyBones::from_seed()` 的确定性逻辑不能被本轮改动破坏。
+2. **视觉差异只依赖 bones**：所有新增渲染差异只能读取 `bones.rarity` / `bones.species` / `bones.shiny` / `bones.hat` 等 seed 派生字段，不能引入运行时随机态。
+3. **snapshot 固定 seed**：测试使用 `"codex-home::project"` / `"codex-goose::project"` / `"codex-snail::project"` 等固定 seed；同一 seed 在改动前后必须产生同一 bones（species/rarity/hat/eye/shiny 不变）。
+ 
+### 布局约束（INV-LAYOUT）
+ 
+4. **sprite 行宽不变**：species sprite 固定 3 行 × 10 字符宽（由 `apply_offset` 保持）。新增装饰（prefix/suffix/边框）不能改变 sprite 主体宽度。
+5. **full layout 总高受控**：当前 full layout = 上边框(可选 1行) + sprite(3~4行含 hat) + 下边框(可选 1行) + identity(1行) = 最多 6 行。新增装饰层最多再增加 2 行（冠饰行上移或 aura 行下移），full layout 总高不超过 8 行。
+6. **compact 视图保持单行**：`render_narrow_line()` 输出必须仍是 1 行，不能破坏窄屏布局。
+7. **宽度阈值不变**：`FULL_LAYOUT_WIDTH = 58` 和 `MIN_RENDER_WIDTH = 12` 不在本轮调整范围内。
+8. **pet burst 兼容**：pet 动画的 `<3` hearts 行必须在稀有度装饰之前或之上渲染，不能被新装饰覆盖或打乱时序。
+ 
+### 模块边界约束（INV-MOD）
+ 
+9. **改动收敛于 buddy/ 模块**：只改 `model.rs`、`render.rs`、`mod.rs`（含其测试），不触碰 `chatwidget.rs`、`bottom_pane/` 或 `buddy/` 外的任何文件。
+10. **render.rs 行数警戒**：`render.rs` 当前 663 行，接近 800 行警戒线。新增 rarity overlay 逻辑如果超过 ~80 行，必须提取为 render.rs 内的独立函数组（如 `rarity_overlay` 子模块），而不是继续内联膨胀。
+11. **model.rs 已超警戒**：`model.rs` 当前 811 行，已超过 500 行目标线和 800 行警戒线。不在本轮继续向 model.rs 增加渲染相关逻辑；rarity 到视觉信号的映射在 model.rs 只保留纯数据访问方法（如 `frame_symbol` / `aura_line` / `crown_symbol`），复杂渲染逻辑放 render.rs。
+ 
+### 视觉分层不变量（INV-VIS）
+ 
+12. **逐级增强原则**：每一级 rarity 的视觉信号强度严格递增（Common ≤ Uncommon ≤ Rare ≤ Epic ≤ Legendary），不能出现低等级视觉信号意外强于高等级的情况。
+13. **无颜色环境下仍可区分**：Legendary vs Epic vs Rare 必须在单色终端（无 ANSI 颜色）下仍能通过字符差异识别，不能仅靠颜色区分。
+14. **Common 保持朴素**：Common 不增加任何装饰层、边框或专属符号，保留"空白就是朴素"的视觉语义。
+15. **Uncommon 必须获得至少一个可见造型元素**：当前 Uncommon 在 full 视图中与 Common 完全相同（仅颜色不同）；本轮必须让 Uncommon 获得至少一个非颜色类的可见差异（如专属前缀符号或轮廓标记）。
+ 
+### 兼容性约束（INV-COMPAT）
+ 
+16. **slash 命令语义不变**：`/buddy show|full|pet|hide|status` 的行为语义和返回结构不变，只增强展示。
+17. **status 文案增强而非重写**：`status()` 方法返回的 `message` 字段可以补充造型特征描述，但必须保留现有字段（峰值属性、可见性等），不能破坏依赖该字段的调用方。
+18. **BuddyRarity 枚举不变**：不新增或删除 rarity 变体，不改概率分布。
+ 
+### 验证约束（INV-TEST）
+ 
+19. **snapshot 范围严格限定**：只接收 `buddy/snapshots/` 目录下的 pending snapshots，不执行 `cargo insta accept` 全量操作。
+20. **新增 snapshot 覆盖**：为新增的 rarity-driven 视觉差异补对应的定向测试和 snapshot（至少覆盖 Legendary full 和 Epic full 场景）。
+21. **格式化与 lint**：改动完成后执行 `just fmt`；若 render.rs 或 model.rs 改动超过 ~30 行，额外执行 `just fix -p codex-tui`。
+22. **定向测试范围**：只跑 `cargo nextest run -p codex-tui`（或 `cargo test -p codex-tui`），不扩大到 workspace 全量。
+ 
+### 风险约束（INV-RISK）
+ 
+23. **不引入 species × rarity 全组合**：维护成本 O(N×M) 的硬编码 sprite 被明确排除。只能用 overlay/variant 机制。
+24. **不引入动画时序重构**：本轮不为 rarity 增加专属帧动画或状态机扩展，fidget/excited/pet burst 时序逻辑不变。
+25. **不扩展 config schema**：不为 rarity 样式引入用户配置开关或 `config.toml` 字段。
 
 ## 实施策略
 - 总体方案：
@@ -178,3 +228,272 @@
 - `/workspace/reference-projects/claude-code-rev/src/buddy/companion.ts:79`
 - `/workspace/reference-projects/claude-code-rev/src/buddy/CompanionSprite.tsx:218`
 - `/workspace/.agents/llmdoc/memory/reflections/2026-04-10-buddy-snapshot-accept-scope.md:1`
+
+## 目标澄清 (Intent)
+
+> 执行阶段：目标澄清（Intent）。
+
+### 核心目标
+
+**让不同稀有度在终端中一眼可辨**，不只是颜色/星星的差异，而是造型层面有稳定、逐级增强的视觉信号。
+
+### 当前状态（已确认事实）
+
+- `BuddyRarity` 在 `model.rs:416-548` 定义，包含 `Common/Uncommon/Rare/Epic/Legendary` 五个等级。
+- 已有的 rarity 相关渲染接口：
+  - `rarity_style()` — 为 Legendary 启用 `shiny_style()`（品红+粗体），其他等级使用不同颜色（dim/green/cyan/magenta）。
+  - `sprite_prefix()` — 仅 `Legendary` 返回 `Some("✦ ")`。
+  - `sprite_suffix()` — `Epic` 返回 `Some(" ✨")`，`Legendary` 返回 `Some(" ✦")`。
+  - `frame_symbol()` — `Rare` 返回 `Some("·")`，`Epic` 返回 `Some("✦")`，`Legendary` 返回 `Some("★")`。
+  - `compact_symbol()` — Uncommon→Rare→Epic→Legendary 分别返回 `◆/✦/★/✧`，Common 返回空。
+  - `visual_trait()` — 每个等级返回一句中文描述（"普通外观"/"微光轮廓"等）。
+- 渲染入口在 `render.rs:48-68`：full sprite 路径已使用 `frame_symbol` 画边框，`prefix`/`suffix` 生效；narrow/compact 路径仅展示 `stars` + `compact_symbol`，无边框。
+- `model.rs` 的 `BuddyBones::from_seed` 已实现确定性生成，不依赖运行时随机态。
+- 参考项目 `reference-projects/claude-code-rev/src/buddy/companion.ts` 的设计：rarity 影响 hat 是否为 none（common 必定无帽）、stat floor、颜色 key，但不直接改变 sprite 骨架。关键价值：rarity 作为"贯穿所有视觉层"的稳定属性。
+- `render.rs` 当前只有 3 行 sprite（无 body 层/装饰层分离），所有 species 共用同一 3 行 ASCII 格式，扩展空间有限但可叠加装饰。
+
+### 未完全确认/需要澄清的假设
+
+| 假设 | 状态 | 需要的澄清 |
+|------|------|-----------|
+| Rare/Epic 不画边框时是否仍需要至少一个专属视觉信号 | 需确认 | 计划需明确 Rare/Epic 的 fallback 信号 |
+| compact 视图是否需要在单行内展示比 stars+symbol 更多信息 | 需确认 | 影响 compact 行的改法幅度 |
+| status 文案中的 visual_trait 是否作为主要区分手段 | 需确认 | 目前已存在，但可能需要更具体 |
+| "造型差异"的具体定义：边框装饰/prefix/suffix/颜色/compact 符号，如何分配 | 待决策 | 这正是阶段一要解决的 visual contract |
+
+### 明确成功标准
+
+1. **全视图可辨**：full sprite（宽屏）和 compact（窄屏）两个视图，高 rarity（Epic/Legendary）都具备不同于低 rarity 的即时可辨信号。
+2. **造型层差异**：至少一种造型层（边框/装饰/前缀后缀/mini-face 变体之一）由 rarity 直接驱动，而不是只有颜色。
+3. **无颜色环境可区分**：Legendary 在无颜色环境下仍能通过符号/边框与 Rare 区分。
+4. **现有语义不变**：`/buddy show|full|pet|hide|status` 命令行为不变。
+5. **snapshot 通过**：所有 Buddy 相关 snapshot 更新并通过。
+6. **确定性保持**：稀有度差异由 seed 决定，无运行时随机态污染。
+
+### 明确非目标
+
+- 不修改 `roll_rarity` 概率。
+- 不引入培养/升级系统。
+- 不重写全部 species sprite 骨架。
+- 不修改 app-server、protocol 或 config schema。
+- 不在 `chatwidget.rs` 或 `bottom_pane/mod.rs` 散落 rarity 逻辑。
+
+### 阶段一目标（Visual Contract）
+
+需要回答以下问题：
+1. Rare/Epic/Common/Uncommon 的 full sprite 视觉信号是什么（边框？装饰行？前缀后缀？）？
+2. compact 视图的视觉层次是否需要强化，如何强化？
+3. status 文案的 `visual_trait` 是否需要升级为更具体的描述？
+4. 哪些信号只在 full 视图出现，哪些在两个视图共享？
+
+### 下一步
+
+完成本阶段后，计划进入**阶段一**：定义 visual contract——即每种 rarity 的具体视觉信号清单，作为阶段二编码的蓝图。
+
+
+## 上下文收集 (Context) — 已完成
+
+### 代码结构确认
+
+- **`codex-rs/tui/src/buddy/model.rs`** (811 行)
+  - `BuddyRarity` 枚举 (L416-422)：`Common/Uncommon/Rare/Epic/Legendary`，已 derive `Ord`，可做大小比较。
+  - 现有 rarity 方法（全部已实现）：
+    - `label()` — 中文标签
+    - `stars()` — 星级文本（★ 到 ★★★★★）
+    - `styled_span()` / `stars_span()` — 带颜色 Span
+    - `stat_floor()` — 属性下限
+    - `sprite_prefix()` — 仅 Legendary 返回 `"✦ "`
+    - `sprite_suffix()` — Epic 返回 `" ✨"`，Legendary 返回 `" ✦"`
+    - `frame_symbol()` — Rare/`·`，Epic/`✦`，Legendary/`★`
+    - `compact_symbol()` — 空字符串/◆/✦/★/✧
+    - `visual_trait()` — 中文描述（"普通外观"到"传奇光效"）
+  - `BuddyBones::from_seed()` (L555+)：确定性生成，rarity 由 `roll_rarity()` 决定（Common 60%/Uncommon 25%/Rare 10%/Epic 4%/Legendary 1%）。Common 必定无 hat；Rare+ 可选 rare_species（Dragon/Ghost/Robot）。
+  - `BuddyBones` 结构体 (L540)：name, species, rarity, eye, hat, shiny, stats。
+  - `BuddySpecies` 有 20 种，每种有独立 `_lines(eye, frame) -> [String; 3]` 渲染函数。
+
+- **`codex-rs/tui/src/buddy/render.rs`** (663 行)
+  - `render_lines()` (L48-68)：根据 width 和 mode 分流到 `render_wide_lines()` 或 `render_narrow_line()`。
+  - `render_wide_lines()` (L69-130)：
+    - 如果 rarity 有 `frame_symbol()`（Rare+），画上下边框行 + sprite 行两侧带 prefix/suffix。
+    - 否则只画 sprite 行 + prefix/suffix。
+    - 最后 `render_identity_line()` 显示 name + stars + rarity label + species + mood。
+  - `render_narrow_line()` (L132-200)：
+    - 显示 `mini_face + name + stars + compact_symbol + species` 或 reaction 文本。
+    - 无边框、无额外装饰行。
+  - `sprite_lines()` (L250-300)：分派到各 species 的 3 行 ASCII 渲染，加上可选 hat_line。
+  - 所有 species 的 sprite 都是固定 3 行、10 字符宽的 ASCII art，通过 `apply_offset()` 实现 fidget 动画。
+  - `rarity_style()` (L630-640)：Common=默认, Uncommon=green, Rare=cyan, Epic=magenta, Legendary=shiny_style(magenta+bold)；shiny 叠加 bold。
+  - `mini_face()` (L543-620)：每个 species × frame 组合返回一个迷你表情字符串，用于 compact 视图。
+
+- **`codex-rs/tui/src/buddy/mod.rs`** (560 行)
+  - `BuddyWidget`：管理 bones/state/soul，实现 `Renderable`。
+  - `/buddy show|full|pet|hide|status` 命令入口。
+  - `status()` (L170-230)：输出含 stars、visual_trait、hat、eye、mood、pet_count、primary_stat 的完整文案。
+  - 测试模块 (L400-560)：9 个 insta snapshot 测试 + 3 个行为测试。Snapshot 文件在 `buddy/snapshots/`。
+
+### 当前视觉分层现状（gap 分析）
+
+| Rarity | Full Sprite 信号 | Compact 信号 | Gap |
+|--------|------------------|-------------|-----|
+| Common | 无 prefix/suffix，无边框，默认颜色 | 空白 compact_symbol | ✅ 足够朴素 |
+| Uncommon | 无 prefix/suffix，无边框，绿色 | `◆` + 绿色 | ⚠️ 仅靠颜色和单个符号，无造型层差异 |
+| Rare | 边框 `·` + cyan | `✦` + cyan | ⚠️ 边框符号很弱，容易忽略 |
+| Epic | 边框 `✦` + suffix `✨` + magenta | `★` + magenta | ⚠️ 有后缀和边框但 compact 仍靠单符号 |
+| Legendary | prefix `✦` + suffix `✦` + 边框 `★` + shiny_style | `✧` + magenta.bold | ⚠️ Full 视图最丰富但 compact 与 Epic 符号差异小 |
+
+**核心 gap**：
+1. Common/Uncommon 在 full 视图中无任何造型差异，只有颜色不同。
+2. Rare 的边框符号 `·` 极其微弱，几乎不可见。
+3. Compact 视图所有 rarity 的差异仅靠颜色 + 单个符号，无造型层信号。
+4. Legendary 与 Epic 在 compact 视图中仅 `✧` vs `★`，区分度不足。
+5. Uncommon 无任何专属造型元素（无 prefix/suffix/frame_symbol）。
+
+### 约束确认
+
+- **Deterministic**：所有视觉差异必须由 seed 驱动，无运行时随机态。
+- **布局安全**：sprite 固定 3 行 10 字符宽，边框/装饰行在 sprite 行上下各加 1 行。扩展不能破坏现有宽度对齐。
+- **snapshot 优先**：TUI 用户可见变更必须补 snapshot，`cargo insta accept -p codex-tui` 只在 Buddy 相关文件范围内执行。
+- **格式化**：Rust 改动完成后执行 `just fmt`；非小修则 `just fix -p codex-tui`。
+- **测试**：定向跑 `cargo nextest run -p codex-tui` 验证 Buddy 相关测试。
+- **模块边界**：rarity 展示逻辑收敛在 `buddy/` 模块内部，不散落到 chatwidget 或 bottom_pane。
+- **文件尺度**：render.rs 663 行接近 800 行警戒线；新增装饰层逻辑优先提取为 render.rs 内的独立函数或考虑拆子模块。
+
+### 参考项目关键设计
+
+- `reference-projects/claude-code-rev/src/buddy/types.ts`：Rarity 作为稳定骨架属性，影响 stat floor、颜色 key、hat 是否为 none。
+- `reference-projects/claude-code-rev/src/buddy/companion.ts`：rarity 影响生成逻辑（Common 无帽）。
+- `reference-projects/claude-code-rev/src/buddy/CompanionSprite.tsx`：React 组件，sprite 渲染使用 CSS 样式和表情组合。
+- **对我们有价值的思路**：让 rarity 贯穿所有视觉层（颜色+符号+边框+装饰+identity line），而不仅是概率和标签。我们当前已部分实现但还不够深入。
+
+### 已有测试和 Snapshot
+
+- `buddy/snapshots/` 下 8 个 `.snap` 文件，覆盖 wide/compact/bubble/teaser/petted/goose/snail 场景。
+- 测试使用固定 seed `"codex-home::project"` 等，确保确定性。
+- 任何 visual contract 变更都会影响现有 snapshot，需逐一 review 并接受。
+
+## 方案设计（Architecture）
+
+### 设计原则
+
+1. **逐级增强**：每个稀有度等级在前一级基础上叠加新视觉层，形成清晰的视觉阶梯。
+2. **Deterministic**：所有差异由 seed → rarity 驱动，不引入运行时随机态。
+3. **模块收敛**：视觉逻辑收敛在 `buddy/` 模块内，不散落到 chatwidget/bottom_pane。
+4. **最小改动**：不改 species sprite 核心 ASCII art，通过装饰层（frame/prefix/suffix/aura）叠加稀有度信号。
+5. **文件尺度安全**：render.rs 已 663 行，接近 800 警戒线；新逻辑提取为独立函数，新增约 30-50 行，总量约 700-710，不拆子模块。
+
+### 视觉分层方案
+
+#### Full（宽屏）视图分层
+
+| Rarity | 背景光晕 (aura) | 边框 (frame) | 前缀/后缀 (prefix/suffix) | Identity line 信号 |
+|--------|-----------------|-------------|--------------------------|-------------------|
+| Common | 无 | 无 | 无 | ★ + "常见" dim |
+| Uncommon | 无 | 上下 `~` 浅绿波浪线 | 无 | ★★ + "少见" green |
+| Rare | 无 | 上下 `·` cyan 点线 | 无 | ★★★ + "稀有" cyan |
+| Epic | 精灵上方 `✧  ✧  ✧` 光点行 | 上下 `✦` magenta | 后缀 `✨` | ★★★★ + "史诗" magenta |
+| Legendary | 精灵上下各 `✦ ✦ ✦` 光晕行 | 上下 `★` shiny magenta | 前缀 `✦` + 后缀 `✦` | ★★★★★ + "传奇" magenta.bold + "闪亮" |
+
+#### Compact（窄屏）视图分层
+
+| Rarity | 符号 | 样式 |
+|--------|------|------|
+| Common | 无 | 默认颜色 |
+| Uncommon | `◆` | 绿色 |
+| Rare | `✦` | cyan |
+| Epic | `★` | magenta bold |
+| Legendary | `✧✧` | shiny magenta + name 前后 `✧` 包裹 |
+
+**Compact 增强**：Legendary 在 name 前后加 `✧` 包裹符（如 `✧ Mochi ✧`），并在 species 后追加 `✦` 尾缀，使其与 Epic 在紧凑视图中也能一眼区分。
+
+### 具体改动清单
+
+#### 1. `model.rs` — BuddyRarity 扩展
+
+**新增方法：**
+
+- `aura_lines(self) -> Option<(&'static str, &'static str)>` — 返回 (上光晕行, 下光晕行)。`Epic` 返回 `Some(("  ✧   ✧   ✧  ", ""))`，`Legendary` 返回 `Some((" ✦  ✦  ✦ ", " ✦  ✦  ✦ "))`，其余 `None`。
+- `compact_prefix(self) -> &'static str` — compact 视图中 name 前的包裹符。仅 `Legendary` 返回 `"✧ "`。
+- `compact_suffix(self) -> &'static str` — compact 视图中 species 后的尾缀。仅 `Legendary` 返回 `" ✦"`。
+- `identity_badge(self) -> Option<&'static str>` — identity line 尾部额外标签。`Epic` 返回 `Some("✨")`，`Legendary` 返回 `Some("✦✦✦")`。
+
+**修改方法：**
+
+- `frame_symbol(self)` — 扩展到 `Uncommon` 也返回 `Some("~")`，使 Uncommon 获得波浪边框。
+- `visual_trait(self)` — 更新描述文案以匹配新视觉层（如 Uncommon → "柔和波纹"，Epic → "星光点缀"）。
+
+#### 2. `render.rs` — 渲染管线增强
+
+**新增函数：**
+
+- `fn render_aura_line(bones: &BuddyBones, is_top: bool) -> Option<Line<'static>>` — 根据 `bones.rarity.aura_lines()` 渲染光晕行。
+- `fn rarity_frame_style(bones: &BuddyBones) -> Style` — 边框行的样式，使边框颜色匹配稀有度而非统一 dim。
+
+**修改 `render_wide_lines()`：**
+
+渲染顺序：
+```
+1. pet_burst_frame (如有)
+2. frame 上边框 (Uncommon+ 的 ~ / Rare+ 的 · / Epic+ 的 ✦ / Legendary 的 ★)
+3. aura 上行 (Epic+ 或 Legendary)
+4. sprite 行 (带 prefix/suffix)
+5. aura 下行 (仅 Legendary)
+6. frame 下边框
+7. identity_line (带 badge)
+```
+
+边框样式从统一 `dim()` 改为 `rarity_frame_style(bones)`。
+
+**修改 `render_narrow_line()`：**
+
+- 对于 Legendary，name 前插入 `compact_prefix`，species 后追加 `compact_suffix`。
+- compact_symbol 样式对 Legendary 使用 `shiny_style()`。
+
+**修改 `render_identity_line()`：**
+
+- 在 shiny 标记之后，追加 `identity_badge`（如有）。
+
+#### 3. `mod.rs` — 测试和 snapshot 更新
+
+- 新增 4 个 snapshot 测试用例，覆盖 Uncommon/Epic/Legendary full + Legendary compact 场景。
+- 现有 8 个 snapshot 逐一 review 后 accept。
+
+### 数据流
+
+```
+seed → BuddyBones::from_seed()
+  → roll_rarity() → BuddyRarity
+  → rarity 决定 frame_symbol / aura_lines / prefix / suffix / compact_* / badge
+  → render_wide_lines() / render_narrow_line() 组合渲染
+  → 传给 BuddyWidget::render() → 底栏显示
+```
+
+### 状态所有权
+
+- **BuddyRarity** — 在 `BuddyBones` 创建时确定，之后不可变。所有视觉分支从 `bones.rarity` 派生。
+- **BuddyState** — 管理 animation frame / pet / reaction 状态，不参与 rarity 视觉决策。
+- **render 函数** — 纯函数，接收 `(&BuddyBones, &str, &BuddyState, u16)` 返回 `Vec<Line>` 或 `Line`，无副作用。
+
+### 集成点
+
+- `BuddyWidget::render()` → 调用 `render::render_lines()`，现有调用点不变。
+- `/buddy status` → 调用 `bones.rarity.visual_trait()`，文案更新自然反映。
+- Snapshot 测试 → 新增 rarity-specific 用例，现有用例更新。
+
+### 风险与缓解
+
+| 风险 | 缓解 |
+|------|------|
+| 宽度对齐被 aura/badge 打破 | aura 行宽度与 sprite 行一致（≤ 10 char），badge 在 identity line 末尾追加，不影响对齐 |
+| Uncommon 波浪边框 `~` 在某些终端渲染不清 | 使用 `fg(Color::Green)` 而非纯 dim，确保可见 |
+| Legendary compact 包裹符在极窄屏被截断 | `truncate_with_ellipsis` 已兜底，包裹符会被自然截断 |
+| Snapshot 全部失效 | 逐个 review，只 accept Buddy 相关 snapshot，不盲目全量 accept |
+
+### 可执行任务拆分（供下一阶段参考）
+
+1. **model.rs**: 扩展 `BuddyRarity` 方法（aura_lines, compact_prefix, compact_suffix, identity_badge, 更新 frame_symbol/visual_trait）
+2. **render.rs**: 新增 `render_aura_line()` + `rarity_frame_style()`，修改 `render_wide_lines()` 渲染顺序
+3. **render.rs**: 修改 `render_narrow_line()` 支持 Legendary 包裹符
+4. **render.rs**: 修改 `render_identity_line()` 追加 badge
+5. **mod.rs**: 新增 4 个 rarity-specific snapshot 测试
+6. **验证**: `cargo nextest run -p codex-tui` → review snapshot → `cargo insta accept -p codex-tui` → `just fmt`
+7. **可选**: `just fix -p codex-tui` 确认无 clippy 警告

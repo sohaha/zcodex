@@ -2,9 +2,13 @@
 //!
 //! 验证功能从用户视角的正确性和可用性。
 
-use crate::mission::handoff::{Handoff, ReviewStatus, UserTestingResult};
-use crate::mission::validators::{Validator, ValidatorConfig};
-use serde::{Deserialize, Serialize};
+use crate::mission::handoff::Handoff;
+use crate::mission::handoff::ReviewStatus;
+use crate::mission::handoff::UserTestingResult;
+use crate::mission::validators::Validator;
+use crate::mission::validators::ValidatorConfig;
+use serde::Deserialize;
+use serde::Serialize;
 
 /// User Testing 验证报告。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,13 +185,19 @@ impl UserTestingValidator {
         ));
 
         let total_tests = report.test_results.len();
-        let passed_tests = report.test_results.iter()
+        let passed_tests = report
+            .test_results
+            .iter()
             .filter(|t| t.status == TestStatus::Passed)
             .count();
-        let failed_tests = report.test_results.iter()
+        let failed_tests = report
+            .test_results
+            .iter()
             .filter(|t| t.status == TestStatus::Failed)
             .count();
-        let skipped_tests = report.test_results.iter()
+        let skipped_tests = report
+            .test_results
+            .iter()
             .filter(|t| t.status == TestStatus::Skipped)
             .count();
 
@@ -208,7 +218,9 @@ impl UserTestingValidator {
                 TestCategory::Error,
                 TestCategory::Integration,
             ] {
-                let tests: Vec<_> = report.test_results.iter()
+                let tests: Vec<_> = report
+                    .test_results
+                    .iter()
                     .filter(|t| t.category == category)
                     .collect();
 
@@ -234,8 +246,15 @@ impl UserTestingValidator {
         if !report.issues.is_empty() {
             output.push_str("## Issues Found\n\n");
 
-            for severity in [IssueSeverity::Critical, IssueSeverity::High, IssueSeverity::Medium, IssueSeverity::Low] {
-                let issues: Vec<_> = report.issues.iter()
+            for severity in [
+                IssueSeverity::Critical,
+                IssueSeverity::High,
+                IssueSeverity::Medium,
+                IssueSeverity::Low,
+            ] {
+                let issues: Vec<_> = report
+                    .issues
+                    .iter()
                     .filter(|i| i.severity == severity)
                     .collect();
 
@@ -249,7 +268,10 @@ impl UserTestingValidator {
                         output.push_str(&format!("- **Expected:** {}\n", issue.expected));
                         output.push_str(&format!("- **Actual:** {}\n", issue.actual));
                         output.push_str(&format!("- **Impact:** {}\n", issue.impact));
-                        output.push_str(&format!("- **Recommendation:** {}\n\n", issue.recommendation));
+                        output.push_str(&format!(
+                            "- **Recommendation:** {}\n\n",
+                            issue.recommendation
+                        ));
                     }
                 }
             }
@@ -343,7 +365,9 @@ impl Validator for UserTestingValidator {
             }
             ReviewStatus::Partial => {
                 let pass_rate = if user_testing.test_cases_executed > 0 {
-                    (user_testing.test_cases_passed as f64 / user_testing.test_cases_executed as f64) * 100.0
+                    (user_testing.test_cases_passed as f64
+                        / user_testing.test_cases_executed as f64)
+                        * 100.0
                 } else {
                     0.0
                 };
@@ -354,17 +378,12 @@ impl Validator for UserTestingValidator {
                     status: TestStatus::Passed,
                     notes: format!(
                         "{} of {} tests passed ({:.0}%)",
-                        user_testing.test_cases_passed,
-                        user_testing.test_cases_executed,
-                        pass_rate
+                        user_testing.test_cases_passed, user_testing.test_cases_executed, pass_rate
                     ),
                 });
 
                 if pass_rate >= 90.0 {
-                    positive_findings.push(format!(
-                        "High test pass rate: {:.0}%",
-                        pass_rate
-                    ));
+                    positive_findings.push(format!("High test pass rate: {:.0}%", pass_rate));
                 } else if pass_rate >= 70.0 {
                     issues.push(TestIssue {
                         title: "Some tests failed".to_string(),
@@ -458,8 +477,14 @@ impl Validator for UserTestingValidator {
         }
 
         // 生成总体建议
-        let critical_count = issues.iter().filter(|i| i.severity == IssueSeverity::Critical).count();
-        let high_count = issues.iter().filter(|i| i.severity == IssueSeverity::High).count();
+        let critical_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Critical)
+            .count();
+        let high_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::High)
+            .count();
 
         if critical_count > 0 {
             recommendations.push(format!(
@@ -480,7 +505,10 @@ impl Validator for UserTestingValidator {
 
         // 确定总体状态
         let overall_status = if self.config.strict {
-            if test_results.iter().any(|t| t.category == TestCategory::Smoke && t.status == TestStatus::Failed) {
+            if test_results
+                .iter()
+                .any(|t| t.category == TestCategory::Smoke && t.status == TestStatus::Failed)
+            {
                 TestingStatus::Failed
             } else if !issues.is_empty() {
                 TestingStatus::Partial
@@ -488,11 +516,13 @@ impl Validator for UserTestingValidator {
                 TestingStatus::Passed
             }
         } else {
-            let smoke_failed = test_results.iter()
+            let smoke_failed = test_results
+                .iter()
                 .any(|t| t.category == TestCategory::Smoke && t.status == TestStatus::Failed);
 
             let pass_rate = if user_testing.test_cases_executed > 0 {
-                (user_testing.test_cases_passed as f64 / user_testing.test_cases_executed as f64) * 100.0
+                (user_testing.test_cases_passed as f64 / user_testing.test_cases_executed as f64)
+                    * 100.0
             } else {
                 0.0
             };
@@ -569,7 +599,12 @@ mod tests {
 
         assert_eq!(report.overall_status, TestingStatus::Failed);
         assert!(!report.issues.is_empty());
-        assert!(report.issues.iter().any(|i| i.severity == IssueSeverity::Critical));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.severity == IssueSeverity::Critical)
+        );
     }
 
     #[test]
@@ -584,7 +619,12 @@ mod tests {
         let report = validator.validate(&handoff);
 
         assert!(!matches!(report.overall_status, TestingStatus::Passed));
-        assert!(report.issues.iter().any(|i| matches!(i.category, TestCategory::Smoke)));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| matches!(i.category, TestCategory::Smoke))
+        );
     }
 
     #[test]
