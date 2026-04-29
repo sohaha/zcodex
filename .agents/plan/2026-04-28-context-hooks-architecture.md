@@ -809,3 +809,545 @@ let args = ZmemoryToolCallParam {
 - [x] 实现阶段拆分：4 个有序阶段，每个有明确验证标准
 - [x] 风险与缓解：4 项风险有缓解措施
 - [x] 方案足够具体，可以拆成可执行任务
+
+---
+
+# 执行计划 (Plan)
+
+## 当前代码状态盘点（已验证）
+
+| 资产 | 状态 | 关键发现 |
+|---|---|---|
+| Feature gate `Feature::ZContext` | ✅ Stable, 默认开启 | 已注册于 `features/src/lib.rs:81`，测试覆盖于 `features/src/tests.rs:82-86` |
+| `codex-context-hooks` crate | ✅ 已注册 workspace，未编译引入 core | `Cargo.toml` 在 workspace members；`core/Cargo.toml` 已引用 |
+| `ContextHooksToml` / `ContextHooksConfig` | ✅ 已集成 | `config/src/types.rs:1048-1057` + `core/src/config/types.rs:44-65` |
+| `record_post_tool_use_event` | ✅ 已实现 | `context-hooks/src/event_recorder.rs`，但**缺脱敏（D1）** |
+| `build_session_snapshot` | ⚠️ 有缺陷 | `context-hooks/src/snapshot.rs`，使用 Export 全域导出再内存过滤（D2） |
+| I1: hook_runtime.rs 事件记录接入 | ❌ 未接入 | `hook_runtime.rs` 中无 zcontext 调用 |
+| I2: session/mod.rs snapshot 注入 | ❌ 未接入 | 无 additional_context 注入 |
+| I3: ctx 工具 spec | ❌ 未实现 | `tools/src/` 中无 ctx 相关代码 |
+| I4: ToolHandlerKind::Ctx | ❌ 未实现 | `tool_registry_plan_types.rs` 中无 Ctx variant |
+| I5: ctx handler | ❌ 未实现 | `core/src/tools/handlers/` 中无 ctx.rs |
+
+**关键发现**：`context-hooks` crate 可独立编译（`cargo check -p codex-context-hooks` ✅），核心逻辑已有草稿，主要缺的是脱敏层、主路径接入和 ctx 工具。
+
+---
+
+## 实施顺序与依赖关系
+
+### Phase 0: 草稿修正与脱敏层（零依赖，独立完成）
+
+**目标**：修正 `event_recorder.rs` 脱敏缺失（D1）和 `snapshot.rs` 全域导出（D2）。
+
+**任务 T0.1** — 新建 `context-hooks/src/sanitize.rs`
+- 实现 `sanitize_content(input: &str) -> String`
+- 脱敏模式（正则）：
+  - API keys: `r"sk-[A-Za-z0-9_-]{20,}"`、`r"ghp_[A-Za-z0-9]{36}"`、`r"glpat-[A-Za-z0-9_-]{20,}"`
+  - Bearer tokens: `r"(?i)bearer\s+[A-Za-z0-9_-]+\b"`
+  - 密码字段: JSON 中 `"password"`, `"secret"`, `"token"`, `"api_key"`, `"private_key"` 键值对
+  - 环境变量: `r"[A-Z_]{3,}=[^\s]+` 模式
+- 替换为 `[REDACTED]`，最多连续 3 个
+- 导出 `sanitize_content` 于 `lib.rs`
+
+**任务 T0.2** — 集成脱敏到 `event_recorder.rs`
+- 修改 `build_post_tool_use_record` 中的 `pretty_json → truncate_field` 管道
+- 插入 `sanitize_content`：`pretty_json → sanitize_content → truncate_field`
+- 对 `input` 和 `response` 分别调用
+
+**任务 T0.3** — 修正 `snapshot.rs` 全域导出（D2）
+- 改 `Export` → `Search` action
+- URI 前缀过滤：`session://{session_id}/events/`
+- **重要**：Search 返回 `{query, matchCount, matches: [{domain, path, uri, snippet, priority, disclosure}]}`
+- 解析 `snippet` 字段替代原 `content` 字段（snippet 已含高亮片段，适合做摘要）
+- 适配搜索结果排序（priority ASC + 相关性），不再需要内存 priority 排序
+
+**验证入口**：`cd codex-rs && RUSTC_WRAPPER="" cargo test -p codex-context-hooks`
+
+**回滚边界**：仅改动 `context-hooks/src/` 下的 3 个文件，无破坏性变更。
+
+---
+
+### Phase 1: 主路径接入（依赖 Phase 0）
+
+**目标**：将 `record_post_tool_use_event` 和 `build_session_snapshot` 接入 `codex-core` 运行路径。
+
+**任务 T1.1** — I1: 接入 `hook_runtime.rs`
+- 找到 `run_post_tool_use_hooks` 函数（~line 245）
+- 在 `preview_runs` 之后、`outcome = sess.hooks().run_post_tool_use(request).await` 之前
+- 添加：
+
+```rust
+if features.enabled(Feature::ZContext) && ctx.context_hooks.enabled {
+    let zctx = codex_context_hooks::ZmemoryContext::new(
+        ctx.codex_home.clone(),
+        ctx.cwd.clone(),
+        None,
+        ctx.to_zmemory_settings(),
+    );
+    if let Err(e) = codex_context_hooks::record_post_tool_use_event(&zctx, &request) {
+        tracing::warn!(?e, "zcontext: failed to record post tool use event");
+    }
+}
+```
+
+- 前提：从 TurnContext 提取 `codex_home`（已有）和 `zmemory_path`（需确认路径）
+
+**任务 T1.2** — I2: 接入 `session/mod.rs` snapshot 注入
+- 找到 `PreCompact` / resume 触发点
+- 调用 `build_session_snapshot`，将返回的 `Option<String>` 作为 `additional_context` 注入
+- **需确认接入点**：查看 session 中 compact/resume 逻辑位置
+- 验证：在 `session/mod.rs` 中搜索 `PreCompact` 或 `compact` 触发
+
+**验证入口**：`cd codex-rs && RUSTC_WRAPPER="" cargo check -p codex-core`，然后定向运行 context-hooks 相关测试
+
+**回滚边界**：仅在 hook_runtime.rs 和 session/mod.rs 中添加 feature-gated 代码片段，原有行为不变。
+
+---
+
+### Phase 2: Ctx 工具实现（依赖 Phase 1 完成 core 接入）
+
+**目标**：注册并实现 `ctx_execute`/`ctx_search`/`ctx_stats`/`ctx_doctor`/`ctx_purge` 工具。
+
+**任务 T2.1** — I4: 新增 `ToolHandlerKind::Ctx`
+- 在 `tools/src/tool_registry_plan_types.rs` 的 `ToolHandlerKind` enum 中添加 `Ctx` variant
+- 需确保 `impl PartialEq` 和 `#[derive(Debug, Clone, Copy)]` 自动覆盖
+
+**任务 T2.2** — I3: 新建 `tools/src/ctx_tool.rs`
+- 定义工具 spec：`ctx_execute`、`ctx_search`、`ctx_stats`、`ctx_doctor`、`ctx_purge`
+- 工具描述对齐 `context-mode` 参考能力
+- 每个工具 `input_schema` 使用 JSON Schema
+- 导出 `create_ctx_tools() -> Vec<DiscoverableTool>`
+
+**任务 T2.3** — 注册 ctx 工具
+- 在 `tools/src/tool_registry_plan.rs` 中：
+  - 调用 `create_ctx_tools()` 获取 spec
+  - 对每个工具名 `plan.register_handler(name, ToolHandlerKind::Ctx)`
+  - Feature gate: 仅在 `features.enabled(Feature::ZContext)` 时注册
+
+**任务 T2.4** — I5: 新建 `core/src/tools/handlers/ctx.rs`
+- 实现 `CtxHandler::execute`
+- 内部复用 `run_zmemory_tool_with_context`，action 映射：
+  - `ctx_execute` → Read
+  - `ctx_search` → Search
+  - `ctx_stats` → Stats
+  - `ctx_doctor` → Doctor
+  - `ctx_purge` → DeletePath
+- 工具参数 JSON → `ZmemoryToolCallParam` 转换
+
+**任务 T2.5** — 分发接入
+- 在 `core/src/tools/handlers/mod.rs` 中添加 `ToolHandlerKind::Ctx => CtxHandler.handle(invocation)`
+
+**验证入口**：`cd codex-rs && RUSTC_WRAPPER="" cargo check -p codex-tools && cargo check -p codex-core`
+
+**回滚边界**：仅添加新文件 + 修改 3 个已有文件中的小片段。
+
+---
+
+### Phase 3: Schema / 文档 / 全量验证
+
+**任务 T3.1** — 更新 config schema
+- `just write-config-schema`（确认 context-hooks 相关配置已导出到 schema）
+
+**任务 T3.2** — 格式化与 lint
+- `cd codex-rs && just fmt`
+- `cd codex-rs && just fix -p codex-context-hooks -p codex-tools -p codex-core`
+
+**任务 T3.3** — 单元测试
+- `cd codex-rs && RUSTC_WRAPPER="" cargo test -p codex-context-hooks`
+- `cd codex-rs && RUSTC_WRAPPER="" cargo test -p codex-tools`
+- `cd codex-rs && RUSTC_WRAPPER="" cargo test -p codex-core`（定向相关用例）
+
+**任务 T3.4** — Snapshot 测试（UI 变更）
+- 若 ctx 工具 UI 输出涉及渲染，update insta snapshots
+
+**任务 T3.5** — 文档（按需）
+- 检查 `docs/` 中是否有 zcontext 相关文档需更新
+
+**全量测试**：需用户确认后执行 `cd codex-rs && just test` 或 `cargo nextest run`
+
+---
+
+## 依赖图
+
+```
+Phase 0 (T0.1-T0.3)
+    │
+    ▼
+Phase 1 (T1.1-T1.2)  ──依赖── Phase 0 编译通过
+    │
+    ▼
+Phase 2 (T2.1-T2.5)  ──依赖── Phase 1 check 通过
+    │
+    ▼
+Phase 3 (T3.1-T3.5)  ──依赖── Phase 2 check 通过
+```
+
+---
+
+## 验证入口汇总
+
+| 阶段 | 验证命令 | 预期 |
+|---|---|---|
+| Phase 0 | `cargo test -p codex-context-hooks` | 2 个现有测试通过；新增 sanitize 测试通过 |
+| Phase 1 | `cargo check -p codex-core` | 无编译错误 |
+| Phase 2 | `cargo check -p codex-tools && cargo check -p codex-core` | 无编译错误 |
+| Phase 3 | `just fmt && just fix && just write-config-schema` | 全部通过 |
+| 最终 | `cargo test -p codex-context-hooks -p codex-tools` | 全量通过 |
+
+---
+
+## 回滚边界
+
+- Phase 0：仅 `context-hooks/src/` 下 3 文件有改动，回滚 = 删除 sanitize.rs + 还原 event_recorder/snapshot.rs
+- Phase 1：仅在 `hook_runtime.rs` 和 `session/mod.rs` 中添加 feature-gated 片段，删除即回滚
+- Phase 2：删除 3 个新增文件 + 还原 3 个已有文件的增量，回滚干净
+- Phase 3：仅配置/格式文件改动，无破坏性
+
+---
+
+## 出口条件检查
+
+- [ ] Phase 0: `cargo test -p codex-context-hooks` 全绿
+- [ ] Phase 0: `sanitize_content` 覆盖所有规定模式
+- [ ] Phase 0: `build_session_snapshot` 改用 Search，解析 snippet 字段
+- [ ] Phase 1: `cargo check -p codex-core` 无错误
+- [ ] Phase 1: `record_post_tool_use_event` 在 PostToolUse 钩子中被调用（feature-gated）
+- [ ] Phase 1: snapshot 通过 additional_context seam 注入
+- [ ] Phase 2: ctx 工具 spec 定义完整
+- [ ] Phase 2: ToolHandlerKind::Ctx 分发到 CtxHandler
+- [ ] Phase 2: `cargo check -p codex-tools && cargo check -p codex-core` 无错误
+- [ ] Phase 3: `just fmt && just fix` 通过
+- [ ] Phase 3: config schema 更新
+- [ ] Phase 3: 所有相关测试通过
+
+
+## Worker 定义
+
+基于对现有代码、计划 Phase 0-3、依赖图和代码约束的分析，定义 5 个可独立派发的 Worker。每个 Worker 拥有明确的文件所有权、输入/输出契约和验收标准。
+
+### 通用约定
+
+- 所有 Worker 在派发前由主流程确认前置条件满足。
+- Worker 之间不共享可变状态；交接通过 crate 公共 API 和 git 文件边界完成。
+- 每个 Worker 的改动范围限制在其拥有的文件集内，不允许跨 Worker 文件集修改。
+- Feature gate 检查 (`Feature::ZContext`) 由 Worker 0 集中确认，其余 Worker 依赖该注册结果。
+
+---
+
+### Worker 0: Feature Gate 与配置基线
+
+**职责**：确保 `Feature::ZContext` 注册完整、`ContextHooksConfig` 解析正确、`context-hooks` crate 公共 API 稳定。
+
+**文件所有权**：
+- `codex-rs/features/src/lib.rs`（确认 `ZContext` 在 `Feature` enum 中，stage 为 `Stable`，`default_enabled: true`）
+- `codex-rs/core/src/config/types.rs`（`ContextHooksToml` / `ContextHooksConfig`）
+- `codex-rs/context-hooks/src/lib.rs`（公共 API 导出）
+- `codex-rs/context-hooks/Cargo.toml`（依赖声明）
+
+**输入**：现有代码状态（已审查）。
+
+**输出/验收标准**：
+1. `Feature::ZContext` 的 `FeatureSpec` 为 `Stage::Stable`, `default_enabled: true`, key `"zcontext"`
+2. `ContextHooksConfig::from_toml(None)` 返回 `enabled: true`
+3. `ContextHooksConfig::from_toml(Some(ContextHooksToml { enabled: Some(false), .. }))` 返回 `enabled: false`
+4. `cargo check -p codex-context-hooks` 无错误
+5. `cargo test -p codex-context-hooks` 通过
+6. `to_context_hooks_settings()` 字段映射一一对应
+
+**交接物**：`codex-context-hooks` crate 可被 `codex-core` 正常依赖和调用。
+
+---
+
+### Worker 1: 事件记录增强（脱敏 + sanitize）
+
+**职责**：为 `event_recorder.rs` 添加内容脱敏层，确保敏感内容在存储前被替换。
+
+**文件所有权**：
+- `codex-rs/context-hooks/src/event_recorder.rs`
+- 新建 `codex-rs/context-hooks/src/sanitize.rs`
+
+**输入**：Worker 0 完成后的 crate 状态。
+
+**输出/验收标准**：
+1. 新增 `sanitize_content(content: &str) -> String`，覆盖：API key/token 模式（`sk-...`、`ghp_...`、Bearer）、密码字段（`"password"`/`"secret"`/`"token"` JSON 键）、环境变量凭证（`API_KEY=...`、`SECRET=...`）、私钥头部（`-----BEGIN PRIVATE KEY-----`）
+2. `sanitize_content` 有单元测试覆盖所有模式
+3. `build_post_tool_use_record` 对 input 和 response 调用 `sanitize_content`
+4. `sanitize.rs` 在 `lib.rs` 声明为 `pub(crate) mod`
+5. 现有测试仍通过，新增测试覆盖脱敏逻辑
+
+**交接物**：`event_recorder` 输出的存储内容不含明文敏感值。
+
+---
+
+### Worker 2: Snapshot 恢复（Search-based）
+
+**职责**：将 `build_session_snapshot` 从 `Export` action 改为 `Search` action，避免全域导出再过滤。
+
+**文件所有权**：
+- `codex-rs/context-hooks/src/snapshot.rs`
+
+**输入**：Worker 0 + Worker 1 完成后的 crate 状态。
+
+**输出/验收标准**：
+1. 使用 `ZmemoryToolAction::Search` 替代 `Export`
+2. Search 参数：`query: Some(session_id)` + `uri: Some(format!("session://{session_id}/"))`
+3. 解析 Search 返回的 `snippets` 字段（替代 Export 的 `items`），提取 title/content 摘要/uri
+4. 优先排序逻辑不变（按 priority 排序，截断到 `max_events_per_snapshot`）
+5. 分组输出格式不变
+6. `formatted_truncate_text` token budget 截断仍生效
+7. `extract_session_events` 测试更新为匹配 Search 返回结构
+8. `cargo test -p codex-context-hooks` 通过
+
+**交接物**：`build_session_snapshot` 基于 Search 返回 session 上下文快照。
+
+---
+
+### Worker 3: Core 接入层（Hook Seam + Snapshot 注入）
+
+**职责**：在 `codex-core` 中接入 context-hooks 的记录和恢复能力，通过 feature gate 控制。
+
+**文件所有权**：
+- `codex-rs/core/src/hook_runtime.rs`（PostToolUse 钩子调用 `record_post_tool_use_event`）
+- `codex-rs/core/src/compact.rs` 或 `codex-rs/core/src/session/turn.rs`（compact/resume 注入 snapshot）
+
+**限制**：仅允许薄调用片段（< 15 行），不引入业务逻辑。
+
+**输入**：Worker 0-2 完成后的 `codex-context-hooks` 公共 API。
+
+**输出/验收标准**：
+1. `run_post_tool_use_hooks` 返回 `PostToolUseOutcome` 前，在 `features.enabled(Feature::ZContext) && config.context_hooks.enabled` 时调用 `record_post_tool_use_event`
+2. 调用使用 `ZmemoryContext::new(...)` 构造 context
+3. 调用结果仅 log 错误，不阻断 hook 流程
+4. compact 流程在构造 prompt 前检查 feature，若启用则调用 `build_session_snapshot`，结果通过 `record_additional_contexts` 注入
+5. 所有新增代码有 `if features.enabled(Feature::ZContext) && context_hooks.enabled` 保护
+6. `cargo check -p codex-core` 无错误
+7. 现有测试不受影响
+
+**交接物**：ZContext 通过 feature gate 在 `codex-core` 中激活，事件自动记录、compact 时自动注入 snapshot。
+
+---
+
+### Worker 4: Ctx 工具注册与分发
+
+**职责**：定义 `ctx_*` 工具 spec、注册到 tool registry、实现 handler 分发。
+
+**文件所有权**：
+- 新建 `codex-rs/tools/src/ctx_tool.rs`（工具 spec）
+- `codex-rs/tools/src/tool_registry_plan_types.rs`（`ToolHandlerKind::Ctx`）
+- `codex-rs/tools/src/tool_registry_plan.rs`（注册 ctx 工具，feature-gated）
+- 新建 `codex-rs/core/src/tools/handlers/ctx.rs`（handler 实现）
+- `codex-rs/core/src/tools/handlers/mod.rs`（`Ctx` 分发分支）
+
+**输入**：Worker 3 完成后的 core 接入层 + 现有 `ZmemoryHandler` 参考模式。
+
+**输出/验收标准**：
+1. `ToolHandlerKind::Ctx` variant 已添加
+2. 5 个工具 spec：`ctx_execute`(→Read)、`ctx_search`(→Search)、`ctx_stats`(→Stats)、`ctx_doctor`(→Doctor)、`ctx_purge`(→DeletePath)
+3. 每个工具 `input_schema` 使用 `JsonSchema`，描述对齐 context-mode
+4. `tool_registry_plan.rs` 中 `features.enabled(Feature::ZContext)` 时注册
+5. `ctx.rs` handler 复用 `run_zmemory_tool_with_context`
+6. `mod.rs` 添加 `ToolHandlerKind::Ctx => CtxHandler.handle(invocation)` 分发
+7. `cargo check -p codex-tools && cargo check -p codex-core` 无错误
+8. 现有 zmemory 工具和测试不受影响
+
+**交接物**：模型可通过 `ctx_*` 工具访问 session 上下文。
+
+---
+
+### Worker 依赖图
+
+```
+Worker 0 (Feature Gate 基线)
+    │
+    ├──► Worker 1 (脱敏)
+    │       │
+    │       └──► Worker 2 (Snapshot Search) ──► Worker 3 (Core 接入) ──► Worker 4 (Ctx 工具)
+    │
+    └──► Worker 2 可与 Worker 1 并行启动（无文件冲突）
+```
+
+**并行策略**：
+- Worker 0 先完成（提供稳定 API 基线）
+- Worker 1 和 Worker 2 可并行派发（文件集不重叠）
+- Worker 3 在 Worker 1+2 完成后启动
+- Worker 4 在 Worker 3 完成后启动
+
+### 交接格式
+
+1. **crate 公共 API**：`codex-context-hooks` 的 `pub use` 导出
+2. **git 文件边界**：每个 Worker 改动提交到独立文件集
+3. **编译检查**：后续 Worker 启动前，主流程验证 `cargo check` 通过
+
+### 风险与缓解
+
+| 风险 | 影响 | 缓解 |
+|---|---|---|
+| `ZmemoryToolAction::Search` 返回结构与 Export 不同 | Worker 2 需调整解析 | 启动时先确认 Search action 返回的 JSON 结构 |
+| compact 注入点不明确 | Worker 3 可能需改更多文件 | 优先查 `record_additional_contexts` 调用链，确定最小注入点 |
+| ctx 工具与 zmemory 工具名称冲突 | 注册歧义 | ctx 使用 `ctx_` 前缀，与 `*_memory` 正交 |
+| Bazel BUILD.bazel 需更新 | 新增文件可能破坏 Bazel 构建 | Worker 4 后运行 `just bazel-lock-update` |
+
+---
+
+# 验证策略 (Verification)
+
+## 验证原则
+
+1. **分层验证**：按 crate 边界从内向外验证，先 `codex-context-hooks` 单元，再 `codex-core` 集成，最后端到端。
+2. **可复现**：所有验证步骤必须可通过命令行复现，无手动依赖。
+3. **失败快**：每个 Worker 交付前先跑自己的测试，通过后才交接。
+4. **风险覆盖**：验证链路必须覆盖 6 条成功标准中的核心风险面。
+
+## 一、代码审查清单
+
+每个 Worker 交付后，主流程执行以下审查（自审或指派 explorer）：
+
+### Worker 0: Feature Gate 基线
+- [ ] `Feature::ZContext` 在 `FEATURES` 数组中 `stage: Stage::Stable, default_enabled: true`
+- [ ] `ContextHooksToml` 字段（`enabled`, `snapshot_token_budget`, `max_events_per_snapshot`）在 `codex-rs/config/src/types.rs` 中存在
+- [ ] `from_toml(None)` 解析为 `enabled: true`（默认开启），而非之前草稿的 disabled
+- [ ] config schema 更新（`just write-config-schema` 后 `config.schema.json` 包含 `context_hooks` 段）
+
+### Worker 1: 脱敏
+- [ ] `record_post_tool_use_event` 不存储原始 `tool_input`/`tool_response`，而是经 `truncate_field` 截断
+- [ ] `classify_event` 分类正确（error → file_edit → git → command → tool）
+- [ ] URI 格式 `session://{session_id}/events/{turn_id}/{call_id}` 经过 `sanitize_uri_segment`
+- [ ] 不泄漏密钥/令牌（content 中无非预期敏感字段）
+- [ ] 测试 `cargo test -p codex-context-hooks` 通过（修复现有编译错误后）
+
+### Worker 2: Snapshot Search
+- [ ] `build_session_snapshot` 使用 `ZmemoryToolAction::Search` 而非 `Export`
+- [ ] Search 参数包含 `uri: Some("session://{session_id}/")` 和 `query: Some(session_id)`
+- [ ] 解析 Search 返回的 `snippets` 字段（非 Export 的 `items`）
+- [ ] 优先排序和 token budget 截断逻辑保留
+- [ ] 测试 `cargo test -p codex-context-hooks` 通过
+
+### Worker 3: Core 接入层
+- [ ] `hook_runtime.rs` 中 PostToolUse 钩子路径有 `if features.enabled(Feature::ZContext)` 保护
+- [ ] 调用 `record_post_tool_use_event` 使用 `ZmemoryContext::new(...)` 构造 context
+- [ ] 调用失败仅 log 错误，不阻断 hook 流程（不返回 Err）
+- [ ] compact/PreCompact 注入点检查 feature gate
+- [ ] `cargo check -p codex-core` 无错误
+- [ ] 现有测试不受影响（`cargo nextest run -p codex-core` 无新增失败）
+
+### Worker 4: Ctx 工具注册
+- [ ] `ToolHandlerKind::Ctx` variant 已添加到 `codex-rs/tools/src/tool_registry_plan_types.rs`
+- [ ] 5 个工具 spec 存在（`ctx_execute`, `ctx_search`, `ctx_stats`, `ctx_doctor`, `ctx_purge`）
+- [ ] 注册有 `features.enabled(Feature::ZContext)` feature-gated
+- [ ] `ctx.rs` handler 复用 `run_zmemory_tool_with_context`
+- [ ] `mod.rs` 添加 `ToolHandlerKind::Ctx => ...` 分发分支
+- [ ] `cargo check -p codex-tools && cargo check -p codex-core` 无错误
+- [ ] 现有 zmemory 工具和测试不受影响
+
+## 二、自动验证命令
+
+每个 Worker 完成后按顺序执行：
+
+### Worker 0-2（codex-context-hooks crate）
+```bash
+# 编译检查
+RUSTC_WRAPPER= cargo check -p codex-context-hooks
+# 单元测试（修复现有编译错误后）
+RUSTC_WRAPPER= cargo nextest run -p codex-context-hooks
+# 格式化
+just fmt
+# Lint（限定范围）
+just fix -p codex-context-hooks
+```
+
+### Worker 3（codex-core 接入）
+```bash
+# 编译检查
+RUSTC_WRAPPER= cargo check -p codex-core
+# 现有测试不回归（可选，询问用户后执行）
+RUSTC_WRAPPER= cargo nextest run -p codex-core
+# 格式化
+just fmt
+just fix -p codex-core
+```
+
+### Worker 4（tools + core handler）
+```bash
+RUSTC_WRAPPER= cargo check -p codex-tools
+RUSTC_WRAPPER= cargo check -p codex-core
+# Bazel lock 更新（依赖变更时）
+just bazel-lock-update
+just bazel-lock-check
+```
+
+### 全量验证（所有 Worker 完成后）
+```bash
+RUSTC_WRAPPER= cargo check --workspace
+RUSTC_WRAPPER= cargo nextest run -p codex-context-hooks
+just fmt
+# Schema 更新
+just write-config-schema
+```
+
+## 三、已知阻断项与前置修复
+
+| 阻断项 | 影响 | 修复动作 |
+|---|---|---|
+| `context-hooks` 测试编译失败（缺少 `codex_protocol`/`codex_utils_absolute_path` 依赖） | Worker 1 测试无法运行 | 在 `Cargo.toml` 中添加 `codex-protocol` 和 `codex-utils-absolute-path` 依赖，或将测试中的 `ThreadId::from_string` 和 `to_abs_path_buf()` 替换为手构 fixture |
+| `snapshot.rs` 使用 `Export` action | Worker 2 目标就是改为 `Search`，但需先确认 Search 返回的 JSON 结构 | 在 `codex-rs/zmemory` 中检查 `Search` action 的返回格式（`snippets` 字段） |
+| compact 注入点未明确 | Worker 3 需找到最小注入点 | 在 `codex-rs/core/src/session/` 中查找 compact/compaction 相关调用链，确认 `additional_contexts` 注入 seam |
+| `codex-core` 中 `post_tool_use` 相关调用未找到 | Worker 3 需确认 hook 调用链 | 检查 `codex-rs/hooks/src/registry.rs:run_post_tool_use` 和 core 中的调用者 |
+
+## 四、用户测试场景
+
+以下场景由用户在本地环境手动验证（sandbox 环境可能受限）：
+
+### 场景 1：Feature Gate 开关
+1. 默认启动 Codex TUI，确认 zcontext 功能激活（可通过 `codex features list` 查看）
+2. 在 `config.toml` 中设置 `[features] zcontext = false`，重启确认所有 zcontext 行为停止
+3. 通过 `codex --disable zcontext` 命令行参数禁用
+
+### 场景 2：事件记录
+1. 执行一次 shell 命令（如 `ls`），确认 `session://` 域下有对应事件记录
+2. 执行一次 `apply_patch`，确认分类为 `file_edit`
+3. 执行一个会失败的命令，确认分类为 `error`
+4. 通过 `ctx_search` 或 zmemory 工具查看记录，确认内容经过截断、不含原始敏感数据
+
+### 场景 3：Snapshot 恢复
+1. 在一个 session 中执行若干操作后触发 compact（`/compact`）
+2. 确认 compact 后的 additional context 包含 session snapshot
+3. 新 session resume 时确认 snapshot 被注入
+
+### 场景 4：Ctx 工具
+1. 通过 `ctx_stats` 查看 session 统计
+2. 通过 `ctx_search` 搜索特定事件
+3. 通过 `ctx_doctor` 诊断 zcontext 健康状态
+4. 通过 `ctx_purge` 清理指定 session 数据
+
+## 五、最终交接要求
+
+### 交付物清单
+1. `codex-rs/context-hooks/` — 完整的 `codex-context-hooks` crate，含事件记录、脱敏、snapshot 恢复
+2. `codex-rs/core/src/hook_runtime.rs` — PostToolUse 钩子薄调用（< 15 行新增）
+3. `codex-rs/core/src/` compact/resume 注入点 — snapshot 注入薄调用
+4. `codex-rs/tools/src/tool_registry_plan_types.rs` — `ToolHandlerKind::Ctx` variant
+5. `codex-rs/tools/src/ctx_tool.rs`（新建）— ctx 工具 spec
+6. `codex-rs/core/src/tools/handlers/ctx.rs`（新建）— ctx handler
+7. `codex-rs/features/src/lib.rs` — `Feature::ZContext` 已注册（已有）
+8. `codex-rs/config/src/types.rs` — `ContextHooksToml` 已定义（已有）
+9. `codex-rs/core/config.schema.json` — 更新后的 schema
+
+### 交接检查
+- [ ] 所有 `cargo check` 通过
+- [ ] 所有 `cargo nextest run -p codex-context-hooks` 通过
+- [ ] 现有测试无回归
+- [ ] `just fmt` 无变更
+- [ ] `just write-config-schema` 后 schema 包含 context_hooks
+- [ ] 每个功能面有对应单元测试
+- [ ] 无硬编码密钥/令牌
+- [ ] 无 `unwrap()` 在非测试路径（使用 `?` 或 `map_err`）
+- [ ] 新增代码有 `Feature::ZContext` feature gate 保护
+- [ ] `codex-core` 改动限于薄调用（每处 < 15 行）
+
+### 交接后剩余风险
+| 风险 | 等级 | 缓解 |
+|---|---|---|
+| `ZmemoryToolAction::Search` 返回结构不稳定 | 中 | Worker 2 启动时先跑 Search 集成测试确认返回格式 |
+| compact 注入点可能有多个候选 | 低 | Worker 3 先做 code exploration 确认最优注入点 |
+| Bazel 构建未覆盖 | 低 | 本地先验证 Cargo，CI 覆盖 Bazel |
+| 端到端测试需手动验证 | 中 | 用户测试场景覆盖，交接后安排手动验证 |

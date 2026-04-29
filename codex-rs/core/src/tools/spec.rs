@@ -79,6 +79,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ApplyPatchHandler;
     use crate::tools::handlers::CodeModeExecuteHandler;
     use crate::tools::handlers::CodeModeWaitHandler;
+    use crate::tools::handlers::CtxHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::GoalHandler;
     use crate::tools::handlers::ListDirHandler;
@@ -292,6 +293,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::Zmemory => {
                 builder.register_handler(handler.name, Arc::new(ZmemoryHandler));
+            }
+            ToolHandlerKind::Ctx => {
+                builder.register_handler(handler.name, Arc::new(CtxHandler));
             }
         }
     }

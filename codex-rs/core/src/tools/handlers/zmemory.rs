@@ -239,7 +239,7 @@ fn map_search_scope(uri: Option<String>, domain: Option<String>) -> Option<Strin
         .or_else(|| map_domain_to_scope(domain))
 }
 
-async fn resolve_zmemory_config_for_turn(
+pub(crate) async fn resolve_zmemory_config_for_turn(
     session: &Session,
     codex_home: &std::path::Path,
     turn_cwd: &std::path::Path,

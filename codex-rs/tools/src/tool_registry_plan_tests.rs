@@ -16,6 +16,7 @@ use crate::ToolRegistryPlanDeferredTool;
 use crate::ToolRegistryPlanMcpTool;
 use crate::ToolsConfigParams;
 use crate::WaitAgentTimeoutOptions;
+use crate::create_ctx_tools;
 use crate::mcp_call_tool_result_output_schema;
 use codex_app_server_protocol::AppInfo;
 use codex_features::Feature;
@@ -144,6 +145,9 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
     }
     let spec = create_tldr_tool();
     expected.insert(spec.name().to_string(), spec);
+    for spec in create_ctx_tools() {
+        expected.insert(spec.name().to_string(), spec);
+    }
 
     assert_eq!(
         actual.keys().collect::<Vec<_>>(),

@@ -42,6 +42,7 @@ pub enum ToolHandlerKind {
     WaitAgentV1,
     WaitAgentV2,
     Zmemory,
+    Ctx,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

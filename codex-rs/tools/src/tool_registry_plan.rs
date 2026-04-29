@@ -27,6 +27,7 @@ use crate::create_close_agent_tool_v1;
 use crate::create_close_agent_tool_v2;
 use crate::create_code_mode_tool;
 use crate::create_create_goal_tool;
+use crate::create_ctx_tools;
 use crate::create_exec_command_tool;
 use crate::create_followup_task_tool;
 use crate::create_get_goal_tool;
@@ -284,6 +285,18 @@ pub fn build_tool_registry_plan(
                 config.code_mode_enabled,
             );
             plan.register_handler(name, ToolHandlerKind::Zmemory);
+        }
+    }
+
+    if config.ctx_tools_enabled {
+        for spec in create_ctx_tools() {
+            let name = spec.name().to_string();
+            plan.push_spec(
+                spec,
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+            plan.register_handler(name, ToolHandlerKind::Ctx);
         }
     }
 

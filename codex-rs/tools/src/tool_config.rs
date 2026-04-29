@@ -145,6 +145,7 @@ pub struct ToolsConfig {
     pub agent_jobs_worker_tools: bool,
     pub agent_type_description: String,
     pub zmemory_tool_enabled: bool,
+    pub ctx_tools_enabled: bool,
     pub wire_api: WireApi,
 }
 
@@ -189,6 +190,7 @@ impl ToolsConfig {
             && features.enabled(Feature::Plugins);
         let include_original_image_detail = can_request_original_image_detail(model_info);
         let include_zmemory_tool = features.enabled(Feature::MemoryTool);
+        let include_ctx_tools = features.enabled(Feature::ZContext);
         // API-key auth bypasses Codex backend entitlement/tool normalization, so
         // callers must confirm ChatGPT auth before exposing the built-in tool.
         let include_image_gen_tool = *image_generation_tool_auth_allowed
@@ -270,6 +272,7 @@ impl ToolsConfig {
             agent_jobs_worker_tools,
             agent_type_description: String::new(),
             zmemory_tool_enabled: include_zmemory_tool,
+            ctx_tools_enabled: include_ctx_tools,
             wire_api: *wire_api,
         }
     }

@@ -9,46 +9,18 @@ use serde_json::Value;
 use crate::ContextHooksSettings;
 use crate::ZmemoryContext;
 
+/// Default search query used to find session events for snapshot building.
+const SNAPSHOT_SEARCH_QUERY: &str = "events";
+
 pub fn build_session_snapshot(
     context: &ZmemoryContext,
     session_id: &str,
     settings: &ContextHooksSettings,
 ) -> Result<Option<String>> {
-    let args = ZmemoryToolCallParam {
-        action: ZmemoryToolAction::Export,
-        codex_home: None,
-        uri: None,
-        parent_uri: None,
-        new_uri: None,
-        target_uri: None,
-        query: None,
-        domain: Some("session".to_string()),
-        content: None,
-        title: None,
-        old_string: None,
-        new_string: None,
-        append: None,
-        priority: None,
-        disclosure: None,
-        add: None,
-        remove: None,
-        items: None,
-        limit: None,
-        audit_action: None,
-    };
-    let result = match run_zmemory_tool_with_context(
-        context.codex_home(),
-        context.cwd(),
-        context.zmemory_path.as_deref(),
-        Some(context.settings.clone()),
-        args,
-    ) {
-        Ok(result) => result,
-        Err(err) if err.to_string().contains("memory not found") => return Ok(None),
-        Err(err) if err.to_string().contains("domain is not readable") => return Ok(None),
-        Err(err) => return Err(err),
-    };
-    let events = extract_session_events(&result.structured_content, session_id);
+    let scope_uri = format!("session://{session_id}");
+    let search_result =
+        search_session_events(context, &scope_uri, settings.max_events_per_snapshot)?;
+    let events = extract_session_events_from_search(&search_result.structured_content, session_id);
     if events.is_empty() {
         return Ok(None);
     }
@@ -85,10 +57,10 @@ struct SnapshotEvent {
     priority: i64,
 }
 
-fn extract_session_events(payload: &Value, session_id: &str) -> Vec<SnapshotEvent> {
+fn extract_session_events_from_search(payload: &Value, session_id: &str) -> Vec<SnapshotEvent> {
     let prefix = format!("session://{session_id}/events/");
     payload
-        .pointer("/result/items")
+        .pointer("/matches")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
@@ -97,19 +69,21 @@ fn extract_session_events(payload: &Value, session_id: &str) -> Vec<SnapshotEven
             if !uri.starts_with(&prefix) {
                 return None;
             }
-            let content = item.get("content")?.as_str()?.to_string();
-            let category = metadata_value(&content, "Category").unwrap_or_else(|| "other".into());
-            let title = content
-                .lines()
-                .find_map(|line| line.strip_prefix("# "))
-                .unwrap_or("Tool Execution")
+            let snippet = item
+                .get("snippet")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let category = extract_category_from_snippet(&snippet)
+                .unwrap_or("other")
                 .to_string();
             let priority = item.get("priority").and_then(Value::as_i64).unwrap_or(4);
+            let title = uri.rsplit('/').next().unwrap_or("event").to_string();
             Some(SnapshotEvent {
                 uri,
                 category,
                 title,
-                summary: summarize_content(&content),
+                summary: snippet,
                 priority,
             })
         })
@@ -153,26 +127,50 @@ fn append_group(snapshot: &mut String, title: &str, events: &[SnapshotEvent], ca
     snapshot.push('\n');
 }
 
-fn metadata_value(content: &str, key: &str) -> Option<String> {
-    let needle = format!("**{key}**:");
-    content.lines().find_map(|line| {
-        line.strip_prefix(&needle)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    })
+fn search_session_events(
+    context: &ZmemoryContext,
+    scope_uri: &str,
+    limit: usize,
+) -> Result<codex_zmemory::tool_api::ZmemoryToolResult> {
+    let args = ZmemoryToolCallParam {
+        action: ZmemoryToolAction::Search,
+        codex_home: None,
+        uri: Some(scope_uri.to_string()),
+        parent_uri: None,
+        new_uri: None,
+        target_uri: None,
+        query: Some(SNAPSHOT_SEARCH_QUERY.to_string()),
+        domain: None,
+        content: None,
+        title: None,
+        old_string: None,
+        new_string: None,
+        append: None,
+        priority: None,
+        disclosure: None,
+        add: None,
+        remove: None,
+        items: None,
+        limit: Some(limit),
+        audit_action: None,
+    };
+    run_zmemory_tool_with_context(
+        context.codex_home(),
+        context.cwd(),
+        context.zmemory_path.as_deref(),
+        Some(context.settings.clone()),
+        args,
+    )
 }
 
-fn summarize_content(content: &str) -> String {
-    content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("**")
-        })
-        .take(3)
-        .collect::<Vec<_>>()
-        .join(" ")
+fn extract_category_from_snippet(snippet: &str) -> Option<&str> {
+    for line in snippet.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("**Category**:") {
+            return Some(rest.trim());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -180,55 +178,54 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
 
-    use super::extract_session_events;
+    use super::extract_session_events_from_search;
     use super::select_events;
 
     #[test]
     fn extracts_only_matching_session_events() {
         let payload = json!({
-            "result": {
-                "items": [
-                    {
-                        "uri": "session://s1/events/t1/c1",
-                        "priority": 1,
-                        "content": "# Tool Execution: apply_patch\n\n**Category**: file_edit\n\n## Output\nchanged file"
-                    },
-                    {
-                        "uri": "session://s2/events/t1/c1",
-                        "priority": 0,
-                        "content": "# Tool Execution: Bash\n\n**Category**: error"
-                    }
-                ]
-            }
+            "matches": [
+                {
+                    "uri": "session://s1/events/t1/c1",
+                    "priority": 1,
+                    "snippet": "**Category**: file_edit\n\napply_patch output"
+                },
+                {
+                    "uri": "session://s2/events/t1/c1",
+                    "priority": 0,
+                    "snippet": "**Category**: error\n\nerror output"
+                }
+            ]
         });
 
-        let events = extract_session_events(&payload, "s1");
+        let events = extract_session_events_from_search(&payload, "s1");
 
         assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].summary,
+            "**Category**: file_edit\n\napply_patch output"
+        );
         assert_eq!(events[0].category, "file_edit");
-        assert_eq!(events[0].summary, "changed file");
     }
 
     #[test]
     fn selection_prioritizes_lower_priority() {
         let payload = json!({
-            "result": {
-                "items": [
-                    {
-                        "uri": "session://s1/events/t1/low",
-                        "priority": 4,
-                        "content": "# Tool Execution: Bash\n\n**Category**: tool\n\nlow"
-                    },
-                    {
-                        "uri": "session://s1/events/t1/high",
-                        "priority": 0,
-                        "content": "# Tool Execution: Bash\n\n**Category**: error\n\nhigh"
-                    }
-                ]
-            }
+            "matches": [
+                {
+                    "uri": "session://s1/events/t1/low",
+                    "priority": 4,
+                    "snippet": "tool output"
+                },
+                {
+                    "uri": "session://s1/events/t1/high",
+                    "priority": 0,
+                    "snippet": "**Category**: error\n\nerror output"
+                }
+            ]
         });
-        let events = select_events(extract_session_events(&payload, "s1"), 1);
+        let events = select_events(extract_session_events_from_search(&payload, "s1"), 1);
 
-        assert_eq!(events[0].category, "error");
+        assert_eq!(events[0].priority, 0);
     }
 }

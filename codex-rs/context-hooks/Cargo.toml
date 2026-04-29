@@ -24,3 +24,5 @@ tracing = { workspace = true }
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+codex-protocol = { workspace = true }
+codex-utils-absolute-path = { workspace = true }

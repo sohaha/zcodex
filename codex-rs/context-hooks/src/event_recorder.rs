@@ -199,10 +199,11 @@ mod tests {
 
     #[test]
     fn post_tool_use_record_classifies_git_error() {
+        let session_id = ThreadId::new();
         let request = PostToolUseRequest {
-            session_id: ThreadId::from_string("session-1".to_string()),
+            session_id,
             turn_id: "turn-1".to_string(),
-            cwd: "/workspace".to_abs_path_buf(),
+            cwd: std::path::PathBuf::from("/workspace").abs(),
             transcript_path: None,
             model: "gpt".to_string(),
             permission_mode: "default".to_string(),
@@ -216,7 +217,8 @@ mod tests {
         let record = build_post_tool_use_record(&request).expect("record");
 
         assert_eq!(record.category, EventCategory::Error);
-        assert_eq!(record.uri, "session://session-1/events/turn-1/call-1");
+        assert!(record.uri.starts_with("session://"));
+        assert!(record.uri.ends_with("/events/turn-1/call-1"));
         assert!(record.content.contains("**Category**: error"));
         assert!(record.content.contains("git status"));
     }

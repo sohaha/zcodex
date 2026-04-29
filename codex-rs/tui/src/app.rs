@@ -7259,7 +7259,6 @@ impl App {
     fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
     }
-
 }
 
 /// Collect every MCP server status needed for `/mcp` from the app-server by

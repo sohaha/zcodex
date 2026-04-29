@@ -415,16 +415,16 @@ impl ToolRegistry {
         } else {
             None
         };
-        let post_tool_use_outcome = if let Some(post_tool_use_payload) = post_tool_use_payload {
+        let post_tool_use_outcome = if let Some(ref ptup) = post_tool_use_payload {
             Some(
                 run_post_tool_use_hooks(
                     &invocation.session,
                     &invocation.turn,
-                    post_tool_use_payload.tool_use_id,
-                    post_tool_use_payload.tool_name.name().to_string(),
-                    post_tool_use_payload.tool_name.matcher_aliases().to_vec(),
-                    post_tool_use_payload.tool_input,
-                    post_tool_use_payload.tool_response,
+                    ptup.tool_use_id.clone(),
+                    ptup.tool_name.name().to_string(),
+                    ptup.tool_name.matcher_aliases().to_vec(),
+                    ptup.tool_input.clone(),
+                    ptup.tool_response.clone(),
                 )
                 .await,
             )
@@ -475,6 +475,18 @@ impl ToolRegistry {
                     ));
                 }
             }
+        }
+
+        if let Some(ref payload) = post_tool_use_payload {
+            record_zcontext_event(
+                &invocation.session,
+                &invocation.turn,
+                &payload.tool_name,
+                &payload.tool_input,
+                &payload.tool_response,
+                &payload.tool_use_id,
+            )
+            .await;
         }
 
         if let Err(err) = invocation
@@ -711,6 +723,52 @@ async fn dispatch_after_tool_use_hook(
     }
 
     None
+}
+
+async fn record_zcontext_event(
+    session: &Arc<crate::session::session::Session>,
+    turn_context: &Arc<TurnContext>,
+    tool_name: &HookToolName,
+    tool_input: &Value,
+    tool_response: &Value,
+    tool_use_id: &str,
+) {
+    use codex_context_hooks::ZmemoryContext;
+    use codex_context_hooks::record_post_tool_use_event;
+    use codex_features::Feature;
+
+    let features = session.features();
+    if !features.get().enabled(Feature::ZContext) {
+        return;
+    }
+
+    let request = codex_hooks::PostToolUseRequest {
+        session_id: session.conversation_id,
+        turn_id: turn_context.sub_id.clone(),
+        cwd: turn_context.cwd.clone(),
+        transcript_path: session.hook_transcript_path().await,
+        model: turn_context.model_info.slug.clone(),
+        permission_mode: String::new(),
+        tool_name: tool_name.name().to_string(),
+        matcher_aliases: tool_name.matcher_aliases().to_vec(),
+        tool_use_id: tool_use_id.to_string(),
+        tool_input: tool_input.clone(),
+        tool_response: tool_response.clone(),
+    };
+
+    let codex_home = session.codex_home().await.into_path_buf();
+    let config = session.get_config().await;
+    let zmemory_settings = config.zmemory.to_runtime_settings();
+    let context = ZmemoryContext::new(
+        codex_home,
+        turn_context.cwd.as_path().to_path_buf(),
+        config.zmemory.path.clone(),
+        zmemory_settings,
+    );
+
+    if let Err(err) = record_post_tool_use_event(&context, &request) {
+        warn!("zcontext: failed to record post-tool-use event: {err}");
+    }
 }
 
 #[cfg(test)]
