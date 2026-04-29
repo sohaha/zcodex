@@ -54,45 +54,46 @@ pub fn resolve_review_request(
 }
 
 pub fn review_prompt(target: &ReviewTarget, cwd: &AbsolutePathBuf) -> anyhow::Result<String> {
-    match target {
-        ReviewTarget::UncommittedChanges => Ok(UNCOMMITTED_PROMPT.to_string()),
+    let prompt = match target {
+        ReviewTarget::UncommittedChanges => UNCOMMITTED_PROMPT.to_string(),
         ReviewTarget::BaseBranch { branch } => {
             if let Some(commit) = merge_base_with_head(cwd, branch)? {
-                Ok(render_review_prompt(
+                render_review_prompt(
                     &BASE_BRANCH_PROMPT_TEMPLATE,
                     [
                         ("base_branch", branch.as_str()),
                         ("merge_base_sha", commit.as_str()),
                     ],
-                ))
+                )
             } else {
-                Ok(render_review_prompt(
+                render_review_prompt(
                     &BASE_BRANCH_PROMPT_BACKUP_TEMPLATE,
                     [("branch", branch.as_str())],
-                ))
+                )
             }
         }
         ReviewTarget::Commit { sha, title } => {
             if let Some(title) = title {
-                Ok(render_review_prompt(
+                render_review_prompt(
                     &COMMIT_PROMPT_WITH_TITLE_TEMPLATE,
                     [("sha", sha.as_str()), ("title", title.as_str())],
-                ))
+                )
             } else {
-                Ok(render_review_prompt(
+                render_review_prompt(
                     &COMMIT_PROMPT_TEMPLATE,
                     [("sha", sha.as_str())],
-                ))
+                )
             }
         }
         ReviewTarget::Custom { instructions } => {
-            let prompt = instructions.trim();
-            if prompt.is_empty() {
+            let custom = instructions.trim();
+            if custom.is_empty() {
                 anyhow::bail!("Review prompt cannot be empty");
             }
-            Ok(prompt.to_string())
+            return Ok(custom.to_string());
         }
-    }
+    };
+    Ok(format!("{prompt}\n\nPrefer responding in Chinese (Simplified)."))
 }
 
 fn render_review_prompt<'a, const N: usize>(
@@ -164,7 +165,9 @@ mod tests {
                 &AbsolutePathBuf::current_dir().expect("cwd"),
             )
             .expect("commit prompt should render"),
-            "Review the code changes introduced by commit deadbeef. Provide prioritized, actionable findings."
+            "Review the code changes introduced by commit deadbeef. Provide prioritized, actionable findings.
+
+Prefer responding in Chinese (Simplified)."
         );
     }
 
@@ -179,7 +182,9 @@ mod tests {
                 &AbsolutePathBuf::current_dir().expect("cwd"),
             )
             .expect("commit prompt should render"),
-            "Review the code changes introduced by commit deadbeef (\"Fix bug\"). Provide prioritized, actionable findings."
+            "Review the code changes introduced by commit deadbeef (\"Fix bug\"). Provide prioritized, actionable findings.
+
+Prefer responding in Chinese (Simplified)."
         );
     }
 }
