@@ -192,6 +192,7 @@ fn model_provider_from_proto(
         max_output_tokens: None,
         skip_reasoning_popup: false,
         retry_429: true,
+        skip_freeform_tools: false,
     };
     Ok((id, info))
 }

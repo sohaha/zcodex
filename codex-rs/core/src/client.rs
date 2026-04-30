@@ -976,9 +976,6 @@ impl ModelClientSession {
                         || *status == HttpStatusCode::UNAUTHORIZED
             )
     }
-                        || *status == HttpStatusCode::UNAUTHORIZED
-            )
-    }
 
     pub(crate) fn should_retry_without_freeform_apply_patch_stream_error(
         &self,

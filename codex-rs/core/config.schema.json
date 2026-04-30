@@ -1462,6 +1462,11 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "skip_freeform_tools": {
+          "default": false,
+          "description": "When true, never send `custom` or `web_search` tool types to this provider and convert freeform `apply_patch` to a standard function tool. Use for third-party proxies (e.g. manifest, local gateways) that reject non-standard tool types with HTTP 400.",
+          "type": "boolean"
+        },
         "skip_reasoning_popup": {
           "default": false,
           "description": "When true, selecting this provider's model in the picker skips the reasoning-effort (thinking level) selection popup and uses the model's default reasoning effort directly.",
