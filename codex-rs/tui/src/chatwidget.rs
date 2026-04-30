@@ -4740,7 +4740,7 @@ impl ChatWidget {
         self.flush_active_cell();
         self.active_cell = Some(Box::new(history_cell::new_active_native_tool_call(
             ev.call_id,
-            ev.tool_name,
+            ev.arguments,
             self.config.animations,
         )));
         self.bump_active_cell_revision();
@@ -4765,7 +4765,7 @@ impl ChatWidget {
         if !handled {
             self.add_to_history(history_cell::new_completed_native_tool_call(
                 ev.call_id,
-                ev.tool_name,
+                None,
             ));
         }
         self.had_work_activity = true;
@@ -7200,6 +7200,7 @@ impl ChatWidget {
             ThreadItem::NativeToolCall {
                 id,
                 tool_name,
+                arguments,
                 status,
                 success,
                 duration_ms,
@@ -7207,6 +7208,7 @@ impl ChatWidget {
                 self.on_native_tool_call_begin(NativeToolCallBeginEvent {
                     call_id: id.clone(),
                     tool_name: tool_name.clone(),
+                    arguments: arguments.clone(),
                 });
                 if status == codex_app_server_protocol::NativeToolCallStatus::Completed {
                     self.on_native_tool_call_end(NativeToolCallEndEvent {
@@ -7217,12 +7219,6 @@ impl ChatWidget {
                     });
                 }
             }
-            ThreadItem::ImageView { id, path } => {
-                self.on_view_image_tool_call(ViewImageToolCallEvent { call_id: id, path });
-            }
-            ThreadItem::ImageGeneration {
-                id,
-                status,
                 revised_prompt,
                 result,
                 saved_path,
@@ -7757,10 +7753,11 @@ impl ChatWidget {
             ThreadItem::WebSearch { id, .. } => {
                 self.on_web_search_begin(WebSearchBeginEvent { call_id: id });
             }
-            ThreadItem::NativeToolCall { id, tool_name, .. } => {
+            ThreadItem::NativeToolCall { id, tool_name, arguments, .. } => {
                 self.on_native_tool_call_begin(NativeToolCallBeginEvent {
                     call_id: id,
                     tool_name,
+                    arguments,
                 });
             }
             ThreadItem::ImageGeneration { id, .. } => {

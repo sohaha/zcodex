@@ -1802,28 +1802,77 @@ pub(crate) fn new_web_search_call(
     cell
 }
 
-fn native_tool_call_header(completed: bool, tool_name: &str) -> String {
-    if completed {
-        format!("已探索 • {tool_name}")
+fn native_tool_call_display(completed: bool, detail: &str) -> String {
+    let prefix = if completed { "已理解" } else { "理解中" };
+    if detail.is_empty() {
+        prefix.to_string()
     } else {
-        format!("探索中 • {tool_name}")
+        format!("{prefix} • {detail}")
     }
+}
+
+/// Extracts a short, human-readable summary from the tool arguments JSON.
+fn native_tool_call_detail(arguments: &Option<String>) -> String {
+    let Some(args) = arguments else {
+        return String::new();
+    };
+    let Ok(val): Result<serde_json::Value, _> = serde_json::from_str(args) else {
+        return String::new();
+    };
+    let Some(obj) = val.as_object() else {
+        return String::new();
+    };
+
+    let action = obj.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let mut parts: Vec<String> = Vec::new();
+    if !action.is_empty() {
+        parts.push(action.to_string());
+    }
+
+    let key = match action {
+        "search" | "semantic" => "query",
+        "structure" | "extract" | "imports" | "importers" | "context" | "impact" | "calls"
+        | "dead" | "cfg" | "dfg" | "slice" | "diagnostics" => {
+            if obj.get("symbol").and_then(|v| v.as_str()).is_some() {
+                "symbol"
+            } else if obj.get("path").and_then(|v| v.as_str()).is_some() {
+                "path"
+            } else {
+                "query"
+            }
+        }
+        _ => "query",
+    };
+
+    if let Some(v) = obj.get(key).and_then(|v| v.as_str()) {
+        if !v.is_empty() {
+            let truncated = if v.len() > 60 {
+                format!("{}…", &v[..60])
+            } else {
+                v.to_string()
+            };
+            parts.push(truncated);
+        }
+    }
+
+    parts.join(" ")
 }
 
 #[derive(Debug)]
 pub(crate) struct NativeToolCallCell {
     call_id: String,
-    tool_name: String,
+    detail: String,
     start_time: Instant,
     completed: bool,
     animations_enabled: bool,
 }
 
 impl NativeToolCallCell {
-    pub(crate) fn new(call_id: String, tool_name: String, animations_enabled: bool) -> Self {
+    pub(crate) fn new(call_id: String, arguments: Option<String>, animations_enabled: bool) -> Self {
+        let detail = native_tool_call_detail(&arguments);
         Self {
             call_id,
-            tool_name,
+            detail,
             start_time: Instant::now(),
             completed: false,
             animations_enabled,
@@ -1846,7 +1895,7 @@ impl HistoryCell for NativeToolCallCell {
         } else {
             spinner(Some(self.start_time), self.animations_enabled)
         };
-        let header = native_tool_call_header(self.completed, &self.tool_name);
+        let header = native_tool_call_display(self.completed, &self.detail);
         let text: Text<'static> = Line::from(vec![header.bold()]).into();
         PrefixedWrappedHistoryCell::new(text, vec![bullet, " ".into()], "  ").display_lines(width)
     }
@@ -1854,17 +1903,17 @@ impl HistoryCell for NativeToolCallCell {
 
 pub(crate) fn new_active_native_tool_call(
     call_id: String,
-    tool_name: String,
+    arguments: Option<String>,
     animations_enabled: bool,
 ) -> NativeToolCallCell {
-    NativeToolCallCell::new(call_id, tool_name, animations_enabled)
+    NativeToolCallCell::new(call_id, arguments, animations_enabled)
 }
 
 pub(crate) fn new_completed_native_tool_call(
     call_id: String,
-    tool_name: String,
+    arguments: Option<String>,
 ) -> NativeToolCallCell {
-    let mut cell = NativeToolCallCell::new(call_id, tool_name, /*animations_enabled*/ false);
+    let mut cell = NativeToolCallCell::new(call_id, arguments, false);
     cell.complete();
     cell
 }
