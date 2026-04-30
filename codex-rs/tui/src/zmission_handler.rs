@@ -105,7 +105,10 @@ impl crate::app::App {
         // 如果 LLM 已写入分析产物则直接通过；否则用 note 创建占位文件。
         if let Ok(Some(state)) = planner.store().load() {
             if let Some(phase) = state.phase {
-                ensure_phase_artifact(&planner, phase, note.as_deref());
+                if let Err(e) = planner.ensure_phase_artifact(phase, note.as_deref()) {
+                    self.chat_widget
+                        .add_info_message(format!("⚠️ 产物文件创建失败: {e}"), None);
+                }
             }
         }
 
@@ -199,32 +202,6 @@ impl crate::app::App {
         self.chat_widget
             .submit_user_message_as_plain_user_turn(UserMessage::from(prompt.as_str()));
     }
-}
-
-/// 确保指定阶段的产物文件存在且非空。
-/// 如果产物已存在且非空则跳过；否则用 note 内容创建占位产物。
-fn ensure_phase_artifact(
-    planner: &MissionPlanner,
-    phase: codex_mission::MissionPhase,
-    note: Option<&str>,
-) {
-    let artifact_path = planner.phase_artifact_path(phase);
-    if artifact_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&artifact_path) {
-            if !content.trim().is_empty() {
-                return;
-            }
-        }
-    }
-    // 产物不存在或为空，用 note 创建占位
-    if let Some(parent) = artifact_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let content = match note {
-        Some(n) => n.to_string(),
-        None => format!("{} 阶段已确认", phase.label()),
-    };
-    let _ = std::fs::write(&artifact_path, content);
 }
 
 fn format_planning_step(prefix: &str, step: &codex_mission::MissionPlanningStep) -> String {

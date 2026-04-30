@@ -219,6 +219,13 @@ pub enum MissionError {
 
     #[error("没有可执行的方案")]
     NoPlanToExecute,
+
+    #[error("无法创建阶段产物文件 {path}: {source}")]
+    WritePhaseArtifact {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Mission 子系统内部统一 Result。

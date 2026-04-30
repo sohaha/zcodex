@@ -166,6 +166,13 @@ impl MissionPlanner {
                 path: self.store.state_path().to_path_buf(),
             })?;
 
+        // 终态不可变更
+        if state.status.is_terminal() {
+            return Err(MissionError::TerminalState {
+                status: state.status.to_string(),
+            });
+        }
+
         state.status = MissionStatus::Aborted;
         state.updated_at = Some(Utc::now());
         self.store.save(&state)?;
@@ -178,6 +185,41 @@ impl MissionPlanner {
     pub fn phase_artifact_path(&self, phase: MissionPhase) -> PathBuf {
         let definition = phase_definition(phase);
         self.store.plans_dir().join(definition.artifact_filename)
+    }
+
+    /// 确保指定阶段的产物文件存在且非空。
+    ///
+    /// 如果产物已存在且非空则跳过；否则用 note 内容创建占位产物。
+    /// 写入失败时返回错误，便于调用方记录日志。
+    pub fn ensure_phase_artifact(
+        &self,
+        phase: MissionPhase,
+        note: Option<&str>,
+    ) -> MissionResult<()> {
+        let artifact_path = self.phase_artifact_path(phase);
+        if artifact_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&artifact_path) {
+                if !content.trim().is_empty() {
+                    return Ok(());
+                }
+            }
+        }
+        // 产物不存在或为空，用 note 创建占位
+        if let Some(parent) = artifact_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| MissionError::WritePhaseArtifact {
+                path: parent.to_path_buf(),
+                source: e,
+            })?;
+        }
+        let content = match note {
+            Some(n) => n.to_string(),
+            None => format!("{} 阶段已确认", phase.label()),
+        };
+        std::fs::write(&artifact_path, content).map_err(|e| MissionError::WritePhaseArtifact {
+            path: artifact_path.clone(),
+            source: e,
+        })?;
+        Ok(())
     }
 
     /// 校验指定阶段的产物文件是否存在且非空。
@@ -387,6 +429,10 @@ mod tests {
 
         // 从终态继续推进应该失败
         let result = planner.continue_planning(None);
+        assert!(result.is_err());
+
+        // 重复 abort 也应失败
+        let result = planner.abort();
         assert!(result.is_err());
         Ok(())
     }

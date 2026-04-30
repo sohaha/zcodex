@@ -5,7 +5,6 @@ use clap::Subcommand;
 use codex_arg0::Arg0DispatchPaths;
 use codex_core::config_loader::LoaderOverrides;
 use codex_core::mission::Handoff;
-use codex_core::mission::MissionPhase;
 use codex_core::mission::MissionPhaseDefinition;
 use codex_core::mission::MissionPlanner;
 use codex_core::mission::MissionPlanningStep;
@@ -249,7 +248,9 @@ async fn run_phases_loop(
         }
 
         let note = Some(format!("{} 阶段已完成，继续推进", definition.phase.label()));
-        ensure_cli_phase_artifact(&planner, definition.phase, note.as_deref());
+        if let Err(e) = planner.ensure_phase_artifact(definition.phase, note.as_deref()) {
+            eprintln!("⚠️ 产物文件创建失败: {e}");
+        }
         step = planner.continue_planning(note)?;
         print_planning_step(&step);
     }
@@ -443,26 +444,6 @@ fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
         Handoff::load_from(latest_handoff)
             .with_context(|| format!("无法加载 Handoff 文件: {}", latest_handoff.display()))
     }
-}
-
-/// 确保 CLI 侧阶段产物文件存在：不存在则用 note 创建占位。
-fn ensure_cli_phase_artifact(planner: &MissionPlanner, phase: MissionPhase, note: Option<&str>) {
-    let artifact_path = planner.phase_artifact_path(phase);
-    if artifact_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&artifact_path) {
-            if !content.trim().is_empty() {
-                return;
-            }
-        }
-    }
-    if let Some(parent) = artifact_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let content: String = match note {
-        Some(n) => n.to_string(),
-        None => format!("{} 阶段已确认", phase.label()),
-    };
-    let _ = std::fs::write(&artifact_path, content);
 }
 
 fn planner_for_current_dir() -> Result<MissionPlanner> {
