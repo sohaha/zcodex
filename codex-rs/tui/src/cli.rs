@@ -42,6 +42,10 @@ pub struct Cli {
     #[clap(skip)]
     pub resume_zoffsec_clean: bool,
 
+    /// Internal: 由 `codex zmission start` 设置，标记 TUI 运行在 mission 模式下。
+    #[clap(skip)]
+    pub mission_mode: bool,
+
     // Internal controls set by the top-level `codex fork` subcommand.
     // These are not exposed as user flags on the base `codex` command.
     #[clap(skip)]

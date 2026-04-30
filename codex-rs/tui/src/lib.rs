@@ -1532,6 +1532,7 @@ async fn run_ratatui_app(
         prompt,
         shared,
         no_alt_screen,
+        mission_mode,
         ..
     } = cli;
     let images = shared.into_inner().images;
@@ -1580,6 +1581,7 @@ async fn run_ratatui_app(
         remote_url,
         remote_auth_token,
         environment_manager,
+        mission_mode,
     )
     .await;
 

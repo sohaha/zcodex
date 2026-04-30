@@ -5,6 +5,9 @@ use std::future::Future;
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// Maximum single backoff delay cap (1 minute).
+const MAX_BACKOFF_MS: u64 = 60_000;
+
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
     pub max_attempts: u64,
@@ -43,7 +46,8 @@ pub fn backoff(base: Duration, attempt: u64) -> Duration {
     let millis = base.as_millis() as u64;
     let raw = millis.saturating_mul(exp);
     let jitter: f64 = rand::rng().random_range(0.9..1.1);
-    Duration::from_millis((raw as f64 * jitter) as u64)
+    let delay_ms = ((raw as f64 * jitter) as u64).min(MAX_BACKOFF_MS);
+    Duration::from_millis(delay_ms)
 }
 
 pub async fn run_with_retry<T, F, Fut>(

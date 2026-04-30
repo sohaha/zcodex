@@ -411,6 +411,7 @@ async fn enqueue_primary_thread_session_replays_turns_before_initial_prompt_subm
         session_telemetry: app.session_telemetry.clone(),
     });
 
+        mission_mode: false,
     app.enqueue_primary_thread_session(
         test_thread_session(thread_id, test_path_buf("/tmp/project")),
         vec![test_turn(
@@ -4582,6 +4583,7 @@ async fn replace_chat_widget_reseeds_collab_agent_metadata_for_replay() {
         status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
         terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
         session_telemetry: app.session_telemetry.clone(),
+        mission_mode: false,
     });
     app.replace_chat_widget(replacement);
 

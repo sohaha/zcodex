@@ -641,7 +641,7 @@ async fn chat_stream_completes_when_connection_closes_after_text_without_finish_
             phase,
         }) if id.is_none()
             && role == "assistant"
-            && *end_turn == None
+            && end_turn.is_none()
             && phase.is_none()
             && content
                 == &vec![ContentItem::OutputText {

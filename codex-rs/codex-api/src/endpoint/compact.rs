@@ -119,19 +119,17 @@ impl<T: HttpTransport> CompactClient<T> {
                     if data.is_empty() || data == "[DONE]" {
                         continue;
                     }
-                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(delta) = chunk
+                    if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(data)
+                        && let Some(delta) = chunk
                             .get("delta")
                             .and_then(|d| d.get("text"))
                             .and_then(|t| t.as_str())
-                        {
-                            if !delta.is_empty() {
-                                blocks.push(AnthropicContentBlock {
-                                    kind: "text".to_string(),
-                                    text: Some(delta.to_string()),
-                                });
-                            }
-                        }
+                        && !delta.is_empty()
+                    {
+                        blocks.push(AnthropicContentBlock {
+                            kind: "text".to_string(),
+                            text: Some(delta.to_string()),
+                        });
                     }
                 }
                 if blocks.is_empty() {

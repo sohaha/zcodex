@@ -37,6 +37,7 @@ pub use skill_manager::MISSION_SKILL_FILES;
 pub use skill_manager::MISSION_SKILLS_DIR_NAME;
 pub use skill_manager::MISSION_SKILLS_WORK_DIR;
 pub use skill_manager::MissionSkillManager;
+pub use state::AGENTS_MISSION_DIR_NAME;
 pub use state::MISSION_DIR_NAME;
 pub use state::MISSION_STATE_FILE_NAME;
 pub use state::MissionPhase;

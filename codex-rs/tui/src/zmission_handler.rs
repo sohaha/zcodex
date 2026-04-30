@@ -9,6 +9,7 @@ use crate::bottom_pane::SelectionAction;
 use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
+use crate::chatwidget::UserMessage;
 use crate::key_hint;
 use crate::zmission_command::Command;
 use codex_mission::MissionPlanner;
@@ -33,14 +34,19 @@ impl crate::app::App {
             Command::Continue { note } => {
                 self.handle_zmission_continue(workspace, note);
             }
+            Command::Reset => {
+                self.handle_zmission_reset(workspace);
+            }
         }
         Ok(())
     }
 
     fn handle_zmission_start(&mut self, workspace: std::path::PathBuf, goal: Option<String>) {
         let Some(goal) = goal else {
-            self.chat_widget
-                .add_error_message("请提供 Mission 目标：/zmission start <goal>".to_string());
+            self.chat_widget.add_info_message(
+                "请输入 Mission 目标：/zmission start <目标>".to_string(),
+                None,
+            );
             return;
         };
 
@@ -95,13 +101,33 @@ impl crate::app::App {
                 let msg = format_planning_step("✅ 阶段已确认", &step);
                 self.chat_widget.add_info_message(msg, None);
 
-                if step.definition.is_some() {
+                if let Some(_definition) = step.definition {
                     self.show_phase_confirm_selection(&step.state);
+                } else {
+                    // 规划完成，加载执行方案并注入执行 prompt
+                    self.inject_execution_prompt(&planner, &step.state.goal);
                 }
             }
             Err(err) => {
                 self.chat_widget
                     .add_error_message(format!("Mission 推进失败：{err}"));
+            }
+        }
+    }
+
+    fn handle_zmission_reset(&mut self, workspace: std::path::PathBuf) {
+        let store = MissionStateStore::for_workspace(&workspace);
+        match store.reset() {
+            Ok(()) => {
+                self.chat_widget.add_info_message(
+                    "🔄 当前 Mission 已结束。使用 /zmission start <目标> 开始新 Mission。"
+                        .to_string(),
+                    None,
+                );
+            }
+            Err(err) => {
+                self.chat_widget
+                    .add_error_message(format!("重置 Mission 失败：{err}"));
             }
         }
     }
@@ -117,11 +143,24 @@ impl crate::app::App {
             })]
         };
 
+        let reset_actions: Vec<SelectionAction> = {
+            vec![Box::new(move |tx| {
+                tx.send(AppEvent::ZmissionCommand(Command::Reset));
+            })]
+        };
+
         let items = vec![
             SelectionItem {
                 name: "继续下一阶段".to_string(),
                 display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Enter)),
                 actions: continue_actions,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            SelectionItem {
+                name: "结束并开始新 Mission".to_string(),
+                display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Char('r'))),
+                actions: reset_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
@@ -141,6 +180,30 @@ impl crate::app::App {
             items,
             ..Default::default()
         });
+    }
+
+    /// 规划完成后加载执行方案并注入执行 prompt。
+    fn inject_execution_prompt(&mut self, planner: &MissionPlanner, goal: &str) {
+        let plan_content = match planner.load_execution_plan() {
+            Ok(content) => content,
+            Err(_) => {
+                // 没有方案文件时仅用目标
+                self.chat_widget.add_info_message(
+                    "⚠ 未找到执行方案文件，将基于目标直接执行。".to_string(),
+                    None,
+                );
+                format!("按以下 Mission 目标执行：\n{goal}")
+            }
+        };
+
+        let prompt = format!(
+            "开始执行 Mission：{goal}\n\n\
+             ## 执行方案\n\n\
+             {plan_content}\n\n\
+             请严格按照上述方案中的步骤执行。"
+        );
+        self.chat_widget
+            .submit_user_message_as_plain_user_turn(UserMessage::from(prompt.as_str()));
     }
 }
 

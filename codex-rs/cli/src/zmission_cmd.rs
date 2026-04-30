@@ -3,7 +3,9 @@ use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
 use codex_arg0::Arg0DispatchPaths;
+use codex_core::config_loader::LoaderOverrides;
 use codex_core::mission::Handoff;
+use codex_core::mission::MissionPhaseDefinition;
 use codex_core::mission::MissionPlanner;
 use codex_core::mission::MissionPlanningStep;
 use codex_core::mission::MissionState;
@@ -13,7 +15,7 @@ use codex_core::mission::ScrutinyValidator;
 use codex_core::mission::UserTestingValidator;
 use codex_core::mission::Validator;
 use codex_core::mission::ValidatorConfig;
-use codex_exec::Cli as ExecCli;
+use codex_tui::Cli as TuiCli;
 use codex_utils_cli::CliConfigOverrides;
 use std::fs;
 use std::io::Write;
@@ -48,9 +50,9 @@ pub struct MissionStartCommand {
     #[arg(long = "skip-git-repo-check", default_value_t = false)]
     pub skip_git_repo_check: bool,
 
-    /// Mission 目标。
+    /// Mission 目标；省略时直接进入 TUI 输入。
     #[arg(value_name = "目标")]
-    pub goal: String,
+    pub goal: Option<String>,
 }
 
 #[derive(Debug, Parser)]
@@ -131,16 +133,27 @@ pub async fn run_zmission_command(
             start_mission(command, arg0_paths, root_config_overrides).await
         }
         ZmissionSubcommand::Status => print_status(),
-        ZmissionSubcommand::Continue(command) => {
-            let planner = planner_for_current_dir()?;
-            let step = planner.continue_planning(command.note)?;
-            print_planning_step(&step);
-            run_phases_loop(
-                step,
-                planner,
+        ZmissionSubcommand::Continue(_command) => {
+            // 读取当前 Mission 状态，根据阶段决定 TUI prompt，直接进入 TUI
+            let store = MissionStateStore::for_workspace(current_workspace()?);
+            let state = match store.status_report()? {
+                MissionStatusReport::Empty { .. } => {
+                    anyhow::bail!("没有活跃的 Mission。请先运行 `codex zmission start`");
+                }
+                MissionStatusReport::Active { state, .. } => state,
+            };
+            let prompt = if state.phase.is_some() {
+                // 仍在规划阶段：TUI 中显示继续按钮
+                None
+            } else {
+                // 已进入执行阶段：注入执行 prompt
+                build_execution_prompt(&planner_for_current_dir()?, &state.goal)
+            };
+            launch_tui_with_prompt(
+                prompt,
                 arg0_paths,
                 root_config_overrides,
-                command.skip_git_repo_check,
+                /*mission_mode*/ true,
             )
             .await
         }
@@ -153,8 +166,19 @@ async fn start_mission(
     arg0_paths: Arg0DispatchPaths,
     root_config_overrides: CliConfigOverrides,
 ) -> Result<()> {
+    let Some(goal) = command.goal else {
+        // 无目标时直接启动 TUI，让用户在 TUI 中输入
+        return launch_tui_with_prompt(
+            None,
+            arg0_paths,
+            root_config_overrides,
+            /*mission_mode*/ true,
+        )
+        .await;
+    };
+
     let planner = planner_for_current_dir()?;
-    let step = planner.start(command.goal)?;
+    let step = planner.start(goal)?;
     print_planning_step(&step);
     run_phases_loop(
         step,
@@ -175,7 +199,7 @@ async fn run_phases_loop(
     skip_git_repo_check: bool,
 ) -> Result<()> {
     loop {
-        launch_exec_for_phase(
+        launch_tui_for_phase(
             &step,
             arg0_paths.clone(),
             root_config_overrides.clone(),
@@ -184,23 +208,25 @@ async fn run_phases_loop(
         .await?;
 
         let Some(definition) = step.definition else {
-            println!("\n规划阶段已完成，Mission 进入执行状态。");
-            println!(
-                "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
-                step.state.goal
-            );
-            return Ok(());
+            return launch_tui_with_prompt(
+                Some(format!("开始执行 Mission：{}", step.state.goal)),
+                arg0_paths,
+                root_config_overrides,
+                /*mission_mode*/ true,
+            )
+            .await;
         };
 
         let next_phase = match definition.phase.next() {
             Some(next) => next,
             None => {
-                println!("\n规划阶段已完成，Mission 进入执行状态。");
-                println!(
-                    "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
-                    step.state.goal
-                );
-                return Ok(());
+                return launch_tui_with_prompt(
+                    Some(format!("开始执行 Mission：{}", step.state.goal)),
+                    arg0_paths,
+                    root_config_overrides,
+                    /*mission_mode*/ true,
+                )
+                .await;
             }
         };
 
@@ -216,7 +242,7 @@ async fn run_phases_loop(
         println!("{}", "-".repeat(60));
 
         if !confirm_continue()? {
-            println!("已暂停。随时运行 `codex mission continue` 继续下一阶段。");
+            println!("已暂停。随时运行 `codex zmission continue` 继续下一阶段。");
             return Ok(());
         }
 
@@ -245,19 +271,14 @@ fn print_status() -> Result<()> {
     Ok(())
 }
 
-/// 为当前规划阶段构造 prompt，然后启动 agent session 来执行该阶段的分析。
-async fn launch_exec_for_phase(
+/// 为当前规划阶段构造 prompt，然后启动 TUI 来执行该阶段的分析。
+async fn launch_tui_for_phase(
     step: &MissionPlanningStep,
     arg0_paths: Arg0DispatchPaths,
     root_config_overrides: CliConfigOverrides,
-    skip_git_repo_check: bool,
+    _skip_git_repo_check: bool,
 ) -> Result<()> {
     let Some(definition) = step.definition else {
-        println!("规划阶段已完成，Mission 进入执行状态。");
-        println!(
-            "使用 `codex exec \"开始执行 Mission：{}\"` 来启动执行。",
-            step.state.goal
-        );
         return Ok(());
     };
 
@@ -275,14 +296,38 @@ async fn launch_exec_for_phase(
         exit_condition = definition.exit_condition,
     );
 
-    let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
-    if skip_git_repo_check {
-        exec_cli.skip_git_repo_check = true;
-    }
-    exec_cli.prompt = Some(prompt);
-    prepend_config_flags(&mut exec_cli.config_overrides, root_config_overrides);
-    codex_exec::run_main(exec_cli, arg0_paths).await
+    launch_tui_with_prompt(
+        Some(prompt),
+        arg0_paths,
+        root_config_overrides,
+        /*mission_mode*/ true,
+    )
+    .await
 }
+
+/// 使用给定 prompt 启动交互式 TUI。
+async fn launch_tui_with_prompt(
+    prompt: Option<String>,
+    arg0_paths: Arg0DispatchPaths,
+    root_config_overrides: CliConfigOverrides,
+    mission_mode: bool,
+) -> Result<()> {
+    let mut tui_cli = TuiCli::try_parse_from(["codex"])?;
+    tui_cli.mission_mode = mission_mode;
+    tui_cli.prompt = prompt;
+    prepend_config_flags(&mut tui_cli.config_overrides, root_config_overrides);
+    codex_tui::run_main(
+        tui_cli,
+        arg0_paths,
+        LoaderOverrides::default(),
+        /*remote*/ None,
+        /*remote_auth_token*/ None,
+    )
+    .await
+    .map_err(|e| anyhow::anyhow!("TUI 退出异常: {e}"))?;
+    Ok(())
+}
+
 fn validate_mission(command: MissionValidateCommand) -> Result<()> {
     let handoff = load_handoff(command.handoff.as_deref())?;
     let config = ValidatorConfig {
@@ -421,14 +466,31 @@ fn print_planning_step(step: &MissionPlanningStep) {
     println!("Mission 状态：{}", step.state.status.label());
     println!("目标：{}", step.state.goal);
     if let Some(definition) = step.definition {
-        println!(
-            "当前阶段：{} ({})",
-            definition.title,
-            definition.phase.label()
-        );
-        println!("提示：{}", definition.prompt);
-        println!("出口条件：{}", definition.exit_condition);
-        return;
+        print_phase_details(&definition);
+    } else {
+        println!("规划阶段已完成，Mission 进入执行状态。");
     }
-    println!("规划阶段已完成，Mission 进入执行状态。");
+}
+
+fn print_phase_details(definition: &MissionPhaseDefinition) {
+    println!(
+        "当前阶段：{} ({})",
+        definition.title,
+        definition.phase.label()
+    );
+    println!("提示：{}", definition.prompt);
+    println!("出口条件：{}", definition.exit_condition);
+}
+
+/// 构建执行 prompt，尝试加载 `.agents/mission/plan.md` 中的方案内容。
+fn build_execution_prompt(planner: &MissionPlanner, goal: &str) -> Option<String> {
+    match planner.load_execution_plan() {
+        Ok(plan_content) => Some(format!(
+            "开始执行 Mission：{goal}\n\n\
+             ## 执行方案\n\n\
+             {plan_content}\n\n\
+             请严格按照上述方案中的步骤执行。"
+        )),
+        Err(_) => Some(format!("开始执行 Mission：{goal}")),
+    }
 }

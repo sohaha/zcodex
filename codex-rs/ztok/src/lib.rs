@@ -1205,19 +1205,33 @@ fn run_cli(cli: Cli) -> Result<()> {
             tail_lines,
             line_numbers,
         } => {
-            for file in files {
-                if file == Path::new("-") {
-                    read::run_stdin(level, max_lines, tail_lines, line_numbers, cli.verbose)?;
+            let mut had_error = false;
+            let mut stdin_seen = false;
+            for file in &files {
+                let result = if file == Path::new("-") {
+                    if stdin_seen {
+                        eprintln!("ztok: warning: stdin specified more than once");
+                        continue;
+                    }
+                    stdin_seen = true;
+                    read::run_stdin(level, max_lines, tail_lines, line_numbers, cli.verbose)
                 } else {
                     read::run(
-                        &file,
+                        file,
                         level,
                         max_lines,
                         tail_lines,
                         line_numbers,
                         cli.verbose,
-                    )?;
+                    )
+                };
+                if let Err(e) = result {
+                    eprintln!("cat: {}: {}", file.display(), e.root_cause());
+                    had_error = true;
                 }
+            }
+            if had_error {
+                std::process::exit(1);
             }
         }
 

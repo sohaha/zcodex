@@ -180,6 +180,30 @@ pub enum MissionError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("无法创建方案目录 {path}: {source}")]
+    CreatePlanDir {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("无法写入方案文件 {path}: {source}")]
+    WritePlan {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("无法读取方案文件 {path}: {source}")]
+    ReadPlan {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+
+    #[error("没有可执行的方案")]
+    NoPlanToExecute,
 }
 
 /// Mission 子系统内部统一 Result。

@@ -10,6 +10,8 @@ use codex_shell_command::parse_command::shlex_join;
 
 const INITIAL_DELAY_MS: u64 = 200;
 const BACKOFF_FACTOR: f64 = 2.0;
+/// Maximum single backoff delay cap (1 minute).
+const MAX_BACKOFF_DURATION_MS: u64 = 60_000;
 
 /// Emit structured feedback metadata as key/value pairs.
 ///
@@ -89,7 +91,8 @@ pub fn backoff(attempt: u64) -> Duration {
     let exp = BACKOFF_FACTOR.powi(attempt.saturating_sub(1) as i32);
     let base = (INITIAL_DELAY_MS as f64 * exp) as u64;
     let jitter = rand::rng().random_range(0.9..1.1);
-    Duration::from_millis((base as f64 * jitter) as u64)
+    let delay_ms = ((base as f64 * jitter) as u64).min(MAX_BACKOFF_DURATION_MS);
+    Duration::from_millis(delay_ms)
 }
 
 pub(crate) fn error_or_panic(message: impl std::string::ToString) {

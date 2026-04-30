@@ -30,9 +30,9 @@ use tracing::debug;
 use tracing::trace;
 
 const ANTHROPIC_DEFAULT_MAX_TOKENS: u64 = 8_192;
-const ANTHROPIC_LOW_THINKING_BUDGET_TOKENS: u64 = 1_024;
-const ANTHROPIC_MEDIUM_THINKING_BUDGET_TOKENS: u64 = 2_048;
-const ANTHROPIC_HIGH_THINKING_BUDGET_TOKENS: u64 = 4_096;
+const ANTHROPIC_LOW_THINKING_BUDGET_TOKENS: u64 = 4_000;
+const ANTHROPIC_MEDIUM_THINKING_BUDGET_TOKENS: u64 = 16_000;
+const ANTHROPIC_HIGH_THINKING_BUDGET_TOKENS: u64 = 32_000;
 const ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS: &str =
     "Respond with JSON only. It must strictly match this schema:";
 const TOOL_INPUT_FIELD: &str = "input";
@@ -169,6 +169,21 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
                     status != "completed",
                 )],
             ),
+            ResponseItem::Reasoning {
+                summary, content, ..
+            } => {
+                let text = reasoning_history_text(summary, content.as_deref());
+                if !text.is_empty() {
+                    push_message_blocks(
+                        &mut messages,
+                        "assistant",
+                        vec![json!({
+                            "type": "thinking",
+                            "thinking": text,
+                        })],
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -199,15 +214,14 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
         }
         if !tools.is_empty() {
             object.insert("tools".to_string(), Value::Array(tools));
+            let mut choice = anthropic_tool_choice(&request.tool_choice);
             if !request.parallel_tool_calls {
-                object.insert(
-                    "tool_choice".to_string(),
-                    json!({
-                        "type": "auto",
-                        "disable_parallel_tool_use": true,
-                    }),
-                );
+                choice
+                    .as_object_mut()
+                    .expect("tool_choice is always an object")
+                    .insert("disable_parallel_tool_use".to_string(), Value::Bool(true));
             }
+            object.insert("tool_choice".to_string(), choice);
         }
         if let Some(thinking) = anthropic_thinking(request) {
             object.insert("thinking".to_string(), thinking);
@@ -876,7 +890,7 @@ fn longest_tag_prefix<'a>(s: &'a str, tags: &[&str]) -> &'a str {
     for tag in tags {
         let tag_bytes = tag.as_bytes();
         for len in (1..tag_bytes.len()).rev() {
-            if bytes.len() >= len && &bytes[bytes.len() - len..] == &tag_bytes[..len] {
+            if bytes.len() >= len && bytes[bytes.len() - len..] == tag_bytes[..len] {
                 return &s[s.len() - len..];
             }
         }
@@ -1057,6 +1071,51 @@ fn anthropic_thinking(request: &ResponsesApiRequest) -> Option<Value> {
         "type": "enabled",
         "budget_tokens": budget_tokens,
     }))
+}
+
+fn anthropic_tool_choice(tool_choice: &str) -> Value {
+    match tool_choice {
+        "auto" => json!({ "type": "auto" }),
+        "none" => json!({ "type": "none" }),
+        "required" => json!({ "type": "any" }),
+        name if name.starts_with("required:") => {
+            let tool_name = &name["required:".len()..];
+            json!({ "type": "tool", "name": tool_name })
+        }
+        _ => json!({ "type": "auto" }),
+    }
+}
+
+fn reasoning_history_text(
+    summary: &[ReasoningItemReasoningSummary],
+    content: Option<&[ReasoningItemContent]>,
+) -> String {
+    let summary_text = summary
+        .iter()
+        .map(|item| match item {
+            ReasoningItemReasoningSummary::SummaryText { text } => text.as_str(),
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content_text = content
+        .unwrap_or_default()
+        .iter()
+        .map(|item| match item {
+            ReasoningItemContent::ReasoningText { text } | ReasoningItemContent::Text { text } => {
+                text.as_str()
+            }
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    match (summary_text.is_empty(), content_text.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => summary_text,
+        (true, false) => content_text,
+        (false, false) => format!("{summary_text}\n\n{content_text}"),
+    }
 }
 
 fn parse_json_object_or_wrapped(input: &str) -> Value {
@@ -1934,7 +1993,7 @@ mod tests {
                 phase,
             }) if id == &Some("msg_1".to_string())
                 && role == "assistant"
-                && *end_turn == None
+                && end_turn.is_none()
                 && phase.is_none()
                 && content
                     == &vec![ContentItem::OutputText {
@@ -2008,7 +2067,7 @@ mod tests {
                 phase,
             }) if id == &Some("msg_1".to_string())
                 && role == "assistant"
-                && *end_turn == None
+                && end_turn.is_none()
                 && phase.is_none()
                 && content
                     == &vec![ContentItem::OutputText {
@@ -2190,5 +2249,438 @@ mod tests {
                     "limit": 2,
                 })
         );
+    }
+
+    // ── tool_choice 完整映射测试 ──
+
+    fn base_request_with_tool_choice(tool_choice: &str, parallel: bool) -> ResponsesApiRequest {
+        ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "You are helpful.".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hello".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            tools: vec![json!({
+                "type": "function",
+                "name": "shell",
+                "description": "run shell",
+                "parameters": { "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"] }
+            })],
+            tool_choice: tool_choice.to_string(),
+            parallel_tool_calls: parallel,
+            reasoning: None,
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        }
+    }
+
+    #[test]
+    fn tool_choice_auto_maps_to_anthropic_auto() {
+        let body = build_request_body(&base_request_with_tool_choice("auto", true));
+        assert_eq!(body["tool_choice"]["type"], "auto");
+        assert_eq!(body["tool_choice"].get("disable_parallel_tool_use"), None);
+    }
+
+    #[test]
+    fn tool_choice_auto_parallel_false_maps_to_anthropic_auto_with_disable_parallel() {
+        let body = build_request_body(&base_request_with_tool_choice("auto", false));
+        assert_eq!(body["tool_choice"]["type"], "auto");
+        assert_eq!(body["tool_choice"]["disable_parallel_tool_use"], true);
+    }
+
+    #[test]
+    fn tool_choice_none_maps_to_anthropic_none() {
+        let body = build_request_body(&base_request_with_tool_choice("none", true));
+        assert_eq!(body["tool_choice"]["type"], "none");
+    }
+
+    #[test]
+    fn tool_choice_required_maps_to_anthropic_any() {
+        let body = build_request_body(&base_request_with_tool_choice("required", true));
+        assert_eq!(body["tool_choice"]["type"], "any");
+    }
+
+    #[test]
+    fn tool_choice_required_name_maps_to_anthropic_tool() {
+        let body = build_request_body(&base_request_with_tool_choice("required:shell", true));
+        assert_eq!(body["tool_choice"]["type"], "tool");
+        assert_eq!(body["tool_choice"]["name"], "shell");
+    }
+
+    #[test]
+    fn tool_choice_required_name_parallel_false_adds_disable() {
+        let body = build_request_body(&base_request_with_tool_choice("required:shell", false));
+        assert_eq!(body["tool_choice"]["type"], "tool");
+        assert_eq!(body["tool_choice"]["name"], "shell");
+        assert_eq!(body["tool_choice"]["disable_parallel_tool_use"], true);
+    }
+
+    #[test]
+    fn tool_choice_unknown_falls_back_to_auto() {
+        let body = build_request_body(&base_request_with_tool_choice("something_else", true));
+        assert_eq!(body["tool_choice"]["type"], "auto");
+    }
+
+    #[test]
+    fn no_tool_choice_sent_when_tools_empty() {
+        let mut req = base_request_with_tool_choice("auto", true);
+        req.tools = vec![];
+        let body = build_request_body(&req);
+        assert_eq!(body.get("tool_choice"), None);
+    }
+
+    // ── Reasoning item 请求侧传递测试 ──
+
+    #[test]
+    fn reasoning_item_in_input_produces_thinking_block() {
+        let request = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "You are helpful.".to_string(),
+            input: vec![
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "hello".to_string(),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+                ResponseItem::Reasoning {
+                    id: "rs_1".to_string(),
+                    summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                        text: "I need to think about this".to_string(),
+                    }],
+                    content: Some(vec![ReasoningItemContent::ReasoningText {
+                        text: "The user said hello".to_string(),
+                    }]),
+                    encrypted_content: None,
+                },
+            ],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: None,
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
+
+        let body = build_request_body(&request);
+        let messages = body["messages"].as_array().expect("messages array");
+        // Should have: user message + assistant thinking block
+        assert_eq!(messages.len(), 2);
+
+        // First message is user
+        assert_eq!(messages[0]["role"], "user");
+
+        // Second message is assistant with thinking block
+        assert_eq!(messages[1]["role"], "assistant");
+        let blocks = messages[1]["content"].as_array().expect("content array");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "thinking");
+        let thinking_text = blocks[0]["thinking"].as_str().expect("thinking text");
+        assert!(thinking_text.contains("I need to think about this"));
+        assert!(thinking_text.contains("The user said hello"));
+    }
+
+    #[test]
+    fn reasoning_item_with_empty_summary_and_content_is_skipped() {
+        let request = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "You are helpful.".to_string(),
+            input: vec![
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "hello".to_string(),
+                    }],
+                    end_turn: None,
+                    phase: None,
+                },
+                ResponseItem::Reasoning {
+                    id: "rs_1".to_string(),
+                    summary: vec![],
+                    content: None,
+                    encrypted_content: None,
+                },
+            ],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: None,
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
+
+        let body = build_request_body(&request);
+        let messages = body["messages"].as_array().expect("messages array");
+        // Empty reasoning should be skipped — only user message
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+    }
+
+    #[test]
+    fn reasoning_item_with_only_summary_omits_content() {
+        let request = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "".to_string(),
+            input: vec![ResponseItem::Reasoning {
+                id: "rs_1".to_string(),
+                summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                    text: "just summary".to_string(),
+                }],
+                content: None,
+                encrypted_content: None,
+            }],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: None,
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
+
+        let body = build_request_body(&request);
+        let messages = body["messages"].as_array().expect("messages array");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "assistant");
+        let thinking = messages[0]["content"][0]["thinking"].as_str().unwrap();
+        assert_eq!(thinking, "just summary");
+    }
+
+    // ── Reasoning Effort 阈值测试 ──
+
+    fn base_request_with_effort(effort: Option<ReasoningEffort>) -> ResponsesApiRequest {
+        ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hello".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: effort.map(|e| crate::common::Reasoning {
+                effort: Some(e),
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
+            }),
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        }
+    }
+
+    #[test]
+    fn effort_low_uses_low_budget() {
+        let body = build_request_body(&base_request_with_effort(Some(ReasoningEffort::Low)));
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_LOW_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_minimal_uses_low_budget() {
+        let body = build_request_body(&base_request_with_effort(Some(ReasoningEffort::Minimal)));
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_LOW_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_medium_uses_medium_budget() {
+        let body = build_request_body(&base_request_with_effort(Some(ReasoningEffort::Medium)));
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_MEDIUM_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_high_uses_high_budget() {
+        let body = build_request_body(&base_request_with_effort(Some(ReasoningEffort::High)));
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_HIGH_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_xhigh_uses_high_budget() {
+        let body = build_request_body(&base_request_with_effort(Some(ReasoningEffort::XHigh)));
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_HIGH_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_none_with_summary_uses_medium_budget() {
+        let req = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hi".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: Some(crate::common::Reasoning {
+                effort: Some(ReasoningEffort::None),
+                summary: Some(codex_protocol::config_types::ReasoningSummary::Auto),
+            }),
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
+        let body = build_request_body(&req);
+        assert_eq!(
+            body["thinking"]["budget_tokens"],
+            ANTHROPIC_MEDIUM_THINKING_BUDGET_TOKENS
+        );
+    }
+
+    #[test]
+    fn effort_none_without_summary_disables_thinking() {
+        let req = ResponsesApiRequest {
+            model: "claude-3-7-sonnet".to_string(),
+            instructions: "".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hi".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            tools: vec![],
+            tool_choice: "auto".to_string(),
+            parallel_tool_calls: true,
+            reasoning: Some(crate::common::Reasoning {
+                effort: Some(ReasoningEffort::None),
+                summary: None,
+            }),
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: None,
+            client_metadata: None,
+            prompt_cache_key: None,
+            text: None,
+            max_output_tokens: None,
+        };
+        let body = build_request_body(&req);
+        assert_eq!(body.get("thinking"), None);
+    }
+
+    // ── reasoning_history_text 辅助函数测试 ──
+
+    #[test]
+    fn reasoning_history_text_joins_summary_and_content() {
+        let text = reasoning_history_text(
+            &[ReasoningItemReasoningSummary::SummaryText {
+                text: "summary part".to_string(),
+            }],
+            Some(&[ReasoningItemContent::ReasoningText {
+                text: "content part".to_string(),
+            }]),
+        );
+        assert!(text.contains("summary part"));
+        assert!(text.contains("content part"));
+        assert!(text.contains("\n\n"));
+    }
+
+    #[test]
+    fn reasoning_history_text_empty_inputs() {
+        let text = reasoning_history_text(&[], None);
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn reasoning_history_text_summary_only() {
+        let text = reasoning_history_text(
+            &[ReasoningItemReasoningSummary::SummaryText {
+                text: "only summary".to_string(),
+            }],
+            None,
+        );
+        assert_eq!(text, "only summary");
+    }
+
+    #[test]
+    fn reasoning_history_text_content_only() {
+        let text = reasoning_history_text(
+            &[],
+            Some(&[ReasoningItemContent::Text {
+                text: "only content".to_string(),
+            }]),
+        );
+        assert_eq!(text, "only content");
+    }
+
+    #[test]
+    fn reasoning_history_text_uses_reasoning_text_variant() {
+        let text = reasoning_history_text(
+            &[],
+            Some(&[ReasoningItemContent::ReasoningText {
+                text: "reasoning variant".to_string(),
+            }]),
+        );
+        assert_eq!(text, "reasoning variant");
     }
 }

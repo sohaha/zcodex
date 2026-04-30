@@ -7,7 +7,9 @@ use crate::MissionStateStore;
 use crate::MissionStatus;
 use crate::phases::MissionPhaseDefinition;
 use crate::phases::phase_definition;
+use crate::state::AGENTS_MISSION_DIR_NAME;
 use std::path::Path;
+use std::path::PathBuf;
 
 /// Mission 规划器，负责启动和推进 7 阶段规划状态机。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,6 +74,65 @@ impl MissionPlanner {
         }
         self.store.save(&state)?;
         Ok(self.step_for_state(state))
+    }
+
+    /// 方案存储目录（`<workspace>/.agents/mission/`）。
+    pub fn plans_dir(&self) -> PathBuf {
+        // state_path = <workspace>/.mission/mission_state.json
+        // 方案目录 = <workspace>/.agents/mission/
+        let workspace = self
+            .store
+            .state_path()
+            .parent()
+            .and_then(|p| p.parent())
+            .unwrap_or(self.store.state_path());
+        workspace.join(AGENTS_MISSION_DIR_NAME)
+    }
+
+    /// 保存规划阶段的产物到方案目录。
+    ///
+    /// 文件名为 `{phase}.md`，例如 `intent.md`、`plan.md`。
+    pub fn save_plan_artifact(&self, phase: MissionPhase, content: &str) -> MissionResult<PathBuf> {
+        let dir = self.plans_dir();
+        std::fs::create_dir_all(&dir).map_err(|source| MissionError::CreatePlanDir {
+            path: dir.clone(),
+            source,
+        })?;
+        let path = dir.join(format!("{}.md", phase.label()));
+        std::fs::write(&path, content).map_err(|source| MissionError::WritePlan {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(path)
+    }
+
+    /// 读取指定阶段的方案产物。
+    pub fn load_plan_artifact(&self, phase: MissionPhase) -> MissionResult<String> {
+        let path = self.plans_dir().join(format!("{}.md", phase.label()));
+        std::fs::read_to_string(&path).map_err(|source| MissionError::ReadPlan { path, source })
+    }
+
+    /// 加载执行方案（`plan.md`）。
+    ///
+    /// 如果 `plan.md` 不存在，尝试从 `worker_definition.md` 获取执行步骤。
+    pub fn load_execution_plan(&self) -> MissionResult<String> {
+        // 优先加载 plan.md
+        let plan_path = self.plans_dir().join("plan.md");
+        if plan_path.exists() {
+            return std::fs::read_to_string(&plan_path).map_err(|source| MissionError::ReadPlan {
+                path: plan_path,
+                source,
+            });
+        }
+        // 回退到 worker_definition.md
+        let fallback = self.plans_dir().join("worker_definition.md");
+        if fallback.exists() {
+            return std::fs::read_to_string(&fallback).map_err(|source| MissionError::ReadPlan {
+                path: fallback,
+                source,
+            });
+        }
+        Err(MissionError::NoPlanToExecute)
     }
 
     fn step_for_state(&self, state: MissionState) -> MissionPlanningStep {

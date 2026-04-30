@@ -1185,6 +1185,7 @@ impl App {
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: self.terminal_title_invalid_items_warned.clone(),
             session_telemetry: self.session_telemetry.clone(),
+            mission_mode: false,
         }
     }
 
@@ -4459,6 +4460,7 @@ impl App {
         remote_app_server_url: Option<String>,
         remote_app_server_auth_token: Option<String>,
         environment_manager: Arc<EnvironmentManager>,
+        mission_mode: bool,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
@@ -4596,6 +4598,7 @@ impl App {
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
+                    mission_mode,
                 };
                 (ChatWidget::new_with_app_event(init), Some(started))
             }
@@ -4630,6 +4633,7 @@ impl App {
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
+                    mission_mode,
                 };
                 (ChatWidget::new_with_app_event(init), Some(resumed))
             }
@@ -4669,6 +4673,7 @@ impl App {
                     terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
+                    mission_mode,
                 };
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
@@ -8047,6 +8052,7 @@ mod tests {
             status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
             session_telemetry: app.session_telemetry.clone(),
+            mission_mode: false,
         });
 
         app.enqueue_primary_thread_session(
@@ -12327,6 +12333,7 @@ guardian_approval = true
             status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
             terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
             session_telemetry: app.session_telemetry.clone(),
+            mission_mode: false,
         });
         app.replace_chat_widget(replacement);
 

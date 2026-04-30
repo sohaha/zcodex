@@ -9,9 +9,13 @@ pub(crate) enum Command {
     Status,
     /// 继续推进当前 Mission 规划阶段。
     Continue { note: Option<String> },
+    /// 结束当前 Mission。
+    Reset,
 }
 
+#[allow(dead_code)]
 pub(crate) const MODE_NAME: &str = "ZMission";
+#[allow(dead_code)]
 pub(crate) const COMMAND_NAME: &str = "/zmission";
 
 impl Command {
@@ -41,6 +45,8 @@ impl Command {
                     .filter(|s| !s.is_empty());
                 Ok(Self::Continue { note })
             }
+            "reset" => Ok(Self::Reset),
+            "restart" => Ok(Self::Reset),
             other => Err(format!("未知的 zmission 子命令: {other}")),
         }
     }
@@ -63,6 +69,6 @@ pub(crate) fn entry_available_during_task(args: Option<&str>) -> bool {
             .next()
             .map(|s| s.to_ascii_lowercase())
             .as_deref(),
-        Some("status")
+        Some("status") | Some("reset") | Some("restart")
     )
 }

@@ -608,6 +608,8 @@ pub(crate) struct ChatWidgetInit {
     // Shared latch so we only warn once about invalid terminal-title item IDs.
     pub(crate) terminal_title_invalid_items_warned: Arc<AtomicBool>,
     pub(crate) session_telemetry: SessionTelemetry,
+    /// TUI 运行在 mission 模式下（由 `codex zmission start` 设置）。
+    pub(crate) mission_mode: bool,
 }
 
 #[derive(Default)]
@@ -946,6 +948,8 @@ pub(crate) struct ChatWidget {
     // history has been rendered so resumed/forked prompts keep chronological
     // order.
     suppress_initial_user_message_submit: bool,
+    /// TUI 运行在 mission 模式下；session_configured 后展示 mission 阶段 UI。
+    mission_mode: bool,
     // User inputs queued while a turn is in progress.
     queued_user_messages: VecDeque<QueuedUserMessage>,
     // History records for queued user messages. Slash commands such as `/goal`
@@ -2482,6 +2486,11 @@ impl ChatWidget {
         {
             self.emit_forked_thread_event(forked_from_id, fork_parent_title);
         }
+        // Mission 模式：session 配置完成后展示 mission 阶段信息。
+        if self.mission_mode {
+            self.show_mission_status_on_session_configured();
+        }
+
         if !self.suppress_session_configured_redraw {
             self.request_redraw();
         }
@@ -2494,6 +2503,119 @@ impl ChatWidget {
     pub(crate) fn submit_initial_user_message_if_pending(&mut self) {
         if let Some(user_message) = self.initial_user_message.take() {
             self.submit_user_message(user_message);
+        }
+    }
+
+    /// Mission 模式下，session 配置完成后展示 mission 阶段信息和确认面板。
+    fn show_mission_status_on_session_configured(&mut self) {
+        let workspace = self.config.cwd.to_path_buf();
+        let store = codex_mission::MissionStateStore::for_workspace(&workspace);
+        match store.status_report() {
+            Ok(codex_mission::MissionStatusReport::Active { state, .. }) => {
+                let phase_label = state.phase.map(|p| p.label()).unwrap_or("unknown");
+                let mut lines = Vec::new();
+                lines.push("🚀 Mission 模式已激活".to_string());
+                lines.push(format!("目标：{}", state.goal));
+                lines.push(format!("当前阶段：{}", phase_label));
+                if let Some(phase) = state.phase {
+                    let def = codex_mission::phase_definition(phase);
+                    lines.push(format!("提示：{}", def.prompt));
+                    lines.push(format!("出口条件：{}", def.exit_condition));
+                }
+                self.add_info_message(lines.join("\n"), None);
+
+                // 执行阶段：自动注入执行 prompt
+                if state.phase.is_none() {
+                    let planner = codex_mission::MissionPlanner::for_workspace(&workspace);
+                    let plan_content = match planner.load_execution_plan() {
+                        Ok(content) => content,
+                        Err(_) => {
+                            self.add_info_message(
+                                "⚠ 未找到执行方案文件，将基于目标直接执行。".to_string(),
+                                None,
+                            );
+                            format!("按以下 Mission 目标执行：\n{}", state.goal)
+                        }
+                    };
+                    let prompt = format!(
+                        "开始执行 Mission：{goal}\n\n\
+                         ## 执行方案\n\n\
+                         {plan_content}\n\n\
+                         请严格按照上述方案中的步骤执行。",
+                        goal = state.goal,
+                        plan_content = plan_content,
+                    );
+                    self.submit_user_message_as_plain_user_turn(
+                        crate::chatwidget::UserMessage::from(prompt.as_str()),
+                    );
+                    return;
+                }
+
+                // 弹出阶段确认选择面板。
+                if state.phase.is_some() {
+                    let goal = state.goal.clone();
+                    let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
+                        vec![Box::new(move |tx| {
+                            tx.send(crate::app_event::AppEvent::ZmissionCommand(
+                                crate::zmission_command::Command::Continue { note: None },
+                            ));
+                        })]
+                    };
+                    let items = vec![
+                        crate::bottom_pane::SelectionItem {
+                            name: "继续下一阶段".to_string(),
+                            display_shortcut: Some(crate::key_hint::plain(
+                                crossterm::event::KeyCode::Enter,
+                            )),
+                            actions: continue_actions,
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                        crate::bottom_pane::SelectionItem {
+                            name: "结束并开始新 Mission".to_string(),
+                            display_shortcut: Some(crate::key_hint::plain(
+                                crossterm::event::KeyCode::Char('r'),
+                            )),
+                            actions: {
+                                vec![Box::new(move |tx| {
+                                    tx.send(crate::app_event::AppEvent::ZmissionCommand(
+                                        crate::zmission_command::Command::Reset,
+                                    ));
+                                })]
+                            },
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                        crate::bottom_pane::SelectionItem {
+                            name: "暂停".to_string(),
+                            display_shortcut: Some(crate::key_hint::plain(
+                                crossterm::event::KeyCode::Esc,
+                            )),
+                            is_default: false,
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                    ];
+                    self.show_selection_view(crate::bottom_pane::SelectionViewParams {
+                        title: Some(format!("Mission 阶段完成：{phase_label}")),
+                        subtitle: Some(format!("目标：{goal}")),
+                        footer_hint: Some(
+                            crate::bottom_pane::popup_consts::standard_popup_hint_line(),
+                        ),
+                        items,
+                        ..Default::default()
+                    });
+                }
+            }
+            Ok(codex_mission::MissionStatusReport::Empty { .. }) => {
+                self.add_info_message(
+                    "Mission 模式已激活，但未找到活跃的 Mission 状态。".to_string(),
+                    None,
+                );
+            }
+            Err(err) => {
+                self.add_error_message(format!("读取 Mission 状态失败：{err}"));
+            }
         }
     }
 
@@ -5498,6 +5620,7 @@ impl ChatWidget {
             status_line_invalid_items_warned,
             terminal_title_invalid_items_warned,
             session_telemetry,
+            mission_mode,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -5640,6 +5763,7 @@ impl ChatWidget {
             startup_tooltip_override,
             suppress_session_configured_redraw: false,
             suppress_initial_user_message_submit: false,
+            mission_mode,
             pending_notification: None,
             quit_shortcut_expires_at: None,
             quit_shortcut_key: None,

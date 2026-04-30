@@ -670,7 +670,7 @@ fn longest_tag_prefix(s: &str) -> &str {
     for tag in TAGS {
         let tag_bytes = tag.as_bytes();
         for len in (1..tag_bytes.len()).rev() {
-            if bytes.len() >= len && &bytes[bytes.len() - len..] == &tag_bytes[..len] {
+            if bytes.len() >= len && bytes[bytes.len() - len..] == tag_bytes[..len] {
                 return &s[s.len() - len..];
             }
         }
@@ -714,10 +714,10 @@ fn parse_sse_error(data: &str) -> Option<ApiError> {
         .map(String::from);
 
     // Check for server overloaded errors
-    if let Some(code_str) = code.as_deref() {
-        if matches!(code_str, "server_is_overloaded" | "slow_down" | "1305") {
-            return Some(ApiError::ServerOverloaded);
-        }
+    if let Some(code_str) = code.as_deref()
+        && matches!(code_str, "server_is_overloaded" | "slow_down" | "1305")
+    {
+        return Some(ApiError::ServerOverloaded);
     }
 
     // For other errors, return a generic stream error

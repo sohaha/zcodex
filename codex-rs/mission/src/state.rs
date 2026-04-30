@@ -6,6 +6,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 pub const MISSION_DIR_NAME: &str = ".mission";
+pub const AGENTS_MISSION_DIR_NAME: &str = ".agents/mission";
 pub const MISSION_STATE_FILE_NAME: &str = "mission_state.json";
 
 /// Mission 的顶层运行状态。
@@ -177,6 +178,17 @@ impl MissionStateStore {
             path: self.state_path.clone(),
             source,
         })
+    }
+
+    /// 删除当前 Mission 状态文件。
+    pub fn reset(&self) -> MissionResult<()> {
+        if self.state_path.exists() {
+            std::fs::remove_file(&self.state_path).map_err(|source| MissionError::WriteState {
+                path: self.state_path.clone(),
+                source,
+            })?;
+        }
+        Ok(())
     }
 }
 

@@ -852,41 +852,54 @@ impl Drop for ModelClientSession {
     }
 }
 
-fn prompt_has_freeform_apply_patch_tool(prompt: &Prompt) -> bool {
-    prompt.tools.iter().any(|tool| {
-        matches!(
-            tool,
-            ToolSpec::Freeform(tool) if tool.name == "apply_patch"
-        )
-    })
+fn prompt_has_non_function_tool(prompt: &Prompt) -> bool {
+    prompt
+        .tools
+        .iter()
+        .any(|tool| !matches!(tool, ToolSpec::Function(_)))
 }
 
 fn downgrade_freeform_apply_patch_tools(tools: &[ToolSpec]) -> Vec<ToolSpec> {
     tools
         .iter()
-        .map(|tool| match tool {
+        .filter_map(|tool| match tool {
+            // Convert freeform apply_patch to a standard function tool.
             ToolSpec::Freeform(tool) if tool.name == "apply_patch" => {
-                create_apply_patch_json_tool()
+                Some(create_apply_patch_json_tool())
             }
-            _ => tool.clone(),
+            // Drop all other non-function tools (custom, web_search, etc.)
+            // since third-party proxies often reject non-standard tool types.
+            ToolSpec::Freeform(_) | ToolSpec::WebSearch { .. } => None,
+            // Keep everything else (function, namespace, tool_search, etc.)
+            _ => Some(tool.clone()),
         })
         .collect()
 }
 
 fn responses_provider_rejected_custom_tool_message(message: &str) -> bool {
-    message.contains("unknown variant")
+    // OpenAI-style: "tools[4].type: unknown variant 'custom', expected 'function'"
+    let openai_style = message.contains("unknown variant")
         && message.contains("custom")
         && message.contains("expected")
         && message.contains("function")
         && message.contains("tools[")
-        && message.contains(".type")
+        && message.contains(".type");
+
+    // Third-party proxy style: "tools[9].type: type is illegal"
+    // (e.g., manifest.build wrapping upstream 400 as 401)
+    let proxy_style = message.contains("type is illegal")
+        && message.contains("tools[")
+        && message.contains(".type");
+
+    openai_style || proxy_style
 }
 
 fn responses_provider_rejected_custom_tool(err: &ApiError) -> bool {
     let message = match err {
         ApiError::InvalidRequest { message } => Some(message.as_str()),
         ApiError::Transport(TransportError::Http { status, body, .. })
-            if *status == HttpStatusCode::BAD_REQUEST =>
+            if *status == HttpStatusCode::BAD_REQUEST
+                || *status == HttpStatusCode::UNAUTHORIZED =>
         {
             body.as_deref()
         }
@@ -931,7 +944,7 @@ impl ModelClientSession {
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
-            && prompt_has_freeform_apply_patch_tool(prompt)
+            && prompt_has_non_function_tool(prompt)
         {
             let mut downgraded_prompt = prompt.clone();
             downgraded_prompt.tools = downgrade_freeform_apply_patch_tools(&prompt.tools);
@@ -942,13 +955,25 @@ impl ModelClientSession {
     }
 
     fn should_retry_without_freeform_apply_patch(&self, err: &ApiError, prompt: &Prompt) -> bool {
-        !self
+        if self
             .client
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
-            && prompt_has_freeform_apply_patch_tool(prompt)
-            && responses_provider_rejected_custom_tool(err)
+            || !prompt_has_non_function_tool(prompt)
+        {
+            return false;
+        }
+        // Prefer explicit tool-rejection patterns when available, but also
+        // accept generic 400/401 errors from third-party proxies that wrap
+        // upstream tool-rejection errors in opaque bodies.
+        responses_provider_rejected_custom_tool(err)
+            || matches!(
+                err,
+                ApiError::Transport(TransportError::Http { status, .. })
+                    if *status == HttpStatusCode::BAD_REQUEST
+                        || *status == HttpStatusCode::UNAUTHORIZED
+            )
     }
 
     pub(crate) fn should_retry_without_freeform_apply_patch_stream_error(
@@ -956,13 +981,19 @@ impl ModelClientSession {
         err: &CodexErr,
         prompt: &Prompt,
     ) -> bool {
-        !self
+        if self
             .client
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
-            && prompt_has_freeform_apply_patch_tool(prompt)
-            && responses_stream_rejected_custom_tool(err)
+            || !prompt_has_non_function_tool(prompt)
+        {
+            return false;
+        }
+        // Prefer explicit tool-rejection patterns, but also accept generic
+        // InvalidRequest / Stream errors from third-party proxies.
+        responses_stream_rejected_custom_tool(err)
+            || matches!(err, CodexErr::InvalidRequest(_) | CodexErr::Stream(_, _))
     }
 
     fn remember_responses_custom_apply_patch_unsupported(&self) {
