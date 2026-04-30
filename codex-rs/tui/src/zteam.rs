@@ -1224,15 +1224,13 @@ pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
             backend_role = backend_role,
         ),
         None => format!(
-            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：
-\
-             1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`
-\
-             2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`
-\
-             对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。
-\
-             创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。",
+            concat!(
+                "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n",
+                "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
+                "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
+                "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
+                "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
+            ),
             frontend_role = frontend_role,
             backend_role = backend_role,
         ),
