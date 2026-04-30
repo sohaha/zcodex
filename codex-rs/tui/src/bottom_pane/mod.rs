@@ -600,8 +600,10 @@ impl BottomPane {
         self.composer.sync_popups();
         self.request_redraw();
     }
-
     pub(crate) fn pre_draw_tick(&mut self) {
+        if self.buddy.tick_surprise() {
+            self.request_redraw();
+        }
         self.composer.sync_popups();
     }
 

@@ -42,12 +42,20 @@ impl BuddyWidget {
     pub(crate) fn next_redraw_in(&self) -> Option<std::time::Duration> {
         self.state.next_redraw_in()
     }
+    /// Check if a surprise full-layout is due. Returns `true` when triggered
+    /// so the caller can schedule a redraw.
+    pub(crate) fn tick_surprise(&mut self) -> bool {
+        self.state.check_surprise()
+    }
 
     pub(crate) fn ensure_visible(&mut self, seed: &str) {
         let was_hatched = self.bones.is_some();
         let bones = self.ensure_bones(seed).clone();
         let now = Instant::now();
         self.show_temporary_full(now);
+        if !self.state.full_layout {
+            self.state.schedule_surprise();
+        }
         if !was_hatched && self.state.reaction.is_none() {
             self.state.reaction = Some(BuddyReaction {
                 kind: BuddyReactionKind::Teaser,
@@ -63,6 +71,9 @@ impl BuddyWidget {
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
         self.show_temporary_full(now);
+        if !self.state.full_layout {
+            self.state.schedule_surprise();
+        }
         let reaction_kind = if was_hatched {
             BuddyReactionKind::Return
         } else {
@@ -107,6 +118,7 @@ impl BuddyWidget {
         self.state.visible = true;
         self.state.full_layout = true;
         self.state.full_layout_until = None;
+        self.state.next_surprise_at = None;
         let reaction_kind = if was_hatched {
             BuddyReactionKind::Return
         } else {
@@ -146,6 +158,7 @@ impl BuddyWidget {
         self.state.visible = false;
         self.state.full_layout = false;
         self.state.full_layout_until = None;
+        self.state.next_surprise_at = None;
         self.state.pet_started_at = None;
         self.state.pet_until = None;
         self.state.reaction = None;

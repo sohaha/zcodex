@@ -11,6 +11,12 @@ pub(crate) const PET_FEEDBACK_DURATION: Duration = Duration::from_millis(2500);
 pub(crate) const REACTION_DURATION: Duration = Duration::from_millis(10_000);
 pub(crate) const REACTION_FADE_WINDOW: Duration = Duration::from_millis(3_000);
 pub(crate) const FULL_LAYOUT_INTRO_DURATION: Duration = Duration::from_millis(6_000);
+/// 惊喜模式下完整形象持续时长。
+const SURPRISE_FULL_DURATION: Duration = Duration::from_millis(12_000);
+/// 两次惊喜之间的最短间隔。
+const SURPRISE_MIN_INTERVAL: Duration = Duration::from_secs(90);
+/// 两次惊喜之间的最长间隔。
+const SURPRISE_MAX_INTERVAL: Duration = Duration::from_secs(300);
 
 const IDLE_SEQUENCE: [BuddyFrame; 12] = [
     BuddyFrame::FidgetUp,
@@ -716,6 +722,8 @@ pub(crate) struct BuddyState {
     pub(crate) pet_started_at: Option<Instant>,
     pub(crate) pet_until: Option<Instant>,
     pub(crate) full_layout_until: Option<Instant>,
+    /// 下次惊喜完整形象触发时刻。
+    pub(crate) next_surprise_at: Option<Instant>,
     tick_origin: Instant,
 }
 
@@ -730,6 +738,7 @@ impl Default for BuddyState {
             pet_started_at: None,
             pet_until: None,
             full_layout_until: None,
+            next_surprise_at: None,
             tick_origin: Instant::now(),
         }
     }
@@ -828,6 +837,7 @@ impl BuddyState {
                 self.active_reaction_at(now).map(|reaction| reaction.until),
                 self.pet_until.filter(|until| now < *until),
                 self.full_layout_until.filter(|until| now < *until),
+                self.next_surprise_at.filter(|t| now < *t),
             ]
             .into_iter()
             .flatten(),
@@ -841,6 +851,34 @@ impl BuddyState {
 
     fn tick_at(&self, now: Instant) -> u64 {
         (now.duration_since(self.tick_origin).as_millis() / TICK_DURATION.as_millis()) as u64
+    }
+
+    /// Schedule the next surprise using a random delay.
+    pub(crate) fn schedule_surprise(&mut self) {
+        let now = Instant::now();
+        let range_ms = SURPRISE_MIN_INTERVAL.as_millis()..=SURPRISE_MAX_INTERVAL.as_millis();
+        let delay_ms = rand::rngs::StdRng::from_entropy().gen_range(range_ms);
+        self.next_surprise_at = Some(now + Duration::from_millis(delay_ms as u64));
+    }
+
+    /// Check if a surprise is due; if so, activate temporary full layout and
+    /// schedule the next one. Returns `true` when a surprise was triggered.
+    pub(crate) fn check_surprise(&mut self) -> bool {
+        let now = Instant::now();
+        let Some(target) = self.next_surprise_at else {
+            return false;
+        };
+        if now < target {
+            return false;
+        }
+        // Skip if permanently full, petting, or reacting.
+        if self.full_layout || self.is_petting_at(now) || self.active_reaction_at(now).is_some() {
+            self.next_surprise_at = Some(now + Duration::from_secs(30));
+            return false;
+        }
+        self.full_layout_until = Some(now + SURPRISE_FULL_DURATION);
+        self.schedule_surprise();
+        true
     }
 }
 
