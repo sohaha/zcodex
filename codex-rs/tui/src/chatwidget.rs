@@ -199,6 +199,8 @@ use codex_protocol::protocol::McpToolCallBeginEvent;
 use codex_protocol::protocol::McpToolCallEndEvent;
 #[cfg(test)]
 use codex_protocol::protocol::ModelVerification as CoreModelVerification;
+use codex_protocol::protocol::NativeToolCallBeginEvent;
+use codex_protocol::protocol::NativeToolCallEndEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::RateLimitReachedType;
@@ -226,8 +228,6 @@ use codex_protocol::protocol::ViewImageToolCallEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::protocol::WebSearchBeginEvent;
 use codex_protocol::protocol::WebSearchEndEvent;
-use codex_protocol::protocol::NativeToolCallBeginEvent;
-use codex_protocol::protocol::NativeToolCallEndEvent;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_user_input::RequestUserInputEvent;
 use codex_protocol::request_user_input::RequestUserInputQuestionOption;
@@ -355,9 +355,9 @@ use crate::history_cell::AgentMessageCell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::HookCell;
 use crate::history_cell::McpToolCallCell;
+use crate::history_cell::NativeToolCallCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::WebSearchCell;
-use crate::history_cell::NativeToolCallCell;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 #[cfg(test)]
@@ -4735,7 +4735,6 @@ impl ChatWidget {
         self.had_work_activity = true;
     }
 
-
     fn on_native_tool_call_begin(&mut self, ev: NativeToolCallBeginEvent) {
         self.flush_answer_stream_with_separator();
         self.flush_active_cell();
@@ -7198,7 +7197,13 @@ impl ChatWidget {
                         .unwrap_or(codex_protocol::models::WebSearchAction::Other),
                 });
             }
-            ThreadItem::NativeToolCall { id, tool_name, status, success, duration_ms } => {
+            ThreadItem::NativeToolCall {
+                id,
+                tool_name,
+                status,
+                success,
+                duration_ms,
+            } => {
                 self.on_native_tool_call_begin(NativeToolCallBeginEvent {
                     call_id: id.clone(),
                     tool_name: tool_name.clone(),

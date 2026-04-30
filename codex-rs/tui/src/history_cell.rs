@@ -1820,11 +1820,7 @@ pub(crate) struct NativeToolCallCell {
 }
 
 impl NativeToolCallCell {
-    pub(crate) fn new(
-        call_id: String,
-        tool_name: String,
-        animations_enabled: bool,
-    ) -> Self {
+    pub(crate) fn new(call_id: String, tool_name: String, animations_enabled: bool) -> Self {
         Self {
             call_id,
             tool_name,
@@ -1872,7 +1868,6 @@ pub(crate) fn new_completed_native_tool_call(
     cell.complete();
     cell
 }
-
 
 /// Returns an additional history cell if an MCP tool result includes a decodable image.
 ///

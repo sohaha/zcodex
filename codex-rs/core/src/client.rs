@@ -939,13 +939,13 @@ impl ModelClientSession {
     }
 
     fn effective_responses_prompt<'a>(&self, prompt: &'a Prompt) -> Cow<'a, Prompt> {
-        if self
+        let skip = self
             .client
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
-            && prompt_has_non_function_tool(prompt)
-        {
+            || self.client.state.provider.info().skip_freeform_tools;
+        if skip && prompt_has_non_function_tool(prompt) {
             let mut downgraded_prompt = prompt.clone();
             downgraded_prompt.tools = downgrade_freeform_apply_patch_tools(&prompt.tools);
             Cow::Owned(downgraded_prompt)
@@ -960,6 +960,7 @@ impl ModelClientSession {
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
+            || self.client.state.provider.info().skip_freeform_tools
             || !prompt_has_non_function_tool(prompt)
         {
             return false;
@@ -975,6 +976,9 @@ impl ModelClientSession {
                         || *status == HttpStatusCode::UNAUTHORIZED
             )
     }
+                        || *status == HttpStatusCode::UNAUTHORIZED
+            )
+    }
 
     pub(crate) fn should_retry_without_freeform_apply_patch_stream_error(
         &self,
@@ -986,6 +990,7 @@ impl ModelClientSession {
             .state
             .disable_responses_custom_apply_patch
             .load(Ordering::Relaxed)
+            || self.client.state.provider.info().skip_freeform_tools
             || !prompt_has_non_function_tool(prompt)
         {
             return false;

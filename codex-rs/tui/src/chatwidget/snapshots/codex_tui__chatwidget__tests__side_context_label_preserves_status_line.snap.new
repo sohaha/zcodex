@@ -4,14 +4,14 @@ assertion_line: 288
 expression: terminal.backend()
 ---
 "                                                                                "
-"  .------------------.                                                          "
-"  | 一团快乐挤进来。 |                                                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " ")]
-"  '------------------.                                                          "
+"  .------------.                                                                "
+"  | 悠然趴下。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
+"  '------------.                                                                "
 "    \                                                                           "
-"  /\___/\                                                                       "
-"   ^   ^ )                                                                      "
-"  (  .  )                                                                       "
-"  Marble ★ 常见 团子 · 坐立不安                                                 " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (24, " "), (26, " "), (28, " "), (30, " ")]
+"   n___n                                                                        "
+"  ( ^  ^ )                                                                      "
+"  ( 00 )                                                                        "
+"  Comfy ★ 常见 水豚 · 坐立不安                                                  " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " "), (27, " "), (29, " ")]
 "                                                                                "
 "› Check recently modified functions for compatibility                           "
 "                                                                                "

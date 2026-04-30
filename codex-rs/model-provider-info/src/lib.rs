@@ -178,6 +178,12 @@ pub struct ModelProviderInfo {
     /// transient and should be retried like 5xx responses.
     #[serde(default = "default_retry_429")]
     pub retry_429: bool,
+    /// When true, never send `custom` or `web_search` tool types to this provider
+    /// and convert freeform `apply_patch` to a standard function tool. Use for
+    /// third-party proxies (e.g. manifest, local gateways) that reject non-standard
+    /// tool types with HTTP 400.
+    #[serde(default)]
+    pub skip_freeform_tools: bool,
 }
 
 impl Default for ModelProviderInfo {
@@ -208,6 +214,7 @@ impl Default for ModelProviderInfo {
             max_output_tokens: None,
             skip_reasoning_popup: false,
             retry_429: default_retry_429(),
+            skip_freeform_tools: false,
         }
     }
 }
@@ -235,7 +242,7 @@ impl ModelProviderInfo {
         };
 
         format!(
-            "ModelProviderInfo {{ name: {:?}, model: {:?}, base_url: {:?}, env_key: {:?}, model_catalog: {:?}, env_key_instructions_present: {}, experimental_bearer_token_configured: {}, auth_configured: {}, wire_api: {:?}, query_param_names: {:?}, http_header_names: {:?}, env_http_header_names: {:?}, request_max_retries: {:?}, stream_max_retries: {:?}, stream_idle_timeout_ms: {:?}, retry_base_delay_ms: {:?}, websocket_connect_timeout_ms: {:?}, requires_openai_auth: {}, supports_websockets: {}, model_context_window: {:?}, model_auto_compact_token_limit: {:?}, max_output_tokens: {:?}, skip_reasoning_popup: {}, retry_429: {} }}",
+            "ModelProviderInfo {{ name: {:?}, model: {:?}, base_url: {:?}, env_key: {:?}, model_catalog: {:?}, env_key_instructions_present: {}, experimental_bearer_token_configured: {}, auth_configured: {}, wire_api: {:?}, query_param_names: {:?}, http_header_names: {:?}, env_http_header_names: {:?}, request_max_retries: {:?}, stream_max_retries: {:?}, stream_idle_timeout_ms: {:?}, retry_base_delay_ms: {:?}, websocket_connect_timeout_ms: {:?}, requires_openai_auth: {}, supports_websockets: {}, model_context_window: {:?}, model_auto_compact_token_limit: {:?}, max_output_tokens: {:?}, skip_reasoning_popup: {}, retry_429: {}, skip_freeform_tools: {} }}",
             self.name,
             self.model,
             self.base_url,
@@ -259,7 +266,8 @@ impl ModelProviderInfo {
             self.model_auto_compact_token_limit,
             self.max_output_tokens,
             self.skip_reasoning_popup,
-            self.retry_429
+            self.retry_429,
+            self.skip_freeform_tools
         )
     }
 
@@ -513,6 +521,7 @@ impl ModelProviderInfo {
             model_catalog: None,
             skip_reasoning_popup: false,
             retry_429: true,
+            skip_freeform_tools: false,
         }
     }
 
@@ -548,6 +557,7 @@ impl ModelProviderInfo {
             supports_websockets: false,
             skip_reasoning_popup: false,
             retry_429: true,
+            skip_freeform_tools: false,
         }
     }
 
@@ -739,5 +749,6 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         supports_websockets: false,
         skip_reasoning_popup: false,
         retry_429: true,
+        skip_freeform_tools: false,
     }
 }

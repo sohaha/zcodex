@@ -170,6 +170,8 @@ pub(crate) struct PostToolUsePayload {
 
 trait AnyToolHandler: Send + Sync {
     fn matches_kind(&self, payload: &ToolPayload) -> bool;
+    fn kind(&self) -> ToolKind;
+    fn owns_lifecycle(&self) -> bool;
 
     fn is_mutating<'a>(&'a self, invocation: &'a ToolInvocation) -> BoxFuture<'a, bool>;
 
@@ -188,6 +190,13 @@ where
 {
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         ToolHandler::matches_kind(self, payload)
+    }
+    fn kind(&self) -> ToolKind {
+        ToolHandler::kind(self)
+    }
+
+    fn owns_lifecycle(&self) -> bool {
+        ToolHandler::owns_lifecycle(self)
     }
 
     fn is_mutating<'a>(&'a self, invocation: &'a ToolInvocation) -> BoxFuture<'a, bool> {

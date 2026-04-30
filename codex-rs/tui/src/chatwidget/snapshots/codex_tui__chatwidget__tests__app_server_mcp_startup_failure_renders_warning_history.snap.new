@@ -6,14 +6,14 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ⚠ `alpha` 的 MCP 客户端启动失败: handshake failed
 ⚠ MCP 启动未完成（失败：alpha）
 
-  .------------------.
-  | 背着壳慢慢滑来。 |
-  '------------------.
+  .--------------.
+  | 触手先到了。 |
+  '--------------.
     \
-  ^  .--.
-   \ ( @ )
-    ~~~~~
-  Mallow ★ 常见 蜗牛 · 坐立不安
+   .--.
+  ( ^^ )
+  /\/\/\
+  Orbit ★ 常见 章鱼 · 坐立不安
 
 › 让 Codex 帮你做任何事
 

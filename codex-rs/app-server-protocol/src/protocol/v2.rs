@@ -6082,7 +6082,6 @@ pub enum WebSearchAction {
     Other,
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
