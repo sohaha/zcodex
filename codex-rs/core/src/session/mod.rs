@@ -1169,8 +1169,8 @@ impl Session {
                         &turn_context,
                         EventMsg::Warning(WarningEvent {
                             message: format!(
-                                "This session was recorded with model `{prev}` but is resuming with `{curr}`. \
-                         Consider switching back to `{prev}` as it may affect Codex performance."
+                                "此会话使用模型 `{prev}` 录制，但当前恢复时使用 `{curr}`。\
+                         建议切换回 `{prev}`，否则可能影响 Codex 性能。"
                             ),
                         }),
                     )
