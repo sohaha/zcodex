@@ -8,11 +8,10 @@ mod user_testing;
 pub use scrutiny::ScrutinyReport;
 pub use scrutiny::ScrutinyStatus;
 pub use scrutiny::ScrutinyValidator;
-pub use user_testing::TestingStatus;
 pub use user_testing::UserTestingReport;
 pub use user_testing::UserTestingValidator;
 
-use crate::mission::handoff::Handoff;
+use crate::handoff::Handoff;
 
 /// 验证器通用接口。
 pub trait Validator {

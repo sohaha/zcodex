@@ -35,6 +35,7 @@ pub(crate) fn builtins_for_input(flags: BuiltinCommandFlags) -> Vec<(&'static st
                 || !matches!(*cmd, SlashCommand::Collab | SlashCommand::Plan)
         })
         .filter(|(_, cmd)| flags.zteam_enabled || *cmd != SlashCommand::Zteam)
+        .filter(|(_, cmd)| flags.zteam_enabled || *cmd != SlashCommand::Zmission)
         .filter(|(_, cmd)| flags.connectors_enabled || *cmd != SlashCommand::Apps)
         .filter(|(_, cmd)| flags.plugins_command_enabled || *cmd != SlashCommand::Plugins)
         .filter(|(_, cmd)| flags.fast_command_enabled || *cmd != SlashCommand::Fast)

@@ -2,8 +2,8 @@
 //!
 //! 负责管理 `.factory/` 目录的知识沉淀，包括服务、库和代理规范。
 
-use crate::mission::MissionResult;
-use crate::mission::error::MissionError;
+use crate::MissionResult;
+use crate::error::MissionError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;

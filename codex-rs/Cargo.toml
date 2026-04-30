@@ -3,6 +3,7 @@ members = [
     "aws-auth",
     "analytics",
     "agent-identity",
+    "mission",
     "backend-client",
     "ansi-escape",
     "async-utils",
@@ -168,6 +169,7 @@ codex-login = { path = "login" }
 codex-mcp = { path = "codex-mcp" }
 codex-mcp-server = { path = "mcp-server" }
 codex-model-provider = { path = "model-provider" }
+codex-mission = { path = "mission" }
 codex-model-provider-info = { path = "model-provider-info" }
 codex-models-manager = { path = "models-manager" }
 codex-native-tldr = { path = "native-tldr" }

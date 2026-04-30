@@ -31,6 +31,7 @@ pub enum SlashCommand {
     Init,
     Compact,
     Zteam,
+    Zmission,
     Plan,
     Goal,
     Collab,
@@ -85,6 +86,7 @@ impl SlashCommand {
             SlashCommand::Clear => "清空终端并开始新的聊天",
             SlashCommand::Fork => "复制当前聊天",
             SlashCommand::Zteam => "以目标启动 ZTeam mission 协作并查看状态",
+            SlashCommand::Zmission => "启动或管理 Mission 7 阶段规划流程",
             // SlashCommand::Undo => "ask Codex to undo a turn",
             SlashCommand::Quit | SlashCommand::Exit => "退出 Codex",
             SlashCommand::Copy => "将最新 Codex 输出复制到剪贴板",
@@ -147,6 +149,7 @@ impl SlashCommand {
                 | SlashCommand::SandboxReadRoot
                 | SlashCommand::Buddy
                 | SlashCommand::Zteam
+                | SlashCommand::Zmission
         )
     }
 
@@ -167,6 +170,7 @@ impl SlashCommand {
             | SlashCommand::Init
             | SlashCommand::Compact
             | SlashCommand::Zteam
+            | SlashCommand::Zmission
             // | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::Fast

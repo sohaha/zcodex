@@ -110,6 +110,7 @@ impl ChatWidget {
 
         let available = match cmd {
             SlashCommand::Zteam => crate::zteam::entry_available_during_task(/*args*/ None),
+            SlashCommand::Zmission => crate::zmission_command::entry_available_during_task(None),
             _ => cmd.available_during_task(),
         };
         if !available && self.bottom_pane.is_task_running() {
@@ -167,6 +168,11 @@ impl ChatWidget {
             }
             SlashCommand::Zteam => {
                 self.open_zteam_entry();
+            }
+            SlashCommand::Zmission => {
+                self.app_event_tx.send(AppEvent::ZmissionCommand(
+                    crate::zmission_command::Command::Status,
+                ));
             }
             SlashCommand::Review => {
                 self.open_review_popup();
@@ -455,6 +461,9 @@ impl ChatWidget {
         }
         let available = match cmd {
             SlashCommand::Zteam => crate::zteam::entry_available_during_task(Some(args.trim())),
+            SlashCommand::Zmission => {
+                crate::zmission_command::entry_available_during_task(Some(args.trim()))
+            }
             _ => cmd.available_during_task(),
         };
         if !available && self.bottom_pane.is_task_running() {
@@ -750,6 +759,29 @@ impl ChatWidget {
                     }
                 }
             }
+            SlashCommand::Zmission => {
+                let prepared_args = if self.bottom_pane.composer_text().is_empty() {
+                    args
+                } else {
+                    let Some((prepared_args, _prepared_elements)) = self
+                        .bottom_pane
+                        .prepare_inline_args_submission(/*record_history*/ false)
+                    else {
+                        return;
+                    };
+                    prepared_args
+                };
+                match crate::zmission_command::Command::parse(&prepared_args) {
+                    Ok(command) => {
+                        self.app_event_tx.send(AppEvent::ZmissionCommand(command));
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                    Err(message) => {
+                        self.add_error_message(message);
+                        self.bottom_pane.drain_pending_submission_state();
+                    }
+                }
+            }
             _ => self.dispatch_command(cmd),
         }
         if source == SlashCommandDispatchSource::Live && cmd != SlashCommand::Goal {
@@ -873,6 +905,7 @@ impl ChatWidget {
             | SlashCommand::MemoryDrop
             | SlashCommand::MemoryUpdate
             | SlashCommand::Zteam
+            | SlashCommand::Zmission
             | SlashCommand::Buddy
             | SlashCommand::Mcp
             | SlashCommand::Apps

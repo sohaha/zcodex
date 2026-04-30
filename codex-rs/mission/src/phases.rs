@@ -1,4 +1,4 @@
-use crate::mission::MissionPhase;
+use crate::MissionPhase;
 
 /// 描述一个 Mission 规划阶段的出口条件与提示。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

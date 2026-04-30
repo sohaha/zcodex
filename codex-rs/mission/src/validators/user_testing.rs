@@ -2,11 +2,11 @@
 //!
 //! 验证功能从用户视角的正确性和可用性。
 
-use crate::mission::handoff::Handoff;
-use crate::mission::handoff::ReviewStatus;
-use crate::mission::handoff::UserTestingResult;
-use crate::mission::validators::Validator;
-use crate::mission::validators::ValidatorConfig;
+use crate::handoff::Handoff;
+use crate::handoff::ReviewStatus;
+use crate::handoff::UserTestingResult;
+use crate::validators::Validator;
+use crate::validators::ValidatorConfig;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -558,7 +558,7 @@ mod tests {
             .with_next_steps("Next phase");
 
         // 模拟通过的用户测试结果
-        let mut verification = crate::mission::handoff::Verification::default();
+        let mut verification = crate::handoff::Verification::default();
         verification.user_testing = UserTestingResult {
             status: ReviewStatus::Passed,
             results: "All tests passed".to_string(),
@@ -584,7 +584,7 @@ mod tests {
             .with_next_steps("Testing");
 
         // 模拟失败的用户测试结果
-        let mut verification = crate::mission::handoff::Verification::default();
+        let mut verification = crate::handoff::Verification::default();
         verification.user_testing = UserTestingResult {
             status: ReviewStatus::Failed,
             results: "Critical tests failed".to_string(),

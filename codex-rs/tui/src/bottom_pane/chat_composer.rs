@@ -2681,6 +2681,9 @@ impl ChatComposer {
     ) -> bool {
         let available = match cmd {
             SlashCommand::Zteam => crate::zteam::entry_available_during_task(inline_args),
+            SlashCommand::Zmission => {
+                crate::zmission_command::entry_available_during_task(inline_args)
+            }
             _ => cmd.available_during_task(),
         };
         if !self.is_task_running || available {

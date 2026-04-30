@@ -126,5 +126,5 @@
 - `codex-rs/tui/src/zteam/autopilot.rs` — `AutopilotState` 状态机（可参考事件驱动模式）
 - `codex-rs/tui/src/app_event.rs:115` — `AppEvent::ZteamCommand`（事件总线接入点）
 - `codex-rs/tui/src/bottom_pane/mod.rs:871` — `show_selection_view`（可复用的选择视图组件）
-- `codex-rs/tui/src/bottom_pane/list_selection_view.rs` — `SelectionViewParams` + `ListSelectionView`
+ - `codex-rs/tui/src/bottom_pane/list_selection_view.rs` — `SelectionViewParams` + `ListSelectionView`
 - `codex-rs/tui/src/zteam/view.rs` — `WorkbenchView`（ratatui 渲染模式参考）

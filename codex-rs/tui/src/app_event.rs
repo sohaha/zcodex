@@ -35,6 +35,7 @@ use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::history_cell::HistoryCell;
+use crate::zmission_command::Command as ZmissionCommand;
 use crate::zteam::Command as ZteamCommand;
 
 use codex_config::types::ApprovalsReviewer;
@@ -113,6 +114,9 @@ pub(crate) enum AppEvent {
 
     /// Execute a ZTeam collaboration command.
     ZteamCommand(ZteamCommand),
+
+    /// Execute a ZMission command.
+    ZmissionCommand(ZmissionCommand),
 
     /// Re-evaluate whether ZTeam Mission Autopilot can advance.
     ZteamAutopilotTick,

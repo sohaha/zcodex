@@ -2519,6 +2519,7 @@ dependencies = [
  "codex-hooks",
  "codex-login",
  "codex-mcp",
+ "codex-mission",
  "codex-model-provider",
  "codex-model-provider-info",
  "codex-models-manager",
@@ -3123,6 +3124,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-mission"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "codex-model-provider"
 version = "1.0.0"
 dependencies = [
@@ -3701,6 +3715,7 @@ dependencies = [
  "codex-install-context",
  "codex-login",
  "codex-mcp",
+ "codex-mission",
  "codex-model-provider-info",
  "codex-models-manager",
  "codex-otel",

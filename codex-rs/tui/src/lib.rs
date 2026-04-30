@@ -186,6 +186,8 @@ mod transcript_reflow;
 mod tui;
 mod ui_consts;
 pub(crate) mod update_action;
+mod zmission_command;
+mod zmission_handler;
 mod zteam;
 pub use update_action::UpdateAction;
 mod update_prompt;

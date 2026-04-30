@@ -2,8 +2,8 @@
 //!
 //! 负责从已安装的 mission skill 目录加载 skill 文件。
 
-use crate::mission::MissionResult;
-use crate::mission::error::MissionError;
+use crate::MissionResult;
+use crate::error::MissionError;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -228,11 +228,14 @@ mod tests {
         // 创建源目录和 skill 文件
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
-        fs::write(
-            source_dir.join("mission-planning.md"),
-            "Mission Planning Content",
-        )
-        .unwrap();
+        for skill_file in MISSION_SKILL_FILES {
+            let content = if *skill_file == "mission-planning.md" {
+                "Mission Planning Content"
+            } else {
+                ""
+            };
+            fs::write(source_dir.join(skill_file), content).unwrap();
+        }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
         manager.install().unwrap();
@@ -276,7 +279,9 @@ mod tests {
         // 创建源目录和 skill 文件
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
-        fs::write(source_dir.join("mission-planning.md"), "Content").unwrap();
+        for skill_file in MISSION_SKILL_FILES {
+            fs::write(source_dir.join(skill_file), "Content").unwrap();
+        }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
         manager.install().unwrap();
@@ -294,7 +299,9 @@ mod tests {
         // 创建源目录和 skill 文件
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
-        fs::write(source_dir.join("mission-planning.md"), "Content").unwrap();
+        for skill_file in MISSION_SKILL_FILES {
+            fs::write(source_dir.join(skill_file), "Content").unwrap();
+        }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
         manager.install().unwrap();
@@ -311,7 +318,9 @@ mod tests {
         // 创建源目录和 skill 文件
         let source_dir = codex_home.path().join("skills").join("mission");
         fs::create_dir_all(&source_dir).unwrap();
-        fs::write(source_dir.join("mission-planning.md"), "Content").unwrap();
+        for skill_file in MISSION_SKILL_FILES {
+            fs::write(source_dir.join(skill_file), "Content").unwrap();
+        }
 
         let manager = MissionSkillManager::new(codex_home.path(), workspace.path());
         manager.install().unwrap();

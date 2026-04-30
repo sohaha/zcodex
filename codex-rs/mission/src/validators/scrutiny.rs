@@ -2,11 +2,10 @@
 //!
 //! 通过静态分析验证代码质量。
 
-use crate::mission::handoff::CodeReviewResult;
-use crate::mission::handoff::Handoff;
-use crate::mission::handoff::ReviewStatus;
-use crate::mission::validators::Validator;
-use crate::mission::validators::ValidatorConfig;
+use crate::handoff::Handoff;
+use crate::handoff::ReviewStatus;
+use crate::validators::Validator;
+use crate::validators::ValidatorConfig;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -407,6 +406,10 @@ mod tests {
             .add_implementation("Feature A implementation")
             .add_implementation("Unit tests for feature A")
             .with_next_steps("Proceed to feature B");
+
+        let mut verification = crate::handoff::Verification::default();
+        verification.code_review.status = crate::handoff::ReviewStatus::Passed;
+        let handoff = handoff.with_verification(verification);
 
         let validator = ScrutinyValidator::with_defaults();
         let report = validator.validate(&handoff);

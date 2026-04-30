@@ -1,27 +1,27 @@
 {
-  "goal": ".agents/plan/2026-04-28-context-hooks-architecture.md",
+  "goal": ".agents/plan/2026-04-29-zmission-tui-integration.md",
   "status": "planning",
   "phase": "verification",
   "completed_phases": [
     {
       "phase": "intent",
-      "note": "intent 阶段已确认"
+      "note": "intent 阶段已完成，继续推进"
     },
     {
       "phase": "context",
-      "note": "context 阶段已确认"
+      "note": "context 阶段已完成，继续推进"
     },
     {
       "phase": "constraints",
-      "note": "constraints 阶段已确认"
+      "note": "constraints 阶段已完成，继续推进"
     },
     {
       "phase": "architecture",
-      "note": "architecture 阶段已确认"
+      "note": "architecture 阶段已完成，继续推进"
     },
     {
       "phase": "plan",
-      "note": "plan 阶段已确认"
+      "note": "plan 阶段已完成，继续推进"
     },
     {
       "phase": "worker_definition",

@@ -2,8 +2,8 @@
 //!
 //! 定义 Worker 之间交接的标准格式和相关操作。
 
-use crate::mission::MissionResult;
-use crate::mission::error::MissionError;
+use crate::MissionResult;
+use crate::error::MissionError;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;

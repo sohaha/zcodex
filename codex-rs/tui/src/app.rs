@@ -5312,6 +5312,9 @@ impl App {
             AppEvent::ZteamCommand(command) => {
                 self.handle_zteam_command(app_server, command).await?;
             }
+            AppEvent::ZmissionCommand(command) => {
+                self.handle_zmission_command(app_server, command).await?;
+            }
             AppEvent::ZteamAutopilotTick => {
                 self.drive_zteam_autopilot(app_server).await?;
             }
