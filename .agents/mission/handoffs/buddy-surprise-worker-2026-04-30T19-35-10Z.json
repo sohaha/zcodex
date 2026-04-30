@@ -1,0 +1,47 @@
+{
+  "worker": "buddy-surprise-worker",
+  "timestamp": "2026-05-01T03-00:00Z",
+  "salientSummary": "宠物惊喜完整显示功能实现：可见宠物在空闲时随机显示完整形象 12 秒",
+  "whatWasImplemented": [
+    "SURPRISE_FULL_DURATION/SURPRISE_MIN_INTERVAL/SURPRISE_MAX_INTERVAL 常量",
+    "BuddyState.next_surprise_at 字段和 schedule_surprise/check_surprise 方法",
+    "next_redraw_in() 增加 surprise deadline",
+    "BuddyWidget.tick_surprise() 暴露给外部调用",
+    "ensure_visible/show 中非 full_layout 时调度惊喜",
+    "hide/show_full 中清除惊喜调度",
+    "BottomPane.pre_draw_tick() 中调用 tick_surprise 并触发重绘",
+    "7 个单元测试覆盖触发/跳过/冲突/清除场景"
+  ],
+  "filesModified": [
+    {
+      "path": "codex-rs/tui/src/buddy/model.rs",
+      "changeSummary": "新增惊喜常量、next_surprise_at 字段、schedule_surprise/check_surprise 方法、next_redraw_in deadline"
+    },
+    {
+      "path": "codex-rs/tui/src/buddy/mod.rs",
+      "changeSummary": "新增 tick_surprise 方法、ensure_visible/show 中调度惊喜、hide/show_full 中清除惊喜、7 个单元测试"
+    },
+    {
+      "path": "codex-rs/tui/src/bottom_pane/mod.rs",
+      "changeSummary": "pre_draw_tick 中调用 buddy.tick_surprise() 并触发 request_redraw"
+    }
+  ],
+  "filesCreated": [],
+  "verification": {
+    "codeReview": {
+      "status": "passed",
+      "findings": "惊喜机制不干扰现有 full_layout/full_layout_until 语义；hide/show_full 正确清除调度；check_surprise 处理 pet/reaction 冲突",
+      "issuesFound": 0,
+      "issuesFixed": 0
+    },
+    "userTesting": {
+      "status": "skipped",
+      "results": "需用户手动验证：启动 TUI /buddy show 后等待 2-3 分钟观察惊喜",
+      "testCasesExecuted": 0,
+      "testCasesPassed": 0
+    },
+    "remainingWork": "snapshot 测试有 5 个预存失败（名称中文化问题，与本次改动无关）；用户需手动验证惊喜行为"
+  },
+  "nextSteps": "用户启动 TUI 验证惊喜显示效果；如有需要可调整 SURPRISE_MIN_INTERVAL/SURPRISE_MAX_INTERVAL 常量",
+  "blockers": []
+}

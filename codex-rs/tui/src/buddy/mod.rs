@@ -397,6 +397,7 @@ impl Renderable for BuddyBubble<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
 
@@ -641,5 +642,80 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         buddy.render(Rect::new(0, 0, width, height), &mut buf);
         assert_snapshot!("buddy_widget_legendary_narrow", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn schedule_surprise_sets_future_instant() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let before = Instant::now();
+        buddy.state.schedule_surprise();
+        let after = Instant::now();
+        let target = buddy.state.next_surprise_at.unwrap();
+        assert!(target >= before + Duration::from_secs(90));
+        assert!(target <= after + Duration::from_secs(300));
+    }
+
+    #[test]
+    fn check_surprise_returns_false_when_not_due() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        buddy.state.schedule_surprise();
+        assert!(!buddy.state.check_surprise());
+        // full_layout_until should still be from show_temporary_full, not surprise
+    }
+
+    #[test]
+    fn check_surprise_triggers_when_due() {
+        let mut state = BuddyState::default();
+        state.visible = true;
+        state.next_surprise_at = Some(Instant::now() - Duration::from_millis(1));
+        let triggered = state.check_surprise();
+        assert!(triggered);
+        assert!(state.full_layout_until.is_some());
+        // next_surprise_at should be rescheduled
+        assert!(state.next_surprise_at.is_some());
+    }
+
+    #[test]
+    fn check_surprise_skips_when_full_layout() {
+        let mut state = BuddyState::default();
+        state.visible = true;
+        state.full_layout = true;
+        state.next_surprise_at = Some(Instant::now() - Duration::from_millis(1));
+        let triggered = state.check_surprise();
+        assert!(!triggered);
+        // Should be rescheduled 30s later instead
+        assert!(state.next_surprise_at.is_some());
+    }
+
+    #[test]
+    fn check_surprise_skips_when_petting() {
+        let mut state = BuddyState::default();
+        state.visible = true;
+        state.pet_until = Some(Instant::now() + Duration::from_secs(5));
+        state.next_surprise_at = Some(Instant::now() - Duration::from_millis(1));
+        let triggered = state.check_surprise();
+        assert!(!triggered);
+    }
+
+    #[test]
+    fn hide_clears_surprise() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        buddy.state.schedule_surprise();
+        assert!(buddy.state.next_surprise_at.is_some());
+        let _ = buddy.hide();
+        assert!(buddy.state.next_surprise_at.is_none());
+    }
+
+    #[test]
+    fn show_full_clears_surprise() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        buddy.state.schedule_surprise();
+        assert!(buddy.state.next_surprise_at.is_some());
+        let _ = buddy.show_full("codex-home::project");
+        assert!(buddy.state.next_surprise_at.is_none());
     }
 }

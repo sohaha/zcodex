@@ -1,6 +1,6 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 2091
+assertion_line: 2093
 expression: "render_snapshot(&pane, area)"
 ---
   .--------------.                                          

@@ -1,6 +1,0 @@
----
-source: tui/src/chatwidget/tests/history_replay.rs
-assertion_line: 1221
-expression: header
----
-  .----------------.

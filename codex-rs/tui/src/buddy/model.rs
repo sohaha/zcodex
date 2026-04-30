@@ -857,7 +857,7 @@ impl BuddyState {
     pub(crate) fn schedule_surprise(&mut self) {
         let now = Instant::now();
         let range_ms = SURPRISE_MIN_INTERVAL.as_millis()..=SURPRISE_MAX_INTERVAL.as_millis();
-        let delay_ms = rand::rngs::StdRng::from_entropy().gen_range(range_ms);
+        let delay_ms = rand::rng().random_range(range_ms);
         self.next_surprise_at = Some(now + Duration::from_millis(delay_ms as u64));
     }
 

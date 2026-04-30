@@ -1,6 +1,6 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 480
+assertion_line: 494
 expression: snapshot_buffer(&buf)
 ---
 ~(o_o)~ 墨 墨  ★
