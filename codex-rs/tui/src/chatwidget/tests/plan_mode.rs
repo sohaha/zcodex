@@ -1396,6 +1396,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         session_telemetry,
         mission_mode: false,
         pending_mission_goal: false,
+        mission_phase_running: false,
     };
 
     let chat = ChatWidget::new_with_app_event(init);

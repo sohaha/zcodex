@@ -1,18 +1,21 @@
 ---
-source: tui/src/chatwidget/tests/exec_flow.rs
-assertion_line: 249
+source: tui/src/chatwidget/tests/mcp_startup.rs
+assertion_line: 23
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"• 处理中 (0s • esc 中断)                                                        " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (20, " "), (22, " ")]
+"• 正在启动 MCP 服务器：alpha (0s • esc 中断)                                    " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (16, " "), (18, " "), (20, " "), (22, " "), (40, " "), (42, " ")]
 "  .------------.                                                                "
 "  | 安静落座。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
 "  '------------.                                                                "
 "    \                                                                           "
+"    ·     ·                                                                     "
+"     _____                                                                      "
 "   ,_,                                                                          "
 "  ( ^_^ )                                                                       "
 "  /)___(\\                                                                      "
-"  Cinder ★ 常见 猫头鹰 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
+"    ·     ·                                                                     "
+"  Morrow ★★★ 稀有 猫头鹰 · 坐立不安                                             " Hidden by multi-width symbols: [(14, " "), (16, " "), (19, " "), (21, " "), (23, " "), (28, " "), (30, " "), (32, " "), (34, " ")]
 "                                                                                "
 "                                                                                "
 "› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]

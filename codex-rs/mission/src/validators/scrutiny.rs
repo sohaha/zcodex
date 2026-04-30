@@ -2,12 +2,14 @@
 //!
 //! 通过静态分析验证代码质量。
 
-use crate::handoff::Handoff;
-use crate::handoff::ReviewStatus;
-use crate::validators::Validator;
-use crate::validators::ValidatorConfig;
 use serde::Deserialize;
 use serde::Serialize;
+
+use crate::handoff::Handoff;
+use crate::handoff::ReviewStatus;
+use crate::validators::Severity;
+use crate::validators::Validator;
+use crate::validators::ValidatorConfig;
 
 /// Scrutiny 验证报告。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,11 +28,8 @@ pub struct ScrutinyReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScrutinyStatus {
-    /// 通过。
     Passed,
-    /// 失败。
     Failed,
-    /// 部分通过。
     Partial,
 }
 
@@ -40,31 +39,6 @@ impl ScrutinyStatus {
             Self::Passed => "PASSED",
             Self::Failed => "FAILED",
             Self::Partial => "PARTIAL",
-        }
-    }
-}
-
-/// 问题严重程度。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Severity {
-    /// 关键问题。
-    Critical,
-    /// 高优先级问题。
-    High,
-    /// 中等优先级问题。
-    Medium,
-    /// 低优先级问题。
-    Low,
-}
-
-impl Severity {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Critical => "Critical",
-            Self::High => "High",
-            Self::Medium => "Medium",
-            Self::Low => "Low",
         }
     }
 }
@@ -93,12 +67,10 @@ pub struct ScrutinyValidator {
 }
 
 impl ScrutinyValidator {
-    /// 创建新的 Scrutiny 验证器。
     pub fn new(config: ValidatorConfig) -> Self {
         Self { config }
     }
 
-    /// 使用默认配置创建验证器。
     pub fn with_defaults() -> Self {
         Self::new(ValidatorConfig::default())
     }
@@ -138,7 +110,6 @@ impl ScrutinyValidator {
                 .count(),
         ));
 
-        // 按严重程度分组显示问题
         for severity in [
             Severity::Critical,
             Severity::High,
@@ -187,20 +158,6 @@ impl ScrutinyValidator {
             output.push('\n');
         }
 
-        // 总体结论
-        output.push_str("## Conclusion\n\n");
-        match report.overall_status {
-            ScrutinyStatus::Passed => {
-                output.push_str("Code quality meets project standards. Ready to proceed.\n");
-            }
-            ScrutinyStatus::Failed => {
-                output.push_str("Code quality is below acceptable standards. Critical or high issues must be addressed before proceeding.\n");
-            }
-            ScrutinyStatus::Partial => {
-                output.push_str("Code is acceptable but has clear improvement opportunities. Consider addressing high and medium issues.\n");
-            }
-        }
-
         output
     }
 }
@@ -208,118 +165,64 @@ impl ScrutinyValidator {
 impl Validator for ScrutinyValidator {
     type Report = ScrutinyReport;
 
-    fn validate(&self, handoff: &Handoff) -> Self::Report {
+    fn validate(&self, handoff: &Handoff) -> ScrutinyReport {
         let mut issues = Vec::new();
         let mut positive_findings = Vec::new();
         let mut recommendations = Vec::new();
 
-        // 检查 Handoff 的代码审查结果
-        let code_review = &handoff.verification.code_review;
-
-        // 根据代码审查状态生成问题
-        match code_review.status {
-            ReviewStatus::Passed => {
-                positive_findings.push(format!(
-                    "Code review passed with {} issues fixed",
-                    code_review.issues_fixed
-                ));
-            }
-            ReviewStatus::Failed => {
-                issues.push(Issue {
-                    title: "Code review failed".to_string(),
-                    severity: Severity::Critical,
-                    location: None,
-                    description: "Code review indicated failure".to_string(),
-                    impact: "Code may have critical quality issues".to_string(),
-                    recommendation: "Review and address all code review findings".to_string(),
-                });
-            }
-            ReviewStatus::Partial => {
-                issues.push(Issue {
-                    title: "Code review partially completed".to_string(),
-                    severity: Severity::Medium,
-                    location: None,
-                    description: "Code review was partially completed".to_string(),
-                    impact: "Some issues may remain unaddressed".to_string(),
-                    recommendation: "Complete code review and address findings".to_string(),
-                });
-            }
-            ReviewStatus::Skipped => {
-                issues.push(Issue {
-                    title: "Code review was skipped".to_string(),
-                    severity: Severity::High,
-                    location: None,
-                    description: "No code review was performed".to_string(),
-                    impact: "Code quality has not been verified".to_string(),
-                    recommendation: "Perform thorough code review".to_string(),
-                });
-            }
-        }
-
-        // 检查文件变更
-        if handoff.files_modified.is_empty() && handoff.files_created.is_empty() {
-            positive_findings
-                .push("No file changes reported (configuration or documentation only)".to_string());
-        } else {
-            // 检查是否有大量文件变更（可能需要重构）
-            let total_changes = handoff.files_modified.len() + handoff.files_created.len();
-            if total_changes > 10 {
-                issues.push(Issue {
-                    title: "Large number of file changes".to_string(),
-                    severity: Severity::Medium,
-                    location: None,
-                    description: format!("{} files were changed", total_changes),
-                    impact: "May indicate need for refactoring or better separation of concerns"
-                        .to_string(),
-                    recommendation: "Consider if changes can be split into smaller, focused PRs"
-                        .to_string(),
-                });
-            } else {
-                positive_findings.push(format!(
-                    "Reasonable number of file changes: {}",
-                    total_changes
-                ));
-            }
-        }
-
-        // 检查阻塞问题
+        // 检查是否有阻塞问题
         if !handoff.blockers.is_empty() {
-            for blocker in &handoff.blockers {
-                issues.push(Issue {
-                    title: "Blocker reported".to_string(),
-                    severity: Severity::Critical,
-                    location: None,
-                    description: blocker.clone(),
-                    impact: "Blocks progress on the mission".to_string(),
-                    recommendation: "Address blockers before proceeding".to_string(),
-                });
-            }
+            issues.push(Issue {
+                title: "Blockers present".to_string(),
+                severity: Severity::Critical,
+                location: None,
+                description: format!(
+                    "{} blocker(s) found: {}",
+                    handoff.blockers.len(),
+                    handoff.blockers.join(", ")
+                ),
+                impact: "Mission cannot proceed until blockers are resolved".to_string(),
+                recommendation: "Resolve all blockers before proceeding".to_string(),
+            });
+        }
+
+        // 检查验证结果
+        if handoff.verification.code_review.status == ReviewStatus::Passed {
+            positive_findings.push("Code review passed".to_string());
+        } else if handoff.verification.code_review.status == ReviewStatus::Failed {
+            issues.push(Issue {
+                title: "Code review failed".to_string(),
+                severity: Severity::High,
+                location: None,
+                description: handoff.verification.code_review.findings.clone(),
+                impact: "Code quality issues may affect reliability".to_string(),
+                recommendation: "Address code review findings before proceeding".to_string(),
+            });
+        }
+
+        if handoff.verification.code_review.issues_found > 0
+            && handoff.verification.code_review.issues_fixed
+                < handoff.verification.code_review.issues_found
+        {
+            let unfixed = handoff.verification.code_review.issues_found
+                - handoff.verification.code_review.issues_fixed;
+            issues.push(Issue {
+                title: "Unfixed code review issues".to_string(),
+                severity: Severity::Medium,
+                location: None,
+                description: format!(
+                    "{unfixed} issue(s) from code review remain unfixed out of {} total",
+                    handoff.verification.code_review.issues_found
+                ),
+                impact: "Remaining issues may cause problems in later stages".to_string(),
+                recommendation: "Fix remaining code review issues or document exceptions"
+                    .to_string(),
+            });
         }
 
         // 检查摘要质量
-        if handoff.salient_summary.is_empty() {
-            issues.push(Issue {
-                title: "Empty summary".to_string(),
-                severity: Severity::High,
-                location: None,
-                description: "Handoff summary is empty".to_string(),
-                impact: "Difficult to understand what was accomplished".to_string(),
-                recommendation: "Provide a clear 1-2 sentence summary".to_string(),
-            });
-        } else if handoff.salient_summary.len() < 20 {
-            issues.push(Issue {
-                title: "Summary too brief".to_string(),
-                severity: Severity::Low,
-                location: None,
-                description: format!(
-                    "Summary is only {} characters",
-                    handoff.salient_summary.len()
-                ),
-                impact: "May not capture key outcomes".to_string(),
-                recommendation: "Expand summary to better describe work done".to_string(),
-            });
-        } else {
-            positive_findings.push("Clear and comprehensive summary provided".to_string());
+        if handoff.salient_summary.len() > 20 {
+            positive_findings.push("Concise summary provided".to_string());
         }
 
         // 检查实现内容
@@ -349,19 +252,16 @@ impl Validator for ScrutinyValidator {
 
             if critical_count > 0 {
                 recommendations.push(format!(
-                    "Address {} critical issue(s) before proceeding",
-                    critical_count
+                    "Address {critical_count} critical issue(s) before proceeding"
                 ));
             }
             if high_count > 0 {
                 recommendations.push(format!(
-                    "Address {} high-priority issue(s) as soon as possible",
-                    high_count
+                    "Address {high_count} high-priority issue(s) as soon as possible"
                 ));
             }
         }
 
-        // 确定总体状态
         let overall_status = if self.config.strict {
             if issues.iter().any(|i| i.severity == Severity::Critical) {
                 ScrutinyStatus::Failed
@@ -370,20 +270,18 @@ impl Validator for ScrutinyValidator {
             } else {
                 ScrutinyStatus::Passed
             }
+        } else if issues.iter().any(|i| i.severity == Severity::Critical)
+            || issues
+                .iter()
+                .filter(|i| i.severity == Severity::High)
+                .count()
+                > 2
+        {
+            ScrutinyStatus::Failed
+        } else if !issues.is_empty() {
+            ScrutinyStatus::Partial
         } else {
-            if issues.iter().any(|i| i.severity == Severity::Critical)
-                || issues
-                    .iter()
-                    .filter(|i| i.severity == Severity::High)
-                    .count()
-                    > 2
-            {
-                ScrutinyStatus::Failed
-            } else if !issues.is_empty() {
-                ScrutinyStatus::Partial
-            } else {
-                ScrutinyStatus::Passed
-            }
+            ScrutinyStatus::Passed
         };
 
         ScrutinyReport {
@@ -408,7 +306,7 @@ mod tests {
             .with_next_steps("Proceed to feature B");
 
         let mut verification = crate::handoff::Verification::default();
-        verification.code_review.status = crate::handoff::ReviewStatus::Passed;
+        verification.code_review.status = ReviewStatus::Passed;
         let handoff = handoff.with_verification(verification);
 
         let validator = ScrutinyValidator::with_defaults();

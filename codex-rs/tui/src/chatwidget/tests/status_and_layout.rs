@@ -174,6 +174,7 @@ async fn helpers_are_available_and_do_not_panic() {
         session_telemetry,
         mission_mode: false,
         pending_mission_goal: false,
+        mission_phase_running: false,
     };
     let mut w = ChatWidget::new_with_app_event(init);
     // Basic construction sanity.

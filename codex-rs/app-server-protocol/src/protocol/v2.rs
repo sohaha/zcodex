@@ -5656,6 +5656,16 @@ pub enum ThreadItem {
     },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
+    NativeToolCall {
+        id: String,
+        tool_name: String,
+        status: NativeToolCallStatus,
+        success: Option<bool>,
+        #[ts(type = "number | null")]
+        duration_ms: Option<i64>,
+    },
+    #[serde(rename_all = "camelCase")]
+    #[ts(rename_all = "camelCase")]
     ImageView { id: String, path: AbsolutePathBuf },
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -5701,6 +5711,7 @@ impl ThreadItem {
             | ThreadItem::DynamicToolCall { id, .. }
             | ThreadItem::CollabAgentToolCall { id, .. }
             | ThreadItem::WebSearch { id, .. }
+            | ThreadItem::NativeToolCall { id, .. }
             | ThreadItem::ImageView { id, .. }
             | ThreadItem::ImageGeneration { id, .. }
             | ThreadItem::EnteredReviewMode { id, .. }
@@ -6069,6 +6080,15 @@ pub enum WebSearchAction {
     },
     #[serde(other)]
     Other,
+}
+
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum NativeToolCallStatus {
+    InProgress,
+    Completed,
 }
 
 impl From<codex_protocol::models::WebSearchAction> for WebSearchAction {

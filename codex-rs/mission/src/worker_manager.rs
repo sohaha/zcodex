@@ -4,12 +4,13 @@
 
 use crate::MissionResult;
 use crate::error::MissionError;
+use chrono::DateTime;
+use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::SystemTime;
 
 /// Worker session 目录名称。
 pub const WORKER_SESSIONS_DIR: &str = "worker_sessions";
@@ -57,7 +58,18 @@ impl WorkerId {
 
     /// 获取 Worker 名称。
     pub fn name(&self) -> &str {
-        self.0.rsplit('-').next().unwrap_or(&self.0)
+        self.0
+            .rfind('-')
+            .map(|idx| &self.0[..idx])
+            .unwrap_or(&self.0)
+    }
+
+    /// 获取 Worker 序号。
+    pub fn sequence(&self) -> u32 {
+        self.0
+            .rfind('-')
+            .and_then(|idx| self.0[idx + 1..].parse().ok())
+            .unwrap_or(0)
     }
 
     /// 获取完整 ID 字符串。
@@ -76,9 +88,9 @@ pub struct WorkerSession {
     /// Worker 状态。
     pub status: WorkerStatus,
     /// 创建时间。
-    pub created_at: SystemTime,
+    pub created_at: DateTime<Utc>,
     /// 更新时间。
-    pub updated_at: SystemTime,
+    pub updated_at: DateTime<Utc>,
     /// 输入数据。
     #[serde(default)]
     pub input: WorkerInput,
@@ -157,7 +169,7 @@ impl WorkerManager {
         let sequence = self.next_sequence(&worker_type)?;
         let id = WorkerId::new(worker_type.clone(), sequence);
 
-        let now = SystemTime::now();
+        let now = Utc::now();
         let session = WorkerSession {
             id: id.clone(),
             worker_type: worker_type.clone(),
@@ -194,7 +206,7 @@ impl WorkerManager {
     /// 更新 Worker session。
     pub fn update_session(&self, session: &WorkerSession) -> MissionResult<()> {
         let mut updated = session.clone();
-        updated.updated_at = SystemTime::now();
+        updated.updated_at = Utc::now();
         self.save_session(&updated)
     }
 
@@ -252,7 +264,7 @@ impl WorkerManager {
 
         let max_sequence = worker_sessions
             .iter()
-            .filter_map(|s| s.id.name().parse::<u32>().ok())
+            .filter_map(|s| Some(s.id.sequence()).filter(|&seq| seq > 0))
             .max()
             .unwrap_or(0);
 

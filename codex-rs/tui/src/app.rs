@@ -1187,6 +1187,7 @@ impl App {
             session_telemetry: self.session_telemetry.clone(),
             mission_mode: false,
             pending_mission_goal: false,
+            mission_phase_running: false,
         }
     }
 
@@ -4601,6 +4602,7 @@ impl App {
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
                     pending_mission_goal: false,
+                    mission_phase_running: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(started))
             }
@@ -4637,6 +4639,7 @@ impl App {
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
                     pending_mission_goal: false,
+                    mission_phase_running: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(resumed))
             }
@@ -4678,6 +4681,7 @@ impl App {
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
                     pending_mission_goal: false,
+                    mission_phase_running: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
@@ -8058,6 +8062,7 @@ mod tests {
             session_telemetry: app.session_telemetry.clone(),
             mission_mode: false,
             pending_mission_goal: false,
+            mission_phase_running: false,
         });
 
         app.enqueue_primary_thread_session(
@@ -12340,6 +12345,7 @@ guardian_approval = true
             session_telemetry: app.session_telemetry.clone(),
             mission_mode: false,
             pending_mission_goal: false,
+            mission_phase_running: false,
         });
         app.replace_chat_widget(replacement);
 

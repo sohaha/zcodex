@@ -355,6 +355,10 @@ impl ToolHandler for ShellHandler {
         ToolKind::Function
     }
 
+    fn owns_lifecycle(&self) -> bool {
+        true
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(
             payload,
@@ -471,6 +475,9 @@ impl ToolHandler for ShellCommandHandler {
         ToolKind::Function
     }
 
+    fn owns_lifecycle(&self) -> bool {
+        true
+    }
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }

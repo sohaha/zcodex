@@ -226,6 +226,8 @@ use codex_protocol::protocol::ViewImageToolCallEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::protocol::WebSearchBeginEvent;
 use codex_protocol::protocol::WebSearchEndEvent;
+use codex_protocol::protocol::NativeToolCallBeginEvent;
+use codex_protocol::protocol::NativeToolCallEndEvent;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_user_input::RequestUserInputEvent;
 use codex_protocol::request_user_input::RequestUserInputQuestionOption;
@@ -355,6 +357,7 @@ use crate::history_cell::HookCell;
 use crate::history_cell::McpToolCallCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::WebSearchCell;
+use crate::history_cell::NativeToolCallCell;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 #[cfg(test)]
@@ -612,6 +615,8 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) mission_mode: bool,
     /// 等待用户输入新的 Mission 目标（reset 后置 true）。
     pub(crate) pending_mission_goal: bool,
+    /// Mission 阶段分析进行中，LLM 完成后弹出确认面板。
+    pub(crate) mission_phase_running: bool,
 }
 
 #[derive(Default)]
@@ -954,6 +959,8 @@ pub(crate) struct ChatWidget {
     mission_mode: bool,
     /// 等待用户输入新的 Mission 目标（reset 后置 true）。
     pub(crate) pending_mission_goal: bool,
+    /// Mission 阶段分析进行中，LLM 完成后弹出确认面板。
+    pub(crate) mission_phase_running: bool,
     // User inputs queued while a turn is in progress.
     queued_user_messages: VecDeque<QueuedUserMessage>,
     // History records for queued user messages. Slash commands such as `/goal`
@@ -2555,7 +2562,14 @@ impl ChatWidget {
                     return;
                 }
 
-                // 弹出阶段确认选择面板。
+                // 判断 LLM 是否正在处理阶段分析（CLI 已注入 prompt 的情况）。
+                // 如果是，等待 LLM 完成后再弹出选择面板。
+                if self.user_turn_pending_start || self.agent_turn_running {
+                    self.mission_phase_running = true;
+                    return;
+                }
+
+                // 从暂停恢复：直接弹出阶段确认选择面板。
                 if state.phase.is_some() {
                     let goal = state.goal.clone();
                     let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
@@ -2622,6 +2636,65 @@ impl ChatWidget {
                 self.add_error_message(format!("读取 Mission 状态失败：{err}"));
             }
         }
+    }
+
+    /// Mission 阶段分析完成后，弹出确认选择面板。
+    fn show_mission_phase_complete_selection(&mut self) {
+        let workspace = self.config.cwd.to_path_buf();
+        let store = codex_mission::MissionStateStore::for_workspace(&workspace);
+        let state = match store.status_report() {
+            Ok(codex_mission::MissionStatusReport::Active { state, .. }) => state,
+            _ => return,
+        };
+        let phase_label = state.phase.map(|p| p.label()).unwrap_or("unknown");
+        let goal = state.goal.clone();
+
+        let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
+            vec![Box::new(move |tx| {
+                tx.send(crate::app_event::AppEvent::ZmissionCommand(
+                    crate::zmission_command::Command::Continue { note: None },
+                ));
+            })]
+        };
+        let reset_actions: Vec<crate::bottom_pane::SelectionAction> = {
+            vec![Box::new(move |tx| {
+                tx.send(crate::app_event::AppEvent::ZmissionCommand(
+                    crate::zmission_command::Command::Reset,
+                ));
+            })]
+        };
+        let items = vec![
+            crate::bottom_pane::SelectionItem {
+                name: "继续下一阶段".to_string(),
+                display_shortcut: Some(crate::key_hint::plain(crossterm::event::KeyCode::Enter)),
+                actions: continue_actions,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            crate::bottom_pane::SelectionItem {
+                name: "结束并开始新 Mission".to_string(),
+                display_shortcut: Some(crate::key_hint::plain(crossterm::event::KeyCode::Char(
+                    'r',
+                ))),
+                actions: reset_actions,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            crate::bottom_pane::SelectionItem {
+                name: "暂停".to_string(),
+                display_shortcut: Some(crate::key_hint::plain(crossterm::event::KeyCode::Esc)),
+                is_default: false,
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+        ];
+        self.show_selection_view(crate::bottom_pane::SelectionViewParams {
+            title: Some(format!("Mission 阶段完成：{phase_label}")),
+            subtitle: Some(format!("目标：{goal}")),
+            footer_hint: Some(crate::bottom_pane::popup_consts::standard_popup_hint_line()),
+            items,
+            ..Default::default()
+        });
     }
 
     pub(crate) fn handle_thread_session(&mut self, session: ThreadSessionState) {
@@ -3009,6 +3082,12 @@ impl ChatWidget {
         self.refresh_pending_input_preview();
 
         if !from_replay && !self.has_queued_follow_up_messages() && !had_pending_steers {
+            // Mission 阶段分析完成：弹出确认选择面板
+            if self.mission_phase_running && self.mission_mode {
+                self.mission_phase_running = false;
+                self.show_mission_phase_complete_selection();
+                return;
+            }
             self.maybe_prompt_plan_implementation();
         }
         // Keep this flag for replayed completion events so a subsequent live TurnComplete can
@@ -4656,6 +4735,42 @@ impl ChatWidget {
         self.had_work_activity = true;
     }
 
+
+    fn on_native_tool_call_begin(&mut self, ev: NativeToolCallBeginEvent) {
+        self.flush_answer_stream_with_separator();
+        self.flush_active_cell();
+        self.active_cell = Some(Box::new(history_cell::new_active_native_tool_call(
+            ev.call_id,
+            ev.tool_name,
+            self.config.animations,
+        )));
+        self.bump_active_cell_revision();
+        self.request_redraw();
+    }
+
+    fn on_native_tool_call_end(&mut self, ev: NativeToolCallEndEvent) {
+        self.flush_answer_stream_with_separator();
+        let mut handled = false;
+        if let Some(cell) = self
+            .active_cell
+            .as_mut()
+            .and_then(|cell| cell.as_any_mut().downcast_mut::<NativeToolCallCell>())
+            && cell.call_id() == ev.call_id
+        {
+            cell.complete();
+            self.bump_active_cell_revision();
+            self.flush_active_cell();
+            handled = true;
+        }
+
+        if !handled {
+            self.add_to_history(history_cell::new_completed_native_tool_call(
+                ev.call_id,
+                ev.tool_name,
+            ));
+        }
+        self.had_work_activity = true;
+    }
     fn on_collab_event(&mut self, cell: PlainHistoryCell) {
         self.flush_answer_stream_with_separator();
         self.add_to_history(cell);
@@ -5627,6 +5742,7 @@ impl ChatWidget {
             session_telemetry,
             mission_mode,
             pending_mission_goal,
+            mission_phase_running,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -5771,6 +5887,7 @@ impl ChatWidget {
             suppress_initial_user_message_submit: false,
             mission_mode,
             pending_mission_goal: false,
+            mission_phase_running: false,
             pending_notification: None,
             quit_shortcut_expires_at: None,
             quit_shortcut_key: None,
@@ -7081,6 +7198,20 @@ impl ChatWidget {
                         .unwrap_or(codex_protocol::models::WebSearchAction::Other),
                 });
             }
+            ThreadItem::NativeToolCall { id, tool_name, status, success, duration_ms } => {
+                self.on_native_tool_call_begin(NativeToolCallBeginEvent {
+                    call_id: id.clone(),
+                    tool_name: tool_name.clone(),
+                });
+                if status == codex_app_server_protocol::NativeToolCallStatus::Completed {
+                    self.on_native_tool_call_end(NativeToolCallEndEvent {
+                        call_id: id,
+                        tool_name,
+                        success: success.unwrap_or(true),
+                        duration: std::time::Duration::from_millis(duration_ms.unwrap_or(0) as u64),
+                    });
+                }
+            }
             ThreadItem::ImageView { id, path } => {
                 self.on_view_image_tool_call(ViewImageToolCallEvent { call_id: id, path });
             }
@@ -7621,6 +7752,12 @@ impl ChatWidget {
             ThreadItem::WebSearch { id, .. } => {
                 self.on_web_search_begin(WebSearchBeginEvent { call_id: id });
             }
+            ThreadItem::NativeToolCall { id, tool_name, .. } => {
+                self.on_native_tool_call_begin(NativeToolCallBeginEvent {
+                    call_id: id,
+                    tool_name,
+                });
+            }
             ThreadItem::ImageGeneration { id, .. } => {
                 self.on_image_generation_begin(ImageGenerationBeginEvent { call_id: id });
             }
@@ -7969,6 +8106,8 @@ impl ChatWidget {
             EventMsg::McpToolCallEnd(ev) => self.on_mcp_tool_call_end(ev),
             EventMsg::WebSearchBegin(ev) => self.on_web_search_begin(ev),
             EventMsg::WebSearchEnd(ev) => self.on_web_search_end(ev),
+            EventMsg::NativeToolCallBegin(ev) => self.on_native_tool_call_begin(ev),
+            EventMsg::NativeToolCallEnd(ev) => self.on_native_tool_call_end(ev),
             EventMsg::GetHistoryEntryResponse(ev) => self.handle_history_entry_response(ev),
             EventMsg::McpListToolsResponse(ev) => self.on_list_mcp_tools(ev),
             EventMsg::ListSkillsResponse(ev) => self.on_list_skills(ev),

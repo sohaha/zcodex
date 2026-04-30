@@ -105,6 +105,10 @@ impl ToolHandler for UnifiedExecHandler {
         ToolKind::Function
     }
 
+    fn owns_lifecycle(&self) -> bool {
+        true
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Function { .. })
     }

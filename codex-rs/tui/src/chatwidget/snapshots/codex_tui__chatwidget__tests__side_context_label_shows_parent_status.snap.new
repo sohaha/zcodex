@@ -1,0 +1,21 @@
+---
+source: tui/src/chatwidget/tests/side.rs
+assertion_line: 309
+expression: terminal.backend()
+---
+"                                                                                "
+"  .--------------------.                                                        "
+"  | 伴着一点火星现身。 |                                                        " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " ")]
+"  '--------------------.                                                        "
+"    \                                                                           "
+"    ·     ·                                                                     "
+"    --(*)--                                                                     "
+"   /\_/\\                                                                       "
+"  ( ^ ~ ^ )                                                                     "
+"   \\_v_//                                                                      "
+"    ·     ·                                                                     "
+"  Flare ★★★ 稀有 龙 · 坐立不安                                                  " Hidden by multi-width symbols: [(13, " "), (15, " "), (18, " "), (23, " "), (25, " "), (27, " "), (29, " ")]
+"                                                                                "
+"› Check recently modified functions for compatibility                           "
+"                                                                                "
+"  gpt-5.5 默认 · 已…  Side from main thread · main needs input · Esc to return  " Hidden by multi-width symbols: [(11, " "), (13, " "), (18, " ")]

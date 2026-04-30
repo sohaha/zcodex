@@ -1609,6 +1609,9 @@ pub enum EventMsg {
 
     WebSearchEnd(WebSearchEndEvent),
 
+    NativeToolCallBegin(NativeToolCallBeginEvent),
+
+    NativeToolCallEnd(NativeToolCallEndEvent),
     ImageGenerationBegin(ImageGenerationBeginEvent),
 
     ImageGenerationEnd(ImageGenerationEndEvent),
@@ -2611,6 +2614,20 @@ pub struct WebSearchEndEvent {
     pub action: WebSearchAction,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct NativeToolCallBeginEvent {
+    pub call_id: String,
+    pub tool_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct NativeToolCallEndEvent {
+    pub call_id: String,
+    pub tool_name: String,
+    pub success: bool,
+    #[ts(type = "string")]
+    pub duration: std::time::Duration,
+}
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ImageGenerationBeginEvent {
     pub call_id: String,

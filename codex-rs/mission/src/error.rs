@@ -9,6 +9,15 @@ pub enum MissionError {
     #[error("当前工作区还没有 Mission 状态文件：{path}")]
     MissingState { path: PathBuf },
 
+    #[error("非法阶段转换：不能从 {from:?} 跳转到 {to:?}")]
+    InvalidPhaseTransition { from: String, to: String },
+
+    #[error("Mission 已处于终态 {status}，无法继续推进")]
+    TerminalState { status: String },
+
+    #[error("Handoff 验证失败：{reason}")]
+    HandoffValidation { reason: String },
+
     #[error("无法读取 Mission 状态文件 {path}: {source}")]
     ReadState {
         path: PathBuf,

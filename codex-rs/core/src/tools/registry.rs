@@ -26,6 +26,8 @@ use codex_hooks::HookToolInputLocalShell;
 use codex_hooks::HookToolKind;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::NativeToolCallBeginEvent;
+use codex_protocol::protocol::NativeToolCallEndEvent;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_tools::ConfiguredToolSpec;
 use codex_tools::ToolName;
@@ -81,6 +83,13 @@ pub trait ToolHandler: Send + Sync {
     /// Creates an optional consumer for streamed tool argument diffs.
     fn create_diff_consumer(&self) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
         None
+    }
+
+    /// Returns `true` if this handler emits its own begin/end lifecycle events
+    /// (e.g., ExecCommandBegin/End, McpToolCallBegin/End). When true, the
+    /// dispatch layer skips emitting NativeToolCallBegin/End to avoid duplicates.
+    fn owns_lifecycle(&self) -> bool {
+        false
     }
 
     /// Perform the actual [ToolInvocation] and returns a [ToolOutput] containing
@@ -369,6 +378,22 @@ impl ToolRegistry {
         let response_cell = tokio::sync::Mutex::new(None);
         let invocation_for_tool = invocation.clone();
 
+        let emit_native_lifecycle =
+            handler.kind() == ToolKind::Function && !handler.owns_lifecycle();
+
+        if emit_native_lifecycle {
+            invocation
+                .session
+                .send_event(
+                    &invocation.turn,
+                    EventMsg::NativeToolCallBegin(NativeToolCallBeginEvent {
+                        call_id: invocation.call_id.clone(),
+                        tool_name: tool_name.display().to_string(),
+                    }),
+                )
+                .await;
+        }
+
         let started = Instant::now();
         let result = otel
             .log_tool_result_with_tags(
@@ -402,6 +427,20 @@ impl ToolRegistry {
             )
             .await;
         let duration = started.elapsed();
+        if emit_native_lifecycle {
+            invocation
+                .session
+                .send_event(
+                    &invocation.turn,
+                    EventMsg::NativeToolCallEnd(NativeToolCallEndEvent {
+                        call_id: invocation.call_id.clone(),
+                        tool_name: tool_name.display().to_string(),
+                        success: matches!(&result, Ok(_)),
+                        duration,
+                    }),
+                )
+                .await;
+        }
         let (output_preview, success) = match &result {
             Ok((preview, success)) => (preview.clone(), *success),
             Err(err) => (err.to_string(), false),

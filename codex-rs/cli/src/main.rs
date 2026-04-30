@@ -911,12 +911,11 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_remote_auth_token_env.as_deref(),
                 "zmission",
             )?;
-            run_zmission_command(
-                zmission_cli,
-                arg0_paths.clone(),
-                root_config_overrides.clone(),
-            )
-            .await?;
+            let mut zmission_overrides = root_config_overrides.clone();
+            if let Some(provider) = interactive.provider.as_deref() {
+                inject_provider_override(&mut zmission_overrides, provider);
+            }
+            run_zmission_command(zmission_cli, arg0_paths.clone(), zmission_overrides).await?;
         }
         Some(Subcommand::Mcp(mut mcp_cli)) => {
             reject_remote_mode_for_subcommand(

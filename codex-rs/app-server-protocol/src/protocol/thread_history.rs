@@ -13,6 +13,7 @@ use crate::protocol::v2::DynamicToolCallStatus;
 use crate::protocol::v2::McpToolCallError;
 use crate::protocol::v2::McpToolCallResult;
 use crate::protocol::v2::McpToolCallStatus;
+use crate::protocol::v2::NativeToolCallStatus;
 use crate::protocol::v2::ThreadItem;
 use crate::protocol::v2::Turn;
 use crate::protocol::v2::TurnError as V2TurnError;
@@ -54,6 +55,8 @@ use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::ViewImageToolCallEvent;
 use codex_protocol::protocol::WebSearchBeginEvent;
 use codex_protocol::protocol::WebSearchEndEvent;
+use codex_protocol::protocol::NativeToolCallBeginEvent;
+use codex_protocol::protocol::NativeToolCallEndEvent;
 use std::collections::HashMap;
 use tracing::warn;
 use uuid::Uuid;
@@ -174,6 +177,8 @@ impl ThreadHistoryBuilder {
             }
             EventMsg::WebSearchBegin(payload) => self.handle_web_search_begin(payload),
             EventMsg::WebSearchEnd(payload) => self.handle_web_search_end(payload),
+            EventMsg::NativeToolCallBegin(payload) => self.handle_native_tool_call_begin(payload),
+            EventMsg::NativeToolCallEnd(payload) => self.handle_native_tool_call_end(payload),
             EventMsg::ExecCommandBegin(payload) => self.handle_exec_command_begin(payload),
             EventMsg::ExecCommandEnd(payload) => self.handle_exec_command_end(payload),
             EventMsg::GuardianAssessment(payload) => self.handle_guardian_assessment(payload),
@@ -406,6 +411,28 @@ impl ThreadHistoryBuilder {
             id: payload.call_id.clone(),
             query: payload.query.clone(),
             action: Some(WebSearchAction::from(payload.action.clone())),
+        };
+        self.upsert_item_in_current_turn(item);
+    }
+
+    fn handle_native_tool_call_begin(&mut self, payload: &NativeToolCallBeginEvent) {
+        let item = ThreadItem::NativeToolCall {
+            id: payload.call_id.clone(),
+            tool_name: payload.tool_name.clone(),
+            status: NativeToolCallStatus::InProgress,
+            success: None,
+            duration_ms: None,
+        };
+        self.upsert_item_in_current_turn(item);
+    }
+
+    fn handle_native_tool_call_end(&mut self, payload: &NativeToolCallEndEvent) {
+        let item = ThreadItem::NativeToolCall {
+            id: payload.call_id.clone(),
+            tool_name: payload.tool_name.clone(),
+            status: NativeToolCallStatus::Completed,
+            success: Some(payload.success),
+            duration_ms: Some(payload.duration.as_millis() as i64),
         };
         self.upsert_item_in_current_turn(item);
     }

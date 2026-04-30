@@ -184,6 +184,10 @@ impl ToolHandler for McpResourceHandler {
         ToolKind::Function
     }
 
+    fn owns_lifecycle(&self) -> bool {
+        true
+    }
+
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
             session,

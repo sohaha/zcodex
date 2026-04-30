@@ -1815,6 +1815,8 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::McpToolCallEnd(_)
         | EventMsg::WebSearchBegin(_)
         | EventMsg::WebSearchEnd(_)
+        | EventMsg::NativeToolCallBegin(_)
+        | EventMsg::NativeToolCallEnd(_)
         | EventMsg::ExecCommandBegin(_)
         | EventMsg::ExecCommandOutputDelta(_)
         | EventMsg::TerminalInteraction(_)
@@ -2581,6 +2583,36 @@ async fn try_run_sampling_request(
                 response_id: _,
                 token_usage,
             } => {
+                // 某些第三方代理（如 manifest/glm）只通过 output_text.delta
+                // 流式发送文本，而不发送 output_item.added/done 事件。
+                // 此时 pending_stream_deltas 中仍有未消费的文本。
+                // 合成一个 assistant message item 以便 UI 正确显示。
+                if active_item.is_none() && !pending_stream_deltas.output_text.is_empty() {
+                    let combined: String =
+                        pending_stream_deltas.output_text.iter().cloned().collect();
+                    let synthetic_item = ResponseItem::Message {
+                        id: None,
+                        role: "assistant".to_string(),
+                        content: vec![ContentItem::OutputText {
+                            text: combined.clone(),
+                        }],
+                        end_turn: None,
+                        phase: None,
+                    };
+                    if let Some(turn_item) = handle_non_tool_response_item(
+                        sess.as_ref(),
+                        turn_context.as_ref(),
+                        &synthetic_item,
+                        plan_mode,
+                    )
+                    .await
+                    {
+                        sess.emit_turn_item_started(&turn_context, &turn_item).await;
+                        pending_stream_deltas.take_output_text();
+                        sess.emit_turn_item_completed(&turn_context, turn_item)
+                            .await;
+                    }
+                }
                 flush_assistant_text_segments_all(
                     &sess,
                     &turn_context,

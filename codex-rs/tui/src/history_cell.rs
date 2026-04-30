@@ -1802,6 +1802,78 @@ pub(crate) fn new_web_search_call(
     cell
 }
 
+fn native_tool_call_header(completed: bool, tool_name: &str) -> String {
+    if completed {
+        format!("已探索 • {tool_name}")
+    } else {
+        format!("探索中 • {tool_name}")
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct NativeToolCallCell {
+    call_id: String,
+    tool_name: String,
+    start_time: Instant,
+    completed: bool,
+    animations_enabled: bool,
+}
+
+impl NativeToolCallCell {
+    pub(crate) fn new(
+        call_id: String,
+        tool_name: String,
+        animations_enabled: bool,
+    ) -> Self {
+        Self {
+            call_id,
+            tool_name,
+            start_time: Instant::now(),
+            completed: false,
+            animations_enabled,
+        }
+    }
+
+    pub(crate) fn call_id(&self) -> &str {
+        &self.call_id
+    }
+
+    pub(crate) fn complete(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl HistoryCell for NativeToolCallCell {
+    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let bullet = if self.completed {
+            "•".dim()
+        } else {
+            spinner(Some(self.start_time), self.animations_enabled)
+        };
+        let header = native_tool_call_header(self.completed, &self.tool_name);
+        let text: Text<'static> = Line::from(vec![header.bold()]).into();
+        PrefixedWrappedHistoryCell::new(text, vec![bullet, " ".into()], "  ").display_lines(width)
+    }
+}
+
+pub(crate) fn new_active_native_tool_call(
+    call_id: String,
+    tool_name: String,
+    animations_enabled: bool,
+) -> NativeToolCallCell {
+    NativeToolCallCell::new(call_id, tool_name, animations_enabled)
+}
+
+pub(crate) fn new_completed_native_tool_call(
+    call_id: String,
+    tool_name: String,
+) -> NativeToolCallCell {
+    let mut cell = NativeToolCallCell::new(call_id, tool_name, /*animations_enabled*/ false);
+    cell.complete();
+    cell
+}
+
+
 /// Returns an additional history cell if an MCP tool result includes a decodable image.
 ///
 /// This intentionally returns at most one cell: the first image in `CallToolResult.content` that

@@ -1,0 +1,21 @@
+---
+source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 502
+expression: normalize_snapshot_paths(rendered)
+---
+• 正 在 审 查  2 个 批 准 请 求  (0s • esc 中 断 )
+  └ • rm -rf '/tmp/guardian target 1'
+    • rm -rf '/tmp/guardian target 2'
+  .------------.
+  | 悠 然 趴 下 。  |
+  '------------.
+    \
+   n___n
+  ( ^  ^ )
+  ( 00 )
+  Sundae ★ 常 见  水 豚  · 坐 立 不 安
+
+
+› 让  Codex 帮 你 做 任 何 事
+
+  gpt-5.5 默 认  · 已 用  0% · /tmp/project

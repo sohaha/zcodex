@@ -2,13 +2,15 @@
 //!
 //! 定义 Worker 之间交接的标准格式和相关操作。
 
-use crate::MissionResult;
-use crate::error::MissionError;
-use serde::Deserialize;
-use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+
+use serde::Deserialize;
+use serde::Serialize;
+
+use crate::MissionResult;
+use crate::error::MissionError;
 
 /// Handoff 文件扩展名。
 pub const HANDOFF_EXT: &str = "json";
@@ -98,13 +100,9 @@ pub struct UserTestingResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewStatus {
-    /// 通过。
     Passed,
-    /// 失败。
     Failed,
-    /// 部分完成。
     Partial,
-    /// 跳过。
     Skipped,
 }
 
@@ -187,35 +185,38 @@ impl Handoff {
         self
     }
 
-    /// 验证 Handoff 内容的完整性。
-    pub fn validate(&self) -> Result<(), HandoffValidationError> {
-        if self.salient_summary.is_empty() {
-            return Err(HandoffValidationError::EmptySummary);
+    /// 校验 Handoff 必填字段。
+    pub fn validate(&self) -> MissionResult<()> {
+        if self.salient_summary.trim().is_empty() {
+            return Err(MissionError::HandoffValidation {
+                reason: "核心摘要不能为空".to_string(),
+            });
         }
-
         if self.what_was_implemented.is_empty() {
-            return Err(HandoffValidationError::EmptyImplementation);
+            return Err(MissionError::HandoffValidation {
+                reason: "实现内容不能为空".to_string(),
+            });
         }
-
-        if self.next_steps.is_empty() {
-            return Err(HandoffValidationError::EmptyNextSteps);
+        if self.next_steps.trim().is_empty() {
+            return Err(MissionError::HandoffValidation {
+                reason: "下一步建议不能为空".to_string(),
+            });
         }
-
         Ok(())
     }
 
-    /// 保存到文件。
+    /// 保存 Handoff 到指定目录。
     pub fn save_to(&self, handoffs_dir: &Path) -> MissionResult<PathBuf> {
         fs::create_dir_all(handoffs_dir).map_err(|source| MissionError::CreateHandoffDir {
             path: handoffs_dir.to_path_buf(),
             source,
         })?;
 
-        let timestamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        let safe_ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
         let filename = format!(
             "{}-{}.{}",
             self.worker.replace('-', "_"),
-            timestamp,
+            safe_ts,
             HANDOFF_EXT
         );
         let path = handoffs_dir.join(&filename);
@@ -231,7 +232,7 @@ impl Handoff {
         Ok(path)
     }
 
-    /// 从文件加载。
+    /// 从文件加载 Handoff。
     pub fn load_from(path: &Path) -> MissionResult<Self> {
         let content = fs::read_to_string(path).map_err(|source| MissionError::ReadHandoff {
             path: path.to_path_buf(),
@@ -244,7 +245,7 @@ impl Handoff {
         })
     }
 
-    /// 生成 Markdown 报告。
+    /// 生成 Markdown 格式的交接报告。
     pub fn to_markdown(&self) -> String {
         let mut report = String::new();
 
@@ -263,50 +264,30 @@ impl Handoff {
 
         if !self.files_modified.is_empty() {
             report.push_str("## Files Modified\n\n");
-            for change in &self.files_modified {
-                report.push_str(&format!(
-                    "- **{}**: {}\n",
-                    change.path, change.change_summary
-                ));
+            for file in &self.files_modified {
+                report.push_str(&format!("- `{}`: {}\n", file.path, file.change_summary));
             }
             report.push('\n');
         }
 
         if !self.files_created.is_empty() {
             report.push_str("## Files Created\n\n");
-            for creation in &self.files_created {
-                report.push_str(&format!("- **{}**: {}\n", creation.path, creation.purpose));
+            for file in &self.files_created {
+                report.push_str(&format!("- `{}`: {}\n", file.path, file.purpose));
             }
             report.push('\n');
         }
 
         report.push_str("## Verification\n\n");
-
-        report.push_str("### Code Review\n\n");
         report.push_str(&format!(
-            "**Status:** {}\n",
-            self.verification.code_review.status.label()
-        ));
-        report.push_str(&format!(
-            "**Issues Found:** {}\n",
+            "**Code Review:** {} ({}/{} issues fixed)\n",
+            self.verification.code_review.status.label(),
+            self.verification.code_review.issues_fixed,
             self.verification.code_review.issues_found
         ));
         report.push_str(&format!(
-            "**Issues Fixed:** {}\n",
-            self.verification.code_review.issues_fixed
-        ));
-        report.push_str(&format!(
-            "**Findings:** {}\n\n",
-            self.verification.code_review.findings
-        ));
-
-        report.push_str("### User Testing\n\n");
-        report.push_str(&format!(
-            "**Status:** {}\n",
-            self.verification.user_testing.status.label()
-        ));
-        report.push_str(&format!(
-            "**Test Cases:** {}/{}\n",
+            "**User Testing:** {} ({}/{} passed)\n",
+            self.verification.user_testing.status.label(),
             self.verification.user_testing.test_cases_passed,
             self.verification.user_testing.test_cases_executed
         ));
@@ -357,29 +338,6 @@ impl Default for Verification {
     }
 }
 
-/// Handoff 验证错误。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum HandoffValidationError {
-    /// 核心摘要为空。
-    EmptySummary,
-    /// 实现内容为空。
-    EmptyImplementation,
-    /// 下一步建议为空。
-    EmptyNextSteps,
-}
-
-impl std::fmt::Display for HandoffValidationError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::EmptySummary => write!(f, "核心摘要不能为空"),
-            Self::EmptyImplementation => write!(f, "实现内容不能为空"),
-            Self::EmptyNextSteps => write!(f, "下一步建议不能为空"),
-        }
-    }
-}
-
-impl std::error::Error for HandoffValidationError {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,13 +373,14 @@ mod tests {
     }
 
     #[test]
-    fn validate_handoff_failure() {
+    fn validate_handoff_empty_summary() {
         let handoff = Handoff::new("test-worker".to_string());
 
-        assert!(matches!(
-            handoff.validate(),
-            Err(HandoffValidationError::EmptySummary)
-        ));
+        let err = handoff.validate().unwrap_err();
+        assert!(
+            matches!(err, MissionError::HandoffValidation { .. }),
+            "expected HandoffValidation error, got {err:?}"
+        );
     }
 
     #[test]

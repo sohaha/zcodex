@@ -2,13 +2,14 @@
 //!
 //! 验证功能从用户视角的正确性和可用性。
 
-use crate::handoff::Handoff;
-use crate::handoff::ReviewStatus;
-use crate::handoff::UserTestingResult;
-use crate::validators::Validator;
-use crate::validators::ValidatorConfig;
 use serde::Deserialize;
 use serde::Serialize;
+
+use crate::handoff::Handoff;
+use crate::handoff::ReviewStatus;
+use crate::validators::Severity;
+use crate::validators::Validator;
+use crate::validators::ValidatorConfig;
 
 /// User Testing 验证报告。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,11 +30,8 @@ pub struct UserTestingReport {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestingStatus {
-    /// 通过。
     Passed,
-    /// 失败。
     Failed,
-    /// 部分通过。
     Partial,
 }
 
@@ -51,15 +49,10 @@ impl TestingStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestCategory {
-    /// 冒烟测试。
     Smoke,
-    /// 正常用例。
     Normal,
-    /// 边界用例。
     Edge,
-    /// 错误用例。
     Error,
-    /// 集成用例。
     Integration,
 }
 
@@ -78,13 +71,9 @@ impl TestCategory {
 /// 单个测试用例结果。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestResult {
-    /// 测试名称。
     pub name: String,
-    /// 测试分类。
     pub category: TestCategory,
-    /// 测试状态。
     pub status: TestStatus,
-    /// 备注。
     pub notes: String,
 }
 
@@ -92,11 +81,8 @@ pub struct TestResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestStatus {
-    /// 通过。
     Passed,
-    /// 失败。
     Failed,
-    /// 跳过。
     Skipped,
 }
 
@@ -113,47 +99,14 @@ impl TestStatus {
 /// 测试发现的问题。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TestIssue {
-    /// 问题标题。
     pub title: String,
-    /// 测试用例。
     pub test_case: String,
-    /// 分类。
     pub category: TestCategory,
-    /// 严重程度。
-    pub severity: IssueSeverity,
-    /// 预期行为。
+    pub severity: Severity,
     pub expected: String,
-    /// 实际行为。
     pub actual: String,
-    /// 影响。
     pub impact: String,
-    /// 建议。
     pub recommendation: String,
-}
-
-/// 问题严重程度。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IssueSeverity {
-    /// 关键问题。
-    Critical,
-    /// 高优先级问题。
-    High,
-    /// 中等优先级问题。
-    Medium,
-    /// 低优先级问题。
-    Low,
-}
-
-impl IssueSeverity {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Critical => "Critical",
-            Self::High => "High",
-            Self::Medium => "Medium",
-            Self::Low => "Low",
-        }
-    }
 }
 
 /// User Testing 验证器。
@@ -163,12 +116,10 @@ pub struct UserTestingValidator {
 }
 
 impl UserTestingValidator {
-    /// 创建新的 User Testing 验证器。
     pub fn new(config: ValidatorConfig) -> Self {
         Self { config }
     }
 
-    /// 使用默认配置创建验证器。
     pub fn with_defaults() -> Self {
         Self::new(ValidatorConfig::default())
     }
@@ -178,106 +129,70 @@ impl UserTestingValidator {
         let mut output = String::new();
 
         output.push_str("# User Testing Validation Report\n\n");
-
         output.push_str(&format!(
             "**Overall Status:** {}\n",
             report.overall_status.label()
         ));
 
         let total_tests = report.test_results.len();
-        let passed_tests = report
+        let passed = report
             .test_results
             .iter()
             .filter(|t| t.status == TestStatus::Passed)
             .count();
-        let failed_tests = report
+        let failed = report
             .test_results
             .iter()
             .filter(|t| t.status == TestStatus::Failed)
             .count();
-        let skipped_tests = report
+        let skipped = report
             .test_results
             .iter()
             .filter(|t| t.status == TestStatus::Skipped)
             .count();
 
-        output.push_str(&format!("**Tests Executed:** {}\n", total_tests));
-        output.push_str(&format!("**Tests Passed:** {}\n", passed_tests));
-        output.push_str(&format!("**Tests Failed:** {}\n", failed_tests));
-        output.push_str(&format!("**Tests Skipped:** {}\n\n", skipped_tests));
+        output.push_str(&format!(
+            "**Tests Executed:** {} (Passed: {}, Failed: {}, Skipped: {})\n\n",
+            total_tests, passed, failed, skipped
+        ));
 
-        // 测试结果表格
         if !report.test_results.is_empty() {
             output.push_str("## Test Results\n\n");
-
-            // 按分类组织
-            for category in [
-                TestCategory::Smoke,
-                TestCategory::Normal,
-                TestCategory::Edge,
-                TestCategory::Error,
-                TestCategory::Integration,
-            ] {
-                let tests: Vec<_> = report
-                    .test_results
-                    .iter()
-                    .filter(|t| t.category == category)
-                    .collect();
-
-                if !tests.is_empty() {
-                    output.push_str(&format!("### {} Tests\n\n", category.label()));
-                    output.push_str("| Test | Status | Notes |\n");
-                    output.push_str("|------|--------|-------|\n");
-
-                    for test in tests {
-                        output.push_str(&format!(
-                            "| {} | {} | {} |\n",
-                            test.name,
-                            test.status.label(),
-                            test.notes
-                        ));
-                    }
-                    output.push('\n');
-                }
+            output.push_str("| Test | Category | Status | Notes |\n");
+            output.push_str("|------|----------|--------|-------|\n");
+            for test in &report.test_results {
+                output.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    test.name,
+                    test.category.label(),
+                    test.status.label(),
+                    test.notes
+                ));
             }
+            output.push('\n');
         }
 
-        // 发现的问题
         if !report.issues.is_empty() {
-            output.push_str("## Issues Found\n\n");
-
-            for severity in [
-                IssueSeverity::Critical,
-                IssueSeverity::High,
-                IssueSeverity::Medium,
-                IssueSeverity::Low,
-            ] {
-                let issues: Vec<_> = report
-                    .issues
-                    .iter()
-                    .filter(|i| i.severity == severity)
-                    .collect();
-
-                if !issues.is_empty() {
-                    output.push_str(&format!("### {} Issues\n\n", severity.label()));
-
-                    for issue in issues {
-                        output.push_str(&format!("#### {}\n\n", issue.title));
-                        output.push_str(&format!("- **Test Case:** {}\n", issue.test_case));
-                        output.push_str(&format!("- **Category:** {}\n", issue.category.label()));
-                        output.push_str(&format!("- **Expected:** {}\n", issue.expected));
-                        output.push_str(&format!("- **Actual:** {}\n", issue.actual));
-                        output.push_str(&format!("- **Impact:** {}\n", issue.impact));
-                        output.push_str(&format!(
-                            "- **Recommendation:** {}\n\n",
-                            issue.recommendation
-                        ));
-                    }
-                }
+            output.push_str("## Issues\n\n");
+            for issue in &report.issues {
+                output.push_str(&format!(
+                    "### {} [{}]\n\n",
+                    issue.title,
+                    issue.severity.label()
+                ));
+                output.push_str(&format!("- **Test Case:** {}\n", issue.test_case));
+                output.push_str(&format!(
+                    "- **Expected:** {}\n- **Actual:** {}\n",
+                    issue.expected, issue.actual
+                ));
+                output.push_str(&format!("- **Impact:** {}\n", issue.impact));
+                output.push_str(&format!(
+                    "- **Recommendation:** {}\n\n",
+                    issue.recommendation
+                ));
             }
         }
 
-        // 正面发现
         if !report.positive_findings.is_empty() {
             output.push_str("## Positive Findings\n\n");
             for finding in &report.positive_findings {
@@ -286,27 +201,12 @@ impl UserTestingValidator {
             output.push('\n');
         }
 
-        // 建议
         if !report.recommendations.is_empty() {
             output.push_str("## Recommendations\n\n");
             for rec in &report.recommendations {
                 output.push_str(&format!("- {}\n", rec));
             }
             output.push('\n');
-        }
-
-        // 总体结论
-        output.push_str("## Conclusion\n\n");
-        match report.overall_status {
-            TestingStatus::Passed => {
-                output.push_str("All critical tests passed. User experience is acceptable.\n");
-            }
-            TestingStatus::Failed => {
-                output.push_str("Critical tests failed or smoke tests failed. User experience is not acceptable.\n");
-            }
-            TestingStatus::Partial => {
-                output.push_str("Some tests failed but core functionality works. User experience is acceptable with some friction.\n");
-            }
         }
 
         output
@@ -316,194 +216,104 @@ impl UserTestingValidator {
 impl Validator for UserTestingValidator {
     type Report = UserTestingReport;
 
-    fn validate(&self, handoff: &Handoff) -> Self::Report {
+    fn validate(&self, handoff: &Handoff) -> UserTestingReport {
         let mut test_results = Vec::new();
         let mut issues = Vec::new();
         let mut positive_findings = Vec::new();
         let mut recommendations = Vec::new();
 
-        // 从 Handoff 提取用户测试结果
         let user_testing = &handoff.verification.user_testing;
 
-        // 检查测试状态
-        match user_testing.status {
-            ReviewStatus::Passed => {
-                // 添加综合测试结果
-                test_results.push(TestResult {
-                    name: "Overall User Testing".to_string(),
-                    category: TestCategory::Normal,
-                    status: TestStatus::Passed,
-                    notes: format!(
-                        "{} of {} test cases passed",
-                        user_testing.test_cases_passed, user_testing.test_cases_executed
-                    ),
-                });
-
-                positive_findings.push(format!(
-                    "All user tests passed ({} test cases)",
-                    user_testing.test_cases_executed
-                ));
-            }
-            ReviewStatus::Failed => {
-                test_results.push(TestResult {
-                    name: "Overall User Testing".to_string(),
-                    category: TestCategory::Smoke,
-                    status: TestStatus::Failed,
-                    notes: user_testing.results.clone(),
-                });
-
-                issues.push(TestIssue {
-                    title: "User testing failed".to_string(),
-                    test_case: "Overall Testing".to_string(),
-                    category: TestCategory::Smoke,
-                    severity: IssueSeverity::Critical,
-                    expected: "All tests should pass".to_string(),
-                    actual: format!("Tests failed: {}", user_testing.results),
-                    impact: "Core functionality may not work for users".to_string(),
-                    recommendation: "Review and fix failing tests before proceeding".to_string(),
-                });
-            }
-            ReviewStatus::Partial => {
-                let pass_rate = if user_testing.test_cases_executed > 0 {
-                    (user_testing.test_cases_passed as f64
-                        / user_testing.test_cases_executed as f64)
-                        * 100.0
-                } else {
-                    0.0
-                };
-
-                test_results.push(TestResult {
-                    name: "Overall User Testing".to_string(),
-                    category: TestCategory::Normal,
-                    status: TestStatus::Passed,
-                    notes: format!(
-                        "{} of {} tests passed ({:.0}%)",
-                        user_testing.test_cases_passed, user_testing.test_cases_executed, pass_rate
-                    ),
-                });
-
-                if pass_rate >= 90.0 {
-                    positive_findings.push(format!("High test pass rate: {:.0}%", pass_rate));
-                } else if pass_rate >= 70.0 {
-                    issues.push(TestIssue {
-                        title: "Some tests failed".to_string(),
-                        test_case: "Overall Testing".to_string(),
-                        category: TestCategory::Normal,
-                        severity: IssueSeverity::Medium,
-                        expected: "All tests should pass".to_string(),
-                        actual: format!("{:.0}% of tests passed", pass_rate),
-                        impact: "Some features may not work correctly".to_string(),
-                        recommendation: "Fix failing tests to improve reliability".to_string(),
-                    });
-                } else {
-                    issues.push(TestIssue {
-                        title: "Many tests failed".to_string(),
-                        test_case: "Overall Testing".to_string(),
-                        category: TestCategory::Smoke,
-                        severity: IssueSeverity::High,
-                        expected: "All tests should pass".to_string(),
-                        actual: format!("Only {:.0}% of tests passed", pass_rate),
-                        impact: "Significant functionality may be broken".to_string(),
-                        recommendation: "Critical: Fix failing tests before proceeding".to_string(),
-                    });
-                }
-            }
-            ReviewStatus::Skipped => {
-                test_results.push(TestResult {
-                    name: "User Testing".to_string(),
-                    category: TestCategory::Smoke,
-                    status: TestStatus::Skipped,
-                    notes: "Testing was skipped".to_string(),
-                });
-
-                issues.push(TestIssue {
-                    title: "User testing was skipped".to_string(),
-                    test_case: "Overall Testing".to_string(),
-                    category: TestCategory::Smoke,
-                    severity: IssueSeverity::High,
-                    expected: "Tests should be run".to_string(),
-                    actual: "No testing was performed".to_string(),
-                    impact: "Cannot verify functionality works for users".to_string(),
-                    recommendation: "Run user tests before proceeding".to_string(),
-                });
-            }
-        }
-
-        // 检查是否有文件变更（假设有变更就需要测试）
-        if !handoff.files_modified.is_empty() || !handoff.files_created.is_empty() {
-            if user_testing.test_cases_executed == 0 {
-                issues.push(TestIssue {
-                    title: "No tests executed despite code changes".to_string(),
-                    test_case: "Test Coverage".to_string(),
-                    category: TestCategory::Normal,
-                    severity: IssueSeverity::High,
-                    expected: "Tests should be run for code changes".to_string(),
-                    actual: "No tests were executed".to_string(),
-                    impact: "Cannot verify code changes work correctly".to_string(),
-                    recommendation: "Write and run tests for new functionality".to_string(),
-                });
-            }
-        }
-
-        // 检查阻塞问题对用户体验的影响
-        if !handoff.blockers.is_empty() {
-            for blocker in &handoff.blockers {
-                issues.push(TestIssue {
-                    title: "User-facing blocker".to_string(),
-                    test_case: "Workflow Test".to_string(),
-                    category: TestCategory::Smoke,
-                    severity: IssueSeverity::Critical,
-                    expected: "User can complete their workflow".to_string(),
-                    actual: format!("Blocked by: {}", blocker),
-                    impact: "Users cannot complete their tasks".to_string(),
-                    recommendation: "Resolve blockers before release".to_string(),
-                });
-            }
-        }
-
-        // 检查剩余工作对用户体验的影响
-        if !handoff.verification.remaining_work.is_empty() {
+        // 根据测试结果生成测试用例
+        if user_testing.status == ReviewStatus::Passed {
             test_results.push(TestResult {
-                name: "Remaining Work Assessment".to_string(),
-                category: TestCategory::Normal,
-                status: TestStatus::Skipped,
-                notes: handoff.verification.remaining_work.clone(),
+                name: "core_functionality".to_string(),
+                category: TestCategory::Smoke,
+                status: TestStatus::Passed,
+                notes: user_testing.results.clone(),
+            });
+            positive_findings.push(format!(
+                "All {} tests passed",
+                user_testing.test_cases_executed
+            ));
+        } else if user_testing.status == ReviewStatus::Failed {
+            let failed_count = user_testing.test_cases_executed - user_testing.test_cases_passed;
+            test_results.push(TestResult {
+                name: "core_functionality".to_string(),
+                category: TestCategory::Smoke,
+                status: TestStatus::Failed,
+                notes: format!("{failed_count} test(s) failed: {}", user_testing.results),
             });
 
-            recommendations.push(format!(
-                "Address remaining work: {}",
-                handoff.verification.remaining_work
-            ));
+            let severity = if (user_testing.test_cases_passed as f64
+                / user_testing.test_cases_executed.max(1) as f64)
+                <= 0.5
+            {
+                Severity::Critical
+            } else {
+                Severity::High
+            };
+
+            issues.push(TestIssue {
+                title: "User tests failed".to_string(),
+                test_case: "core_functionality".to_string(),
+                category: TestCategory::Smoke,
+                severity,
+                expected: "All tests should pass".to_string(),
+                actual: format!(
+                    "{}/{} tests passed",
+                    user_testing.test_cases_passed, user_testing.test_cases_executed
+                ),
+                impact: "Failed tests indicate broken user-facing functionality".to_string(),
+                recommendation: "Fix failing tests before proceeding".to_string(),
+            });
+        } else if user_testing.status == ReviewStatus::Skipped {
+            // 如果有文件变更但没有测试，标记为需要测试
+            if !handoff.files_created.is_empty() || !handoff.files_modified.is_empty() {
+                test_results.push(TestResult {
+                    name: "smoke_test".to_string(),
+                    category: TestCategory::Smoke,
+                    status: TestStatus::Skipped,
+                    notes: "User testing was skipped but files were changed".to_string(),
+                });
+
+                issues.push(TestIssue {
+                    title: "User testing skipped".to_string(),
+                    test_case: "smoke_test".to_string(),
+                    category: TestCategory::Smoke,
+                    severity: Severity::High,
+                    expected: "User testing should be performed for changed files".to_string(),
+                    actual: "User testing was skipped".to_string(),
+                    impact: "Changed files may have user-facing regressions".to_string(),
+                    recommendation: "Run user tests on all changed files".to_string(),
+                });
+            }
         }
 
-        // 生成总体建议
+        // 检查通过率
         let critical_count = issues
             .iter()
-            .filter(|i| i.severity == IssueSeverity::Critical)
+            .filter(|i| i.severity == Severity::Critical)
             .count();
         let high_count = issues
             .iter()
-            .filter(|i| i.severity == IssueSeverity::High)
+            .filter(|i| i.severity == Severity::High)
             .count();
 
         if critical_count > 0 {
             recommendations.push(format!(
-                "Critical: Address {} critical issue(s) immediately",
-                critical_count
+                "Address {critical_count} critical issue(s) immediately"
             ));
         }
         if high_count > 0 {
             recommendations.push(format!(
-                "Address {} high-priority issue(s) as soon as possible",
-                high_count
+                "Address {high_count} high-priority issue(s) as soon as possible"
             ));
         }
-
         if issues.is_empty() && !test_results.is_empty() {
             recommendations.push("All tests passed. User experience is good.".to_string());
         }
 
-        // 确定总体状态
         let overall_status = if self.config.strict {
             if test_results
                 .iter()
@@ -519,7 +329,6 @@ impl Validator for UserTestingValidator {
             let smoke_failed = test_results
                 .iter()
                 .any(|t| t.category == TestCategory::Smoke && t.status == TestStatus::Failed);
-
             let pass_rate = if user_testing.test_cases_executed > 0 {
                 (user_testing.test_cases_passed as f64 / user_testing.test_cases_executed as f64)
                     * 100.0
@@ -549,6 +358,7 @@ impl Validator for UserTestingValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handoff::UserTestingResult;
 
     #[test]
     fn validate_passed_user_tests() {
@@ -557,7 +367,6 @@ mod tests {
             .add_implementation("Feature A")
             .with_next_steps("Next phase");
 
-        // 模拟通过的用户测试结果
         let mut verification = crate::handoff::Verification::default();
         verification.user_testing = UserTestingResult {
             status: ReviewStatus::Passed,
@@ -565,7 +374,6 @@ mod tests {
             test_cases_executed: 10,
             test_cases_passed: 10,
         };
-
         let handoff = handoff.with_verification(verification);
 
         let validator = UserTestingValidator::with_defaults();
@@ -583,7 +391,6 @@ mod tests {
             .add_implementation("Feature A")
             .with_next_steps("Testing");
 
-        // 模拟失败的用户测试结果
         let mut verification = crate::handoff::Verification::default();
         verification.user_testing = UserTestingResult {
             status: ReviewStatus::Failed,
@@ -591,7 +398,6 @@ mod tests {
             test_cases_executed: 10,
             test_cases_passed: 5,
         };
-
         let handoff = handoff.with_verification(verification);
 
         let validator = UserTestingValidator::with_defaults();
@@ -603,7 +409,7 @@ mod tests {
             report
                 .issues
                 .iter()
-                .any(|i| i.severity == IssueSeverity::Critical)
+                .any(|i| i.severity == Severity::Critical)
         );
     }
 

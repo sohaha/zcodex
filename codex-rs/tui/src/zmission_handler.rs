@@ -43,10 +43,9 @@ impl crate::app::App {
 
     fn handle_zmission_start(&mut self, workspace: std::path::PathBuf, goal: Option<String>) {
         let Some(goal) = goal else {
-            self.chat_widget.add_info_message(
-                "请输入 Mission 目标：/zmission start <目标>".to_string(),
-                None,
-            );
+            self.chat_widget.pending_mission_goal = true;
+            self.chat_widget
+                .add_info_message("请输入 Mission 目标：".to_string(), None);
             return;
         };
 
@@ -56,8 +55,12 @@ impl crate::app::App {
                 let msg = format_planning_step("🚀 Mission 已启动", &step);
                 self.chat_widget.add_info_message(msg, None);
 
-                if step.definition.is_some() {
-                    self.show_phase_confirm_selection(&step.state);
+                if let Some(definition) = step.definition {
+                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    self.chat_widget.mission_phase_running = true;
+                    self.chat_widget.submit_user_message_as_plain_user_turn(
+                        crate::chatwidget::UserMessage::from(prompt.as_str()),
+                    );
                 }
             }
             Err(err) => {
@@ -101,8 +104,12 @@ impl crate::app::App {
                 let msg = format_planning_step("✅ 阶段已确认", &step);
                 self.chat_widget.add_info_message(msg, None);
 
-                if let Some(_definition) = step.definition {
-                    self.show_phase_confirm_selection(&step.state);
+                if let Some(definition) = step.definition {
+                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    self.chat_widget.mission_phase_running = true;
+                    self.chat_widget.submit_user_message_as_plain_user_turn(
+                        crate::chatwidget::UserMessage::from(prompt.as_str()),
+                    );
                 } else {
                     // 规划完成，加载执行方案并注入执行 prompt
                     self.inject_execution_prompt(&planner, &step.state.goal);
@@ -144,113 +151,19 @@ impl crate::app::App {
                 let msg = format_planning_step("🚀 Mission 已启动", &step);
                 chat_widget.add_info_message(msg, None);
 
-                if step.definition.is_some() {
-                    // Reuse the phase confirm logic by emitting a continue event
-                    // which will show the selection popup
-                    let phase_label = step.state.phase.map(|p| p.label()).unwrap_or("unknown");
-                    let state = step.state;
-                    let goal_clone = state.goal.clone();
-
-                    let continue_actions: Vec<SelectionAction> = {
-                        vec![Box::new(move |tx| {
-                            tx.send(AppEvent::ZmissionCommand(Command::Continue { note: None }));
-                        })]
-                    };
-                    let reset_actions: Vec<SelectionAction> = {
-                        vec![Box::new(move |tx| {
-                            tx.send(AppEvent::ZmissionCommand(Command::Reset));
-                        })]
-                    };
-                    let items = vec![
-                        SelectionItem {
-                            name: "继续下一阶段".to_string(),
-                            display_shortcut: Some(key_hint::plain(
-                                crossterm::event::KeyCode::Enter,
-                            )),
-                            actions: continue_actions,
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                        SelectionItem {
-                            name: "结束并开始新 Mission".to_string(),
-                            display_shortcut: Some(key_hint::plain(
-                                crossterm::event::KeyCode::Char('r'),
-                            )),
-                            actions: reset_actions,
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                        SelectionItem {
-                            name: "暂停".to_string(),
-                            display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Esc)),
-                            is_default: false,
-                            dismiss_on_select: true,
-                            ..Default::default()
-                        },
-                    ];
-                    chat_widget.show_selection_view(SelectionViewParams {
-                        title: Some(format!("Mission 阶段完成：{phase_label}")),
-                        subtitle: Some(format!("目标：{goal_clone}")),
-                        footer_hint: Some(standard_popup_hint_line()),
-                        items,
-                        ..Default::default()
-                    });
+                if let Some(definition) = step.definition {
+                    // 注入阶段分析 prompt，让 LLM 开始分析当前阶段
+                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    chat_widget.mission_phase_running = true;
+                    chat_widget.submit_user_message_as_plain_user_turn(
+                        crate::chatwidget::UserMessage::from(prompt.as_str()),
+                    );
                 }
             }
             Err(err) => {
                 chat_widget.add_error_message(format!("Mission 启动失败：{err}"));
             }
         }
-    }
-
-    /// 在阶段完成后弹出确认选择面板。
-    fn show_phase_confirm_selection(&mut self, state: &codex_mission::MissionState) {
-        let phase_label = state.phase.map(|p| p.label()).unwrap_or("unknown");
-        let goal = state.goal.clone();
-
-        let continue_actions: Vec<SelectionAction> = {
-            vec![Box::new(move |tx| {
-                tx.send(AppEvent::ZmissionCommand(Command::Continue { note: None }));
-            })]
-        };
-
-        let reset_actions: Vec<SelectionAction> = {
-            vec![Box::new(move |tx| {
-                tx.send(AppEvent::ZmissionCommand(Command::Reset));
-            })]
-        };
-
-        let items = vec![
-            SelectionItem {
-                name: "继续下一阶段".to_string(),
-                display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Enter)),
-                actions: continue_actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-            SelectionItem {
-                name: "结束并开始新 Mission".to_string(),
-                display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Char('r'))),
-                actions: reset_actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-            SelectionItem {
-                name: "暂停".to_string(),
-                display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Esc)),
-                is_default: false,
-                dismiss_on_select: true,
-                ..Default::default()
-            },
-        ];
-
-        self.chat_widget.show_selection_view(SelectionViewParams {
-            title: Some(format!("Mission 阶段完成：{phase_label}")),
-            subtitle: Some(format!("目标：{goal}")),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
     }
 
     /// 规划完成后加载执行方案并注入执行 prompt。
@@ -291,4 +204,24 @@ fn format_planning_step(prefix: &str, step: &codex_mission::MissionPlanningStep)
         lines.push("规划阶段已完成，Mission 进入执行状态。".to_string());
     }
     lines.join("\n")
+}
+
+/// 构建阶段分析 prompt，让 LLM 对当前阶段进行分析。
+fn format_phase_analysis_prompt(
+    goal: &str,
+    definition: &codex_mission::MissionPhaseDefinition,
+) -> String {
+    format!(
+        "你正在执行一个 Mission 规划流程。\n\n\
+         Mission 目标：{goal}\n\n\
+         当前阶段：{title} ({phase})\n\
+         阶段提示：{prompt_text}\n\
+         出口条件：{exit_condition}\n\n\
+         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。",
+        goal = goal,
+        title = definition.title,
+        phase = definition.phase.label(),
+        prompt_text = definition.prompt,
+        exit_condition = definition.exit_condition,
+    )
 }
