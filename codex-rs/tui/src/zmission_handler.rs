@@ -119,15 +119,86 @@ impl crate::app::App {
         let store = MissionStateStore::for_workspace(&workspace);
         match store.reset() {
             Ok(()) => {
+                self.chat_widget.pending_mission_goal = true;
                 self.chat_widget.add_info_message(
-                    "🔄 当前 Mission 已结束。使用 /zmission start <目标> 开始新 Mission。"
-                        .to_string(),
+                    "🔄 当前 Mission 已结束。请输入新的 Mission 目标：".to_string(),
                     None,
                 );
             }
             Err(err) => {
                 self.chat_widget
                     .add_error_message(format!("重置 Mission 失败：{err}"));
+            }
+        }
+    }
+
+    /// 从 ChatWidget 内部直接调用，启动新 Mission（用于 pending_mission_goal 拦截）。
+    pub(crate) fn handle_zmission_start_from_widget(
+        chat_widget: &mut crate::chatwidget::ChatWidget,
+        workspace: std::path::PathBuf,
+        goal: String,
+    ) {
+        let planner = MissionPlanner::for_workspace(&workspace);
+        match planner.start(&goal) {
+            Ok(step) => {
+                let msg = format_planning_step("🚀 Mission 已启动", &step);
+                chat_widget.add_info_message(msg, None);
+
+                if step.definition.is_some() {
+                    // Reuse the phase confirm logic by emitting a continue event
+                    // which will show the selection popup
+                    let phase_label = step.state.phase.map(|p| p.label()).unwrap_or("unknown");
+                    let state = step.state;
+                    let goal_clone = state.goal.clone();
+
+                    let continue_actions: Vec<SelectionAction> = {
+                        vec![Box::new(move |tx| {
+                            tx.send(AppEvent::ZmissionCommand(Command::Continue { note: None }));
+                        })]
+                    };
+                    let reset_actions: Vec<SelectionAction> = {
+                        vec![Box::new(move |tx| {
+                            tx.send(AppEvent::ZmissionCommand(Command::Reset));
+                        })]
+                    };
+                    let items = vec![
+                        SelectionItem {
+                            name: "继续下一阶段".to_string(),
+                            display_shortcut: Some(key_hint::plain(
+                                crossterm::event::KeyCode::Enter,
+                            )),
+                            actions: continue_actions,
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                        SelectionItem {
+                            name: "结束并开始新 Mission".to_string(),
+                            display_shortcut: Some(key_hint::plain(
+                                crossterm::event::KeyCode::Char('r'),
+                            )),
+                            actions: reset_actions,
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                        SelectionItem {
+                            name: "暂停".to_string(),
+                            display_shortcut: Some(key_hint::plain(crossterm::event::KeyCode::Esc)),
+                            is_default: false,
+                            dismiss_on_select: true,
+                            ..Default::default()
+                        },
+                    ];
+                    chat_widget.show_selection_view(SelectionViewParams {
+                        title: Some(format!("Mission 阶段完成：{phase_label}")),
+                        subtitle: Some(format!("目标：{goal_clone}")),
+                        footer_hint: Some(standard_popup_hint_line()),
+                        items,
+                        ..Default::default()
+                    });
+                }
+            }
+            Err(err) => {
+                chat_widget.add_error_message(format!("Mission 启动失败：{err}"));
             }
         }
     }

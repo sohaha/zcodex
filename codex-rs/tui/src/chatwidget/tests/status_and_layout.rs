@@ -173,6 +173,7 @@ async fn helpers_are_available_and_do_not_panic() {
         terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
         mission_mode: false,
+        pending_mission_goal: false,
     };
     let mut w = ChatWidget::new_with_app_event(init);
     // Basic construction sanity.

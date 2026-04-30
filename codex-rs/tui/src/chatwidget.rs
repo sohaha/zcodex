@@ -610,6 +610,8 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) session_telemetry: SessionTelemetry,
     /// TUI 运行在 mission 模式下（由 `codex zmission start` 设置）。
     pub(crate) mission_mode: bool,
+    /// 等待用户输入新的 Mission 目标（reset 后置 true）。
+    pub(crate) pending_mission_goal: bool,
 }
 
 #[derive(Default)]
@@ -950,6 +952,8 @@ pub(crate) struct ChatWidget {
     suppress_initial_user_message_submit: bool,
     /// TUI 运行在 mission 模式下；session_configured 后展示 mission 阶段 UI。
     mission_mode: bool,
+    /// 等待用户输入新的 Mission 目标（reset 后置 true）。
+    pub(crate) pending_mission_goal: bool,
     // User inputs queued while a turn is in progress.
     queued_user_messages: VecDeque<QueuedUserMessage>,
     // History records for queued user messages. Slash commands such as `/goal`
@@ -5621,6 +5625,7 @@ impl ChatWidget {
             terminal_title_invalid_items_warned,
             session_telemetry,
             mission_mode,
+            pending_mission_goal,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -5764,6 +5769,7 @@ impl ChatWidget {
             suppress_session_configured_redraw: false,
             suppress_initial_user_message_submit: false,
             mission_mode,
+            pending_mission_goal: false,
             pending_notification: None,
             quit_shortcut_expires_at: None,
             quit_shortcut_key: None,
@@ -11825,6 +11831,19 @@ impl ChatWidget {
         text: String,
         mut collaboration_mode: CollaborationModeMask,
     ) {
+        // 拦截：等待新 Mission 目标时，将用户输入转为 Mission 启动
+        if self.pending_mission_goal {
+            self.pending_mission_goal = false;
+            let goal = text.trim().to_string();
+            if goal.is_empty() {
+                self.add_info_message("目标不能为空，请重新输入。".to_string(), None);
+                return;
+            }
+            let workspace = self.config.cwd.to_path_buf();
+            crate::app::App::handle_zmission_start_from_widget(self, workspace, goal);
+            return;
+        }
+
         if collaboration_mode.mode == Some(ModeKind::Plan)
             && let Some(effort) = self.config.plan_mode_reasoning_effort
         {

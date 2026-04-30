@@ -1395,6 +1395,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
         mission_mode: false,
+        pending_mission_goal: false,
     };
 
     let chat = ChatWidget::new_with_app_event(init);

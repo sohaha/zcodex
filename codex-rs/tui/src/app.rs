@@ -1186,6 +1186,7 @@ impl App {
             terminal_title_invalid_items_warned: self.terminal_title_invalid_items_warned.clone(),
             session_telemetry: self.session_telemetry.clone(),
             mission_mode: false,
+            pending_mission_goal: false,
         }
     }
 
@@ -4599,6 +4600,7 @@ impl App {
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
+                    pending_mission_goal: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(started))
             }
@@ -4634,6 +4636,7 @@ impl App {
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
+                    pending_mission_goal: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(resumed))
             }
@@ -4674,6 +4677,7 @@ impl App {
                         .clone(),
                     session_telemetry: session_telemetry.clone(),
                     mission_mode,
+                    pending_mission_goal: false,
                 };
                 (ChatWidget::new_with_app_event(init), Some(forked))
             }
@@ -8053,6 +8057,7 @@ mod tests {
             terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
             session_telemetry: app.session_telemetry.clone(),
             mission_mode: false,
+            pending_mission_goal: false,
         });
 
         app.enqueue_primary_thread_session(
@@ -12334,6 +12339,7 @@ guardian_approval = true
             terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
             session_telemetry: app.session_telemetry.clone(),
             mission_mode: false,
+            pending_mission_goal: false,
         });
         app.replace_chat_widget(replacement);
 

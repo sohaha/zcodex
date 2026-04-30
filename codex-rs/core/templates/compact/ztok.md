@@ -24,20 +24,5 @@ the current session.
 To temporarily disable session dedup while keeping compression, use
 `{{ logical_launcher_invocation }} ztok --no-cache ...` or set
 `CODEX_ZTOK_NO_DEDUP=1`.
-### `read` subcommand
-
-`{{ logical_launcher_invocation }} ztok read <file> [file...] [options]`
-
-Reads one or more files with optional language-aware filtering to strip
-comments and boilerplate, reducing token consumption.
-
-| Flag | Values | Default | Effect |
-|------|--------|---------|--------|
-| `-l`, `--level` | `none`, `minimal`, `aggressive` | `none` | Filter level. `minimal` strips comments (keeps doc comments). `aggressive` also collapses function bodies. |
-| `-m`, `--max-lines` | `<N>` | — | Truncate to first ~N lines (smart truncation preserves signatures). |
-| `--tail-lines` | `<N>` | — | Keep only the last N lines. |
-| `-n`, `--line-numbers` | flag | off | Prefix each line with its line number. |
-
-When a file fails to read, the error is reported on stderr but remaining
-files continue to be processed. The exit code is non-zero if any file failed.
+`ztok read` supports `--level minimal` (strip comments) or `--level aggressive` (also collapse function bodies) to save tokens on large files.
 
