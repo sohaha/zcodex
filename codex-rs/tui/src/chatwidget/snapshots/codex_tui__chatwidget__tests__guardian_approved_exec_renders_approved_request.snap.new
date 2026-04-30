@@ -12,14 +12,14 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 ✔ 自动审查器批准 Codex 执行 rm -f /tmp/guardian-approved.sqlite（仅这次）
 
-  .------------.
-  | 轻巧落座。 |
-  '------------.
+  .------------------.
+  | 尾巴一甩就到了。 |
+  '------------------.
     \
-   /\_/\\
-  ( ^^ )
-   > ^ <
-  Miso ★ 常见 猫 · 坐立不安
+  /\   /\\
+   ^ v ^ )
+  \\_---_//
+  松果 ★ 常见 狐狸 · 坐立不安
 
 › 让 Codex 帮你做任何事
 

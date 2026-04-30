@@ -1,0 +1,10 @@
+---
+source: tui/src/buddy/mod.rs
+assertion_line: 539
+expression: snapshot_buffer(&buf)
+---
+     <3    <3
+    .--.
+   ( OO )
+   /\/\/\
+  墨 墨  ★ 常 见  章 鱼  · 兴 奋
