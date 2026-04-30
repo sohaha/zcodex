@@ -2612,8 +2612,9 @@ impl ChatWidget {
                 }
             }
             Ok(codex_mission::MissionStatusReport::Empty { .. }) => {
+                self.pending_mission_goal = true;
                 self.add_info_message(
-                    "Mission 模式已激活，但未找到活跃的 Mission 状态。".to_string(),
+                    "Mission 模式已激活。请输入 Mission 目标：".to_string(),
                     None,
                 );
             }
