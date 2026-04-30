@@ -15,6 +15,12 @@ pub enum MissionError {
     #[error("Mission 已处于终态 {status}，无法继续推进")]
     TerminalState { status: String },
 
+    #[error("阶段 {phase} 的产物文件不存在：{path}。请先完成当前阶段的分析并写入产物文件。")]
+    PhaseArtifactMissing { phase: String, path: PathBuf },
+
+    #[error("阶段 {phase} 的产物文件为空：{path}。产物必须包含实质内容才能推进。")]
+    PhaseArtifactEmpty { phase: String, path: PathBuf },
+
     #[error("Handoff 验证失败：{reason}")]
     HandoffValidation { reason: String },
 

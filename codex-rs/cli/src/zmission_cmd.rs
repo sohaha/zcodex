@@ -5,6 +5,7 @@ use clap::Subcommand;
 use codex_arg0::Arg0DispatchPaths;
 use codex_core::config_loader::LoaderOverrides;
 use codex_core::mission::Handoff;
+use codex_core::mission::MissionPhase;
 use codex_core::mission::MissionPhaseDefinition;
 use codex_core::mission::MissionPlanner;
 use codex_core::mission::MissionPlanningStep;
@@ -201,6 +202,7 @@ async fn run_phases_loop(
     loop {
         launch_tui_for_phase(
             &step,
+            &planner,
             arg0_paths.clone(),
             root_config_overrides.clone(),
             skip_git_repo_check,
@@ -247,6 +249,7 @@ async fn run_phases_loop(
         }
 
         let note = Some(format!("{} 阶段已完成，继续推进", definition.phase.label()));
+        ensure_cli_phase_artifact(&planner, definition.phase, note.as_deref());
         step = planner.continue_planning(note)?;
         print_planning_step(&step);
     }
@@ -274,6 +277,7 @@ fn print_status() -> Result<()> {
 /// 为当前规划阶段构造 prompt，然后启动 TUI 来执行该阶段的分析。
 async fn launch_tui_for_phase(
     step: &MissionPlanningStep,
+    planner: &MissionPlanner,
     arg0_paths: Arg0DispatchPaths,
     root_config_overrides: CliConfigOverrides,
     _skip_git_repo_check: bool,
@@ -282,18 +286,23 @@ async fn launch_tui_for_phase(
         return Ok(());
     };
 
+    let artifact_path = planner.phase_artifact_path(definition.phase);
     let prompt = format!(
         "你正在执行一个 Mission 规划流程。\n\n\
          Mission 目标：{goal}\n\n\
          当前阶段：{title} ({phase})\n\
          阶段提示：{prompt_text}\n\
          出口条件：{exit_condition}\n\n\
-         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。",
+         请将本阶段的分析结果写入产物文件：`{artifact_path}`
+         产物文件必须存在且非空，否则无法推进到下一阶段。
+
+         请根据上述信息完成当前阶段的分析。",
         goal = step.state.goal,
         title = definition.title,
         phase = definition.phase.label(),
         prompt_text = definition.prompt,
         exit_condition = definition.exit_condition,
+        artifact_path = artifact_path.display(),
     );
 
     launch_tui_with_prompt(
@@ -436,6 +445,26 @@ fn load_handoff(handoff_path: Option<&Path>) -> Result<Handoff> {
     }
 }
 
+/// 确保 CLI 侧阶段产物文件存在：不存在则用 note 创建占位。
+fn ensure_cli_phase_artifact(planner: &MissionPlanner, phase: MissionPhase, note: Option<&str>) {
+    let artifact_path = planner.phase_artifact_path(phase);
+    if artifact_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&artifact_path) {
+            if !content.trim().is_empty() {
+                return;
+            }
+        }
+    }
+    if let Some(parent) = artifact_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let content: String = match note {
+        Some(n) => n.to_string(),
+        None => format!("{} 阶段已确认", phase.label()),
+    };
+    let _ = std::fs::write(&artifact_path, content);
+}
+
 fn planner_for_current_dir() -> Result<MissionPlanner> {
     Ok(MissionPlanner::for_workspace(current_workspace()?))
 }
@@ -480,6 +509,7 @@ fn print_phase_details(definition: &MissionPhaseDefinition) {
     );
     println!("提示：{}", definition.prompt);
     println!("出口条件：{}", definition.exit_condition);
+    println!("产物文件：{}", definition.artifact_filename);
 }
 
 /// 构建执行 prompt，尝试加载 `.agents/mission/plan.md` 中的方案内容。

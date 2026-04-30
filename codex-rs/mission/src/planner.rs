@@ -14,6 +14,9 @@ use crate::phases::phase_definition;
 use crate::state::MISSION_STATE_VERSION;
 
 /// Mission 规划器，负责启动和推进 7 阶段规划状态机。
+///
+/// 阶段门控：每次推进时校验当前阶段的产物文件是否存在且非空，
+/// 确保无法跳过阶段分析直接推进。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissionPlanner {
     store: MissionStateStore,
@@ -56,7 +59,10 @@ impl MissionPlanner {
 
     /// 推进到下一个规划阶段。
     ///
-    /// 校验阶段转换的合法性：不能跳阶段，不能从终态推进。
+    /// 门控逻辑：
+    /// 1. 校验阶段转换合法性（不跳阶段、不从终态推进）
+    /// 2. **校验当前阶段的产物文件存在且非空**
+    /// 3. 记录已完成阶段，推进到下一阶段
     pub fn continue_planning(&self, note: Option<String>) -> MissionResult<MissionPlanningStep> {
         let mut state = self
             .store
@@ -92,6 +98,9 @@ impl MissionPlanner {
                 to: current_phase.to_string(),
             });
         }
+
+        // 门控：校验当前阶段的产物文件
+        self.validate_phase_artifact(current_phase)?;
 
         let record = MissionPhaseRecord::new(current_phase, normalized_note(note, current_phase))
             .with_artifact(format!("{}.md", current_phase.label()));
@@ -157,55 +166,52 @@ impl MissionPlanner {
                 path: self.store.state_path().to_path_buf(),
             })?;
 
-        if state.status.is_terminal() {
-            return Err(MissionError::TerminalState {
-                status: state.status.to_string(),
-            });
-        }
         state.status = MissionStatus::Aborted;
         state.updated_at = Some(Utc::now());
         self.store.save(&state)?;
         Ok(self.step_for_state(state))
     }
 
-    /// 方案存储目录（委托给 store）。
-    pub fn plans_dir(&self) -> PathBuf {
-        self.store.plans_dir()
-    }
-
-    /// 保存规划阶段的产物到方案目录。
-    pub fn save_plan_artifact(&self, phase: MissionPhase, content: &str) -> MissionResult<PathBuf> {
-        let dir = self.plans_dir();
-        std::fs::create_dir_all(&dir).map_err(|source| MissionError::CreatePlanDir {
-            path: dir.clone(),
-            source,
-        })?;
-        let path = dir.join(format!("{}.md", phase.label()));
-        std::fs::write(&path, content).map_err(|source| MissionError::WritePlan {
-            path: path.clone(),
-            source,
-        })?;
-        Ok(path)
-    }
-
-    /// 读取指定阶段的方案产物。
-    pub fn load_plan_artifact(&self, phase: MissionPhase) -> MissionResult<String> {
-        let path = self.plans_dir().join(format!("{}.md", phase.label()));
-        std::fs::read_to_string(&path).map_err(|source| MissionError::ReadPlan { path, source })
-    }
-
-    /// 加载执行方案（`plan.md`）。
+    /// 返回当前阶段产物文件的完整路径。
     ///
-    /// 如果 `plan.md` 不存在，尝试从 `worker_definition.md` 获取执行步骤。
+    /// 用于 TUI/CLI 在阶段分析前创建文件占位，或供 agent 写入产物。
+    pub fn phase_artifact_path(&self, phase: MissionPhase) -> PathBuf {
+        let definition = phase_definition(phase);
+        self.store.plans_dir().join(definition.artifact_filename)
+    }
+
+    /// 校验指定阶段的产物文件是否存在且非空。
+    fn validate_phase_artifact(&self, phase: MissionPhase) -> MissionResult<()> {
+        let definition = phase_definition(phase);
+        let artifact_path = self.store.plans_dir().join(definition.artifact_filename);
+
+        if !artifact_path.exists() {
+            return Err(MissionError::PhaseArtifactMissing {
+                phase: phase.to_string(),
+                path: artifact_path,
+            });
+        }
+
+        let content = std::fs::read_to_string(&artifact_path).unwrap_or_default();
+        if content.trim().is_empty() {
+            return Err(MissionError::PhaseArtifactEmpty {
+                phase: phase.to_string(),
+                path: artifact_path,
+            });
+        }
+
+        Ok(())
+    }
+
     pub fn load_execution_plan(&self) -> MissionResult<String> {
-        let plan_path = self.plans_dir().join("plan.md");
+        let plan_path = self.store.plans_dir().join("plan.md");
         if plan_path.exists() {
             return std::fs::read_to_string(&plan_path).map_err(|source| MissionError::ReadPlan {
                 path: plan_path,
                 source,
             });
         }
-        let fallback = self.plans_dir().join("worker_definition.md");
+        let fallback = self.store.plans_dir().join("worker_definition.md");
         if fallback.exists() {
             return std::fs::read_to_string(&fallback).map_err(|source| MissionError::ReadPlan {
                 path: fallback,
@@ -252,6 +258,14 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;
 
+    /// 测试辅助：为指定阶段创建非空产物文件。
+    fn create_phase_artifact(planner: &MissionPlanner, phase: MissionPhase, content: &str) {
+        let path = planner.phase_artifact_path(phase);
+        let dir = path.parent().unwrap();
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(&path, content).unwrap();
+    }
+
     #[test]
     fn start_creates_intent_phase_state() -> anyhow::Result<()> {
         let workspace = TempDir::new()?;
@@ -272,23 +286,76 @@ mod tests {
     }
 
     #[test]
-    fn continue_advances_until_executing() -> anyhow::Result<()> {
+    fn continue_requires_artifact_to_advance() -> anyhow::Result<()> {
         let workspace = TempDir::new()?;
         let planner = MissionPlanner::for_workspace(workspace.path());
         planner.start("ship it")?;
 
-        let mut step = planner.continue_planning(Some("intent ok".to_string()))?;
-        assert_eq!(step.state.phase, Some(MissionPhase::Context));
-        assert_eq!(step.state.completed_phases.len(), 1);
-
-        for _ in 0..6 {
-            step = planner.continue_planning(None)?;
+        // 没有产物文件 → 推进应该失败
+        let result = planner.continue_planning(Some("intent ok".to_string()));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MissionError::PhaseArtifactMissing { phase, .. } => {
+                assert_eq!(phase, "intent");
+            }
+            other => panic!("expected PhaseArtifactMissing, got {other:?}"),
         }
 
-        assert_eq!(step.state.status, MissionStatus::Executing);
-        assert_eq!(step.state.phase, None);
-        assert_eq!(step.state.completed_phases.len(), 7);
-        assert!(step.state.updated_at.is_some());
+        // 创建产物文件后可以推进
+        create_phase_artifact(&planner, MissionPhase::Intent, "目标说明...");
+
+        let step = planner.continue_planning(Some("intent ok".to_string()))?;
+        assert_eq!(step.state.phase, Some(MissionPhase::Context));
+        assert_eq!(step.state.completed_phases.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn empty_artifact_rejected() -> anyhow::Result<()> {
+        let workspace = TempDir::new()?;
+        let planner = MissionPlanner::for_workspace(workspace.path());
+        planner.start("ship it")?;
+
+        // 创建空产物文件 → 应该失败
+        create_phase_artifact(&planner, MissionPhase::Intent, "   ");
+
+        let result = planner.continue_planning(None);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            MissionError::PhaseArtifactEmpty { phase, .. } => {
+                assert_eq!(phase, "intent");
+            }
+            other => panic!("expected PhaseArtifactEmpty, got {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn continue_advances_through_all_phases_with_artifacts() -> anyhow::Result<()> {
+        let workspace = TempDir::new()?;
+        let planner = MissionPlanner::for_workspace(workspace.path());
+        planner.start("ship it")?;
+
+        for phase in MissionPhase::ALL {
+            create_phase_artifact(&planner, phase, &format!("{} 分析内容", phase.label()));
+            let step = planner.continue_planning(None)?;
+            if phase == MissionPhase::Verification {
+                assert_eq!(step.state.status, MissionStatus::Executing);
+                assert_eq!(step.state.phase, None);
+                assert_eq!(step.state.completed_phases.len(), 7);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn phase_artifact_path_returns_correct_path() -> anyhow::Result<()> {
+        let workspace = TempDir::new()?;
+        let planner = MissionPlanner::for_workspace(workspace.path());
+
+        let path = planner.phase_artifact_path(MissionPhase::Intent);
+        assert!(path.to_string_lossy().contains("intent.md"));
+        assert!(path.to_string_lossy().contains(".agents/mission"));
         Ok(())
     }
 
@@ -297,6 +364,7 @@ mod tests {
         let workspace = TempDir::new()?;
         let planner = MissionPlanner::for_workspace(workspace.path());
         planner.start("ship it")?;
+        create_phase_artifact(&planner, MissionPhase::Intent, "content");
         planner.continue_planning(None)?;
 
         let step = planner.pause()?;
@@ -338,6 +406,7 @@ mod tests {
         let workspace = TempDir::new()?;
         let planner = MissionPlanner::for_workspace(workspace.path());
         planner.start("ship it")?;
+        create_phase_artifact(&planner, MissionPhase::Intent, "intent analysis");
 
         let step = planner.continue_planning(Some("confirmed".to_string()))?;
         let record = &step.state.completed_phases[0];

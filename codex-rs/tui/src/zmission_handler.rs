@@ -56,7 +56,8 @@ impl crate::app::App {
                 self.chat_widget.add_info_message(msg, None);
 
                 if let Some(definition) = step.definition {
-                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    let prompt =
+                        format_phase_analysis_prompt(&step.state.goal, &definition, &planner);
                     self.chat_widget.mission_phase_running = true;
                     self.chat_widget.submit_user_message_as_plain_user_turn(
                         crate::chatwidget::UserMessage::from(prompt.as_str()),
@@ -99,13 +100,23 @@ impl crate::app::App {
 
     fn handle_zmission_continue(&mut self, workspace: std::path::PathBuf, note: Option<String>) {
         let planner = MissionPlanner::for_workspace(&workspace);
+
+        // 确保当前阶段的产物文件存在（门控要求）。
+        // 如果 LLM 已写入分析产物则直接通过；否则用 note 创建占位文件。
+        if let Ok(Some(state)) = planner.store().load() {
+            if let Some(phase) = state.phase {
+                ensure_phase_artifact(&planner, phase, note.as_deref());
+            }
+        }
+
         match planner.continue_planning(note) {
             Ok(step) => {
                 let msg = format_planning_step("✅ 阶段已确认", &step);
                 self.chat_widget.add_info_message(msg, None);
 
                 if let Some(definition) = step.definition {
-                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    let prompt =
+                        format_phase_analysis_prompt(&step.state.goal, &definition, &planner);
                     self.chat_widget.mission_phase_running = true;
                     self.chat_widget.submit_user_message_as_plain_user_turn(
                         crate::chatwidget::UserMessage::from(prompt.as_str()),
@@ -152,8 +163,8 @@ impl crate::app::App {
                 chat_widget.add_info_message(msg, None);
 
                 if let Some(definition) = step.definition {
-                    // 注入阶段分析 prompt，让 LLM 开始分析当前阶段
-                    let prompt = format_phase_analysis_prompt(&step.state.goal, &definition);
+                    let prompt =
+                        format_phase_analysis_prompt(&step.state.goal, &definition, &planner);
                     chat_widget.mission_phase_running = true;
                     chat_widget.submit_user_message_as_plain_user_turn(
                         crate::chatwidget::UserMessage::from(prompt.as_str()),
@@ -171,7 +182,6 @@ impl crate::app::App {
         let plan_content = match planner.load_execution_plan() {
             Ok(content) => content,
             Err(_) => {
-                // 没有方案文件时仅用目标
                 self.chat_widget.add_info_message(
                     "⚠ 未找到执行方案文件，将基于目标直接执行。".to_string(),
                     None,
@@ -191,6 +201,32 @@ impl crate::app::App {
     }
 }
 
+/// 确保指定阶段的产物文件存在且非空。
+/// 如果产物已存在且非空则跳过；否则用 note 内容创建占位产物。
+fn ensure_phase_artifact(
+    planner: &MissionPlanner,
+    phase: codex_mission::MissionPhase,
+    note: Option<&str>,
+) {
+    let artifact_path = planner.phase_artifact_path(phase);
+    if artifact_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&artifact_path) {
+            if !content.trim().is_empty() {
+                return;
+            }
+        }
+    }
+    // 产物不存在或为空，用 note 创建占位
+    if let Some(parent) = artifact_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let content = match note {
+        Some(n) => n.to_string(),
+        None => format!("{} 阶段已确认", phase.label()),
+    };
+    let _ = std::fs::write(&artifact_path, content);
+}
+
 fn format_planning_step(prefix: &str, step: &codex_mission::MissionPlanningStep) -> String {
     let mut lines = Vec::new();
     lines.push(prefix.to_string());
@@ -200,28 +236,34 @@ fn format_planning_step(prefix: &str, step: &codex_mission::MissionPlanningStep)
         lines.push(format!("当前阶段：{} ({})", def.title, def.phase.label()));
         lines.push(format!("提示：{}", def.prompt));
         lines.push(format!("出口条件：{}", def.exit_condition));
+        lines.push(format!("产物文件：{}", def.artifact_filename));
     } else {
         lines.push("规划阶段已完成，Mission 进入执行状态。".to_string());
     }
     lines.join("\n")
 }
 
-/// 构建阶段分析 prompt，让 LLM 对当前阶段进行分析。
+/// 构建阶段分析 prompt，让 LLM 对当前阶段进行分析，并明确指定产物写入路径。
 fn format_phase_analysis_prompt(
     goal: &str,
     definition: &codex_mission::MissionPhaseDefinition,
+    planner: &MissionPlanner,
 ) -> String {
+    let artifact_path = planner.phase_artifact_path(definition.phase);
     format!(
         "你正在执行一个 Mission 规划流程。\n\n\
          Mission 目标：{goal}\n\n\
          当前阶段：{title} ({phase})\n\
          阶段提示：{prompt_text}\n\
          出口条件：{exit_condition}\n\n\
-         请根据上述信息完成当前阶段的分析。完成后，将分析结果写入计划文件。",
+         **重要：** 请将本阶段的分析结果写入产物文件：`{artifact_path}`\n\
+         产物文件必须存在且非空，否则无法推进到下一阶段。\n\n\
+         请根据上述信息完成当前阶段的分析。",
         goal = goal,
         title = definition.title,
         phase = definition.phase.label(),
         prompt_text = definition.prompt,
         exit_condition = definition.exit_condition,
+        artifact_path = artifact_path.display(),
     )
 }
