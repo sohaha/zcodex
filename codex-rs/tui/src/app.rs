@@ -2180,7 +2180,7 @@ impl App {
             zteam::Command::Start { goal } => {
                 self.submit_active_thread_text_turn(
                     app_server,
-                    zteam::start_prompt(goal.as_deref()),
+                    zteam::start_prompt(goal.as_deref(), &self.chat_widget.zteam_team_config()),
                 )
                 .await?;
                 self.chat_widget

@@ -5822,7 +5822,31 @@ impl ChatWidget {
             running_commands: HashMap::new(),
             collab_agent_metadata: HashMap::new(),
             pending_collab_spawn_requests: HashMap::new(),
-            zteam_state: zteam::State::default(),
+            zteam_state: {
+                let zteam_config = zteam::TeamConfig {
+                    frontend: zteam::SlotConfig {
+                        role_name: config.tui.zteam_frontend.as_ref().and_then(|o| o.role_name.clone()),
+                        display_name: config.tui.zteam_frontend.as_ref().and_then(|o| o.display_name.clone()),
+                        domain_keywords: config
+                            .tui
+                            .zteam_frontend
+                            .as_ref()
+                            .and_then(|o| o.domain_keywords.clone())
+                            .unwrap_or_default(),
+                    },
+                    backend: zteam::SlotConfig {
+                        role_name: config.tui.zteam_backend.as_ref().and_then(|o| o.role_name.clone()),
+                        display_name: config.tui.zteam_backend.as_ref().and_then(|o| o.display_name.clone()),
+                        domain_keywords: config
+                            .tui
+                            .zteam_backend
+                            .as_ref()
+                            .and_then(|o| o.domain_keywords.clone())
+                            .unwrap_or_default(),
+                    },
+                };
+                zteam::State::new(zteam_config)
+            },
             suppressed_exec_calls: HashSet::new(),
             last_unified_wait: None,
             unified_exec_wait_streak: None,
@@ -11091,6 +11115,10 @@ impl ChatWidget {
         if changed && self.bottom_pane.active_view_is(zteam::WORKBENCH_VIEW_ID) {
             self.request_redraw();
         }
+    }
+
+    pub(crate) fn zteam_team_config(&self) -> zteam::TeamConfig {
+        self.zteam_state.team_config().clone()
     }
 
     pub(crate) fn mark_zteam_start_requested_for_goal(&mut self, goal: Option<&str>) {

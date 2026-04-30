@@ -84,6 +84,39 @@ impl fmt::Display for WorkerSlot {
     }
 }
 
+/// 每个 worker slot 的可选配置覆盖
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct SlotConfig {
+    pub role_name: Option<String>,
+    pub display_name: Option<String>,
+    pub domain_keywords: Vec<String>,
+}
+
+/// ZTeam 协作配置，从 config.toml 的 tui.zteam_frontend / tui.zteam_backend 构建
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TeamConfig {
+    pub frontend: SlotConfig,
+    pub backend: SlotConfig,
+}
+
+/// 获取 slot 的 agent_type 角色名，优先使用 config 覆盖
+fn slot_role_name(slot: WorkerSlot, config: &TeamConfig) -> &str {
+    let override_val = match slot {
+        WorkerSlot::Frontend => config.frontend.role_name.as_deref(),
+        WorkerSlot::Backend => config.backend.role_name.as_deref(),
+    };
+    override_val.unwrap_or_else(|| slot.role_name())
+}
+
+/// 获取 slot 的显示名，优先使用 config 覆盖
+fn slot_display_name(slot: WorkerSlot, config: &TeamConfig) -> String {
+    let override_val = match slot {
+        WorkerSlot::Frontend => config.frontend.display_name.as_deref(),
+        WorkerSlot::Backend => config.backend.display_name.as_deref(),
+    };
+    override_val.unwrap_or_else(|| slot.display_name()).to_string()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Command {
     Start {
@@ -204,6 +237,7 @@ struct SharedState {
     activity: VecDeque<ActivityEntry>,
     recent_results: VecDeque<ResultEntry>,
     federation_adapter: Option<FederationAdapter>,
+    team_config: TeamConfig,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -327,6 +361,19 @@ pub(crate) enum AutopilotWorkItem {
 }
 
 impl State {
+    pub(crate) fn new(team_config: TeamConfig) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(SharedState {
+                team_config,
+                ..SharedState::default()
+            })),
+        }
+    }
+
+    pub(crate) fn team_config(&self) -> TeamConfig {
+        self.read_state().team_config.clone()
+    }
+
     pub(crate) fn mark_start_requested_for_goal(&mut self, goal: Option<&str>) -> bool {
         let sanitized_goal = goal.and_then(|goal| sanitize_mission_goal(goal).ok().flatten());
         let mut state = self.write_state();
@@ -346,7 +393,7 @@ impl State {
         for worker in WorkerSlot::ALL {
             *state.worker_mut(worker) = WorkerState::default();
         }
-        state.mission = sanitized_goal.as_deref().map(plan_mission);
+        state.mission = sanitized_goal.as_deref().map(|g| plan_mission(g, &state.team_config));
         reset_autopilot_for_new_mission(&mut state);
         push_activity(
             &mut state.activity,
@@ -391,7 +438,7 @@ impl State {
         let synthesized_recovery_mission = if state.mission.is_none() {
             let frontend = state.frontend.clone();
             let backend = state.backend.clone();
-            state.mission = Some(plan_recovery_mission(&frontend, &backend));
+            state.mission = Some(plan_recovery_mission(&frontend, &backend, &state.team_config));
             reset_autopilot_for_recovery(&mut state);
             true
         } else {
@@ -626,7 +673,7 @@ impl State {
         }
         worker_state.last_dispatched_task = Some(message.to_string());
         if state.mission.is_none() {
-            state.mission = Some(plan_manual_override_mission(worker, message));
+            state.mission = Some(plan_manual_override_mission(worker, message, &state.team_config));
         }
         let frontend = state.frontend.clone();
         let backend = state.backend.clone();
@@ -667,7 +714,7 @@ impl State {
         }
         target_state.last_dispatched_task = Some(message.to_string());
         if state.mission.is_none() {
-            state.mission = Some(plan_manual_relay_mission(from, to, message));
+            state.mission = Some(plan_manual_relay_mission(from, to, message, &state.team_config));
         }
         let frontend = state.frontend.clone();
         let backend = state.backend.clone();
@@ -1145,8 +1192,6 @@ pub(crate) fn usage() -> &'static str {
 pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
     let frontend_role = slot_role_name(WorkerSlot::Frontend, config);
     let backend_role = slot_role_name(WorkerSlot::Backend, config);
-    let frontend_display = slot_display_name(WorkerSlot::Frontend, config);
-    let backend_display = slot_display_name(WorkerSlot::Backend, config);
     match goal {
         Some(goal) => format!(
             concat!(
@@ -1161,14 +1206,9 @@ pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
             frontend_role = frontend_role,
             backend_role = backend_role,
         ),
-        None => concat!(
-            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n",
-            "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
-            "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
-            "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
-            "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
-        )
-        .to_string(),
+        None => format!(
+            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n\\n             1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n\\n             2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n\\n             对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n\\n             创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
+        ),
     }
 }
 
@@ -1239,11 +1279,11 @@ impl MissionMode {
     }
 }
 
-fn plan_mission(goal: &str) -> Mission {
+fn plan_mission(goal: &str, config: &TeamConfig) -> Mission {
     let goal = goal.trim().to_string();
-    let mode = infer_mission_mode(&goal);
+    let mode = infer_mission_mode(&goal, config);
     let (frontend_role, backend_role, frontend_assignment, backend_assignment, next_action) =
-        mission_assignments(&goal, &mode);
+        mission_assignments(&goal, &mode, config);
     let blocker = match mode {
         MissionMode::Blocked => Some("目标过于模糊，暂时无法规划可执行的协作路径。".to_string()),
         _ => None,
@@ -1281,7 +1321,7 @@ fn plan_mission(goal: &str) -> Mission {
     }
 }
 
-fn infer_mission_mode(goal: &str) -> MissionMode {
+fn infer_mission_mode(goal: &str, config: &TeamConfig) -> MissionMode {
     let goal_lower = goal.to_ascii_lowercase();
     if goal.chars().count() <= 6
         || contains_any(
@@ -1299,36 +1339,31 @@ fn infer_mission_mode(goal: &str) -> MissionMode {
     {
         return MissionMode::Blocked;
     }
-    let frontend_like = contains_any(
-        goal,
-        &[
-            "前端",
-            "页面",
-            "布局",
-            "交互",
-            "移动端",
-            "组件",
-            "样式",
-            "导航",
-            "表单",
-            "ui",
-        ],
-    );
-    let backend_like = contains_any(
-        goal,
-        &[
-            "后端",
-            "接口",
-            "服务",
-            "数据库",
-            "登录",
-            "token",
-            "schema",
-            "错误码",
-            "api",
-            "sql",
-        ],
-    );
+
+    // 合并内置关键词和 config 自定义关键词
+    let default_frontend = [
+        "前端", "页面", "布局", "交互", "移动端", "组件", "样式", "导航", "表单", "ui",
+        "frontend", "css", "react", "vue", "html",
+    ];
+    let default_backend = [
+        "后端", "接口", "服务", "数据库", "登录", "token", "schema", "错误码", "api", "sql",
+        "backend", "server", "migration", "database",
+    ];
+
+    let frontend_keywords: Vec<&str> = default_frontend
+        .iter()
+        .copied()
+        .chain(config.frontend.domain_keywords.iter().map(String::as_str))
+        .collect();
+    let backend_keywords: Vec<&str> = default_backend
+        .iter()
+        .copied()
+        .chain(config.backend.domain_keywords.iter().map(String::as_str))
+        .collect();
+
+    let frontend_like = contains_any(goal, &frontend_keywords);
+    let backend_like = contains_any(goal, &backend_keywords);
+
     if contains_any(goal, &["先", "再", "联调", "对齐", "契约", "字段"]) {
         return MissionMode::SerialHandoff;
     }
@@ -1348,6 +1383,7 @@ fn infer_mission_mode(goal: &str) -> MissionMode {
 fn mission_assignments(
     goal: &str,
     mode: &MissionMode,
+    config: &TeamConfig,
 ) -> (
     Option<String>,
     Option<String>,
@@ -1355,20 +1391,22 @@ fn mission_assignments(
     Option<String>,
     String,
 ) {
+    let fe_name = slot_display_name(WorkerSlot::Frontend, config);
+    let be_name = slot_display_name(WorkerSlot::Backend, config);
     match mode {
         MissionMode::Solo(WorkerSlot::Frontend) => (
             Some("主导 UI/交互侧推进".to_string()),
             Some("待命并准备接收后续协助".to_string()),
             Some(format!("围绕当前目标推进前端侧工作：{goal}")),
             None,
-            "等待协作者 A 进入协作上下文，再决定是否需要服务侧协助".to_string(),
+            format!("等待{fe_name}进入协作上下文，再决定是否需要服务侧协助"),
         ),
         MissionMode::Solo(WorkerSlot::Backend) => (
             Some("待命并准备接收后续协助".to_string()),
             Some("主导服务/数据侧推进".to_string()),
             None,
             Some(format!("围绕当前目标推进后端侧工作：{goal}")),
-            "等待协作者 B 进入协作上下文，再决定是否需要 UI 侧协助".to_string(),
+            format!("等待{be_name}进入协作上下文，再决定是否需要 UI 侧协助"),
         ),
         MissionMode::Parallel => (
             Some("负责 UI/交互侧推进".to_string()),
@@ -1398,11 +1436,11 @@ fn contains_any(goal: &str, keywords: &[&str]) -> bool {
     keywords.iter().any(|keyword| goal.contains(keyword))
 }
 
-fn plan_manual_override_mission(worker: WorkerSlot, message: &str) -> Mission {
+fn plan_manual_override_mission(worker: WorkerSlot, message: &str, config: &TeamConfig) -> Mission {
     let mode = MissionMode::Solo(worker);
     let goal = format!("手动分派：{}", preview(message));
     let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
-        mission_assignments(message, &mode);
+        mission_assignments(message, &mode, config);
     let mut mission = Mission {
         goal,
         mode,
@@ -1437,10 +1475,10 @@ fn plan_manual_override_mission(worker: WorkerSlot, message: &str) -> Mission {
     mission
 }
 
-fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str) -> Mission {
+fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str, config: &TeamConfig) -> Mission {
     let goal = format!("手动协作同步：{}", preview(message));
     let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
-        mission_assignments(&goal, &MissionMode::Parallel);
+        mission_assignments(&goal, &MissionMode::Parallel, config);
     let mut mission = Mission {
         goal,
         mode: MissionMode::Parallel,
@@ -1484,7 +1522,7 @@ fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str) ->
     mission
 }
 
-fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState) -> Mission {
+fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState, config: &TeamConfig) -> Mission {
     let mode = match (
         worker_has_recovery_context(frontend),
         worker_has_recovery_context(backend),
@@ -1496,7 +1534,7 @@ fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState) -> Missi
     };
     let goal = recovery_goal(frontend, backend);
     let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
-        mission_assignments(&goal, &mode);
+        mission_assignments(&goal, &mode, config);
     Mission {
         goal,
         mode,

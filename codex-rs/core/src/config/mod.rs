@@ -390,10 +390,10 @@ pub struct Config {
     pub zteam_enabled: bool,
 
     /// Per-slot overrides for ZTeam frontend worker.
-    pub zteam_frontend: Option<codex_config::ZteamSlotOverride>,
+    pub zteam_frontend: Option<codex_config::types::ZteamSlotOverride>,
 
     /// Per-slot overrides for ZTeam backend worker.
-    pub zteam_backend: Option<codex_config::ZteamSlotOverride>,
+    pub zteam_backend: Option<codex_config::types::ZteamSlotOverride>,
 
     /// Show startup tooltips in the TUI welcome screen.
     pub show_tooltips: bool,
@@ -2650,6 +2650,8 @@ impl Config {
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             zteam_enabled: cfg.tui.as_ref().map(|t| t.zteam_enabled).unwrap_or(true),
+            zteam_frontend: cfg.tui.as_ref().and_then(|t| t.zteam_frontend.clone()),
+            zteam_backend: cfg.tui.as_ref().and_then(|t| t.zteam_backend.clone()),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
