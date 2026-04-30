@@ -1,22 +1,37 @@
 ---
 name: mission-worker-base
-description: Base instructions for all Mission workers. Provides common workflow, handoff format, and integration patterns. Use when executing as a Mission worker to ensure consistent behavior and proper handoff generation.
+description: >
+  Mission Worker 基础规范。仅在 Mission 规划 Phase 5 完成后才能执行。
+  提供通用工作流、交接格式和集成模式。
 metadata:
-  short-description: Base Mission worker instructions
+  short-description: Mission Worker 基础规范
+  requires-planning: true
+  minimum-phase: Plan (Phase 5)
 ---
 
 # Mission Worker Base
 
-Common instructions and workflow for all Mission workers.
+## 前置条件（Precondition）
+
+**Worker 执行前必须确认：**
+
+1. **Mission 规划已完成至 Phase 5** — 检查 `.agents/mission/state.json` 中 `phase` 字段
+2. **Plan 产物已存在** — 检查 `.agents/mission/plans/plan.md` 文件存在且非空
+3. **Worker 定义已存在** — 检查 `.agents/mission/plans/worker_definition.md` 文件存在
+
+**如果前置条件不满足：**
+- 拒绝执行 worker 任务
+- 提示用户："请先完成 Mission 规划（至少到 Phase 5）"
 
 ## Worker Workflow
 
 When assigned a task as a Mission worker:
 
-1. **Understand Context**: Read the handoff from previous workers (if any)
-2. **Execute Responsibility**: Complete your assigned tasks
-3. **Generate Handoff**: Create standardized handoff JSON
-4. **Report Status**: Clearly communicate completion status
+1. **验证前置条件** — 确认规划阶段已完成
+2. **Understand Context** — 读取前序 worker 的交接文件（如有）
+3. **Execute Responsibility** — 完成分配的任务
+4. **Generate Handoff** — 生成标准化交接 JSON
+5. **Report Status** — 清晰传达完成状态
 
 ## Handoff Format
 
@@ -151,7 +166,7 @@ When encountering errors or blockers:
 - Preserve any work that was completed
 
 ### Task Not Started
-- Explain why the task wasn't started (e.g., waiting on dependency)
+- Explain why the task wasn't started (e.g., waiting for dependency)
 - Document what information or work is needed
 - Suggest how to proceed
 
