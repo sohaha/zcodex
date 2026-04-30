@@ -389,6 +389,12 @@ pub struct Config {
     /// Expose the local ZTeam collaboration entry points in the TUI.
     pub zteam_enabled: bool,
 
+    /// Per-slot overrides for ZTeam frontend worker.
+    pub zteam_frontend: Option<codex_config::ZteamSlotOverride>,
+
+    /// Per-slot overrides for ZTeam backend worker.
+    pub zteam_backend: Option<codex_config::ZteamSlotOverride>,
+
     /// Show startup tooltips in the TUI welcome screen.
     pub show_tooltips: bool,
 

@@ -584,6 +584,16 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub zteam_enabled: bool,
 
+    /// Custom display names and role overrides for ZTeam worker slots.
+    /// When set, the specified fields override the built-in defaults for
+    /// the matching slot (frontend/backend).
+    #[serde(default)]
+    pub zteam_frontend: Option<ZteamSlotOverride>,
+
+    /// Backend slot override for ZTeam.
+    #[serde(default)]
+    pub zteam_backend: Option<ZteamSlotOverride>,
+
     /// Enable animations (welcome screen, shimmer effects, spinners).
     /// Defaults to `true`.
     #[serde(default = "default_true")]
@@ -1060,4 +1070,26 @@ pub struct ZtokToml {
     /// Selects whether ztok uses the default enhanced behavior or the reduced
     /// basic mode.
     pub behavior: Option<ZtokBehavior>,
+}
+
+/// Per-slot overrides for a ZTeam worker.
+///
+/// Allows customizing the role name, display name, and domain keywords
+/// for one of the two built-in ZTeam slots (frontend/backend).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ZteamSlotOverride {
+    /// Override the agent type/role (e.g. "fullstack-engineer").
+    #[serde(default)]
+    pub role_name: Option<String>,
+
+    /// Override the display name shown in the TUI (e.g. "全栈").
+    #[serde(default)]
+    pub display_name: Option<String>,
+
+    /// Domain keywords that map goals to this slot. When a goal contains
+    /// any of these keywords, the mission planner will route work here.
+    /// Replaces the built-in keyword lists for the slot.
+    #[serde(default)]
+    pub domain_keywords: Option<Vec<String>>,
 }

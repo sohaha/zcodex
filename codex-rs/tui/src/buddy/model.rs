@@ -27,26 +27,26 @@ const IDLE_SEQUENCE: [BuddyFrame; 12] = [
     BuddyFrame::Rest,
 ];
 
-const CAT_NAMES: &[&str] = &["Mochi", "Pixel", "Pico", "Nori", "Miso"];
-const FOX_NAMES: &[&str] = &["Ember", "Sable", "Maple", "Juniper", "Vixen"];
-const OTTER_NAMES: &[&str] = &["Ripple", "Pebble", "Kelp", "Drift", "Sunny"];
-const RABBIT_NAMES: &[&str] = &["Clover", "Pip", "Thistle", "Velvet", "Sprout"];
-const OWL_NAMES: &[&str] = &["Talon", "Aster", "Cinder", "Nettle", "Morrow"];
-const DRAGON_NAMES: &[&str] = &["Cobalt", "Rune", "Singe", "Tempest", "Flare"];
-const GHOST_NAMES: &[&str] = &["Wisp", "Velour", "Echo", "Glint", "Murmur"];
-const ROBOT_NAMES: &[&str] = &["Patch", "Relay", "Sprocket", "Mica", "Vector"];
-const DUCK_NAMES: &[&str] = &["Waddle", "Puddle", "Quill", "Sunny", "Pebble"];
-const GOOSE_NAMES: &[&str] = &["Honk", "Marsh", "Brisket", "Gale", "Pond"];
-const BLOB_NAMES: &[&str] = &["Gloop", "Puff", "Melt", "Bloop", "Squish"];
-const OCTOPUS_NAMES: &[&str] = &["Inky", "Drift", "Tangle", "Orbit", "Suction"];
-const PENGUIN_NAMES: &[&str] = &["Frost", "Chill", "Glide", "Waddle", "Icicle"];
-const TURTLE_NAMES: &[&str] = &["Shellby", "Harbor", "Moss", "Drift", "Bramble"];
-const SNAIL_NAMES: &[&str] = &["Shelly", "Dew", "Mallow", "Spiral", "Moss"];
-const AXOLOTL_NAMES: &[&str] = &["Axel", "Gilly", "Ripple", "Bloom", "Nemo"];
-const CAPYBARA_NAMES: &[&str] = &["Capy", "Mocha", "Sundae", "River", "Comfy"];
-const CACTUS_NAMES: &[&str] = &["Spike", "Prickle", "Sage", "Aloe", "Tumble"];
-const MUSHROOM_NAMES: &[&str] = &["Spore", "Morel", "Puff", "Truffle", "Cap"];
-const CHONK_NAMES: &[&str] = &["Chonk", "Biscuit", "Pudding", "Marble", "Chunky"];
+const CAT_NAMES: &[&str] = &["年糕", "花卷", "小橘", "芝麻", "豆沙"];
+const FOX_NAMES: &[&str] = &["小枫", "琥珀", "松果", "红豆", "阿赤"];
+const OTTER_NAMES: &[&str] = &["小溪", "浪花", "圆圆", "海苔", "暖阳"];
+const RABBIT_NAMES: &[&str] = &["三叶", "绒绒", "嫩芽", "棉花", "小跳"];
+const OWL_NAMES: &[&str] = &["弯弯", "晓晓", "灰灰", "夜夜", "星星"];
+const DRAGON_NAMES: &[&str] = &["小焰", "龙宝", "喷喷", "小雷", "飞飞"];
+const GHOST_NAMES: &[&str] = &["飘飘", "烟烟", "幽幽", "萤萤", "念念"];
+const ROBOT_NAMES: &[&str] = &["补丁", "哔哔", "铛铛", "小芯", "铮铮"];
+const DUCK_NAMES: &[&str] = &["扁扁", "水洼", "羽笔", "扑腾", "小黄"];
+const GOOSE_NAMES: &[&str] = &["嘎嘎", "饭团", "大白", "小灰", "胖胖"];
+const BLOB_NAMES: &[&str] = &["滴溜", "呼噜", "融融", "咕噜", "软软"];
+const OCTOPUS_NAMES: &[&str] = &["墨墨", "缠缠", "鼓鼓", "漩涡", "触触"];
+const PENGUIN_NAMES: &[&str] = &["霜花", "凛凛", "滑翔", "摇摇", "冰柱"];
+const TURTLE_NAMES: &[&str] = &["龟龟", "游游", "青青", "慢慢", "躲躲"];
+const SNAIL_NAMES: &[&str] = &["壳壳", "露珠", "嘟嘟", "拖拖", "粘粘"];
+const AXOLOTL_NAMES: &[&str] = &["阿索", "鳃花", "涟漪", "绽放", "尼莫"];
+const CAPYBARA_NAMES: &[&str] = &["豚豚", "摩卡", "圣代", "暖暖", "萌萌"];
+const CACTUS_NAMES: &[&str] = &["刺刺", "仙人", "艾草", "芦荟", "滚滚"];
+const MUSHROOM_NAMES: &[&str] = &["小帽", "菇菇", "噗噗", "松露", "小伞"];
+const CHONK_NAMES: &[&str] = &["胖墩", "饼干", "布丁", "云纹", "肉肉"];
 
 const STAT_NAMES: [BuddyStatName; 5] = [
     BuddyStatName::Debugging,

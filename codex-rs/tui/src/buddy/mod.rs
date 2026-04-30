@@ -564,7 +564,7 @@ mod tests {
         let mut bones = BuddyBones::from_seed("uncommon-test::project");
         bones.rarity = model::BuddyRarity::Uncommon;
         bones.species = model::BuddySpecies::Cat;
-        bones.name = "Mochi".to_string();
+        bones.name = "年糕".to_string();
         buddy.bones = Some(bones);
         buddy.state.visible = true;
         buddy.state.full_layout = true;
