@@ -8,15 +8,18 @@ use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use codex_models_manager::manager::ModelsEndpointClient;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::manager::StaticModelsManager;
+use codex_models_manager::refresh_state::MODEL_REFRESH_STATE_FILE;
 use codex_protocol::account::ProviderAccount;
 use codex_protocol::openai_models::ModelsResponse;
 
 use crate::amazon_bedrock::AmazonBedrockModelProvider;
 use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
+use crate::models_endpoint::FallbackModelsEndpoint;
 use crate::models_endpoint::OpenAiModelsEndpoint;
 
 /// Current app-visible account state for a model provider.
@@ -114,14 +117,17 @@ pub fn create_model_provider(
 #[derive(Clone, Debug)]
 struct ConfiguredModelProvider {
     info: ModelProviderInfo,
+    base_auth_manager: Option<Arc<AuthManager>>,
     auth_manager: Option<Arc<AuthManager>>,
 }
 
 impl ConfiguredModelProvider {
     fn new(provider_info: ModelProviderInfo, auth_manager: Option<Arc<AuthManager>>) -> Self {
+        let base_auth_manager = auth_manager.clone();
         let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
         Self {
             info: provider_info,
+            base_auth_manager,
             auth_manager,
         }
     }
@@ -190,10 +196,25 @@ impl ModelProvider for ConfiguredModelProvider {
                 collaboration_modes_config,
             )),
             None => {
-                let endpoint = Arc::new(OpenAiModelsEndpoint::new(
+                let primary: Arc<dyn ModelsEndpointClient> = Arc::new(OpenAiModelsEndpoint::new(
                     self.info.clone(),
                     self.auth_manager.clone(),
                 ));
+                let endpoint = if self.info.uses_official_openai_api() {
+                    primary
+                } else {
+                    let fallback: Arc<dyn ModelsEndpointClient> =
+                        Arc::new(OpenAiModelsEndpoint::new(
+                            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+                            self.base_auth_manager.clone(),
+                        ));
+                    Arc::new(FallbackModelsEndpoint::new(
+                        self.info.clone(),
+                        primary,
+                        fallback,
+                        codex_home.join(MODEL_REFRESH_STATE_FILE),
+                    ))
+                };
                 Arc::new(OpenAiModelsManager::new(
                     codex_home,
                     endpoint,
@@ -274,6 +295,7 @@ mod tests {
             model_auto_compact_token_limit: None,
             max_output_tokens: None,
             skip_reasoning_popup: false,
+            retry_429: false,
         }
     }
 

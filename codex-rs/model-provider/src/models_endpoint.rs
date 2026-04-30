@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,14 +18,19 @@ use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_models_manager::manager::ModelsEndpointClient;
+use codex_models_manager::refresh_state::ModelsRefreshStateManager;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CoreResult;
+use codex_protocol::error::UnexpectedResponseError;
 use codex_protocol::openai_models::ModelInfo;
 use codex_response_debug_context::extract_response_debug_context;
 use codex_response_debug_context::telemetry_transport_error_message;
 use http::HeaderMap;
+use http::StatusCode;
 use tokio::time::timeout;
+use tracing::error;
+use tracing::info;
 
 use crate::auth::resolve_provider_auth;
 
@@ -63,6 +69,87 @@ impl OpenAiModelsEndpoint {
             .is_some_and(|auth_manager| auth_manager.codex_api_key_env_enabled());
         collect_auth_env_telemetry(&self.provider_info, codex_api_key_env_enabled)
     }
+}
+
+/// Falls back to the built-in OpenAI `/models` endpoint when a configured
+/// provider does not implement model listing.
+#[derive(Debug)]
+pub(crate) struct FallbackModelsEndpoint {
+    provider_info: ModelProviderInfo,
+    primary: Arc<dyn ModelsEndpointClient>,
+    fallback: Arc<dyn ModelsEndpointClient>,
+    refresh_state: ModelsRefreshStateManager,
+}
+
+impl FallbackModelsEndpoint {
+    pub(crate) fn new(
+        provider_info: ModelProviderInfo,
+        primary: Arc<dyn ModelsEndpointClient>,
+        fallback: Arc<dyn ModelsEndpointClient>,
+        refresh_state_path: PathBuf,
+    ) -> Self {
+        Self {
+            provider_info,
+            primary,
+            fallback,
+            refresh_state: ModelsRefreshStateManager::new(refresh_state_path),
+        }
+    }
+}
+
+#[async_trait]
+impl ModelsEndpointClient for FallbackModelsEndpoint {
+    fn has_command_auth(&self) -> bool {
+        self.primary.has_command_auth()
+    }
+
+    async fn uses_codex_backend(&self) -> bool {
+        self.primary.uses_codex_backend().await
+    }
+
+    async fn list_models(
+        &self,
+        client_version: &str,
+    ) -> CoreResult<(Vec<ModelInfo>, Option<String>)> {
+        if self
+            .refresh_state
+            .is_models_endpoint_unsupported(&self.provider_info)
+            .await
+        {
+            return self.fallback.list_models(client_version).await;
+        }
+
+        match self.primary.list_models(client_version).await {
+            Ok(response) => Ok(response),
+            Err(err) if models_endpoint_unsupported_error(&err) => {
+                match self
+                    .refresh_state
+                    .mark_models_endpoint_unsupported(&self.provider_info)
+                    .await
+                {
+                    Ok(true) => info!("models endpoint unsupported; using OpenAI fallback"),
+                    Ok(false) => {}
+                    Err(err) => {
+                        error!("failed to persist unsupported models endpoint state: {err}")
+                    }
+                }
+                self.fallback.list_models(client_version).await
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn models_endpoint_unsupported_error(err: &CodexErr) -> bool {
+    matches!(
+        err,
+        CodexErr::UnexpectedStatus(UnexpectedResponseError {
+            status: StatusCode::NOT_FOUND
+                | StatusCode::METHOD_NOT_ALLOWED
+                | StatusCode::NOT_IMPLEMENTED,
+            ..
+        })
+    )
 }
 
 #[async_trait]
@@ -204,9 +291,12 @@ impl RequestTelemetry for ModelsRequestTelemetry {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU64;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
 
     use super::*;
     use codex_protocol::config_types::ModelProviderAuthInfo;
+    use serde_json::json;
 
     fn provider_info_with_command_auth() -> ModelProviderInfo {
         ModelProviderInfo {
@@ -222,6 +312,108 @@ mod tests {
             }),
             requires_openai_auth: false,
             ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+        }
+    }
+
+    fn test_state_path(name: &str) -> PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "codex-models-refresh-state-{name}-{}-{nonce}.json",
+            std::process::id(),
+        ))
+    }
+
+    fn remote_model(slug: &str) -> ModelInfo {
+        serde_json::from_value(json!({
+            "slug": slug,
+            "display_name": slug,
+            "description": null,
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": [],
+            "shell_type": "shell_command",
+            "visibility": "list",
+            "supported_in_api": true,
+            "priority": 0,
+            "upgrade": null,
+            "base_instructions": "base instructions",
+            "supports_reasoning_summaries": false,
+            "support_verbosity": false,
+            "default_verbosity": null,
+            "apply_patch_tool_type": null,
+            "truncation_policy": {"mode": "bytes", "limit": 10_000},
+            "supports_parallel_tool_calls": false,
+            "supports_image_detail_original": false,
+            "context_window": 272_000,
+            "max_context_window": 272_000,
+            "experimental_supported_tools": [],
+        }))
+        .expect("valid model")
+    }
+
+    #[derive(Debug)]
+    struct StubModelsEndpoint {
+        response: StubModelsResponse,
+        fetch_count: AtomicUsize,
+    }
+
+    #[derive(Debug)]
+    enum StubModelsResponse {
+        Success(Vec<ModelInfo>),
+        Status(StatusCode),
+    }
+
+    impl StubModelsEndpoint {
+        fn success(models: Vec<ModelInfo>) -> Arc<Self> {
+            Arc::new(Self {
+                response: StubModelsResponse::Success(models),
+                fetch_count: AtomicUsize::new(0),
+            })
+        }
+
+        fn status(status: StatusCode) -> Arc<Self> {
+            Arc::new(Self {
+                response: StubModelsResponse::Status(status),
+                fetch_count: AtomicUsize::new(0),
+            })
+        }
+
+        fn fetch_count(&self) -> usize {
+            self.fetch_count.load(Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait]
+    impl ModelsEndpointClient for StubModelsEndpoint {
+        fn has_command_auth(&self) -> bool {
+            true
+        }
+
+        async fn uses_codex_backend(&self) -> bool {
+            false
+        }
+
+        async fn list_models(
+            &self,
+            _client_version: &str,
+        ) -> CoreResult<(Vec<ModelInfo>, Option<String>)> {
+            self.fetch_count.fetch_add(1, Ordering::SeqCst);
+            match &self.response {
+                StubModelsResponse::Success(models) => Ok((models.clone(), None)),
+                StubModelsResponse::Status(status) => {
+                    Err(CodexErr::UnexpectedStatus(UnexpectedResponseError {
+                        status: *status,
+                        body: status.to_string(),
+                        url: Some("https://example.test/models".to_string()),
+                        cf_ray: None,
+                        request_id: None,
+                        identity_authorization_error: None,
+                        identity_error_code: None,
+                    }))
+                }
+            }
         }
     }
 
@@ -243,5 +435,81 @@ mod tests {
         );
 
         assert!(!endpoint.has_command_auth());
+    }
+
+    #[tokio::test]
+    async fn fallback_endpoint_uses_openai_after_unsupported_models_status() {
+        let state_path = test_state_path("unsupported");
+        let provider = ModelProviderInfo {
+            name: Some("local".to_string()),
+            base_url: Some("http://127.0.0.1:18100".to_string()),
+            ..Default::default()
+        };
+        let primary = StubModelsEndpoint::status(StatusCode::NOT_FOUND);
+        let fallback = StubModelsEndpoint::success(vec![remote_model("openai-model")]);
+        let endpoint = FallbackModelsEndpoint::new(
+            provider.clone(),
+            primary.clone(),
+            fallback.clone(),
+            state_path.clone(),
+        );
+
+        let (models, _) = endpoint
+            .list_models("1.0.0")
+            .await
+            .expect("fallback should succeed");
+
+        assert_eq!(models, vec![remote_model("openai-model")]);
+        assert_eq!(primary.fetch_count(), 1);
+        assert_eq!(fallback.fetch_count(), 1);
+
+        let next_primary = StubModelsEndpoint::status(StatusCode::NOT_FOUND);
+        let next_fallback = StubModelsEndpoint::success(vec![remote_model("openai-model")]);
+        let next_endpoint = FallbackModelsEndpoint::new(
+            provider,
+            next_primary.clone(),
+            next_fallback.clone(),
+            state_path,
+        );
+
+        let _ = next_endpoint
+            .list_models("1.0.0")
+            .await
+            .expect("persisted fallback should succeed");
+
+        assert_eq!(next_primary.fetch_count(), 0);
+        assert_eq!(next_fallback.fetch_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn fallback_endpoint_does_not_fallback_for_auth_errors() {
+        let provider = ModelProviderInfo {
+            name: Some("local".to_string()),
+            base_url: Some("http://127.0.0.1:18100".to_string()),
+            ..Default::default()
+        };
+        let primary = StubModelsEndpoint::status(StatusCode::UNAUTHORIZED);
+        let fallback = StubModelsEndpoint::success(vec![remote_model("openai-model")]);
+        let endpoint = FallbackModelsEndpoint::new(
+            provider,
+            primary.clone(),
+            fallback.clone(),
+            test_state_path("auth"),
+        );
+
+        let err = endpoint
+            .list_models("1.0.0")
+            .await
+            .expect_err("auth errors should not fallback");
+
+        assert!(matches!(
+            err,
+            CodexErr::UnexpectedStatus(UnexpectedResponseError {
+                status: StatusCode::UNAUTHORIZED,
+                ..
+            })
+        ));
+        assert_eq!(primary.fetch_count(), 1);
+        assert_eq!(fallback.fetch_count(), 0);
     }
 }

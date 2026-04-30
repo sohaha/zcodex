@@ -8,21 +8,20 @@ use std::path::PathBuf;
 use tokio::fs;
 use tracing::error;
 
+pub const MODEL_REFRESH_STATE_FILE: &str = "models_refresh_state.json";
+
 /// Manages provider refresh capabilities persisted across process restarts.
 #[derive(Debug)]
-pub(crate) struct ModelsRefreshStateManager {
+pub struct ModelsRefreshStateManager {
     state_path: PathBuf,
 }
 
 impl ModelsRefreshStateManager {
-    pub(crate) fn new(state_path: PathBuf) -> Self {
+    pub fn new(state_path: PathBuf) -> Self {
         Self { state_path }
     }
 
-    pub(crate) async fn is_models_endpoint_unsupported(
-        &self,
-        provider: &ModelProviderInfo,
-    ) -> bool {
+    pub async fn is_models_endpoint_unsupported(&self, provider: &ModelProviderInfo) -> bool {
         let signature = UnsupportedModelsEndpointProvider::from_provider(provider);
         match self.load().await {
             Ok(Some(state)) => state
@@ -37,7 +36,7 @@ impl ModelsRefreshStateManager {
         }
     }
 
-    pub(crate) async fn mark_models_endpoint_unsupported(
+    pub async fn mark_models_endpoint_unsupported(
         &self,
         provider: &ModelProviderInfo,
     ) -> io::Result<bool> {

@@ -4,7 +4,7 @@ pub(crate) mod config;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;
-pub(crate) mod refresh_state;
+pub mod refresh_state;
 pub mod test_support;
 
 pub use codex_app_server_protocol::AuthMode;
