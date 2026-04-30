@@ -5659,6 +5659,9 @@ pub enum ThreadItem {
     NativeToolCall {
         id: String,
         tool_name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        arguments: Option<String>,
         status: NativeToolCallStatus,
         success: Option<bool>,
         #[ts(type = "number | null")]

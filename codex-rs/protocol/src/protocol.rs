@@ -2618,6 +2618,9 @@ pub struct WebSearchEndEvent {
 pub struct NativeToolCallBeginEvent {
     pub call_id: String,
     pub tool_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub arguments: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

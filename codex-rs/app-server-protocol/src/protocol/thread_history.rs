@@ -419,6 +419,7 @@ impl ThreadHistoryBuilder {
         let item = ThreadItem::NativeToolCall {
             id: payload.call_id.clone(),
             tool_name: payload.tool_name.clone(),
+            arguments: payload.arguments.clone(),
             status: NativeToolCallStatus::InProgress,
             success: None,
             duration_ms: None,
@@ -430,6 +431,7 @@ impl ThreadHistoryBuilder {
         let item = ThreadItem::NativeToolCall {
             id: payload.call_id.clone(),
             tool_name: payload.tool_name.clone(),
+            arguments: None,
             status: NativeToolCallStatus::Completed,
             success: Some(payload.success),
             duration_ms: Some(payload.duration.as_millis() as i64),

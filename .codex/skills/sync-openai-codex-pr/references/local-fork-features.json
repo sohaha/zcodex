@@ -612,6 +612,16 @@
           "type": "regex",
           "path": "codex-rs/tui/src/history_cell.rs",
           "pattern": "如果判断有误，请尝试改写请求"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "此会话使用模型"
+        },
+        {
+          "type": "regex",
+          "path": "codex-rs/core/src/session/mod.rs",
+          "pattern": "您的账户因可能的高风险网络活动被标记"
         }
       ]
     },

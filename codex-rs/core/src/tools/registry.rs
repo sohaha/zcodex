@@ -398,6 +398,7 @@ impl ToolRegistry {
                     EventMsg::NativeToolCallBegin(NativeToolCallBeginEvent {
                         call_id: invocation.call_id.clone(),
                         tool_name: tool_name.display().to_string(),
+                        arguments: Some(log_payload.to_string()),
                     }),
                 )
                 .await;

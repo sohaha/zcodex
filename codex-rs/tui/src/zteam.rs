@@ -1142,23 +1142,29 @@ pub(crate) fn usage() -> &'static str {
     "用法：/zteam start <目标> | /zteam start | /zteam status | /zteam attach | /zteam <frontend|backend> <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
 }
 
-pub(crate) fn start_prompt(goal: Option<&str>) -> String {
+pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
+    let frontend_role = slot_role_name(WorkerSlot::Frontend, config);
+    let backend_role = slot_role_name(WorkerSlot::Backend, config);
+    let frontend_display = slot_display_name(WorkerSlot::Frontend, config);
+    let backend_display = slot_display_name(WorkerSlot::Backend, config);
     match goal {
         Some(goal) => format!(
             concat!(
                 "进入 ZTeam Mission 模式。当前目标：`{goal}`。\n",
                 "立即使用 `spawn_agent` 创建两个长期 worker：\n",
-                "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
-                "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
+                "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
+                "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
                 "对两个 worker 都说明：它们是长期协作者，主线程负责围绕当前目标拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
                 "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name，并补一句你准备如何围绕当前目标组织第一轮协作。除非我下一条消息明确要求实现，否则不要开始业务修改。"
             ),
-            goal = goal
+            goal = goal,
+            frontend_role = frontend_role,
+            backend_role = backend_role,
         ),
         None => concat!(
             "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n",
-            "1. `task_name = \"frontend\"`，`agent_type = \"frontend-engineer\"`\n",
-            "2. `task_name = \"backend\"`，`agent_type = \"backend-engineer\"`\n",
+            "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
+            "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
             "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
             "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
         )
