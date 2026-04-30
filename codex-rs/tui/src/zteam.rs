@@ -114,7 +114,9 @@ fn slot_display_name(slot: WorkerSlot, config: &TeamConfig) -> String {
         WorkerSlot::Frontend => config.frontend.display_name.as_deref(),
         WorkerSlot::Backend => config.backend.display_name.as_deref(),
     };
-    override_val.unwrap_or_else(|| slot.display_name()).to_string()
+    override_val
+        .unwrap_or_else(|| slot.display_name())
+        .to_string()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -393,7 +395,9 @@ impl State {
         for worker in WorkerSlot::ALL {
             *state.worker_mut(worker) = WorkerState::default();
         }
-        state.mission = sanitized_goal.as_deref().map(|g| plan_mission(g, &state.team_config));
+        state.mission = sanitized_goal
+            .as_deref()
+            .map(|g| plan_mission(g, &state.team_config));
         reset_autopilot_for_new_mission(&mut state);
         push_activity(
             &mut state.activity,
@@ -438,7 +442,11 @@ impl State {
         let synthesized_recovery_mission = if state.mission.is_none() {
             let frontend = state.frontend.clone();
             let backend = state.backend.clone();
-            state.mission = Some(plan_recovery_mission(&frontend, &backend, &state.team_config));
+            state.mission = Some(plan_recovery_mission(
+                &frontend,
+                &backend,
+                &state.team_config,
+            ));
             reset_autopilot_for_recovery(&mut state);
             true
         } else {
@@ -673,7 +681,11 @@ impl State {
         }
         worker_state.last_dispatched_task = Some(message.to_string());
         if state.mission.is_none() {
-            state.mission = Some(plan_manual_override_mission(worker, message, &state.team_config));
+            state.mission = Some(plan_manual_override_mission(
+                worker,
+                message,
+                &state.team_config,
+            ));
         }
         let frontend = state.frontend.clone();
         let backend = state.backend.clone();
@@ -714,7 +726,12 @@ impl State {
         }
         target_state.last_dispatched_task = Some(message.to_string());
         if state.mission.is_none() {
-            state.mission = Some(plan_manual_relay_mission(from, to, message, &state.team_config));
+            state.mission = Some(plan_manual_relay_mission(
+                from,
+                to,
+                message,
+                &state.team_config,
+            ));
         }
         let frontend = state.frontend.clone();
         let backend = state.backend.clone();
@@ -1207,7 +1224,17 @@ pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
             backend_role = backend_role,
         ),
         None => format!(
-            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n\\n             1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n\\n             2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n\\n             对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n\\n             创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
+            "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：
+\
+             1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`
+\
+             2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`
+\
+             对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。
+\
+             创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。",
+            frontend_role = frontend_role,
+            backend_role = backend_role,
         ),
     }
 }
@@ -1342,12 +1369,37 @@ fn infer_mission_mode(goal: &str, config: &TeamConfig) -> MissionMode {
 
     // 合并内置关键词和 config 自定义关键词
     let default_frontend = [
-        "前端", "页面", "布局", "交互", "移动端", "组件", "样式", "导航", "表单", "ui",
-        "frontend", "css", "react", "vue", "html",
+        "前端",
+        "页面",
+        "布局",
+        "交互",
+        "移动端",
+        "组件",
+        "样式",
+        "导航",
+        "表单",
+        "ui",
+        "frontend",
+        "css",
+        "react",
+        "vue",
+        "html",
     ];
     let default_backend = [
-        "后端", "接口", "服务", "数据库", "登录", "token", "schema", "错误码", "api", "sql",
-        "backend", "server", "migration", "database",
+        "后端",
+        "接口",
+        "服务",
+        "数据库",
+        "登录",
+        "token",
+        "schema",
+        "错误码",
+        "api",
+        "sql",
+        "backend",
+        "server",
+        "migration",
+        "database",
     ];
 
     let frontend_keywords: Vec<&str> = default_frontend
@@ -1475,7 +1527,12 @@ fn plan_manual_override_mission(worker: WorkerSlot, message: &str, config: &Team
     mission
 }
 
-fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str, config: &TeamConfig) -> Mission {
+fn plan_manual_relay_mission(
+    from: WorkerSlot,
+    to: WorkerSlot,
+    message: &str,
+    config: &TeamConfig,
+) -> Mission {
     let goal = format!("手动协作同步：{}", preview(message));
     let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
         mission_assignments(&goal, &MissionMode::Parallel, config);
@@ -1522,7 +1579,11 @@ fn plan_manual_relay_mission(from: WorkerSlot, to: WorkerSlot, message: &str, co
     mission
 }
 
-fn plan_recovery_mission(frontend: &WorkerState, backend: &WorkerState, config: &TeamConfig) -> Mission {
+fn plan_recovery_mission(
+    frontend: &WorkerState,
+    backend: &WorkerState,
+    config: &TeamConfig,
+) -> Mission {
     let mode = match (
         worker_has_recovery_context(frontend),
         worker_has_recovery_context(backend),

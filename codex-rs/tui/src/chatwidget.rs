@@ -4764,8 +4764,7 @@ impl ChatWidget {
 
         if !handled {
             self.add_to_history(history_cell::new_completed_native_tool_call(
-                ev.call_id,
-                None,
+                ev.call_id, None,
             ));
         }
         self.had_work_activity = true;
@@ -5745,6 +5744,8 @@ impl ChatWidget {
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
+        let zteam_frontend = config.zteam_frontend.clone();
+        let zteam_backend = config.zteam_backend.clone();
         config.model = model.clone();
         let prevent_idle_sleep = config.features.enabled(Feature::PreventIdleSleep);
         let mut rng = rand::rng();
@@ -5825,21 +5826,17 @@ impl ChatWidget {
             zteam_state: {
                 let zteam_config = zteam::TeamConfig {
                     frontend: zteam::SlotConfig {
-                        role_name: config.tui.zteam_frontend.as_ref().and_then(|o| o.role_name.clone()),
-                        display_name: config.tui.zteam_frontend.as_ref().and_then(|o| o.display_name.clone()),
-                        domain_keywords: config
-                            .tui
-                            .zteam_frontend
+                        role_name: zteam_frontend.as_ref().and_then(|o| o.role_name.clone()),
+                        display_name: zteam_frontend.as_ref().and_then(|o| o.display_name.clone()),
+                        domain_keywords: zteam_frontend
                             .as_ref()
                             .and_then(|o| o.domain_keywords.clone())
                             .unwrap_or_default(),
                     },
                     backend: zteam::SlotConfig {
-                        role_name: config.tui.zteam_backend.as_ref().and_then(|o| o.role_name.clone()),
-                        display_name: config.tui.zteam_backend.as_ref().and_then(|o| o.display_name.clone()),
-                        domain_keywords: config
-                            .tui
-                            .zteam_backend
+                        role_name: zteam_backend.as_ref().and_then(|o| o.role_name.clone()),
+                        display_name: zteam_backend.as_ref().and_then(|o| o.display_name.clone()),
+                        domain_keywords: zteam_backend
                             .as_ref()
                             .and_then(|o| o.domain_keywords.clone())
                             .unwrap_or_default(),
@@ -7243,6 +7240,12 @@ impl ChatWidget {
                     });
                 }
             }
+            ThreadItem::ImageView { id, path } => {
+                self.on_view_image_tool_call(ViewImageToolCallEvent { call_id: id, path });
+            }
+            ThreadItem::ImageGeneration {
+                id,
+                status,
                 revised_prompt,
                 result,
                 saved_path,
@@ -7777,7 +7780,12 @@ impl ChatWidget {
             ThreadItem::WebSearch { id, .. } => {
                 self.on_web_search_begin(WebSearchBeginEvent { call_id: id });
             }
-            ThreadItem::NativeToolCall { id, tool_name, arguments, .. } => {
+            ThreadItem::NativeToolCall {
+                id,
+                tool_name,
+                arguments,
+                ..
+            } => {
                 self.on_native_tool_call_begin(NativeToolCallBeginEvent {
                     call_id: id,
                     tool_name,

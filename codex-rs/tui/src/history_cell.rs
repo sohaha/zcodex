@@ -1868,7 +1868,11 @@ pub(crate) struct NativeToolCallCell {
 }
 
 impl NativeToolCallCell {
-    pub(crate) fn new(call_id: String, arguments: Option<String>, animations_enabled: bool) -> Self {
+    pub(crate) fn new(
+        call_id: String,
+        arguments: Option<String>,
+        animations_enabled: bool,
+    ) -> Self {
         let detail = native_tool_call_detail(&arguments);
         Self {
             call_id,
