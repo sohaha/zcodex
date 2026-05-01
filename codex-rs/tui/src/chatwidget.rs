@@ -431,6 +431,15 @@ pub(crate) enum BuddyMenuAction {
     Hide,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ZmissionMenuAction {
+    Start,
+    Status,
+    Continue,
+    View,
+    Reset,
+}
+
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "在本地运行命令可在前面加上 !";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "例如：!ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -4778,7 +4787,7 @@ impl ChatWidget {
             .and_then(|cell| cell.as_any_mut().downcast_mut::<NativeToolCallCell>())
             && cell.call_id() == ev.call_id
         {
-            cell.complete();
+            cell.complete(Some(ev.duration));
             self.bump_active_cell_revision();
             self.flush_active_cell();
             handled = true;
@@ -4786,7 +4795,9 @@ impl ChatWidget {
 
         if !handled {
             self.add_to_history(history_cell::new_completed_native_tool_call(
-                ev.call_id, None,
+                ev.call_id,
+                None,
+                Some(ev.duration),
             ));
         }
         self.had_work_activity = true;
@@ -6431,6 +6442,78 @@ impl ChatWidget {
             BuddyMenuAction::Hide => "hide",
         };
         self.handle_buddy_command(args);
+    }
+
+    fn open_zmission_menu(&mut self) {
+        let items = vec![
+            self.zmission_menu_item(
+                "启动 Mission",
+                "开始新的 7 阶段 Mission 规划流程。",
+                ZmissionMenuAction::Start,
+            ),
+            self.zmission_menu_item(
+                "查看状态",
+                "查看当前 Mission 阶段、进度与子代理状态。",
+                ZmissionMenuAction::Status,
+            ),
+            self.zmission_menu_item(
+                "继续推进",
+                "确认当前阶段并推进到下一阶段。",
+                ZmissionMenuAction::Continue,
+            ),
+            self.zmission_menu_item(
+                "打开视图",
+                "进入 Phase Agent 视图查看当前 Mission。",
+                ZmissionMenuAction::View,
+            ),
+            self.zmission_menu_item(
+                "结束 Mission",
+                "重置当前 Mission，并准备输入新的目标。",
+                ZmissionMenuAction::Reset,
+            ),
+        ];
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            view_id: Some("zmission-menu"),
+            title: Some("ZMission 子菜单".to_string()),
+            subtitle: Some("选择一个动作管理当前 Mission 流程。".to_string()),
+            footer_hint: Some(standard_popup_hint_line()),
+            items,
+            ..Default::default()
+        });
+    }
+
+    fn zmission_menu_item(
+        &self,
+        name: &str,
+        description: &str,
+        action: ZmissionMenuAction,
+    ) -> SelectionItem {
+        SelectionItem {
+            name: name.to_string(),
+            description: Some(description.to_string()),
+            actions: vec![Box::new(move |tx| {
+                let command = match action {
+                    ZmissionMenuAction::Start => {
+                        crate::zmission_command::Command::Start { goal: None }
+                    }
+                    ZmissionMenuAction::Status => crate::zmission_command::Command::Status,
+                    ZmissionMenuAction::Continue => {
+                        crate::zmission_command::Command::Continue { note: None }
+                    }
+                    ZmissionMenuAction::View => crate::zmission_command::Command::View,
+                    ZmissionMenuAction::Reset => crate::zmission_command::Command::Reset,
+                };
+                tx.send(AppEvent::ZmissionCommand(command));
+            })],
+            dismiss_on_select: true,
+            ..Default::default()
+        }
+    }
+
+    /// 发送 ZmissionCommand 事件，用于从 ChatWidget 内部触发 Mission 命令。
+    pub(crate) fn send_zmission_command(&self, command: crate::zmission_command::Command) {
+        self.app_event_tx
+            .send(crate::app_event::AppEvent::ZmissionCommand(command));
     }
 
     fn handle_buddy_command(&mut self, args: &str) {

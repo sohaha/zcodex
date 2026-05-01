@@ -428,10 +428,18 @@ impl ThreadHistoryBuilder {
     }
 
     fn handle_native_tool_call_end(&mut self, payload: &NativeToolCallEndEvent) {
+        let existing_args = self
+            .current_turn
+            .as_ref()
+            .and_then(|turn| turn.items.iter().find(|item| item.id() == payload.call_id))
+            .and_then(|item| match item {
+                ThreadItem::NativeToolCall { arguments, .. } => arguments.clone(),
+                _ => None,
+            });
         let item = ThreadItem::NativeToolCall {
             id: payload.call_id.clone(),
             tool_name: payload.tool_name.clone(),
-            arguments: None,
+            arguments: existing_args,
             status: NativeToolCallStatus::Completed,
             success: Some(payload.success),
             duration_ms: Some(payload.duration.as_millis() as i64),

@@ -6,6 +6,7 @@
 //! - 阶段完成后弹出确认面板，用户可选择继续或补充内容
 //! - 补充内容会累积到当前子代理的上下文，不推进阶段
 
+use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
 use crate::chatwidget::UserMessage;
 use crate::zmission::PhaseAgentManager;
@@ -110,7 +111,10 @@ impl crate::app::App {
 
     /// 尝试创建待 fork 的 Phase Agent 子线程。
     /// 如果主线程空闲则立即 fork，否则等待下次调用。
-    pub(crate) async fn try_spawn_pending_phase_agent(&mut self, app_server: &mut AppServerSession) {
+    pub(crate) async fn try_spawn_pending_phase_agent(
+        &mut self,
+        app_server: &mut AppServerSession,
+    ) {
         // 检查是否有待 fork 的阶段
         let pending_phase = {
             let Some(manager) = &self.phase_agent_manager else {
@@ -143,7 +147,10 @@ impl crate::app::App {
 
         // 主线程空闲，可以 fork
         self.chat_widget.add_info_message(
-            format!("✅ 主线程空闲，正在为阶段 {} 创建 Phase Agent 子线程...", crate::zmission::phase_display_name(phase)),
+            format!(
+                "✅ 主线程空闲，正在为阶段 {} 创建 Phase Agent 子线程...",
+                crate::zmission::phase_display_name(phase)
+            ),
             None,
         );
 
@@ -606,33 +613,12 @@ impl crate::app::App {
     /// 从 ChatWidget 内部直接调用，启动新 Mission（用于 pending_mission_goal 拦截）。
     pub(crate) fn handle_zmission_start_from_widget(
         chat_widget: &mut crate::chatwidget::ChatWidget,
-        workspace: std::path::PathBuf,
+        _workspace: std::path::PathBuf,
         goal: String,
     ) {
-        // 注意：这里无法访问 App 的 phase_agent_manager，需要在 App 中处理
-        // 作为兼容方案，使用传统方式启动
-        let planner = MissionPlanner::for_workspace(&workspace);
-        match planner.start(&goal) {
-            Ok(step) => {
-                let msg = format_planning_step_legacy("🚀 Mission 已启动", &step);
-                chat_widget.add_info_message(msg, None);
-
-                if let Some(definition) = step.definition {
-                    let prompt = format_phase_analysis_prompt_legacy(
-                        &step.state.goal,
-                        &definition,
-                        &planner,
-                    );
-                    chat_widget.mission_phase_running = true;
-                    chat_widget.submit_user_message_as_plain_user_turn(
-                        crate::chatwidget::UserMessage::from(prompt.as_str()),
-                    );
-                }
-            }
-            Err(err) => {
-                chat_widget.add_error_message(format!("Mission 启动失败：{err}"));
-            }
-        }
+        // 发送 ZmissionCommand 事件，让 App 使用新的 Phase Agent 架构处理
+        chat_widget
+            .send_zmission_command(crate::zmission_command::Command::Start { goal: Some(goal) });
     }
 
     /// 从 Phase Agent Manager 注入执行 prompt。

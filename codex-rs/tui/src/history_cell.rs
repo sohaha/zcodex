@@ -1832,7 +1832,7 @@ fn native_tool_call_detail(arguments: &Option<String>) -> String {
     let key = match action {
         "search" | "semantic" => "query",
         "structure" | "extract" | "imports" | "importers" | "context" | "impact" | "calls"
-        | "dead" | "cfg" | "dfg" | "slice" | "diagnostics" => {
+        | "dead" | "cfg" | "dfg" | "slice" | "diagnostics" | "arch" => {
             if obj.get("symbol").and_then(|v| v.as_str()).is_some() {
                 "symbol"
             } else if obj.get("path").and_then(|v| v.as_str()).is_some() {
@@ -1841,13 +1841,29 @@ fn native_tool_call_detail(arguments: &Option<String>) -> String {
                 "query"
             }
         }
+        "change-impact" => {
+            if let Some(first_path) = obj
+                .get("paths")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|v| v.as_str())
+            {
+                return format!("{action} {first_path}");
+            } else if obj.get("path").and_then(|v| v.as_str()).is_some() {
+                "path"
+            } else {
+                "symbol"
+            }
+        }
+        "notify" => "path",
+        "status" | "ping" | "warm" | "snapshot" | "doctor" => "",
         _ => "query",
     };
 
     if let Some(v) = obj.get(key).and_then(|v| v.as_str()) {
         if !v.is_empty() {
-            let truncated = if v.len() > 60 {
-                format!("{}…", &v[..60])
+            let truncated = if v.chars().count() > 60 {
+                format!("{}…", v.chars().take(60).collect::<String>())
             } else {
                 v.to_string()
             };
@@ -1862,6 +1878,7 @@ fn native_tool_call_detail(arguments: &Option<String>) -> String {
 pub(crate) struct NativeToolCallCell {
     call_id: String,
     detail: String,
+    duration_label: Option<String>,
     start_time: Instant,
     completed: bool,
     animations_enabled: bool,
@@ -1877,6 +1894,7 @@ impl NativeToolCallCell {
         Self {
             call_id,
             detail,
+            duration_label: None,
             start_time: Instant::now(),
             completed: false,
             animations_enabled,
@@ -1887,8 +1905,16 @@ impl NativeToolCallCell {
         &self.call_id
     }
 
-    pub(crate) fn complete(&mut self) {
+    pub(crate) fn complete(&mut self, duration: Option<std::time::Duration>) {
         self.completed = true;
+        self.duration_label = duration.map(|duration| {
+            let ms = duration.as_millis();
+            if ms < 1000 {
+                format!("{ms}ms")
+            } else {
+                format!("{:.1}s", duration.as_secs_f64())
+            }
+        });
     }
 }
 
@@ -1900,7 +1926,16 @@ impl HistoryCell for NativeToolCallCell {
             spinner(Some(self.start_time), self.animations_enabled)
         };
         let header = native_tool_call_display(self.completed, &self.detail);
-        let text: Text<'static> = Line::from(vec![header.bold()]).into();
+        let text: Text<'static> = if let Some(duration_label) = &self.duration_label {
+            Line::from(vec![
+                header.bold(),
+                " ".into(),
+                format!("({duration_label})").dim(),
+            ])
+            .into()
+        } else {
+            Line::from(vec![header.bold()]).into()
+        };
         PrefixedWrappedHistoryCell::new(text, vec![bullet, " ".into()], "  ").display_lines(width)
     }
 }
@@ -1916,9 +1951,10 @@ pub(crate) fn new_active_native_tool_call(
 pub(crate) fn new_completed_native_tool_call(
     call_id: String,
     arguments: Option<String>,
+    duration: Option<std::time::Duration>,
 ) -> NativeToolCallCell {
     let mut cell = NativeToolCallCell::new(call_id, arguments, false);
-    cell.complete();
+    cell.complete(duration);
     cell
 }
 

@@ -1838,6 +1838,29 @@ async fn slash_buddy_without_args_opens_buddy_menu() {
 }
 
 #[tokio::test]
+async fn slash_zmission_without_args_opens_zmission_menu() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Zmission);
+
+    assert!(chat.bottom_pane.active_view_is("zmission-menu"));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+
+    let height = chat.desired_height(/*width*/ 100);
+    let mut terminal = Terminal::new(TestBackend::new(100, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw zmission menu");
+    assert_chatwidget_snapshot!(
+        "zmission_menu_view",
+        normalized_backend_snapshot(terminal.backend())
+    );
+}
+
+#[tokio::test]
 async fn slash_buddy_full_requests_persistent_full_visibility_update() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

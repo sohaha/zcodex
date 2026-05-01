@@ -170,9 +170,7 @@ impl ChatWidget {
                 self.open_zteam_entry();
             }
             SlashCommand::Zmission => {
-                self.app_event_tx.send(AppEvent::ZmissionCommand(
-                    crate::zmission_command::Command::Status,
-                ));
+                self.open_zmission_menu();
             }
             SlashCommand::Review => {
                 self.open_review_popup();
