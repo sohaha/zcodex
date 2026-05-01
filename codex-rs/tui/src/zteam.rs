@@ -1504,10 +1504,10 @@ fn finalize_root_auto_action(state: &mut SharedState) -> bool {
     };
     let frontend = state.frontend.clone();
     let backend = state.backend.clone();
-    let Some(_) = state.mission.clone() else {
+    if state.mission.is_none() {
         state.autopilot.waiting_on = WaitingOn::Idle;
         return true;
-    };
+    }
     let parsed = state.autopilot.parsed_result.take();
     match action {
         AutoAction::BootstrapWorkers => {

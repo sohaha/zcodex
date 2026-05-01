@@ -128,7 +128,14 @@ pub(crate) async fn run_pending_session_start_hooks(
     )
     .await
     .with_additional_context(
-        built_in_session_start_snapshot(sess, turn_context, session_start_source).await,
+        if matches!(
+            session_start_source,
+            codex_hooks::SessionStartSource::Resume
+        ) {
+            build_zcontext_snapshot(sess, turn_context.as_ref()).await
+        } else {
+            None
+        },
     )
     .record_additional_contexts(sess, turn_context)
     .await
@@ -366,18 +373,6 @@ impl HookRuntimeOutcome {
 
         self.should_stop
     }
-}
-
-async fn built_in_session_start_snapshot(
-    sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
-    source: codex_hooks::SessionStartSource,
-) -> Option<String> {
-    if !matches!(source, codex_hooks::SessionStartSource::Resume) {
-        return None;
-    }
-
-    build_zcontext_snapshot(sess, turn_context.as_ref()).await
 }
 
 pub(crate) async fn record_additional_contexts(
@@ -665,6 +660,31 @@ mod tests {
             completed_at: Some(37),
             duration_ms: Some(27),
             entries: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn zcontext_snapshot_message_wraps_in_developer_role() {
+        let item = super::zcontext_snapshot_message("session snapshot data".to_string());
+        match item {
+            codex_protocol::models::ResponseItem::Message {
+                role, content, id, ..
+            } => {
+                assert_eq!(role, "developer");
+                assert!(id.is_none());
+                let text = content
+                    .into_iter()
+                    .map(|c| match c {
+                        codex_protocol::models::ContentItem::InputText { text } => text,
+                        _ => panic!("unexpected content item"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                assert!(text.contains("<zcontext_snapshot>"));
+                assert!(text.contains("</zcontext_snapshot>"));
+                assert!(text.contains("session snapshot data"));
+            }
+            other => panic!("expected Message, got {other:?}"),
         }
     }
 }
