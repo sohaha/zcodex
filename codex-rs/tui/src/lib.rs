@@ -911,26 +911,27 @@ pub async fn run_main(
         manual_model_provider_override
     };
 
-    // Resolve model: explicit -m wins, then -P clears stale model so the
-    // switched provider can pick its own default, then oss provider default,
-    // then config.toml default.
+    // Determine the effective provider override from any source.
+    // -P <PROVIDER> sets cli_provider_via_flag; -P (empty) or interactive picker
+    // sets model_provider_override. Combine them into one.
+    let effective_provider_override = cli_provider_via_flag
+        .as_deref()
+        .or(model_provider_override.as_deref());
+
+    // Resolve model: explicit -m wins, then provider switch clears stale model
+    // so the switched provider picks its own default, then oss, then config default.
     let model = if let Some(model) = &cli.model {
         Some(model.clone())
-    } else if cli_provider_via_flag.is_some() {
-        // `-P <PROVIDER>` was passed without `-m`: prefer the provider's configured
-        // default model; if none is set, clear the model so the system auto-selects
-        // from the provider's model catalog instead of keeping the old provider's model.
-        cli_provider_via_flag
-            .as_ref()
-            .and_then(|pid| config_toml.model_providers.get(pid.as_str()))
+    } else if let Some(provider_id) = effective_provider_override {
+        // Provider was switched (via -P, picker, or --oss) without explicit -m:
+        // prefer the provider's configured default model; if none is set, clear
+        // the model so the system auto-selects from the provider's model catalog
+        // instead of keeping the old provider's model slug.
+        config_toml
+            .model_providers
+            .get(provider_id)
             .and_then(|info| info.model.clone())
-        // Deliberately use None (not config_toml.model) when provider has no model set.
-    } else if cli.oss {
-        // Use the provider from model_provider_override
-        model_provider_override
-            .as_ref()
-            .and_then(|provider_id| get_default_model_for_oss_provider(provider_id))
-            .map(std::borrow::ToOwned::to_owned)
+        // Deliberately returns None (not config_toml.model) when provider has no model set.
     } else {
         None // No model specified, will use the default.
     };
