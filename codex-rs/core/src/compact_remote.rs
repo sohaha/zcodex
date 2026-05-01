@@ -10,9 +10,11 @@ use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::context_manager::estimate_response_item_model_visible_bytes;
 use crate::context_manager::is_codex_generated_item;
+use crate::hook_runtime::zcontext_snapshot_message;
 use crate::session::session::Session;
 use crate::session::turn::built_tools;
 use crate::session::turn_context::TurnContext;
+use crate::zcontext_runtime::build_zcontext_snapshot;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
@@ -155,6 +157,13 @@ async fn run_remote_compact_task_inner_impl(
         .filter(|item| matches!(item, ResponseItem::GhostSnapshot { .. }))
         .cloned()
         .collect();
+
+    if let Some(snapshot) = build_zcontext_snapshot(sess, turn_context.as_ref()).await {
+        history.record_items(
+            &[zcontext_snapshot_message(snapshot)],
+            turn_context.truncation_policy,
+        );
+    }
 
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
     let tool_router = built_tools(

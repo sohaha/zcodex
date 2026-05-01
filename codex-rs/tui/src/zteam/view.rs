@@ -479,44 +479,19 @@ fn mission_assignment(mission: Option<&super::Mission>, worker: WorkerSlot) -> O
 }
 
 fn auto_action_label(action: super::AutoAction) -> &'static str {
-    match action {
-        super::AutoAction::BootstrapWorkers => "bootstrap_workers",
-        super::AutoAction::PlanCycle => "plan_cycle",
-        super::AutoAction::DispatchCycle => "dispatch_cycle",
-        super::AutoAction::SummarizeResults => "summarize_results",
-        super::AutoAction::RepairWorkers => "repair_workers",
-        super::AutoAction::CompleteMission => "complete_mission",
-    }
+    action.label()
 }
 
 fn mission_mode_label(mode: &super::MissionMode) -> &'static str {
-    match mode {
-        super::MissionMode::Solo(WorkerSlot::Frontend) => "solo-frontend",
-        super::MissionMode::Solo(WorkerSlot::Backend) => "solo-backend",
-        super::MissionMode::Parallel => "parallel",
-        super::MissionMode::SerialHandoff => "serial-handoff",
-        super::MissionMode::Blocked => "blocked",
-    }
+    mode.label()
 }
 
 fn mission_phase_label(phase: super::MissionPhase) -> &'static str {
-    match phase {
-        super::MissionPhase::Idle => "idle",
-        super::MissionPhase::Bootstrapping => "bootstrapping",
-        super::MissionPhase::Planning => "planning",
-        super::MissionPhase::Executing => "executing",
-        super::MissionPhase::Validating => "validating",
-        super::MissionPhase::Blocked => "blocked",
-        super::MissionPhase::Completed => "completed",
-    }
+    phase.label()
 }
 
 fn acceptance_status_label(status: super::AcceptanceStatus) -> &'static str {
-    match status {
-        super::AcceptanceStatus::Pending => "待验证",
-        super::AcceptanceStatus::Met => "已满足",
-        super::AcceptanceStatus::Failed => "受阻",
-    }
+    status.label()
 }
 
 fn overview_status(snapshot: &Snapshot) -> String {

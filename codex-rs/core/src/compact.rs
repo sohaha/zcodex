@@ -4,12 +4,14 @@ use std::time::Instant;
 use crate::Prompt;
 use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
+use crate::hook_runtime::zcontext_snapshot_message;
 #[cfg(test)]
 use crate::session::PreviousTurnSettings;
 use crate::session::session::Session;
 use crate::session::turn::get_last_assistant_message_from_turn;
 use crate::session::turn_context::TurnContext;
 use crate::util::backoff;
+use crate::zcontext_runtime::build_zcontext_snapshot;
 use codex_analytics::CodexCompactionEvent;
 use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
@@ -164,6 +166,12 @@ async fn run_compact_task_inner_impl(
         &[initial_input_for_turn.into()],
         turn_context.truncation_policy,
     );
+    if let Some(snapshot) = build_zcontext_snapshot(&sess, turn_context.as_ref()).await {
+        history.record_items(
+            &[zcontext_snapshot_message(snapshot)],
+            turn_context.truncation_policy,
+        );
+    }
 
     let mut truncated_count = 0usize;
 

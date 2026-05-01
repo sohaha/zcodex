@@ -333,15 +333,7 @@ fn parse_waiting_workers(value: &str) -> Vec<WorkerSlot> {
 }
 
 fn mission_phase_label(phase: MissionPhase) -> &'static str {
-    match phase {
-        MissionPhase::Idle => "idle",
-        MissionPhase::Bootstrapping => "bootstrapping",
-        MissionPhase::Planning => "planning",
-        MissionPhase::Executing => "executing",
-        MissionPhase::Validating => "validating",
-        MissionPhase::Blocked => "blocked",
-        MissionPhase::Completed => "completed",
-    }
+    phase.label()
 }
 
 fn csv_workers(workers: &[WorkerSlot]) -> String {

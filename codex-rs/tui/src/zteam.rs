@@ -12,6 +12,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 mod autopilot;
+mod command;
+mod mission;
 mod recovery;
 mod view;
 mod worker_source;
@@ -28,8 +30,30 @@ pub(crate) use view::WorkbenchView;
 pub(crate) use worker_source::FederationAdapter;
 pub(crate) use worker_source::WorkerSource;
 
-pub(crate) const MODE_NAME: &str = "ZTeam";
-pub(crate) const COMMAND_NAME: &str = "/zteam";
+pub(crate) use command::COMMAND_NAME;
+pub(crate) use command::Command;
+pub(crate) use command::MODE_NAME;
+pub(crate) use command::disabled_hint;
+pub(crate) use command::disabled_message;
+pub(crate) use command::entry_available_during_task;
+pub(crate) use command::sanitize_mission_goal;
+pub(crate) use command::start_prompt;
+pub(crate) use command::usage;
+
+pub(crate) use mission::AcceptanceCheck;
+pub(crate) use mission::AcceptanceStatus;
+pub(crate) use mission::Mission;
+pub(crate) use mission::MissionMode;
+pub(crate) use mission::MissionPhase;
+pub(crate) use mission::default_acceptance_checks;
+pub(crate) use mission::mission_assignments;
+pub(crate) use mission::plan_manual_override_mission;
+pub(crate) use mission::plan_manual_relay_mission;
+pub(crate) use mission::plan_mission;
+pub(crate) use mission::preview;
+pub(crate) use mission::worker_list;
+pub(crate) use mission::worker_task_list;
+
 const FRONTEND_TASK_NAME: &str = "frontend";
 const BACKEND_TASK_NAME: &str = "backend";
 const FRONTEND_ROLE: &str = "frontend-engineer";
@@ -99,136 +123,6 @@ pub(crate) struct TeamConfig {
     pub backend: SlotConfig,
 }
 
-/// 获取 slot 的 agent_type 角色名，优先使用 config 覆盖
-fn slot_role_name(slot: WorkerSlot, config: &TeamConfig) -> &str {
-    let override_val = match slot {
-        WorkerSlot::Frontend => config.frontend.role_name.as_deref(),
-        WorkerSlot::Backend => config.backend.role_name.as_deref(),
-    };
-    override_val.unwrap_or_else(|| slot.role_name())
-}
-
-/// 获取 slot 的显示名，优先使用 config 覆盖
-fn slot_display_name(slot: WorkerSlot, config: &TeamConfig) -> String {
-    let override_val = match slot {
-        WorkerSlot::Frontend => config.frontend.display_name.as_deref(),
-        WorkerSlot::Backend => config.backend.display_name.as_deref(),
-    };
-    override_val
-        .unwrap_or_else(|| slot.display_name())
-        .to_string()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Command {
-    Start {
-        goal: Option<String>,
-    },
-    Status,
-    Attach,
-    Dispatch {
-        worker: WorkerSlot,
-        message: String,
-    },
-    Relay {
-        from: WorkerSlot,
-        to: WorkerSlot,
-        message: String,
-    },
-}
-
-pub(crate) fn entry_available_during_task(args: Option<&str>) -> bool {
-    let Some(head) = args.and_then(|args| args.split_whitespace().next()) else {
-        return true;
-    };
-    head.eq_ignore_ascii_case("status")
-}
-
-impl Command {
-    pub(crate) fn parse(args: &str) -> Result<Self, String> {
-        let trimmed = args.trim();
-        if trimmed.is_empty() {
-            return Err(usage().to_string());
-        }
-
-        let mut parts = trimmed.split_whitespace();
-        let Some(head) = parts.next() else {
-            return Err(usage().to_string());
-        };
-        match head.to_ascii_lowercase().as_str() {
-            "start" => {
-                let goal = trimmed
-                    .split_once(char::is_whitespace)
-                    .map(|(_, goal)| sanitize_mission_goal(goal.trim()))
-                    .transpose()?
-                    .flatten();
-                Ok(Self::Start { goal })
-            }
-            "status" => {
-                if parts.next().is_some() {
-                    return Err(usage().to_string());
-                }
-                Ok(Self::Status)
-            }
-            "attach" => {
-                if parts.next().is_some() {
-                    return Err(usage().to_string());
-                }
-                Ok(Self::Attach)
-            }
-            "relay" => {
-                let Some((_, rest)) = trimmed.split_once(char::is_whitespace) else {
-                    return Err(usage().to_string());
-                };
-                let rest = rest.trim_start();
-                let Some((from_raw, rest)) = rest.split_once(char::is_whitespace) else {
-                    return Err(usage().to_string());
-                };
-                let rest = rest.trim_start();
-                let Some((to_raw, message)) = rest.split_once(char::is_whitespace) else {
-                    return Err(usage().to_string());
-                };
-                let Some(message) = Some(message.trim()).filter(|message| !message.is_empty())
-                else {
-                    return Err(usage().to_string());
-                };
-                let Some(from) = WorkerSlot::parse(from_raw) else {
-                    return Err(usage().to_string());
-                };
-                let Some(to) = WorkerSlot::parse(to_raw) else {
-                    return Err(usage().to_string());
-                };
-                Ok(Self::Relay {
-                    from,
-                    to,
-                    message: message.to_string(),
-                })
-            }
-            other => {
-                let Some(worker) = WorkerSlot::parse(other) else {
-                    return Err(usage().to_string());
-                };
-                let Some(message) = trimmed
-                    .split_once(char::is_whitespace)
-                    .map(|(_, message)| message.trim())
-                    .filter(|message| !message.is_empty())
-                else {
-                    return Err(usage().to_string());
-                };
-                Ok(Self::Dispatch {
-                    worker,
-                    message: message.to_string(),
-                })
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct State {
-    inner: Arc<RwLock<SharedState>>,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct SharedState {
     start_requested: bool,
@@ -259,54 +153,6 @@ struct ActivityEntry {
 struct ResultEntry {
     worker: WorkerSlot,
     summary: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Mission {
-    goal: String,
-    mode: MissionMode,
-    phase: MissionPhase,
-    acceptance_checks: Vec<AcceptanceCheck>,
-    frontend_role: Option<String>,
-    backend_role: Option<String>,
-    frontend_assignment: Option<String>,
-    backend_assignment: Option<String>,
-    validation_summary: Option<String>,
-    blocker: Option<String>,
-    next_action: Option<String>,
-    cycle: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum MissionMode {
-    Solo(WorkerSlot),
-    Parallel,
-    SerialHandoff,
-    Blocked,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MissionPhase {
-    Idle,
-    Bootstrapping,
-    Planning,
-    Executing,
-    Validating,
-    Blocked,
-    Completed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct AcceptanceCheck {
-    summary: String,
-    status: AcceptanceStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AcceptanceStatus {
-    Pending,
-    Met,
-    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,7 +202,12 @@ impl Snapshot {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
+
+pub(crate) struct State {
+    inner: Arc<RwLock<SharedState>>,
+}
+
 pub(crate) enum AutopilotWorkItem {
     AttachFirstRepair(Vec<WorkerSlot>),
     RootPrompt { action: AutoAction, prompt: String },
@@ -687,26 +538,13 @@ impl State {
                 &state.team_config,
             ));
         }
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
-        if let Some(mission) = state.mission.as_mut() {
-            mission.phase = MissionPhase::Executing;
-            mission.blocker = None;
-            mission.validation_summary = Some(
-                "当前由旧命令触发手动 override；本轮结果回流后需重新判断是否继续沿 mission 主路径推进。"
-                    .to_string(),
-            );
-            mission.assignment_mut(worker).replace(preview(message));
-            mission.next_action =
-                Some("等待本轮手动分派结果回流，再决定是否回到 mission 主流程。".to_string());
-            sync_acceptance_checks(mission, &frontend, &backend);
-        }
-        state.autopilot.manual_override_active = true;
-        state.autopilot.pending_auto_action = None;
-        state.autopilot.queued_auto_action = None;
-        state.autopilot.cycle_planned = false;
-        state.autopilot.cycle_dispatched = true;
-        state.autopilot.waiting_on = WaitingOn::Results(vec![worker]);
+        apply_manual_override(
+            &mut state,
+            worker,
+            "当前由旧命令触发手动 override；本轮结果回流后需重新判断是否继续沿 mission 主路径推进。",
+            "等待本轮手动分派结果回流，再决定是否回到 mission 主流程。",
+            &preview(message),
+        );
         state.autopilot.last_auto_action_result = Some(format!(
             "手动 override 已接管当前 cycle：{}。",
             preview(message)
@@ -733,27 +571,13 @@ impl State {
                 &state.team_config,
             ));
         }
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
-        if let Some(mission) = state.mission.as_mut() {
-            mission.phase = MissionPhase::Executing;
-            mission.blocker = None;
-            mission.validation_summary = Some(
-                "当前由旧命令触发手动 override；请在 relay 结果回流后确认是否回到 mission 主路径。"
-                    .to_string(),
-            );
-            mission.assignment_mut(to).replace(preview(message));
-            mission.next_action = Some(
-                "等待 relay 目标 worker 回流结果，再确认是否恢复 mission 主流程。".to_string(),
-            );
-            sync_acceptance_checks(mission, &frontend, &backend);
-        }
-        state.autopilot.manual_override_active = true;
-        state.autopilot.pending_auto_action = None;
-        state.autopilot.queued_auto_action = None;
-        state.autopilot.cycle_planned = false;
-        state.autopilot.cycle_dispatched = true;
-        state.autopilot.waiting_on = WaitingOn::Results(vec![to]);
+        apply_manual_override(
+            &mut state,
+            to,
+            "当前由旧命令触发手动 override；请在 relay 结果回流后确认是否回到 mission 主路径。",
+            "等待 relay 目标 worker 回流结果，再确认是否恢复 mission 主流程。",
+            &preview(message),
+        );
         state.autopilot.last_auto_action_result = Some(format!(
             "手动 relay override 已接管当前 cycle：{}。",
             preview(message)
@@ -1087,18 +911,6 @@ impl SharedState {
     }
 }
 
-fn sanitize_mission_goal(goal: &str) -> Result<Option<String>, String> {
-    let sanitized = InterAgentCommunication::sanitize_visible_text(goal);
-    let sanitized = sanitized.trim();
-    if sanitized.is_empty() {
-        if goal.trim().is_empty() {
-            return Ok(None);
-        }
-        return Err("`/zteam start <目标>` 中包含的内容在净化内部协作消息后为空；请直接输入面向任务的目标。".to_string());
-    }
-    Ok(Some(sanitized.to_string()))
-}
-
 fn push_activity(activity: &mut VecDeque<ActivityEntry>, summary: String) {
     activity.push_front(ActivityEntry { summary });
     if activity.len() > MAX_ACTIVITY_ITEMS {
@@ -1194,65 +1006,6 @@ impl WorkerSlot {
     const ALL: [Self; 2] = [Self::Frontend, Self::Backend];
 }
 
-pub(crate) fn disabled_message() -> String {
-    format!("{MODE_NAME} 已在当前 TUI 配置中关闭，{COMMAND_NAME} 不再可用。")
-}
-
-pub(crate) fn disabled_hint() -> &'static str {
-    "在 `config.toml` 中设置 `[tui].zteam_enabled = true` 后可再次启用。"
-}
-
-pub(crate) fn usage() -> &'static str {
-    "用法：/zteam start <目标> | /zteam start | /zteam status | /zteam attach | /zteam <frontend|backend> <任务> | /zteam relay <frontend|backend> <frontend|backend> <消息>"
-}
-
-pub(crate) fn start_prompt(goal: Option<&str>, config: &TeamConfig) -> String {
-    let frontend_role = slot_role_name(WorkerSlot::Frontend, config);
-    let backend_role = slot_role_name(WorkerSlot::Backend, config);
-    match goal {
-        Some(goal) => format!(
-            concat!(
-                "进入 ZTeam Mission 模式。当前目标：`{goal}`。\n",
-                "立即使用 `spawn_agent` 创建两个长期 worker：\n",
-                "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
-                "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
-                "对两个 worker 都说明：它们是长期协作者，主线程负责围绕当前目标拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
-                "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name，并补一句你准备如何围绕当前目标组织第一轮协作。除非我下一条消息明确要求实现，否则不要开始业务修改。"
-            ),
-            goal = goal,
-            frontend_role = frontend_role,
-            backend_role = backend_role,
-        ),
-        None => format!(
-            concat!(
-                "进入 ZTeam 本地协作模式（兼容入口）。立即使用 `spawn_agent` 创建两个长期 worker：\n",
-                "1. `task_name = \"frontend\"`，`agent_type = \"{frontend_role}\"`\n",
-                "2. `task_name = \"backend\"`，`agent_type = \"{backend_role}\"`\n",
-                "对两个 worker 都说明：它们是长期协作者，主线程负责拆分任务；需要彼此同步时优先使用 `send_message` 或 `followup_task`；完成阶段结果后继续待命，不要自行关闭。\n",
-                "创建完成后，只用一条简短中文消息汇报两个 worker 的 canonical task name。除非我下一条消息明确分派任务，否则不要开始实现业务工作。"
-            ),
-            frontend_role = frontend_role,
-            backend_role = backend_role,
-        ),
-    }
-}
-
-fn worker_list(workers: &[WorkerSlot]) -> String {
-    workers
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("、")
-}
-
-fn worker_task_list(workers: &[WorkerSlot]) -> String {
-    workers
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("、")
-}
-
 fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
     match AgentPath::root().resolve(worker.task_name()) {
         Ok(path) => path,
@@ -1261,13 +1014,6 @@ fn worker_agent_path(worker: WorkerSlot) -> AgentPath {
 }
 
 impl Mission {
-    fn assignment_mut(&mut self, worker: WorkerSlot) -> &mut Option<String> {
-        match worker {
-            WorkerSlot::Frontend => &mut self.frontend_assignment,
-            WorkerSlot::Backend => &mut self.backend_assignment,
-        }
-    }
-
     fn required_workers(&self, frontend: &WorkerState, backend: &WorkerState) -> Vec<WorkerSlot> {
         match self.mode {
             MissionMode::Solo(worker) => vec![worker],
@@ -1290,291 +1036,6 @@ impl Mission {
             MissionMode::Blocked => Vec::new(),
         }
     }
-}
-
-impl MissionMode {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Solo(WorkerSlot::Frontend) => "solo-frontend",
-            Self::Solo(WorkerSlot::Backend) => "solo-backend",
-            Self::Parallel => "parallel",
-            Self::SerialHandoff => "serial-handoff",
-            Self::Blocked => "blocked",
-        }
-    }
-}
-
-fn plan_mission(goal: &str, config: &TeamConfig) -> Mission {
-    let goal = goal.trim().to_string();
-    let mode = infer_mission_mode(&goal, config);
-    let (frontend_role, backend_role, frontend_assignment, backend_assignment, next_action) =
-        mission_assignments(&goal, &mode, config);
-    let blocker = match mode {
-        MissionMode::Blocked => Some("目标过于模糊，暂时无法规划可执行的协作路径。".to_string()),
-        _ => None,
-    };
-    let phase = match mode {
-        MissionMode::Blocked => MissionPhase::Blocked,
-        _ => MissionPhase::Bootstrapping,
-    };
-    Mission {
-        goal,
-        mode,
-        phase,
-        acceptance_checks: vec![
-            AcceptanceCheck {
-                summary: "目标已拆成可执行的协作分工".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "需要参与的协作者已回流阶段结果".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "主线程已形成验证结论或下一轮动作".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-        ],
-        frontend_role,
-        backend_role,
-        frontend_assignment,
-        backend_assignment,
-        validation_summary: None,
-        blocker,
-        next_action: Some(next_action),
-        cycle: 1,
-    }
-}
-
-fn infer_mission_mode(goal: &str, config: &TeamConfig) -> MissionMode {
-    let goal_lower = goal.to_ascii_lowercase();
-    if goal.chars().count() <= 6
-        || contains_any(
-            goal,
-            &[
-                "看看",
-                "分析一下",
-                "讨论一下",
-                "聊聊",
-                "帮我想想",
-                "怎么弄",
-                "优化什么",
-            ],
-        )
-    {
-        return MissionMode::Blocked;
-    }
-
-    // 合并内置关键词和 config 自定义关键词
-    let default_frontend = [
-        "前端",
-        "页面",
-        "布局",
-        "交互",
-        "移动端",
-        "组件",
-        "样式",
-        "导航",
-        "表单",
-        "ui",
-        "frontend",
-        "css",
-        "react",
-        "vue",
-        "html",
-    ];
-    let default_backend = [
-        "后端",
-        "接口",
-        "服务",
-        "数据库",
-        "登录",
-        "token",
-        "schema",
-        "错误码",
-        "api",
-        "sql",
-        "backend",
-        "server",
-        "migration",
-        "database",
-    ];
-
-    let frontend_keywords: Vec<&str> = default_frontend
-        .iter()
-        .copied()
-        .chain(config.frontend.domain_keywords.iter().map(String::as_str))
-        .collect();
-    let backend_keywords: Vec<&str> = default_backend
-        .iter()
-        .copied()
-        .chain(config.backend.domain_keywords.iter().map(String::as_str))
-        .collect();
-
-    let frontend_like = contains_any(goal, &frontend_keywords);
-    let backend_like = contains_any(goal, &backend_keywords);
-
-    if contains_any(goal, &["先", "再", "联调", "对齐", "契约", "字段"]) {
-        return MissionMode::SerialHandoff;
-    }
-    match (frontend_like, backend_like) {
-        (true, true) => MissionMode::Parallel,
-        (true, false) => MissionMode::Solo(WorkerSlot::Frontend),
-        (false, true) => MissionMode::Solo(WorkerSlot::Backend),
-        (false, false)
-            if goal_lower.contains("同时") || goal.contains("并") || goal.contains("以及") =>
-        {
-            MissionMode::Parallel
-        }
-        _ => MissionMode::Parallel,
-    }
-}
-
-fn mission_assignments(
-    goal: &str,
-    mode: &MissionMode,
-    config: &TeamConfig,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    String,
-) {
-    let fe_name = slot_display_name(WorkerSlot::Frontend, config);
-    let be_name = slot_display_name(WorkerSlot::Backend, config);
-    match mode {
-        MissionMode::Solo(WorkerSlot::Frontend) => (
-            Some("主导 UI/交互侧推进".to_string()),
-            Some("待命并准备接收后续协助".to_string()),
-            Some(format!("围绕当前目标推进前端侧工作：{goal}")),
-            None,
-            format!("等待{fe_name}进入协作上下文，再决定是否需要服务侧协助"),
-        ),
-        MissionMode::Solo(WorkerSlot::Backend) => (
-            Some("待命并准备接收后续协助".to_string()),
-            Some("主导服务/数据侧推进".to_string()),
-            None,
-            Some(format!("围绕当前目标推进后端侧工作：{goal}")),
-            format!("等待{be_name}进入协作上下文，再决定是否需要 UI 侧协助"),
-        ),
-        MissionMode::Parallel => (
-            Some("负责 UI/交互侧推进".to_string()),
-            Some("负责接口/数据侧推进".to_string()),
-            Some(format!("拆解并推进前端侧工作：{goal}")),
-            Some(format!("拆解并推进后端侧工作：{goal}")),
-            "等待两个协作者都进入协作上下文，再开始首轮并行分派".to_string(),
-        ),
-        MissionMode::SerialHandoff => (
-            Some("在契约稳定后承接 UI/交互落地".to_string()),
-            Some("先稳定接口/字段/约束，再交接给前端".to_string()),
-            Some(format!("等待后端先产出可消费的协作结果：{goal}")),
-            Some(format!("先整理服务侧契约与约束：{goal}")),
-            "先让后端明确契约，再决定前端接手时机".to_string(),
-        ),
-        MissionMode::Blocked => (
-            None,
-            None,
-            None,
-            None,
-            "当前 mission 缺少可执行路径，等待主线程重新组织".to_string(),
-        ),
-    }
-}
-
-fn contains_any(goal: &str, keywords: &[&str]) -> bool {
-    keywords.iter().any(|keyword| goal.contains(keyword))
-}
-
-fn plan_manual_override_mission(worker: WorkerSlot, message: &str, config: &TeamConfig) -> Mission {
-    let mode = MissionMode::Solo(worker);
-    let goal = format!("手动分派：{}", preview(message));
-    let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
-        mission_assignments(message, &mode, config);
-    let mut mission = Mission {
-        goal,
-        mode,
-        phase: MissionPhase::Executing,
-        acceptance_checks: vec![
-            AcceptanceCheck {
-                summary: "目标已拆成可执行的协作分工".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "需要参与的协作者已回流阶段结果".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "主线程已形成验证结论或下一轮动作".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-        ],
-        frontend_role,
-        backend_role,
-        frontend_assignment,
-        backend_assignment,
-        validation_summary: Some(
-            "当前由旧命令触发手动 override；本轮结果回流后需重新判断是否继续沿 mission 主路径推进。"
-                .to_string(),
-        ),
-        blocker: None,
-        next_action: Some("等待本轮手动分派结果回流，再决定是否回到 mission 主流程。".to_string()),
-        cycle: 1,
-    };
-    mission.assignment_mut(worker).replace(preview(message));
-    mission
-}
-
-fn plan_manual_relay_mission(
-    from: WorkerSlot,
-    to: WorkerSlot,
-    message: &str,
-    config: &TeamConfig,
-) -> Mission {
-    let goal = format!("手动协作同步：{}", preview(message));
-    let (frontend_role, backend_role, frontend_assignment, backend_assignment, _) =
-        mission_assignments(&goal, &MissionMode::Parallel, config);
-    let mut mission = Mission {
-        goal,
-        mode: MissionMode::Parallel,
-        phase: MissionPhase::Executing,
-        acceptance_checks: vec![
-            AcceptanceCheck {
-                summary: "目标已拆成可执行的协作分工".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "需要参与的协作者已回流阶段结果".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-            AcceptanceCheck {
-                summary: "主线程已形成验证结论或下一轮动作".to_string(),
-                status: AcceptanceStatus::Pending,
-            },
-        ],
-        frontend_role,
-        backend_role,
-        frontend_assignment,
-        backend_assignment,
-        validation_summary: Some(
-            "当前由旧命令触发手动 override；请在 relay 结果回流后确认是否回到 mission 主路径。"
-                .to_string(),
-        ),
-        blocker: None,
-        next_action: Some(
-            "等待 relay 目标协作者回流结果，再确认是否恢复 mission 主流程。".to_string(),
-        ),
-        cycle: 1,
-    };
-    mission.assignment_mut(to).replace(preview(message));
-    mission.assignment_mut(from).get_or_insert_with(|| {
-        format!(
-            "向 {} 转发协作事实：{}",
-            to.display_name(),
-            preview(message)
-        )
-    });
-    mission
 }
 
 fn plan_recovery_mission(
@@ -1794,6 +1255,35 @@ fn mission_assignment_value(mission: &Mission, worker: WorkerSlot) -> Option<&st
         WorkerSlot::Frontend => mission.frontend_assignment.as_deref(),
         WorkerSlot::Backend => mission.backend_assignment.as_deref(),
     }
+}
+
+/// 将 mission 和 autopilot 状态切换为手动 override 模式。
+/// record_dispatch 和 record_relay 共用此逻辑。
+fn apply_manual_override(
+    state: &mut SharedState,
+    target_worker: WorkerSlot,
+    validation_summary: &str,
+    next_action: &str,
+    result_label: &str,
+) {
+    let frontend = state.frontend.clone();
+    let backend = state.backend.clone();
+    if let Some(mission) = state.mission.as_mut() {
+        mission.phase = MissionPhase::Executing;
+        mission.blocker = None;
+        mission.validation_summary = Some(validation_summary.to_string());
+        mission
+            .assignment_mut(target_worker)
+            .replace(result_label.to_string());
+        mission.next_action = Some(next_action.to_string());
+        sync_acceptance_checks(mission, &frontend, &backend);
+    }
+    state.autopilot.manual_override_active = true;
+    state.autopilot.pending_auto_action = None;
+    state.autopilot.queued_auto_action = None;
+    state.autopilot.cycle_planned = false;
+    state.autopilot.cycle_dispatched = true;
+    state.autopilot.waiting_on = WaitingOn::Results(vec![target_worker]);
 }
 
 fn reset_autopilot_for_new_mission(state: &mut SharedState) {
@@ -2214,16 +1704,6 @@ fn worker_status_line(worker: WorkerSlot, state: &WorkerState) -> String {
         task_text,
         result_text
     )
-}
-
-fn preview(text: &str) -> String {
-    const LIMIT: usize = 60;
-    let trimmed = text.trim();
-    if trimmed.chars().count() <= LIMIT {
-        return trimmed.to_string();
-    }
-    let truncated: String = trimmed.chars().take(LIMIT).collect();
-    format!("{truncated}...")
 }
 
 #[cfg(test)]

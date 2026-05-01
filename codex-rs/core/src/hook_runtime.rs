@@ -32,11 +32,13 @@ use serde_json::Value;
 
 use crate::context::ContextualUserFragment;
 use crate::context::HookAdditionalContext;
+use crate::context::ZcontextSnapshotContext;
 use crate::event_mapping::parse_turn_item;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::sandboxing::PermissionRequestPayload;
+use crate::zcontext_runtime::build_zcontext_snapshot;
 
 pub(crate) struct HookRuntimeOutcome {
     pub should_stop: bool,
@@ -125,6 +127,9 @@ pub(crate) async fn run_pending_session_start_hooks(
             .run_session_start(request, Some(turn_context.sub_id.clone())),
     )
     .await
+    .with_additional_context(
+        built_in_session_start_snapshot(sess, turn_context, session_start_source).await,
+    )
     .record_additional_contexts(sess, turn_context)
     .await
 }
@@ -345,6 +350,13 @@ where
 }
 
 impl HookRuntimeOutcome {
+    fn with_additional_context(mut self, additional_context: Option<String>) -> Self {
+        if let Some(additional_context) = additional_context {
+            self.additional_contexts.push(additional_context);
+        }
+        self
+    }
+
     async fn record_additional_contexts(
         self,
         sess: &Arc<Session>,
@@ -354,6 +366,18 @@ impl HookRuntimeOutcome {
 
         self.should_stop
     }
+}
+
+async fn built_in_session_start_snapshot(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    source: codex_hooks::SessionStartSource,
+) -> Option<String> {
+    if !matches!(source, codex_hooks::SessionStartSource::Resume) {
+        return None;
+    }
+
+    build_zcontext_snapshot(sess, turn_context.as_ref()).await
 }
 
 pub(crate) async fn record_additional_contexts(
@@ -376,6 +400,10 @@ fn additional_context_messages(additional_contexts: Vec<String>) -> Vec<Response
         .map(HookAdditionalContext::new)
         .map(ContextualUserFragment::into)
         .collect()
+}
+
+pub(crate) fn zcontext_snapshot_message(snapshot: String) -> ResponseItem {
+    ContextualUserFragment::into(ZcontextSnapshotContext::new(snapshot))
 }
 
 async fn emit_hook_started_events(

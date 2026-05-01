@@ -43,6 +43,7 @@ mod hook_runtime;
 pub mod installation_id;
 pub(crate) mod landlock;
 pub mod mission;
+mod zcontext_runtime;
 pub use landlock::spawn_command_under_linux_sandbox;
 pub(crate) mod mcp;
 mod mcp_skill_dependencies;
