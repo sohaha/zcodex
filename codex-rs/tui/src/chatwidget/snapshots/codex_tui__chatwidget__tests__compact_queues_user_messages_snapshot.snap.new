@@ -1,19 +1,19 @@
 ---
 source: tui/src/chatwidget/tests/slash_commands.rs
-assertion_line: 2623
+assertion_line: 2660
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 • 处理中 (0s • esc 中断)
-  .--------------.
-  | 触手先到了。 |
-  '--------------.
+  .----------------.
+  | 轻轻蹦进视野。 |
+  '----------------.
     \
-     _____
-   .--.
-  ( ^^ )
-  /\/\/\
-  Tangle ★★ 少见 章鱼 · 坐立不安
+     _/\_
+   (\ /)
+  ( ^ ^ )
+  /  ^  \\
+  三叶 ★★ 少见 兔子 · 坐立不安
 
 • 回合结束后提交的消息
   ↳ Steer submitted while /compact was running.

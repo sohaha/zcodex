@@ -31,13 +31,13 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 • Investigating rendering code (0s • esc 中断)
   .------------------.
-  | 带着凉意滑进来。 |
+  | 背着壳慢慢滑来。 |
   '------------------.
     \
-   .--.
-  ( ^>^ )
-  /(   )\
-  Glide ★ 常见 企鹅 · 坐立不安
+  ^  .--.
+   \ ( @ )
+    ~~~~~
+  壳壳 ★ 常见 蜗牛 · 坐立不安
 
 
 › Summarize recent commits

@@ -1,17 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 1402
+assertion_line: 1403
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"  .------------------.                                                          "
-"  | 背着壳慢慢滑来。 |                                                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " ")]
-"  '------------------.                                                          "
+"  .----------------.                                                            "
+"  | 轻轻蹦进视野。 |                                                            " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " ")]
+"  '----------------.                                                            "
 "    \                                                                           "
-"  ^  .--.                                                                       "
-"   \ ( @ )                                                                      "
-"    ~~~~~                                                                       "
-"  Dew ★ 常见 蜗牛 · 坐立不安                                                    " Hidden by multi-width symbols: [(9, " "), (11, " "), (14, " "), (16, " "), (21, " "), (23, " "), (25, " "), (27, " ")]
+"   (\ /)                                                                        "
+"  ( ^ ^ )                                                                       "
+"  /  ^  \\                                                                      "
+"  小跳 ★ 常见 兔子 · 坐立不安                                                   " Hidden by multi-width symbols: [(3, " "), (5, " "), (10, " "), (12, " "), (15, " "), (17, " "), (22, " "), (24, " "), (26, " "), (28, " ")]
 "                                                                                "
 "› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "                                                                                "

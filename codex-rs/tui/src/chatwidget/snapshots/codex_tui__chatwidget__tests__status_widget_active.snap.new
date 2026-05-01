@@ -1,18 +1,18 @@
 ---
-source: tui/src/chatwidget/tests/mcp_startup.rs
-assertion_line: 23
+source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1163
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"• 正在启动 MCP 服务器：alpha (0s • esc 中断)                                    " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (16, " "), (18, " "), (20, " "), (22, " "), (40, " "), (42, " ")]
+"• Analyzing (0s • esc 中断)                                                     " Hidden by multi-width symbols: [(23, " "), (25, " ")]
 "  .----------------.                                                            "
-"  | 摇摇摆摆走来。 |                                                            " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " ")]
+"  | 轻轻蹦进视野。 |                                                            " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " ")]
 "  '----------------.                                                            "
 "    \                                                                           "
-"   __                                                                           "
-"  ( ^> )                                                                        "
-"   `--'                                                                         "
-"  小黄 ★ 常见 鸭子 · 坐立不安                                                   " Hidden by multi-width symbols: [(3, " "), (5, " "), (10, " "), (12, " "), (15, " "), (17, " "), (22, " "), (24, " "), (26, " "), (28, " ")]
+"   (\ /)                                                                        "
+"  ( ^ ^ )                                                                       "
+"  /  ^  \\                                                                      "
+"  三叶 ★ 常见 兔子 · 坐立不安                                                   " Hidden by multi-width symbols: [(3, " "), (5, " "), (10, " "), (12, " "), (15, " "), (17, " "), (22, " "), (24, " "), (26, " "), (28, " ")]
 "                                                                                "
 "                                                                                "
 "› 让 Codex 帮你做任何事                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]

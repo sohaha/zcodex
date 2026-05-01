@@ -5,7 +5,7 @@ expression: normalize_snapshot_paths(rendered)
 ---
 • 等 待 后 台 终 端  (0s • esc 中 断 ) · 1 个 后 台 终 端 运 …
   └ cargo test -p codex-core -- --exact…
-(o o) "悠 然 趴 下 。 "
+(o>) "摇 摇 摆 摆 走 来 。 "
 
 
 › 让  Codex 帮 你 做 任 何 事

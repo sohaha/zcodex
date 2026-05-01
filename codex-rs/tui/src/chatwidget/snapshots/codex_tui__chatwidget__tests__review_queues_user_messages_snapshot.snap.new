@@ -4,19 +4,19 @@ assertion_line: 1694
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
+
 • 处理中 (0s • esc 中断)
   .------------------.
-  | 带着凉意滑进来。 |
+  | 尾巴一甩就到了。 |
   '------------------.
     \
-    .  ✨  .  
-    ✦     ✦
-     .---.    ✨
-   .--.     ✨
-  ( ^>^ )   ✨
-  /(   )\   ✨
-    ✦     ✦
-  Waddle ★★★★ 史诗 企鹅 · 坐立不安 ◈
+  /\   /\\
+   ^ v ^ )
+  \\_---_//
+  松果 ★ 常见 狐狸 · 坐立不安
+
+• 回合结束后提交的消息
+  ↳ Steer submitted while /review was running.
 
 › 让 Codex 帮你做任何事
 

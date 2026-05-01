@@ -774,15 +774,19 @@ pub async fn run_main(
         .is_some_and(|provider| provider.trim().is_empty())
         && !has_explicit_model_provider_override(&cli.config_overrides.raw_overrides);
 
-    // Inject `-P <PROVIDER>` / `--provider <PROVIDER>` as a low-priority
-    // model_provider override. Prepend so that any explicit
-    // `-c model_provider=...` appended later wins.
-    if let Some(provider) = cli
+    // Record the provider ID passed via `-P` / `--provider` (non-empty value only).
+    // Used later to resolve the default model for the switched provider.
+    let cli_provider_via_flag = cli
         .provider
         .as_deref()
         .map(str::trim)
         .filter(|provider| !provider.is_empty())
-    {
+        .map(str::to_string);
+
+    // Inject `-P <PROVIDER>` / `--provider <PROVIDER>` as a low-priority
+    // model_provider override. Prepend so that any explicit
+    // `-c model_provider=...` appended later wins.
+    if let Some(provider) = &cli_provider_via_flag {
         cli.config_overrides
             .raw_overrides
             .insert(0, format!("model_provider={provider}"));
@@ -907,9 +911,20 @@ pub async fn run_main(
         manual_model_provider_override
     };
 
-    // When using `--oss`, let the bootstrapper pick the model based on selected provider
+    // Resolve model: explicit -m wins, then -P clears stale model so the
+    // switched provider can pick its own default, then oss provider default,
+    // then config.toml default.
     let model = if let Some(model) = &cli.model {
         Some(model.clone())
+    } else if cli_provider_via_flag.is_some() {
+        // `-P <PROVIDER>` was passed without `-m`: prefer the provider's configured
+        // default model; if none is set, clear the model so the system auto-selects
+        // from the provider's model catalog instead of keeping the old provider's model.
+        cli_provider_via_flag
+            .as_ref()
+            .and_then(|pid| config_toml.model_providers.get(pid.as_str()))
+            .and_then(|info| info.model.clone())
+        // Deliberately use None (not config_toml.model) when provider has no model set.
     } else if cli.oss {
         // Use the provider from model_provider_override
         model_provider_override
