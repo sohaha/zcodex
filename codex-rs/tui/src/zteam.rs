@@ -30,7 +30,6 @@ pub(crate) use view::WorkbenchView;
 pub(crate) use worker_source::FederationAdapter;
 pub(crate) use worker_source::WorkerSource;
 
-pub(crate) use command::COMMAND_NAME;
 pub(crate) use command::Command;
 pub(crate) use command::MODE_NAME;
 pub(crate) use command::disabled_hint;
@@ -38,14 +37,12 @@ pub(crate) use command::disabled_message;
 pub(crate) use command::entry_available_during_task;
 pub(crate) use command::sanitize_mission_goal;
 pub(crate) use command::start_prompt;
-pub(crate) use command::usage;
 
 pub(crate) use mission::AcceptanceCheck;
 pub(crate) use mission::AcceptanceStatus;
 pub(crate) use mission::Mission;
 pub(crate) use mission::MissionMode;
 pub(crate) use mission::MissionPhase;
-pub(crate) use mission::default_acceptance_checks;
 pub(crate) use mission::mission_assignments;
 pub(crate) use mission::plan_manual_override_mission;
 pub(crate) use mission::plan_manual_relay_mission;
@@ -1799,11 +1796,11 @@ mod tests {
 
     #[test]
     fn command_parser_rejects_invalid_forms() {
-        assert_eq!(Command::parse(""), Err(usage().to_string()));
-        assert_eq!(Command::parse("status extra"), Err(usage().to_string()));
-        assert_eq!(Command::parse("attach extra"), Err(usage().to_string()));
-        assert_eq!(Command::parse("frontend"), Err(usage().to_string()));
-        assert_eq!(Command::parse("relay frontend"), Err(usage().to_string()));
+        assert_eq!(Command::parse(""), Err(command::usage().to_string()));
+        assert_eq!(Command::parse("status extra"), Err(command::usage().to_string()));
+        assert_eq!(Command::parse("attach extra"), Err(command::usage().to_string()));
+        assert_eq!(Command::parse("frontend"), Err(command::usage().to_string()));
+        assert_eq!(Command::parse("relay frontend"), Err(command::usage().to_string()));
         assert_eq!(
             Command::parse(
                 "start <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
@@ -1812,9 +1809,9 @@ mod tests {
         );
         assert_eq!(
             Command::parse("relay frontend backend"),
-            Err(usage().to_string())
+            Err(command::usage().to_string())
         );
-        assert_eq!(Command::parse("unknown test"), Err(usage().to_string()));
+        assert_eq!(Command::parse("unknown test"), Err(command::usage().to_string()));
     }
 
     #[test]
