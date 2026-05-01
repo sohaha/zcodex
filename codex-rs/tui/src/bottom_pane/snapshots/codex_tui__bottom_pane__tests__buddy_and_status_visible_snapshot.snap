@@ -1,6 +1,6 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 1926
+assertion_line: 1959
 expression: "render_snapshot(&pane, area)"
 ---
 • 处 理 中  (0s • esc 中 断 )                                    
@@ -11,7 +11,7 @@ expression: "render_snapshot(&pane, area)"
    .--.                                                     
   ( ^^ )                                                    
   /\/\/\                                                    
-  Inky ★ 常 见  章 鱼  · 坐 立 不 安                                
+  墨 墨  ★ 常 见  章 鱼  · 坐 立 不 安                                
                                                             
                                                             
 › 让  Codex 帮 你 做 任 何 事                                      

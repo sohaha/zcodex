@@ -2523,11 +2523,11 @@ impl ChatWidget {
         let store = codex_mission::MissionStateStore::for_workspace(&workspace);
         match store.status_report() {
             Ok(codex_mission::MissionStatusReport::Active { state, .. }) => {
-                let phase_label = state.phase.map(|p| p.label()).unwrap_or("unknown");
+                let phase_label = state.phase.map(codex_mission::MissionPhase::label).unwrap_or("unknown");
                 let mut lines = Vec::new();
                 lines.push("🚀 Mission 模式已激活".to_string());
                 lines.push(format!("目标：{}", state.goal));
-                lines.push(format!("当前阶段：{}", phase_label));
+                lines.push(format!("当前阶段：{phase_label}"));
                 if let Some(phase) = state.phase {
                     let def = codex_mission::phase_definition(phase);
                     lines.push(format!("提示：{}", def.prompt));
@@ -2571,7 +2571,7 @@ impl ChatWidget {
 
                 // 从暂停恢复：直接弹出阶段确认选择面板。
                 if state.phase.is_some() {
-                    let goal = state.goal.clone();
+                    let goal = state.goal;
                     let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
                         vec![Box::new(move |tx| {
                             tx.send(crate::app_event::AppEvent::ZmissionCommand(
@@ -2646,8 +2646,8 @@ impl ChatWidget {
             Ok(codex_mission::MissionStatusReport::Active { state, .. }) => state,
             _ => return,
         };
-        let phase_label = state.phase.map(|p| p.label()).unwrap_or("unknown");
-        let goal = state.goal.clone();
+        let phase_label = state.phase.map(codex_mission::MissionPhase::label).unwrap_or("unknown");
+        let goal = state.goal;
 
         let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
             vec![Box::new(move |tx| {
@@ -6328,7 +6328,7 @@ impl ChatWidget {
 
     fn show_buddy_help(&mut self) {
         self.add_info_message(
-            "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+            "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy feed`、`/buddy play`、`/buddy sleep`、`/buddy journal`、`/buddy hide`、`/buddy status`。".to_string(),
             Some("小伙伴会根据当前 Codex home 与项目路径稳定生成。".to_string()),
         );
     }
@@ -6366,6 +6366,52 @@ impl ChatWidget {
                 let seed = self.buddy_seed();
                 self.bottom_pane.pet_buddy(&seed)
             }
+            "feed" => {
+                if !self.config.tui_show_buddy {
+                    self.last_buddy_status_message = None;
+                    self.add_info_message(
+                        "小伙伴现在藏起来了。".to_string(),
+                        Some(
+                            "先用 `/buddy show` 让它回来，或用 `/buddy full` 进入全形象常驻。"
+                                .to_string(),
+                        ),
+                    );
+                    return;
+                }
+                let seed = self.buddy_seed();
+                self.bottom_pane.feed_buddy(&seed)
+            }
+            "play" => {
+                if !self.config.tui_show_buddy {
+                    self.last_buddy_status_message = None;
+                    self.add_info_message(
+                        "小伙伴现在藏起来了。".to_string(),
+                        Some(
+                            "先用 `/buddy show` 让它回来，或用 `/buddy full` 进入全形象常驻。"
+                                .to_string(),
+                        ),
+                    );
+                    return;
+                }
+                let seed = self.buddy_seed();
+                self.bottom_pane.play_buddy(&seed)
+            }
+            "sleep" => {
+                if !self.config.tui_show_buddy {
+                    self.last_buddy_status_message = None;
+                    self.add_info_message(
+                        "小伙伴现在藏起来了。".to_string(),
+                        Some(
+                            "先用 `/buddy show` 让它回来，或用 `/buddy full` 进入全形象常驻。"
+                                .to_string(),
+                        ),
+                    );
+                    return;
+                }
+                let seed = self.buddy_seed();
+                self.bottom_pane.sleep_buddy(&seed)
+            }
+            "journal" | "diary" => self.bottom_pane.buddy_journal(),
             "hide" => {
                 self.last_buddy_status_message = None;
                 self.app_event_tx
@@ -6377,7 +6423,9 @@ impl ChatWidget {
                 self.bottom_pane.buddy_status(&seed)
             }
             _ => {
-                self.add_error_message("用法：/buddy [show|full|pet|hide|status]".to_string());
+                self.add_error_message(
+                    "用法：/buddy [show|full|pet|feed|play|sleep|journal|hide|status]".to_string(),
+                );
                 return;
             }
         };
@@ -7229,7 +7277,7 @@ impl ChatWidget {
                 self.on_native_tool_call_begin(NativeToolCallBeginEvent {
                     call_id: id.clone(),
                     tool_name: tool_name.clone(),
-                    arguments: arguments.clone(),
+                    arguments,
                 });
                 if status == codex_app_server_protocol::NativeToolCallStatus::Completed {
                     self.on_native_tool_call_end(NativeToolCallEndEvent {
@@ -11126,7 +11174,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn zteam_team_config(&self) -> zteam::TeamConfig {
-        self.zteam_state.team_config().clone()
+        self.zteam_state.team_config()
     }
 
     pub(crate) fn mark_zteam_start_requested_for_goal(&mut self, goal: Option<&str>) {

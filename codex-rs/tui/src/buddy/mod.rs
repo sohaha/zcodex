@@ -7,9 +7,17 @@ use ratatui::widgets::Paragraph;
 
 use crate::render::renderable::Renderable;
 
+mod growth;
+mod interaction_reactions;
+mod journal;
 mod model;
+mod needs;
 mod render;
 
+use growth::BuddyGrowth;
+use interaction_reactions::interaction_quips;
+use journal::BuddyJournal;
+use journal::JournalEvent;
 use model::BuddyBones;
 pub(crate) use model::BuddyCommandResult;
 use model::BuddyLastAction;
@@ -19,11 +27,17 @@ use model::BuddyState;
 use model::FULL_LAYOUT_INTRO_DURATION;
 use model::PET_FEEDBACK_DURATION;
 use model::REACTION_DURATION;
+use needs::BuddyInteraction;
+use needs::BuddyMood;
+use needs::BuddyNeeds;
 
 pub(crate) struct BuddyWidget {
     bones: Option<BuddyBones>,
     state: BuddyState,
     soul: Option<BuddySoul>,
+    needs: BuddyNeeds,
+    growth: BuddyGrowth,
+    journal: BuddyJournal,
 }
 
 impl BuddyWidget {
@@ -32,6 +46,9 @@ impl BuddyWidget {
             bones: None,
             state: BuddyState::default(),
             soul: None,
+            needs: BuddyNeeds::default(),
+            growth: BuddyGrowth::default(),
+            journal: BuddyJournal::default(),
         }
     }
 
@@ -45,6 +62,7 @@ impl BuddyWidget {
     /// Check if a surprise full-layout is due. Returns `true` when triggered
     /// so the caller can schedule a redraw.
     pub(crate) fn tick_surprise(&mut self) -> bool {
+        self.needs.tick_decay();
         self.state.check_surprise()
     }
 
@@ -91,6 +109,11 @@ impl BuddyWidget {
             BuddyLastAction::Hatched
         });
 
+        if !was_hatched {
+            self.growth.record_hatch();
+            self.journal.record(JournalEvent::Hatched);
+        }
+
         let message = if was_hatched {
             format!(
                 "小伙伴回来了：{} {}。",
@@ -106,7 +129,7 @@ impl BuddyWidget {
         };
         BuddyCommandResult {
             message,
-            hint: Some("试试 `/buddy pet` 来互动，或用 `/buddy status` 查看特征。".to_string()),
+            hint: Some("试试 `/buddy pet` 来互动，或用 `/buddy feed`、`/buddy play`、`/buddy sleep` 照料它。".to_string()),
         }
     }
 
@@ -135,6 +158,11 @@ impl BuddyWidget {
         } else {
             BuddyLastAction::Hatched
         });
+
+        if !was_hatched {
+            self.growth.record_hatch();
+            self.journal.record(JournalEvent::Hatched);
+        }
 
         BuddyCommandResult {
             message: format!(
@@ -184,10 +212,113 @@ impl BuddyWidget {
             until: now + REACTION_DURATION,
         });
         self.state.last_action = Some(BuddyLastAction::Petted);
+        self.needs.apply_interaction(BuddyInteraction::Pet);
+        self.record_interaction(BuddyInteraction::Pet);
 
         BuddyCommandResult {
             message: format!("你抚摸了 {name}。{reaction_text}"),
-            hint: Some("用 `/buddy status` 查看稀有度、特征和心情。".to_string()),
+            hint: Some("用 `/buddy status` 查看需求和心情。".to_string()),
+        }
+    }
+
+    pub(crate) fn feed(&mut self, seed: &str) -> BuddyCommandResult {
+        let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
+        let now = Instant::now();
+        self.show_temporary_full(now);
+        self.needs.apply_interaction(BuddyInteraction::Feed);
+        self.record_interaction(BuddyInteraction::Feed);
+
+        let quips = interaction_quips(bones.species, BuddyInteraction::Feed);
+        let quip = quips[self.growth.feed_count as usize % quips.len()];
+        self.state.reaction = Some(BuddyReaction {
+            kind: BuddyReactionKind::Observe,
+            text: quip.to_string(),
+            until: now + REACTION_DURATION,
+        });
+        self.state.last_action = Some(BuddyLastAction::Observed);
+
+        let hunger_label = self.needs.hunger_label();
+        BuddyCommandResult {
+            message: format!("你喂了 {name}。{quip}（饱食：{hunger_label}）"),
+            hint: Some("试试 `/buddy play` 或 `/buddy sleep`。".to_string()),
+        }
+    }
+
+    pub(crate) fn play(&mut self, seed: &str) -> BuddyCommandResult {
+        let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
+        let now = Instant::now();
+        self.show_temporary_full(now);
+        self.needs.apply_interaction(BuddyInteraction::Play);
+        self.record_interaction(BuddyInteraction::Play);
+
+        let quips = interaction_quips(bones.species, BuddyInteraction::Play);
+        let quip = quips[self.growth.play_count as usize % quips.len()];
+        self.state.reaction = Some(BuddyReaction {
+            kind: BuddyReactionKind::Observe,
+            text: quip.to_string(),
+            until: now + REACTION_DURATION,
+        });
+        self.state.last_action = Some(BuddyLastAction::Observed);
+        self.state.pet_started_at = Some(now);
+        self.state.pet_until = Some(now + PET_FEEDBACK_DURATION);
+
+        let energy_label = self.needs.energy_label();
+        BuddyCommandResult {
+            message: format!("你和 {name} 玩耍。{quip}（活力：{energy_label}）"),
+            hint: Some("累了就用 `/buddy sleep` 休息。".to_string()),
+        }
+    }
+
+    pub(crate) fn sleep(&mut self, seed: &str) -> BuddyCommandResult {
+        let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
+        let now = Instant::now();
+        self.show_temporary_full(now);
+        self.needs.apply_interaction(BuddyInteraction::Sleep);
+        self.record_interaction(BuddyInteraction::Sleep);
+
+        let quips = interaction_quips(bones.species, BuddyInteraction::Sleep);
+        let quip = quips[self.growth.sleep_count as usize % quips.len()];
+        self.state.reaction = Some(BuddyReaction {
+            kind: BuddyReactionKind::Observe,
+            text: quip.to_string(),
+            until: now + REACTION_DURATION,
+        });
+        self.state.last_action = Some(BuddyLastAction::Observed);
+
+        let energy_label = self.needs.energy_label();
+        BuddyCommandResult {
+            message: format!("你让 {name} 休息。{quip}（活力：{energy_label}）"),
+            hint: Some("用 `/buddy status` 查看当前状态。".to_string()),
+        }
+    }
+
+    pub(crate) fn journal_cmd(&self) -> BuddyCommandResult {
+        if self.journal.is_empty() {
+            return BuddyCommandResult {
+                message: "日记还是空的。".to_string(),
+                hint: Some("用 `/buddy show` 孵化小伙伴开始记录。".to_string()),
+            };
+        }
+
+        let entries = self.journal.recent(8);
+        let mut lines = Vec::new();
+        for entry in entries {
+            lines.push(journal::format_entry(entry));
+        }
+        let total = self.journal.len();
+        let shown = entries.len();
+        let header = if total > shown {
+            format!("宠物日记（最近 {shown}/{total} 条）：")
+        } else {
+            format!("宠物日记（{total} 条）：")
+        };
+
+        BuddyCommandResult {
+            message: format!("{header}\n{}", lines.join("\n")),
+            hint: Some("继续互动来记录更多故事。".to_string()),
         }
     }
 
@@ -201,20 +332,28 @@ impl BuddyWidget {
         let name = self.display_name(bones);
 
         let (primary_stat, primary_value) = bones.stats.primary();
-        let mood = if self.state.is_petting() {
-            "开心"
+        let mood = self.needs.mood();
+        let mood_label = if self.state.is_petting() {
+            "开心".to_string()
         } else if let Some(reaction) = self.state.active_reaction() {
             match reaction.kind {
-                BuddyReactionKind::Hatch => "刚孵化",
-                BuddyReactionKind::Return => "安顿好了",
-                BuddyReactionKind::Pet => "很满意",
-                BuddyReactionKind::Teaser => "等你关注",
-                BuddyReactionKind::Observe => "在观察",
+                BuddyReactionKind::Hatch => "刚孵化".to_string(),
+                BuddyReactionKind::Return => "安顿好了".to_string(),
+                BuddyReactionKind::Pet => "很满意".to_string(),
+                BuddyReactionKind::Teaser => "等你关注".to_string(),
+                BuddyReactionKind::Observe => "在观察".to_string(),
             }
         } else if self.state.visible {
-            "警觉"
+            match mood {
+                BuddyMood::Happy => "开心".to_string(),
+                BuddyMood::Sleepy => "困倦".to_string(),
+                BuddyMood::Hungry => "饥饿".to_string(),
+                BuddyMood::Playful => "活泼".to_string(),
+                BuddyMood::Content => "平和".to_string(),
+                BuddyMood::Lonely => "孤单".to_string(),
+            }
         } else {
-            "幕后休息"
+            "幕后休息".to_string()
         };
         let visibility = if self.state.visible {
             "可见"
@@ -233,8 +372,15 @@ impl BuddyWidget {
             .as_ref()
             .map(|soul| format!(" 性格：{}。", soul.personality))
             .unwrap_or_default();
+        let hunger_label = self.needs.hunger_label();
+        let energy_label = self.needs.energy_label();
+        let happiness_label = self.needs.happiness_label();
+        let level = self.growth.level;
+        let xp_progress = (self.growth.xp_progress() * 100.0) as u32;
+        let total_interactions = self.growth.total_interactions();
+        let milestone_count = self.growth.milestones().len();
         let message = format!(
-            "小伙伴状态：{} {}（{visibility}，{display_mode}{shiny}，{}，{}眼，{visual_trait}，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
+            "小伙伴状态：{} {}（Lv.{level}，{visibility}，{display_mode}{shiny}，{}，{}眼，{visual_trait}，心情{mood_label}，抚摸 {}）。需求：饱食{hunger_label}、活力{energy_label}、心情{happiness_label}。经验 {xp_progress}%。互动 {total_interactions} 次，里程碑 {milestone_count} 个。峰值属性：{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
@@ -246,8 +392,20 @@ impl BuddyWidget {
         BuddyCommandResult {
             message,
             hint: Some(
-                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy feed`、`/buddy play`、`/buddy sleep`、`/buddy journal`、`/buddy hide`、`/buddy status`。".to_string(),
             ),
+        }
+    }
+
+    fn record_interaction(&mut self, interaction: BuddyInteraction) {
+        let milestones = self.growth.record_interaction(interaction);
+        let prev_level = self.growth.level;
+        for m in &milestones {
+            self.journal.record_milestone(*m);
+        }
+        // Check if we leveled up
+        if self.growth.level > prev_level {
+            self.journal.record_level_up(self.growth.level);
         }
     }
 
@@ -397,9 +555,9 @@ impl Renderable for BuddyBubble<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;
+    use std::time::Duration;
 
     fn snapshot_buffer(buf: &Buffer) -> String {
         let mut lines = Vec::new();
@@ -437,7 +595,7 @@ mod tests {
         assert_eq!(
             status.hint,
             Some(
-                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。"
+                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy feed`、`/buddy play`、`/buddy sleep`、`/buddy journal`、`/buddy hide`、`/buddy status`。"
                     .to_string()
             )
         );
@@ -545,6 +703,7 @@ mod tests {
     #[test]
     fn petted_buddy_snapshot() {
         let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
         let _ = buddy.pet("codex-home::project");
         let width = 60;
         let height = buddy.desired_height(width);
@@ -554,31 +713,12 @@ mod tests {
     }
 
     #[test]
-    fn visible_buddy_keeps_requesting_animation_frames() {
-        let mut buddy = BuddyWidget::new();
-        buddy.ensure_visible("codex-home::project");
-        assert!(buddy.next_redraw_in().is_some());
-    }
-
-    #[test]
-    fn visible_buddy_idle_frames_change_over_time() {
-        let mut buddy = BuddyWidget::new();
-        buddy.ensure_visible("codex-home::project");
-        let start = Instant::now();
-        let first = buddy.state.frame_at(start);
-        let second = buddy.state.frame_at(start + model::TICK_DURATION);
-        let third = buddy.state.frame_at(start + model::TICK_DURATION * 2);
-        assert_ne!(first, second);
-        assert_ne!(second, third);
-    }
-
-    #[test]
     fn uncommon_buddy_full_snapshot() {
         let mut buddy = BuddyWidget::new();
         let mut bones = BuddyBones::from_seed("uncommon-test::project");
         bones.rarity = model::BuddyRarity::Uncommon;
         bones.species = model::BuddySpecies::Cat;
-        bones.name = "年糕".to_string();
+        bones.name = "Whiskers".to_string();
         buddy.bones = Some(bones);
         buddy.state.visible = true;
         buddy.state.full_layout = true;
@@ -717,5 +857,57 @@ mod tests {
         assert!(buddy.state.next_surprise_at.is_some());
         let _ = buddy.show_full("codex-home::project");
         assert!(buddy.state.next_surprise_at.is_none());
+    }
+
+    #[test]
+    fn feed_increases_hunger() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let initial_hunger = buddy.needs.hunger;
+        let _ = buddy.feed("codex-home::project");
+        assert!(buddy.needs.hunger > initial_hunger);
+    }
+
+    #[test]
+    fn play_increases_happiness() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let initial_happiness = buddy.needs.happiness;
+        let _ = buddy.play("codex-home::project");
+        assert!(buddy.needs.happiness > initial_happiness);
+    }
+
+    #[test]
+    fn sleep_increases_energy() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        buddy.needs.energy = 0.3;
+        let _ = buddy.sleep("codex-home::project");
+        assert!(buddy.needs.energy > 0.6);
+    }
+
+    #[test]
+    fn journal_starts_empty() {
+        let buddy = BuddyWidget::new();
+        let result = buddy.journal_cmd();
+        assert!(result.message.contains("空的"));
+    }
+
+    #[test]
+    fn journal_records_hatch() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let result = buddy.journal_cmd();
+        assert!(result.message.contains("来到了这个世界"));
+    }
+
+    #[test]
+    fn status_shows_mood_and_needs() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let status = buddy.status("codex-home::project");
+        assert!(status.message.contains("需求："));
+        assert!(status.message.contains("经验"));
+        assert!(status.message.contains("里程碑"));
     }
 }

@@ -1,9 +1,8 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 463
 expression: snapshot_buffer(&buf)
 ---
    .--.
   ( ^^ )
   /\/\/\
-  Inky ★ 常 见  章 鱼  · 坐 立 不 安
+  墨 墨  ★ 常 见  章 鱼  · 坐 立 不 安

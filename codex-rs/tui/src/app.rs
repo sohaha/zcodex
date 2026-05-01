@@ -769,7 +769,7 @@ impl ThreadEventStore {
 }
 
 #[derive(Debug)]
-struct ThreadEventChannel {
+pub(super) struct ThreadEventChannel {
     sender: mpsc::Sender<ThreadBufferedEvent>,
     receiver: Option<mpsc::Receiver<ThreadBufferedEvent>>,
     store: Arc<Mutex<ThreadEventStore>>,
@@ -1758,7 +1758,7 @@ impl App {
         }
     }
 
-    fn ensure_thread_channel(&mut self, thread_id: ThreadId) -> &mut ThreadEventChannel {
+    pub(super) fn ensure_thread_channel(&mut self, thread_id: ThreadId) -> &mut ThreadEventChannel {
         self.thread_event_channels
             .entry(thread_id)
             .or_insert_with(|| ThreadEventChannel::new(THREAD_EVENT_CHANNEL_CAPACITY))

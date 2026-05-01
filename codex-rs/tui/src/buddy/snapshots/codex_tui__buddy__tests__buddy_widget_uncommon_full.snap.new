@@ -1,9 +1,0 @@
----
-source: tui/src/buddy/mod.rs
-assertion_line: 590
-expression: snapshot_buffer(&buf)
----
-   /\_/\\
-  ( ^^ )
-   > ^ <
-  年 糕  ★★ 少 见  猫  · 坐 立 不 安

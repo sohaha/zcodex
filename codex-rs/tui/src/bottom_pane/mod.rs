@@ -1386,6 +1386,37 @@ impl BottomPane {
         self.buddy.status(seed)
     }
 
+    pub(crate) fn feed_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.feed(seed);
+        self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
+        result
+    }
+
+    pub(crate) fn play_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.play(seed);
+        self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
+        result
+    }
+
+    pub(crate) fn sleep_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.sleep(seed);
+        self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
+        result
+    }
+
+    pub(crate) fn buddy_journal(&self) -> BuddyCommandResult {
+        self.buddy.journal_cmd()
+    }
+
     pub(crate) fn ensure_buddy_visible(&mut self, seed: &str) {
         self.buddy.ensure_visible(seed);
         self.request_redraw();

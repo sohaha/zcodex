@@ -1898,7 +1898,7 @@ async fn slash_buddy_rejects_unknown_subcommand() {
     assert_eq!(cells.len(), 1, "expected one error message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("用法：/buddy [show|full|pet|hide|status]"),
+        rendered.contains("用法：/buddy [show|full|pet|feed|play|sleep|journal|hide|status]"),
         "unexpected error message: {rendered:?}"
     );
 }

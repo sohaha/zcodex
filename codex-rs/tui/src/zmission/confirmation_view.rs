@@ -39,6 +39,8 @@ pub(crate) struct PhaseConfirmationView {
     completion: Option<ViewCompletion>,
     /// 用户选择的动作
     selected_action: Option<UserAction>,
+    /// 用于发送命令的事件发送器
+    app_event_tx: crate::app_event_sender::AppEventSender,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +71,7 @@ impl PhaseConfirmationView {
         phase_name: impl Into<String>,
         phase_description: impl Into<String>,
         artifact_preview: impl Into<String>,
+        app_event_tx: crate::app_event_sender::AppEventSender,
     ) -> Self {
         let phase_name = phase_name.into();
         let phase_description = phase_description.into();
@@ -97,6 +100,7 @@ impl PhaseConfirmationView {
             mode: ConfirmMode::Select,
             completion: None,
             selected_action: None,
+            app_event_tx,
         }
     }
 
@@ -114,6 +118,9 @@ impl PhaseConfirmationView {
     }
 
     fn confirm_selection(&mut self) {
+        use crate::app_event::AppEvent;
+        use crate::zmission_command::Command;
+
         match self.mode {
             ConfirmMode::Select => {
                 let option = &self.options[self.selected_index];
@@ -121,6 +128,10 @@ impl PhaseConfirmationView {
                     UserAction::Continue => {
                         self.selected_action = Some(UserAction::Continue);
                         self.completion = Some(ViewCompletion::Accepted);
+                        // 自动发送 Continue 命令
+                        let _ = self.app_event_tx.send(AppEvent::ZmissionCommand(
+                            Command::Continue { note: None }
+                        ));
                     }
                     UserAction::Supplement(_) => {
                         // 切换到输入模式
@@ -131,8 +142,12 @@ impl PhaseConfirmationView {
             ConfirmMode::Input => {
                 let content = self.supplement_input.trim().to_string();
                 if !content.is_empty() {
-                    self.selected_action = Some(UserAction::Supplement(content));
+                    self.selected_action = Some(UserAction::Supplement(content.clone()));
                     self.completion = Some(ViewCompletion::Accepted);
+                    // 自动发送 Continue 命令，附带补充内容
+                    let _ = self.app_event_tx.send(AppEvent::ZmissionCommand(
+                        Command::Continue { note: Some(content) }
+                    ));
                 }
             }
         }

@@ -164,6 +164,8 @@ pub(crate) struct PhaseAgent {
     pub id: PhaseAgentId,
     pub role: PhaseAgentRole,
     pub state: PhaseAgentState,
+    /// 关联的子线程 ID（真正的子代理）
+    pub thread_id: Option<codex_protocol::ThreadId>,
     /// 该阶段的历史消息（用于上下文隔离）
     pub messages: VecDeque<PhaseAgentMessage>,
     /// 用户补充的内容（用于继续沟通）
@@ -178,6 +180,7 @@ impl PhaseAgent {
             id,
             role,
             state: PhaseAgentState::Pending,
+            thread_id: None,
             messages: VecDeque::new(),
             user_supplements: Vec::new(),
         }

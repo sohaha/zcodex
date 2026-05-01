@@ -1,6 +1,6 @@
 ---
 source: tui/src/bottom_pane/mod.rs
-assertion_line: 2091
+assertion_line: 2124
 expression: "render_snapshot(&pane, area)"
 ---
   .--------------.                                          
@@ -10,7 +10,7 @@ expression: "render_snapshot(&pane, area)"
    .--.                                                     
   ( ^^ )                                                    
   /\/\/\                                                    
-  Inky ★ 常 见  章 鱼  · 坐 立 不 安                                
+  墨 墨  ★ 常 见  章 鱼  · 坐 立 不 安                                
 • 排 队 的 后 续 消 息                                             
   ↳ Queued follow-up question                               
     ⌥ + ↑ 编 辑 上 一 条 排 队 消 息                                 
