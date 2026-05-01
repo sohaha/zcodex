@@ -11,6 +11,8 @@ pub(crate) enum Command {
     Continue { note: Option<String> },
     /// 结束当前 Mission。
     Reset,
+    /// 打开 Phase Agent 视图界面。
+    View,
 }
 
 #[allow(dead_code)]
@@ -47,6 +49,7 @@ impl Command {
             }
             "reset" => Ok(Self::Reset),
             "restart" => Ok(Self::Reset),
+            "view" => Ok(Self::View),
             other => Err(format!("未知的 zmission 子命令: {other}")),
         }
     }
@@ -69,6 +72,6 @@ pub(crate) fn entry_available_during_task(args: Option<&str>) -> bool {
             .next()
             .map(|s| s.to_ascii_lowercase())
             .as_deref(),
-        Some("status") | Some("reset") | Some("restart")
+        Some("status") | Some("reset") | Some("restart") | Some("view")
     )
 }

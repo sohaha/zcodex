@@ -1116,6 +1116,8 @@ pub(crate) struct App {
     // overwrite a newer toggle, even if the plugin is toggled from different
     // cwd contexts.
     pending_plugin_enabled_writes: HashMap<String, Option<bool>>,
+    /// Phase Agent 管理器，用于 ZMission 子代理模式。
+    pub(crate) phase_agent_manager: Option<Arc<std::sync::RwLock<crate::zmission::PhaseAgentManager>>>,
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<AppServerTurnError> {
@@ -4741,6 +4743,7 @@ impl App {
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_plugin_enabled_writes: HashMap::new(),
+            phase_agent_manager: None,
         };
         if let Some(started) = initial_started_thread {
             app.enqueue_primary_thread_session(started.session, started.turns)
@@ -10829,6 +10832,7 @@ guardian_approval = true
             pending_primary_events: VecDeque::new(),
             pending_app_server_requests: PendingAppServerRequests::default(),
             pending_plugin_enabled_writes: HashMap::new(),
+            phase_agent_manager: None,
         }
     }
 
@@ -10891,6 +10895,7 @@ guardian_approval = true
                 pending_primary_events: VecDeque::new(),
                 pending_app_server_requests: PendingAppServerRequests::default(),
                 pending_plugin_enabled_writes: HashMap::new(),
+                phase_agent_manager: None,
             },
             rx,
             op_rx,

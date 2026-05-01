@@ -5739,8 +5739,8 @@ impl ChatWidget {
             terminal_title_invalid_items_warned,
             session_telemetry,
             mission_mode,
-            pending_mission_goal,
-            mission_phase_running,
+            pending_mission_goal: _,
+            mission_phase_running: _,
         } = common;
         let model = model.filter(|m| !m.trim().is_empty());
         let mut config = config;
@@ -11240,6 +11240,24 @@ impl ChatWidget {
         } else {
             self.request_redraw();
         }
+    }
+
+    /// 打开 Phase Confirmation 视图。
+    pub(crate) fn open_phase_confirmation_view(
+        &mut self,
+        view: Box<dyn crate::bottom_pane::BottomPaneView>,
+    ) {
+        self.bottom_pane.show_view(view);
+        self.request_redraw();
+    }
+
+    /// 打开 Phase Agent 视图。
+    pub(crate) fn open_phase_agent_view(
+        &mut self,
+        view: Box<dyn crate::bottom_pane::BottomPaneView>,
+    ) {
+        self.bottom_pane.show_view(view);
+        self.request_redraw();
     }
 
     fn initial_collaboration_mask(
