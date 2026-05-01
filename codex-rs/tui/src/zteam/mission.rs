@@ -28,7 +28,6 @@ pub(crate) enum MissionMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MissionPhase {
-    Idle,
     Bootstrapping,
     Planning,
     Executing,
@@ -65,7 +64,6 @@ impl MissionMode {
 impl MissionPhase {
     pub(crate) fn label(&self) -> &'static str {
         match self {
-            Self::Idle => "idle",
             Self::Bootstrapping => "bootstrapping",
             Self::Planning => "planning",
             Self::Executing => "executing",
@@ -103,13 +101,6 @@ impl Mission {
         match worker {
             WorkerSlot::Frontend => &mut self.frontend_assignment,
             WorkerSlot::Backend => &mut self.backend_assignment,
-        }
-    }
-
-    pub(crate) fn assignment(&self, worker: WorkerSlot) -> Option<&str> {
-        match worker {
-            WorkerSlot::Frontend => self.frontend_assignment.as_deref(),
-            WorkerSlot::Backend => self.backend_assignment.as_deref(),
         }
     }
 }

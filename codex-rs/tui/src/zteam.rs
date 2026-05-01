@@ -205,6 +205,7 @@ pub(crate) struct State {
     inner: Arc<RwLock<SharedState>>,
 }
 
+#[allow(dead_code)]
 pub(crate) enum AutopilotWorkItem {
     AttachFirstRepair(Vec<WorkerSlot>),
     RootPrompt { action: AutoAction, prompt: String },
@@ -288,8 +289,7 @@ impl State {
         }
         *state.worker_mut(recovered.slot) = next_state;
         let synthesized_recovery_mission = if state.mission.is_none() {
-            let frontend = state.frontend.clone();
-            let backend = state.backend.clone();
+            let (frontend, backend) = state.clone_workers();
             state.mission = Some(plan_recovery_mission(
                 &frontend,
                 &backend,
@@ -300,8 +300,7 @@ impl State {
         } else {
             false
         };
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
+        let (frontend, backend) = state.clone_workers();
         if let Some(mission) = state.mission.as_mut() {
             if synthesized_recovery_mission {
                 apply_recovery_state(mission, &frontend, &backend);
@@ -389,8 +388,7 @@ impl State {
             state.autopilot.queued_auto_action = None;
             return None;
         };
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
+        let (frontend, backend) = state.clone_workers();
         let required_workers = mission.required_workers(&frontend, &backend);
         let repair_targets =
             current_repair_targets(&mission, &frontend, &backend, &state.autopilot);
@@ -488,8 +486,7 @@ impl State {
         let Some(mission) = state.mission.clone() else {
             return false;
         };
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
+        let (frontend, backend) = state.clone_workers();
         let repair_targets =
             current_repair_targets(&mission, &frontend, &backend, &state.autopilot);
         if repair_targets.is_empty() {
@@ -725,8 +722,7 @@ impl State {
             &mut state.activity,
             format!("{worker} 已注册到 `{}`。", worker.canonical_task_name()),
         );
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
+        let (frontend, backend) = state.clone_workers();
         if let Some(mission) = state.mission.as_mut() {
             sync_mission_phase(mission, &frontend, &backend);
         }
@@ -789,8 +785,7 @@ impl State {
             worker_state.last_result = Some(text.clone());
             worker_state.source = WorkerSource::LocalThreadSpawn;
         }
-        let frontend = state.frontend.clone();
-        let backend = state.backend.clone();
+        let (frontend, backend) = state.clone_workers();
         if let Some(mission) = state.mission.as_mut() {
             if required_workers_have_results(mission, &frontend, &backend) {
                 mission.phase = MissionPhase::Validating;
@@ -905,6 +900,12 @@ impl SharedState {
             WorkerSlot::Frontend => &mut self.frontend,
             WorkerSlot::Backend => &mut self.backend,
         }
+    }
+
+    /// 克隆 frontend 和 backend 状态快照，用于打破 borrow 冲突：
+    /// 先 clone 出来，再通过 &mut state 修改 mission/autopilot。
+    fn clone_workers(&self) -> (WorkerState, WorkerState) {
+        (self.frontend.clone(), self.backend.clone())
     }
 }
 
@@ -1263,8 +1264,7 @@ fn apply_manual_override(
     next_action: &str,
     result_label: &str,
 ) {
-    let frontend = state.frontend.clone();
-    let backend = state.backend.clone();
+    let (frontend, backend) = state.clone_workers();
     if let Some(mission) = state.mission.as_mut() {
         mission.phase = MissionPhase::Executing;
         mission.blocker = None;
@@ -1499,8 +1499,7 @@ fn finalize_root_auto_action(state: &mut SharedState) -> bool {
     let Some(action) = state.autopilot.pending_auto_action.take() else {
         return false;
     };
-    let frontend = state.frontend.clone();
-    let backend = state.backend.clone();
+    let (frontend, backend) = state.clone_workers();
     if state.mission.is_none() {
         state.autopilot.waiting_on = WaitingOn::Idle;
         return true;
@@ -1639,8 +1638,7 @@ fn apply_summary_result(state: &mut SharedState, result: autopilot::ParsedAutopi
         "repair" => {
             state.autopilot.manual_override_active = false;
             state.autopilot.attach_attempted = false;
-            let frontend = state.frontend.clone();
-            let backend = state.backend.clone();
+            let (frontend, backend) = state.clone_workers();
             let targets = if result.waiting_on.is_empty() {
                 state
                     .mission
@@ -1797,10 +1795,22 @@ mod tests {
     #[test]
     fn command_parser_rejects_invalid_forms() {
         assert_eq!(Command::parse(""), Err(command::usage().to_string()));
-        assert_eq!(Command::parse("status extra"), Err(command::usage().to_string()));
-        assert_eq!(Command::parse("attach extra"), Err(command::usage().to_string()));
-        assert_eq!(Command::parse("frontend"), Err(command::usage().to_string()));
-        assert_eq!(Command::parse("relay frontend"), Err(command::usage().to_string()));
+        assert_eq!(
+            Command::parse("status extra"),
+            Err(command::usage().to_string())
+        );
+        assert_eq!(
+            Command::parse("attach extra"),
+            Err(command::usage().to_string())
+        );
+        assert_eq!(
+            Command::parse("frontend"),
+            Err(command::usage().to_string())
+        );
+        assert_eq!(
+            Command::parse("relay frontend"),
+            Err(command::usage().to_string())
+        );
         assert_eq!(
             Command::parse(
                 "start <subagent_notification>{\"agent_path\":\"/root/worker\",\"status\":\"completed\"}</subagent_notification>"
@@ -1811,7 +1821,10 @@ mod tests {
             Command::parse("relay frontend backend"),
             Err(command::usage().to_string())
         );
-        assert_eq!(Command::parse("unknown test"), Err(command::usage().to_string()));
+        assert_eq!(
+            Command::parse("unknown test"),
+            Err(command::usage().to_string())
+        );
     }
 
     #[test]
