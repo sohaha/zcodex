@@ -140,7 +140,10 @@ impl Default for PhaseAgentState {
 
 impl PhaseAgentState {
     pub(crate) fn is_active(&self) -> bool {
-        matches!(self, Self::Running { .. } | Self::AwaitingConfirmation { .. })
+        matches!(
+            self,
+            Self::Running { .. } | Self::AwaitingConfirmation { .. }
+        )
     }
 
     pub(crate) fn is_completed(&self) -> bool {
@@ -190,7 +193,11 @@ impl PhaseAgent {
         format!("{} [{}]", self.role.display_name(), self.id.phase.label())
     }
 
-    pub(crate) fn build_phase_prompt(&self, goal: &str, phase_def: &codex_mission::MissionPhaseDefinition) -> String {
+    pub(crate) fn build_phase_prompt(
+        &self,
+        goal: &str,
+        phase_def: &codex_mission::MissionPhaseDefinition,
+    ) -> String {
         let role_prompt = self.role.role_prompt();
         let artifact_file = self.role.artifact_filename();
 

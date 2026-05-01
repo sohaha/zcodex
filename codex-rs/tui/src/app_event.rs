@@ -34,6 +34,7 @@ use codex_utils_approval_presets::ApprovalPreset;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
+use crate::chatwidget::BuddyMenuAction;
 use crate::history_cell::HistoryCell;
 use crate::zmission_command::Command as ZmissionCommand;
 use crate::zteam::Command as ZteamCommand;
@@ -621,6 +622,9 @@ pub(crate) enum AppEvent {
     /// Persist buddy visibility and switch the live widget into full-layout mode.
     PersistBuddyFullVisibility,
 
+    /// Execute a local buddy action selected from the buddy submenu.
+    RunBuddyMenuAction(BuddyMenuAction),
+
     /// Persist the Plan-mode-specific reasoning effort.
     PersistPlanModeReasoningEffort(Option<ReasoningEffort>),
 
@@ -744,6 +748,9 @@ pub(crate) enum AppEvent {
     SyntaxThemeSelected {
         name: String,
     },
+
+    /// Check and spawn pending Phase Agent when main thread is idle.
+    CheckPendingPhaseSpawn,
 }
 
 #[derive(Debug)]

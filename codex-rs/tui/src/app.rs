@@ -1117,7 +1117,8 @@ pub(crate) struct App {
     // cwd contexts.
     pending_plugin_enabled_writes: HashMap<String, Option<bool>>,
     /// Phase Agent 管理器，用于 ZMission 子代理模式。
-    pub(crate) phase_agent_manager: Option<Arc<std::sync::RwLock<crate::zmission::PhaseAgentManager>>>,
+    pub(crate) phase_agent_manager:
+        Option<Arc<std::sync::RwLock<crate::zmission::PhaseAgentManager>>>,
 }
 
 fn active_turn_not_steerable_turn_error(error: &TypedRequestError) -> Option<AppServerTurnError> {
@@ -6427,6 +6428,9 @@ impl App {
             AppEvent::PersistBuddyFullVisibility => {
                 self.chat_widget.sync_buddy_full_visibility();
             }
+            AppEvent::RunBuddyMenuAction(action) => {
+                self.chat_widget.run_buddy_menu_action(action);
+            }
             AppEvent::SkipNextWorldWritableScan => {
                 self.windows_sandbox.skip_world_writable_scan_once = true;
             }
@@ -6811,6 +6815,10 @@ impl App {
                             .add_error_message(format!("Failed to save theme: {err}"));
                     }
                 }
+            }
+            AppEvent::CheckPendingPhaseSpawn => {
+                // 当主线程空闲时，检查并创建待 fork 的 Phase Agent
+                self.try_spawn_pending_phase_agent(app_server).await;
             }
         }
         Ok(AppRunControl::Continue)

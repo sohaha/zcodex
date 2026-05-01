@@ -9,8 +9,8 @@ use crate::bottom_pane::BottomPaneView;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::ViewCompletion;
 use crate::render::renderable::Renderable;
-use crate::zmission::phase_agent::PhaseAgentMessageSender;
 use crate::zmission::PhaseAgentManager;
+use crate::zmission::phase_agent::PhaseAgentMessageSender;
 use codex_mission::MissionPhase;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -23,8 +23,8 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::Wrap;
 use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
@@ -132,9 +132,15 @@ impl PhaseAgentView {
                 };
 
                 let status_style = match agent.map(|a| &a.state) {
-                    Some(super::PhaseAgentState::Completed { .. }) => Span::from(format!("[{}]", status)).green(),
-                    Some(super::PhaseAgentState::Running { .. }) => Span::from(format!("[{}]", status)).yellow(),
-                    Some(super::PhaseAgentState::AwaitingConfirmation { .. }) => Span::from(format!("[{}]", status)).magenta(),
+                    Some(super::PhaseAgentState::Completed { .. }) => {
+                        Span::from(format!("[{}]", status)).green()
+                    }
+                    Some(super::PhaseAgentState::Running { .. }) => {
+                        Span::from(format!("[{}]", status)).yellow()
+                    }
+                    Some(super::PhaseAgentState::AwaitingConfirmation { .. }) => {
+                        Span::from(format!("[{}]", status)).magenta()
+                    }
                     _ => Span::from(format!("[{}]", status)).dim(),
                 };
 
@@ -164,9 +170,7 @@ impl PhaseAgentView {
 
             // 阶段标题
             let phase_title = format!("{} [{}]", agent.role.display_name(), agent.id.phase.label());
-            lines.push(Line::from(vec![
-                Span::from(phase_title).bold(),
-            ]));
+            lines.push(Line::from(vec![Span::from(phase_title).bold()]));
 
             // 阶段描述
             lines.push(Line::from(vec![
@@ -186,13 +190,9 @@ impl PhaseAgentView {
 
             // 消息历史
             if agent.messages.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::from("暂无消息记录").dim(),
-                ]));
+                lines.push(Line::from(vec![Span::from("暂无消息记录").dim()]));
             } else {
-                lines.push(Line::from(vec![
-                    Span::from("对话记录:").bold(),
-                ]));
+                lines.push(Line::from(vec![Span::from("对话记录:").bold()]));
 
                 for msg in &agent.messages {
                     let style = match msg.sender {
@@ -212,7 +212,11 @@ impl PhaseAgentView {
             if !agent.user_supplements.is_empty() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::from(format!("有 {} 条用户补充内容", agent.user_supplements.len())).cyan(),
+                    Span::from(format!(
+                        "有 {} 条用户补充内容",
+                        agent.user_supplements.len()
+                    ))
+                    .cyan(),
                 ]));
             }
         }
@@ -301,8 +305,7 @@ impl Renderable for PhaseAgentView {
             "Phase Agent"
         };
 
-        Paragraph::new(Line::from(title.bold()))
-            .render(title_area, buf);
+        Paragraph::new(Line::from(title.bold())).render(title_area, buf);
 
         if body_area.height > 0 {
             Paragraph::new(Text::from(self.body_lines(body_area.width as usize)))
@@ -316,8 +319,7 @@ impl Renderable for PhaseAgentView {
             } else {
                 "N 打开导航 · 1-7 跳转阶段 · Esc 关闭"
             };
-            Paragraph::new(Line::from(hint.dim()))
-                .render(hint_area, buf);
+            Paragraph::new(Line::from(hint.dim())).render(hint_area, buf);
         }
     }
 }

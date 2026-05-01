@@ -418,6 +418,19 @@ use codex_utils_approval_presets::builtin_approval_presets;
 use strum::IntoEnumIterator;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BuddyMenuAction {
+    Show,
+    Full,
+    Pet,
+    Feed,
+    Play,
+    Sleep,
+    Journal,
+    Status,
+    Hide,
+}
+
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "在本地运行命令可在前面加上 !";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "例如：!ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -2523,7 +2536,10 @@ impl ChatWidget {
         let store = codex_mission::MissionStateStore::for_workspace(&workspace);
         match store.status_report() {
             Ok(codex_mission::MissionStatusReport::Active { state, .. }) => {
-                let phase_label = state.phase.map(codex_mission::MissionPhase::label).unwrap_or("unknown");
+                let phase_label = state
+                    .phase
+                    .map(codex_mission::MissionPhase::label)
+                    .unwrap_or("unknown");
                 let mut lines = Vec::new();
                 lines.push("🚀 Mission 模式已激活".to_string());
                 lines.push(format!("目标：{}", state.goal));
@@ -2646,7 +2662,10 @@ impl ChatWidget {
             Ok(codex_mission::MissionStatusReport::Active { state, .. }) => state,
             _ => return,
         };
-        let phase_label = state.phase.map(codex_mission::MissionPhase::label).unwrap_or("unknown");
+        let phase_label = state
+            .phase
+            .map(codex_mission::MissionPhase::label)
+            .unwrap_or("unknown");
         let goal = state.goal;
 
         let continue_actions: Vec<crate::bottom_pane::SelectionAction> = {
@@ -3077,6 +3096,9 @@ impl ChatWidget {
         self.last_unified_wait = None;
         self.unified_exec_wait_streak = None;
         self.request_redraw();
+
+        // 主线程已空闲，触发 Phase Agent fork 检查
+        self.app_event_tx.send(AppEvent::CheckPendingPhaseSpawn);
 
         let had_pending_steers = !self.pending_steers.is_empty();
         self.refresh_pending_input_preview();
@@ -6333,10 +6355,92 @@ impl ChatWidget {
         );
     }
 
+    fn open_buddy_menu(&mut self) {
+        let items = vec![
+            self.buddy_menu_item(
+                "显示小伙伴",
+                "孵化或召回当前项目的小伙伴。",
+                BuddyMenuAction::Show,
+            ),
+            self.buddy_menu_item(
+                "全形象常驻",
+                "切换到完整形象显示，直到手动隐藏。",
+                BuddyMenuAction::Full,
+            ),
+            self.buddy_menu_item("抚摸", "快速提升心情并触发互动反馈。", BuddyMenuAction::Pet),
+            self.buddy_menu_item(
+                "喂食",
+                "恢复饱食度，顺手提升一点心情。",
+                BuddyMenuAction::Feed,
+            ),
+            self.buddy_menu_item(
+                "玩耍",
+                "提升心情，但会消耗一些活力。",
+                BuddyMenuAction::Play,
+            ),
+            self.buddy_menu_item("休息", "恢复活力，适合疲惫时使用。", BuddyMenuAction::Sleep),
+            self.buddy_menu_item(
+                "查看日记",
+                "回顾最近的成长、升级与里程碑。",
+                BuddyMenuAction::Journal,
+            ),
+            self.buddy_menu_item(
+                "查看状态",
+                "查看需求、等级、连击和下一目标。",
+                BuddyMenuAction::Status,
+            ),
+            self.buddy_menu_item("隐藏", "让小伙伴暂时退场。", BuddyMenuAction::Hide),
+        ];
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            view_id: Some("buddy-menu"),
+            title: Some("Buddy 子菜单".to_string()),
+            subtitle: Some("选择一个动作直接和底栏小伙伴互动。".to_string()),
+            footer_hint: Some(standard_popup_hint_line()),
+            items,
+            ..Default::default()
+        });
+    }
+
+    fn buddy_menu_item(
+        &self,
+        name: &str,
+        description: &str,
+        action: BuddyMenuAction,
+    ) -> SelectionItem {
+        SelectionItem {
+            name: name.to_string(),
+            description: Some(description.to_string()),
+            actions: vec![Box::new(move |tx| {
+                tx.send(AppEvent::RunBuddyMenuAction(action));
+            })],
+            dismiss_on_select: true,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn run_buddy_menu_action(&mut self, action: BuddyMenuAction) {
+        let args = match action {
+            BuddyMenuAction::Show => "show",
+            BuddyMenuAction::Full => "full",
+            BuddyMenuAction::Pet => "pet",
+            BuddyMenuAction::Feed => "feed",
+            BuddyMenuAction::Play => "play",
+            BuddyMenuAction::Sleep => "sleep",
+            BuddyMenuAction::Journal => "journal",
+            BuddyMenuAction::Status => "status",
+            BuddyMenuAction::Hide => "hide",
+        };
+        self.handle_buddy_command(args);
+    }
+
     fn handle_buddy_command(&mut self, args: &str) {
         let is_status = args == "status";
         let result = match args {
-            "" | "help" => {
+            "" => {
+                self.open_buddy_menu();
+                return;
+            }
+            "help" => {
                 self.show_buddy_help();
                 return;
             }

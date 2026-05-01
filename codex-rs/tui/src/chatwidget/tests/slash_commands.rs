@@ -1828,6 +1828,16 @@ async fn slash_buddy_show_requests_persistent_visibility_update() {
 }
 
 #[tokio::test]
+async fn slash_buddy_without_args_opens_buddy_menu() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Buddy);
+
+    assert!(chat.bottom_pane.active_view_is("buddy-menu"));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
 async fn slash_buddy_full_requests_persistent_full_visibility_update() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -1885,6 +1895,10 @@ async fn slash_buddy_status_reports_traits() {
     assert!(
         rendered.contains("峰值属性："),
         "expected trait details in status message: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("下一目标："),
+        "expected next milestone hint in status message: {rendered:?}"
     );
 }
 

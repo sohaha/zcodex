@@ -65,13 +65,12 @@ pub(crate) fn entry_available_during_task(args: Option<&str>) -> bool {
     if trimmed.is_empty() {
         return true;
     }
-    // 只有 status 在 task 进行中可用
+    // 解析子命令
+    let mut parts = trimmed.split_whitespace();
+    let subcommand = parts.next().map(|s| s.to_ascii_lowercase());
+
     matches!(
-        trimmed
-            .split_whitespace()
-            .next()
-            .map(|s| s.to_ascii_lowercase())
-            .as_deref(),
-        Some("status") | Some("reset") | Some("restart") | Some("view")
+        subcommand.as_deref(),
+        Some("status") | Some("reset") | Some("restart") | Some("view") | Some("start")
     )
 }

@@ -19,8 +19,8 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::text::Text;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::Wrap;
 use ratatui::widgets::Widget;
+use ratatui::widgets::Wrap;
 
 /// 阶段确认面板视图。
 pub(crate) struct PhaseConfirmationView {
@@ -129,9 +129,9 @@ impl PhaseConfirmationView {
                         self.selected_action = Some(UserAction::Continue);
                         self.completion = Some(ViewCompletion::Accepted);
                         // 自动发送 Continue 命令
-                        let _ = self.app_event_tx.send(AppEvent::ZmissionCommand(
-                            Command::Continue { note: None }
-                        ));
+                        let _ = self
+                            .app_event_tx
+                            .send(AppEvent::ZmissionCommand(Command::Continue { note: None }));
                     }
                     UserAction::Supplement(_) => {
                         // 切换到输入模式
@@ -145,9 +145,11 @@ impl PhaseConfirmationView {
                     self.selected_action = Some(UserAction::Supplement(content.clone()));
                     self.completion = Some(ViewCompletion::Accepted);
                     // 自动发送 Continue 命令，附带补充内容
-                    let _ = self.app_event_tx.send(AppEvent::ZmissionCommand(
-                        Command::Continue { note: Some(content) }
-                    ));
+                    let _ = self
+                        .app_event_tx
+                        .send(AppEvent::ZmissionCommand(Command::Continue {
+                            note: Some(content),
+                        }));
                 }
             }
         }
@@ -188,18 +190,14 @@ impl PhaseConfirmationView {
         lines.push(Line::from(""));
 
         // 产物预览
-        lines.push(Line::from(vec![
-            Span::from("产物预览：").bold(),
-        ]));
+        lines.push(Line::from(vec![Span::from("产物预览：").bold()]));
         let preview = if self.artifact_preview.len() > inner_width * 5 {
             format!("{}...", &self.artifact_preview[..inner_width * 5])
         } else {
             self.artifact_preview.clone()
         };
         for line in preview.lines() {
-            lines.push(Line::from(vec![
-                Span::from(format!("  {}", line)).dim(),
-            ]));
+            lines.push(Line::from(vec![Span::from(format!("  {}", line)).dim()]));
         }
         lines.push(Line::from(""));
 
@@ -209,9 +207,7 @@ impl PhaseConfirmationView {
 
         // 选项列表
         if self.mode == ConfirmMode::Select {
-            lines.push(Line::from(vec![
-                Span::from("请选择操作：").bold(),
-            ]));
+            lines.push(Line::from(vec![Span::from("请选择操作：").bold()]));
             lines.push(Line::from(""));
 
             for (i, option) in self.options.iter().enumerate() {
@@ -222,10 +218,7 @@ impl PhaseConfirmationView {
                 } else {
                     Span::from(option.label.clone())
                 };
-                lines.push(Line::from(vec![
-                    Span::from(prefix),
-                    label_style,
-                ]));
+                lines.push(Line::from(vec![Span::from(prefix), label_style]));
                 if is_selected {
                     lines.push(Line::from(vec![
                         Span::from(format!("    {}", option.description)).dim(),
@@ -234,9 +227,7 @@ impl PhaseConfirmationView {
             }
         } else {
             // 输入模式
-            lines.push(Line::from(vec![
-                Span::from("请输入补充内容：").bold(),
-            ]));
+            lines.push(Line::from(vec![Span::from("请输入补充内容：").bold()]));
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
                 Span::from("> ").cyan(),
@@ -316,8 +307,7 @@ impl Renderable for PhaseConfirmationView {
         ])
         .areas(area);
 
-        Paragraph::new(Line::from("阶段确认".bold()))
-            .render(title_area, buf);
+        Paragraph::new(Line::from("阶段确认".bold())).render(title_area, buf);
         if body_area.height > 0 {
             Paragraph::new(Text::from(self.body_lines(body_area.width as usize)))
                 .wrap(Wrap { trim: false })
@@ -329,8 +319,7 @@ impl Renderable for PhaseConfirmationView {
             } else {
                 "Enter 确认 · Esc 返回选择"
             };
-            Paragraph::new(Line::from(hint.dim()))
-                .render(hint_area, buf);
+            Paragraph::new(Line::from(hint.dim())).render(hint_area, buf);
         }
     }
 }

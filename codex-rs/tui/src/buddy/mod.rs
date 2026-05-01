@@ -16,6 +16,8 @@ mod render;
 
 use growth::BuddyGrowth;
 use interaction_reactions::interaction_quips;
+use interaction_reactions::level_up_quips;
+use interaction_reactions::milestone_quips;
 use journal::BuddyJournal;
 use journal::JournalEvent;
 use model::BuddyBones;
@@ -70,6 +72,7 @@ impl BuddyWidget {
         let was_hatched = self.bones.is_some();
         let bones = self.ensure_bones(seed).clone();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         if !self.state.full_layout {
             self.state.schedule_surprise();
@@ -88,6 +91,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         if !self.state.full_layout {
             self.state.schedule_surprise();
@@ -110,7 +114,7 @@ impl BuddyWidget {
         });
 
         if !was_hatched {
-            self.growth.record_hatch();
+            self.record_hatch();
             self.journal.record(JournalEvent::Hatched);
         }
 
@@ -138,6 +142,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.state.visible = true;
         self.state.full_layout = true;
         self.state.full_layout_until = None;
@@ -160,7 +165,7 @@ impl BuddyWidget {
         });
 
         if !was_hatched {
-            self.growth.record_hatch();
+            self.record_hatch();
             self.journal.record(JournalEvent::Hatched);
         }
 
@@ -201,6 +206,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         self.state.pet_count += 1;
         self.state.pet_started_at = Some(now);
@@ -225,6 +231,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         self.needs.apply_interaction(BuddyInteraction::Feed);
         self.record_interaction(BuddyInteraction::Feed);
@@ -249,6 +256,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         self.needs.apply_interaction(BuddyInteraction::Play);
         self.record_interaction(BuddyInteraction::Play);
@@ -275,6 +283,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
+        self.record_daily_visit();
         self.show_temporary_full(now);
         self.needs.apply_interaction(BuddyInteraction::Sleep);
         self.record_interaction(BuddyInteraction::Sleep);
@@ -379,8 +388,10 @@ impl BuddyWidget {
         let xp_progress = (self.growth.xp_progress() * 100.0) as u32;
         let total_interactions = self.growth.total_interactions();
         let milestone_count = self.growth.milestones().len();
+        let streak_days = self.growth.streak_days();
+        let next_milestone = self.next_milestone_hint();
         let message = format!(
-            "小伙伴状态：{} {}（Lv.{level}，{visibility}，{display_mode}{shiny}，{}，{}眼，{visual_trait}，心情{mood_label}，抚摸 {}）。需求：饱食{hunger_label}、活力{energy_label}、心情{happiness_label}。经验 {xp_progress}%。互动 {total_interactions} 次，里程碑 {milestone_count} 个。峰值属性：{} {}。{personality}",
+            "小伙伴状态：{} {}（Lv.{level}，{visibility}，{display_mode}{shiny}，{}，{}眼，{visual_trait}，心情{mood_label}，抚摸 {}）。需求：饱食{hunger_label}、活力{energy_label}、心情{happiness_label}。经验 {xp_progress}%。互动 {total_interactions} 次，连续出现 {streak_days} 天，里程碑 {milestone_count} 个。下一目标：{next_milestone}。峰值属性：{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
@@ -398,15 +409,65 @@ impl BuddyWidget {
     }
 
     fn record_interaction(&mut self, interaction: BuddyInteraction) {
-        let milestones = self.growth.record_interaction(interaction);
         let prev_level = self.growth.level;
+        let milestones = self.growth.record_interaction(interaction);
         for m in &milestones {
             self.journal.record_milestone(*m);
         }
-        // Check if we leveled up
         if self.growth.level > prev_level {
             self.journal.record_level_up(self.growth.level);
+            let quips = level_up_quips();
+            let quip = quips[self.growth.level as usize % quips.len()];
+            self.journal.record(JournalEvent::Special(quip.to_string()));
         }
+        if let Some(milestone) = milestones.last().copied() {
+            let quips = milestone_quips();
+            let quip = quips[self.growth.milestones().len() % quips.len()];
+            self.journal.record(JournalEvent::Special(format!(
+                "{quip}（{}）",
+                milestone.description()
+            )));
+        }
+    }
+
+    fn record_hatch(&mut self) {
+        let milestones = self.growth.record_hatch();
+        for milestone in milestones {
+            self.journal.record_milestone(milestone);
+        }
+    }
+
+    fn record_daily_visit(&mut self) {
+        let today = self.growth.hatched_at.elapsed().as_secs() / 86_400 + 1;
+        let previous_streak = self.growth.streak_days();
+        let milestones = self.growth.record_daily_visit(today);
+        if self.growth.streak_days() > previous_streak {
+            self.journal.record_streak(self.growth.streak_days());
+        }
+        for milestone in milestones {
+            self.journal.record_milestone(milestone);
+        }
+    }
+
+    fn next_milestone_hint(&self) -> String {
+        if self.growth.pet_count < 10 {
+            return format!(
+                "再抚摸 {} 次达成「{}」",
+                10 - self.growth.pet_count,
+                "亲密接触 ×10"
+            );
+        }
+        if self.growth.level < 5 {
+            return format!("升到 Lv.5 解锁「{}」", "成长 · Lv.5");
+        }
+        if self.growth.total_interactions() < 50 {
+            return format!(
+                "再互动 {} 次达成「{}」",
+                50 - self.growth.total_interactions(),
+                "互动达人 ×50"
+            );
+        }
+        "继续陪伴它，看看还会发生什么".to_string()
     }
 
     fn ensure_bones(&mut self, seed: &str) -> &BuddyBones {

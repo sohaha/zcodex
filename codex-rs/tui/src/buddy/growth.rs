@@ -112,6 +112,8 @@ pub(crate) struct BuddyGrowth {
     pub last_seen_day: u64,
     /// 孵化时间。
     pub hatched_at: Instant,
+    /// 是否已经完成孵化。
+    hatched: bool,
 }
 
 impl Default for BuddyGrowth {
@@ -127,6 +129,7 @@ impl Default for BuddyGrowth {
             streak_days: 0,
             last_seen_day: 0,
             hatched_at: Instant::now(),
+            hatched: false,
         }
     }
 }
@@ -166,6 +169,8 @@ impl BuddyGrowth {
 
     /// 记录孵化事件。
     pub(crate) fn record_hatch(&mut self) -> Vec<Milestone> {
+        self.hatched_at = Instant::now();
+        self.hatched = true;
         self.check_milestones()
     }
 
@@ -213,10 +218,15 @@ impl BuddyGrowth {
         self.pet_count + self.feed_count + self.play_count + self.sleep_count
     }
 
+    /// 当前已连续出现天数。
+    pub(crate) fn streak_days(&self) -> u32 {
+        self.streak_days
+    }
+
     fn check_milestones(&mut self) -> Vec<Milestone> {
         let candidates = [
             (
-                self.total_interactions() >= 1 && !self.has_milestone(Milestone::FirstHatch),
+                self.hatched && !self.has_milestone(Milestone::FirstHatch),
                 Milestone::FirstHatch,
             ),
             (
@@ -325,6 +335,13 @@ mod tests {
         let mut growth = BuddyGrowth::default();
         let milestones = growth.record_interaction(BuddyInteraction::Pet);
         assert!(milestones.contains(&Milestone::FirstPet));
+    }
+
+    #[test]
+    fn hatch_records_first_hatch_milestone() {
+        let mut growth = BuddyGrowth::default();
+        let milestones = growth.record_hatch();
+        assert!(milestones.contains(&Milestone::FirstHatch));
     }
 
     #[test]

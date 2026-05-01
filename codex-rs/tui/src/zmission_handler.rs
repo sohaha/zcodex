@@ -28,13 +28,15 @@ impl crate::app::App {
         let workspace = self.config.cwd.to_path_buf();
         match command {
             Command::Start { goal } => {
-                self.handle_zmission_start(app_server, workspace, goal).await;
+                self.handle_zmission_start(app_server, workspace, goal)
+                    .await;
             }
             Command::Status => {
                 self.handle_zmission_status(workspace);
             }
             Command::Continue { note } => {
-                self.handle_zmission_continue(app_server, workspace, note).await;
+                self.handle_zmission_continue(app_server, workspace, note)
+                    .await;
             }
             Command::Reset => {
                 self.handle_zmission_reset(workspace);
@@ -61,7 +63,8 @@ impl crate::app::App {
 
         // 创建 Phase Agent 管理器（如果尚未创建）
         if self.phase_agent_manager.is_none() {
-            self.phase_agent_manager = Some(Arc::new(RwLock::new(PhaseAgentManager::new(workspace))));
+            self.phase_agent_manager =
+                Some(Arc::new(RwLock::new(PhaseAgentManager::new(workspace))));
         }
 
         let manager = self.phase_agent_manager.as_ref().unwrap();
@@ -81,27 +84,74 @@ impl crate::app::App {
 
                 // 显示 Mission 启动信息
                 let msg = format!(
-                    "🚀 Mission 已启动（Phase Agent 模式）\n\
+                    "🚀 Mission 已启动（延迟 fork 模式）\n\
                     目标：{}\n\
-                    当前阶段：{} ({})",
+                    当前阶段：{} ({})\n\
+                    等待主线程空闲后将自动创建 Phase Agent 子线程...",
                     goal,
                     phase_name,
                     phase.label()
                 );
                 self.chat_widget.add_info_message(msg, None);
 
+                // 设置待 fork 阶段，等待主线程空闲后 fork
+                manager_guard.set_pending_spawn_phase(phase);
                 drop(manager_guard);
 
-                // 创建 Phase Agent 子线程并注入提示
-                if let Err(err) = self.spawn_phase_agent_thread(app_server, phase).await {
-                    self.chat_widget
-                        .add_error_message(format!("创建 Phase Agent 线程失败：{err}"));
-                }
+                // 立即尝试 fork（如果主线程空闲）
+                self.try_spawn_pending_phase_agent(app_server).await;
             }
             Err(err) => {
                 self.chat_widget
                     .add_error_message(format!("Mission 启动失败：{err}"));
             }
+        }
+    }
+
+    /// 尝试创建待 fork 的 Phase Agent 子线程。
+    /// 如果主线程空闲则立即 fork，否则等待下次调用。
+    pub(crate) async fn try_spawn_pending_phase_agent(&mut self, app_server: &mut AppServerSession) {
+        // 检查是否有待 fork 的阶段
+        let pending_phase = {
+            let Some(manager) = &self.phase_agent_manager else {
+                return;
+            };
+            let Ok(mut manager_guard) = manager.write() else {
+                return;
+            };
+            manager_guard.take_pending_spawn_phase()
+        };
+
+        let Some(phase) = pending_phase else {
+            return;
+        };
+
+        // 检查主线程是否空闲
+        if self.chat_widget.is_agent_turn_running() {
+            self.chat_widget.add_info_message(
+                "⏳ 主线程忙碌中，等待空闲后将自动创建 Phase Agent 子线程...".to_string(),
+                None,
+            );
+            // 重新设置待 fork 阶段，下次再试
+            if let Some(manager) = &self.phase_agent_manager {
+                if let Ok(mut manager_guard) = manager.write() {
+                    manager_guard.set_pending_spawn_phase(phase);
+                }
+            }
+            return;
+        }
+
+        // 主线程空闲，可以 fork
+        self.chat_widget.add_info_message(
+            format!("✅ 主线程空闲，正在为阶段 {} 创建 Phase Agent 子线程...", crate::zmission::phase_display_name(phase)),
+            None,
+        );
+
+        if let Err(err) = self.spawn_phase_agent_thread(app_server, phase).await {
+            self.chat_widget.add_error_message(format!(
+                "创建 Phase Agent 线程失败：{err}\n\
+                请稍后重试或检查 AppServer 连接。"
+            ));
         }
     }
 
@@ -113,13 +163,21 @@ impl crate::app::App {
     ) -> Result<()> {
         use codex_protocol::models::ContentItem;
 
-        let manager = self.phase_agent_manager.as_ref().ok_or_else(||
-            color_eyre::eyre::eyre!("PhaseAgentManager 未初始化"))?;
+        self.chat_widget.add_info_message(
+            format!("[DEBUG] spawn_phase_agent_thread 开始执行，阶段：{phase}"),
+            None,
+        );
+
+        let manager = self
+            .phase_agent_manager
+            .as_ref()
+            .ok_or_else(|| color_eyre::eyre::eyre!("PhaseAgentManager 未初始化"))?;
 
         // 获取 role 和 prompt
         let (role, prompt, has_thread) = {
-            let manager_guard = manager.read().map_err(|_|
-                color_eyre::eyre::eyre!("无法获取管理器锁"))?;
+            let manager_guard = manager
+                .read()
+                .map_err(|_| color_eyre::eyre::eyre!("无法获取管理器锁"))?;
 
             let Some(agent) = manager_guard.get_agent(phase) else {
                 return Err(color_eyre::eyre::eyre!("找不到阶段 {phase} 的 PhaseAgent"));
@@ -133,12 +191,30 @@ impl crate::app::App {
 
         // 如果已有线程，重新激活
         if has_thread {
-            return self.reinject_to_phase_agent_thread(app_server, phase, &prompt).await;
+            return self
+                .reinject_to_phase_agent_thread(app_server, phase, &prompt)
+                .await;
         }
 
         // 获取当前线程 ID 作为父线程
-        let parent_thread_id = self.chat_widget.thread_id()
-            .ok_or_else(|| color_eyre::eyre::eyre!("没有主线程"))?;
+        let parent_thread_id = match self.chat_widget.thread_id() {
+            Some(id) => id,
+            None => {
+                self.chat_widget.add_error_message(
+                    "❌ 无法创建 Phase Agent：没有主线程\n\
+                    请先发送任意消息建立主会话，然后再运行 /zmission start"
+                        .to_string(),
+                );
+                return Err(color_eyre::eyre::eyre!(
+                    "没有主线程，无法 fork 子线程。请先确保有一个活跃的主对话线程。"
+                ));
+            }
+        };
+
+        self.chat_widget.add_info_message(
+            format!("[DEBUG] 父线程 ID: {parent_thread_id}, 准备 fork..."),
+            None,
+        );
 
         // 配置子线程（Phase Agent）
         let mut fork_config = self.config.clone();
@@ -155,16 +231,46 @@ impl crate::app::App {
             role_prompt = role.role_prompt()
         ));
 
+        // 调试：输出配置信息
+        self.chat_widget.add_info_message(
+            format!(
+                "[DEBUG] fork_config: model={model:?}, cwd={cwd:?}",
+                model = fork_config.model,
+                cwd = fork_config.cwd
+            ),
+            None,
+        );
+
         // Fork 子线程
-        let forked = app_server.fork_thread(fork_config, parent_thread_id).await
-            .map_err(|e| color_eyre::eyre::eyre!("Fork 子线程失败：{e}"))?;
+        self.chat_widget
+            .add_info_message("[DEBUG] 正在调用 fork_thread...".to_string(), None);
+
+        let forked = match app_server.fork_thread(fork_config, parent_thread_id).await {
+            Ok(forked) => forked,
+            Err(e) => {
+                let err_msg = format!(
+                    "Fork 子线程失败：{e}\n\
+                    详细错误：{e:?}\n\
+                    父线程：{parent_thread_id}\n\
+                    请确认主线程是否已在服务器端完全初始化。"
+                );
+                self.chat_widget.add_error_message(err_msg.clone());
+                return Err(color_eyre::eyre::eyre!(err_msg));
+            }
+        };
 
         let child_thread_id = forked.session.thread_id;
 
+        self.chat_widget.add_info_message(
+            format!("[DEBUG] fork_thread 成功，子线程 ID: {child_thread_id}"),
+            None,
+        );
+
         // 存储 thread_id 到 PhaseAgent
         {
-            let mut manager_guard = manager.write().map_err(|_|
-                color_eyre::eyre::eyre!("无法获取管理器锁"))?;
+            let mut manager_guard = manager
+                .write()
+                .map_err(|_| color_eyre::eyre::eyre!("无法获取管理器锁"))?;
             if let Some(agent) = manager_guard.get_agent_mut(phase) {
                 agent.thread_id = Some(child_thread_id);
             }
@@ -172,6 +278,9 @@ impl crate::app::App {
 
         // 创建线程事件通道
         self.ensure_thread_channel(child_thread_id);
+
+        self.chat_widget
+            .add_info_message("[DEBUG] 正在注入提示到子线程...".to_string(), None);
 
         // 注入阶段提示到子线程
         let prompt_item = codex_protocol::models::ResponseItem::Message {
@@ -182,7 +291,9 @@ impl crate::app::App {
             phase: None,
         };
 
-        app_server.thread_inject_items(child_thread_id, vec![prompt_item]).await
+        app_server
+            .thread_inject_items(child_thread_id, vec![prompt_item])
+            .await
             .map_err(|e| color_eyre::eyre::eyre!("注入提示到 Phase Agent 线程失败：{e}"))?;
 
         // 通知用户
@@ -208,31 +319,39 @@ impl crate::app::App {
     ) -> Result<()> {
         use codex_protocol::models::ContentItem;
 
-        let manager = self.phase_agent_manager.as_ref().ok_or_else(||
-            color_eyre::eyre::eyre!("PhaseAgentManager 未初始化"))?;
+        let manager = self
+            .phase_agent_manager
+            .as_ref()
+            .ok_or_else(|| color_eyre::eyre::eyre!("PhaseAgentManager 未初始化"))?;
 
         let thread_id = {
-            let manager_guard = manager.read().map_err(|_|
-                color_eyre::eyre::eyre!("无法获取管理器锁"))?;
+            let manager_guard = manager
+                .read()
+                .map_err(|_| color_eyre::eyre::eyre!("无法获取管理器锁"))?;
 
             let Some(agent) = manager_guard.get_agent(phase) else {
                 return Err(color_eyre::eyre::eyre!("找不到阶段 {phase} 的 PhaseAgent"));
             };
 
-            agent.thread_id.ok_or_else(||
-                color_eyre::eyre::eyre!("PhaseAgent {phase} 没有关联的线程"))?
+            agent
+                .thread_id
+                .ok_or_else(|| color_eyre::eyre::eyre!("PhaseAgent {phase} 没有关联的线程"))?
         };
 
         // 注入新的提示到现有线程
         let prompt_item = codex_protocol::models::ResponseItem::Message {
             id: None,
             role: "user".to_string(),
-            content: vec![ContentItem::InputText { text: prompt.to_string() }],
+            content: vec![ContentItem::InputText {
+                text: prompt.to_string(),
+            }],
             end_turn: None,
             phase: None,
         };
 
-        app_server.thread_inject_items(thread_id, vec![prompt_item]).await
+        app_server
+            .thread_inject_items(thread_id, vec![prompt_item])
+            .await
             .map_err(|e| color_eyre::eyre::eyre!("注入提示失败：{e}"))?;
 
         self.chat_widget.add_info_message(
@@ -306,8 +425,9 @@ impl crate::app::App {
         note: Option<String>,
     ) {
         let Some(manager) = &self.phase_agent_manager else {
-            self.chat_widget
-                .add_error_message("没有活跃的 Mission。请先运行 `/zmission start <目标>`".to_string());
+            self.chat_widget.add_error_message(
+                "没有活跃的 Mission。请先运行 `/zmission start <目标>`".to_string(),
+            );
             return;
         };
 
@@ -333,13 +453,12 @@ impl crate::app::App {
                 );
                 self.chat_widget.add_info_message(msg, None);
 
+                // 设置待 fork 阶段，等待主线程空闲后 fork
+                manager_guard.set_pending_spawn_phase(next_phase);
                 drop(manager_guard);
 
-                // 创建新阶段的 Phase Agent 子线程
-                if let Err(err) = self.spawn_phase_agent_thread(app_server, next_phase).await {
-                    self.chat_widget
-                        .add_error_message(format!("创建下一阶段 Phase Agent 失败：{err}"));
-                }
+                // 立即尝试 fork（如果主线程空闲）
+                self.try_spawn_pending_phase_agent(app_server).await;
 
                 self.show_phase_confirmation();
             }
@@ -429,7 +548,8 @@ impl crate::app::App {
             self.app_event_tx.clone(),
         );
 
-        self.chat_widget.open_phase_confirmation_view(Box::new(view));
+        self.chat_widget
+            .open_phase_confirmation_view(Box::new(view));
     }
 
     /// 处理阶段确认结果（由确认视图回调）。
@@ -440,15 +560,20 @@ impl crate::app::App {
             UserAction::Continue => {
                 // Continue 操作已由 confirmation_view 发送 AppEvent 处理
                 // 这里可以添加额外的 UI 反馈
-                self.chat_widget.add_info_message(
-                    "正在推进到下一阶段...".to_string(),
-                    None,
-                );
+                self.chat_widget
+                    .add_info_message("正在推进到下一阶段...".to_string(), None);
             }
             UserAction::Supplement(content) => {
                 // 补充内容已记录，需要通过子线程重新注入
                 self.chat_widget.add_info_message(
-                    format!("📝 补充内容已记录：{}...", if content.len() > 30 { &content[..30] } else { &content }),
+                    format!(
+                        "📝 补充内容已记录：{}...",
+                        if content.len() > 30 {
+                            &content[..30]
+                        } else {
+                            &content
+                        }
+                    ),
                     None,
                 );
                 // 实际的补充内容注入通过 AppEvent 由 confirmation_view 发送 Continue 命令触发
@@ -459,8 +584,10 @@ impl crate::app::App {
     /// 打开 Phase Agent 视图界面。
     pub(crate) fn open_phase_agent_view(&mut self) {
         let Some(manager) = &self.phase_agent_manager else {
-            self.chat_widget
-                .add_info_message("没有活跃的 Mission。请先运行 `/zmission start <目标>`".to_string(), None);
+            self.chat_widget.add_info_message(
+                "没有活跃的 Mission。请先运行 `/zmission start <目标>`".to_string(),
+                None,
+            );
             return;
         };
 
@@ -491,8 +618,11 @@ impl crate::app::App {
                 chat_widget.add_info_message(msg, None);
 
                 if let Some(definition) = step.definition {
-                    let prompt =
-                        format_phase_analysis_prompt_legacy(&step.state.goal, &definition, &planner);
+                    let prompt = format_phase_analysis_prompt_legacy(
+                        &step.state.goal,
+                        &definition,
+                        &planner,
+                    );
                     chat_widget.mission_phase_running = true;
                     chat_widget.submit_user_message_as_plain_user_turn(
                         crate::chatwidget::UserMessage::from(prompt.as_str()),

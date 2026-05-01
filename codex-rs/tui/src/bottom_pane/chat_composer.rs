@@ -2689,10 +2689,7 @@ impl ChatComposer {
         if !self.is_task_running || available {
             return false;
         }
-        let message = format!(
-            "'/{}' is disabled while a task is in progress.",
-            cmd.command()
-        );
+        let message = format!("'/{}' 在任务进行时被禁用.", cmd.command());
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::new_error_event(message),
         )));
@@ -6992,7 +6989,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.contains("'/zteam' is disabled while a task is in progress"));
+                assert!(message.contains("'/zteam' 在任务进行时被禁用"));
                 found_error = true;
                 break;
             }

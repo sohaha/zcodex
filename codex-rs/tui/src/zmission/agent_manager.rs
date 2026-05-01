@@ -2,11 +2,11 @@
 //!
 //! 负责管理所有阶段子代理的生命周期、状态转换和编排。
 
-use super::phase_agent::PhaseAgentMessage;
-use super::phase_agent::PhaseAgentMessageSender;
 use super::PhaseAgent;
 use super::PhaseAgentId;
 use super::PhaseAgentState;
+use super::phase_agent::PhaseAgentMessage;
+use super::phase_agent::PhaseAgentMessageSender;
 use codex_mission::MissionPhase;
 use codex_mission::MissionPlanner;
 use codex_mission::MissionState;
@@ -29,12 +29,17 @@ pub(crate) struct PhaseAgentManager {
     workspace: PathBuf,
     /// 是否已启动
     started: bool,
+    /// 等待主线程空闲后 fork 的阶段
+    pending_spawn_phase: Option<MissionPhase>,
 }
 
 impl PhaseAgentManager {
     pub(crate) fn new(workspace: PathBuf) -> Self {
         // 为每个阶段创建子代理（按顺序）
-        let agents: Vec<_> = MissionPhase::ALL.iter().map(|&p| PhaseAgent::new(p)).collect();
+        let agents: Vec<_> = MissionPhase::ALL
+            .iter()
+            .map(|&p| PhaseAgent::new(p))
+            .collect();
 
         Self {
             agents,
@@ -44,6 +49,7 @@ impl PhaseAgentManager {
             planner: None,
             workspace,
             started: false,
+            pending_spawn_phase: None,
         }
     }
 
@@ -71,7 +77,10 @@ impl PhaseAgentManager {
             agent.messages.push_back(PhaseAgentMessage {
                 timestamp: std::time::Instant::now(),
                 sender: PhaseAgentMessageSender::Orchestrator,
-                content: format!("Mission 已启动，进入 {} 阶段", super::phase_display_name(phase)),
+                content: format!(
+                    "Mission 已启动，进入 {} 阶段",
+                    super::phase_display_name(phase)
+                ),
             });
 
             return Ok(PhaseAgentId::new(phase));
@@ -102,7 +111,8 @@ impl PhaseAgentManager {
 
     /// 获取当前激活的子代理。
     pub(crate) fn active_agent(&self) -> Option<&PhaseAgent> {
-        self.active_agent.and_then(|p| self.agents.get(Self::agent_index(p)))
+        self.active_agent
+            .and_then(|p| self.agents.get(Self::agent_index(p)))
     }
 
     /// 获取当前激活的子代理（可变）。
@@ -158,8 +168,14 @@ impl PhaseAgentManager {
     }
 
     /// 用户确认继续，推进到下一阶段。
-    pub(crate) fn confirm_and_advance(&mut self, note: Option<String>) -> anyhow::Result<Option<PhaseAgentId>> {
-        let planner = self.planner.as_ref().ok_or_else(|| anyhow::anyhow!("Mission 未启动"))?;
+    pub(crate) fn confirm_and_advance(
+        &mut self,
+        note: Option<String>,
+    ) -> anyhow::Result<Option<PhaseAgentId>> {
+        let planner = self
+            .planner
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Mission 未启动"))?;
 
         // 确保当前阶段产物存在
         if let Some(phase) = self.current_phase() {
@@ -195,9 +211,7 @@ impl PhaseAgentManager {
                 thread_id: None,
             };
 
-            let prev_phase_name = prev_phase
-                .map(super::phase_display_name)
-                .unwrap_or("当前");
+            let prev_phase_name = prev_phase.map(super::phase_display_name).unwrap_or("当前");
 
             next_agent.messages.push_back(PhaseAgentMessage {
                 timestamp: std::time::Instant::now(),
@@ -252,7 +266,11 @@ impl PhaseAgentManager {
     }
 
     /// 添加消息到当前子代理。
-    pub(crate) fn add_message_to_active(&mut self, sender: PhaseAgentMessageSender, content: String) {
+    pub(crate) fn add_message_to_active(
+        &mut self,
+        sender: PhaseAgentMessageSender,
+        content: String,
+    ) {
         if let Some(phase) = self.active_agent {
             let idx = Self::agent_index(phase);
             if let Some(agent) = self.agents.get_mut(idx) {
@@ -267,9 +285,7 @@ impl PhaseAgentManager {
 
     /// 检查是否所有阶段都已完成。
     pub(crate) fn is_all_phases_complete(&self) -> bool {
-        self.agents
-            .iter()
-            .all(|agent| agent.state.is_completed())
+        self.agents.iter().all(|agent| agent.state.is_completed())
     }
 
     /// 获取已完成阶段数量。
@@ -343,6 +359,16 @@ impl PhaseAgentManager {
         } else {
             false
         }
+    }
+
+    /// 设置等待 fork 的阶段（用于延迟 fork 机制）。
+    pub(crate) fn set_pending_spawn_phase(&mut self, phase: MissionPhase) {
+        self.pending_spawn_phase = Some(phase);
+    }
+
+    /// 获取并清除等待 fork 的阶段。
+    pub(crate) fn take_pending_spawn_phase(&mut self) -> Option<MissionPhase> {
+        self.pending_spawn_phase.take()
     }
 }
 

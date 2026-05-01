@@ -320,6 +320,9 @@ impl ChatWidget {
             SlashCommand::Copy => {
                 self.copy_last_agent_markdown();
             }
+            SlashCommand::Buddy => {
+                self.open_buddy_menu();
+            }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
@@ -370,9 +373,9 @@ impl ChatWidget {
             SlashCommand::Theme => {
                 self.open_theme_picker();
             }
-            SlashCommand::Buddy => {
-                self.show_buddy_help();
-            }
+            // SlashCommand::Buddy => {
+            //     self.show_buddy_help();
+            // }
             SlashCommand::Ps => {
                 self.add_ps_output();
             }
