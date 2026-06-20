@@ -212,18 +212,12 @@ package_archive_digest() {
   asset="$1"
   manifest_path="$2"
 
-  digest="$(tr -d '\r' < "$manifest_path" | awk -v asset="$asset" '
-    $2 == asset && $1 ~ /^[0-9a-fA-F]{64}$/ {
-      print tolower($1)
-      found = 1
-      exit
-    }
-    END {
-      if (!found) {
-        exit 1
-      }
-    }
-  ' 2>/dev/null || true)"
+  digest="$(tr -d '\r' < "$manifest_path" | while read -r hash name; do
+    case "$hash" in
+      *[!0-9a-fA-F]*) continue ;;
+    esac
+    [ "$name" = "$asset" ] && { printf '%s' "$hash"; break; }
+  done)"
 
   if [ -z "$digest" ]; then
     echo "Could not find SHA-256 digest for $asset in codex-package_SHA256SUMS." >&2
