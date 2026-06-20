@@ -212,7 +212,7 @@ package_archive_digest() {
   asset="$1"
   manifest_path="$2"
 
-  digest="$(awk -v asset="$asset" '
+  digest="$(tr -d '\r' < "$manifest_path" | awk -v asset="$asset" '
     $2 == asset && $1 ~ /^[0-9a-fA-F]{64}$/ {
       print tolower($1)
       found = 1
@@ -223,7 +223,7 @@ package_archive_digest() {
         exit 1
       }
     }
-  ' "$manifest_path" 2>/dev/null || true)"
+  ' 2>/dev/null || true)"
 
   if [ -z "$digest" ]; then
     echo "Could not find SHA-256 digest for $asset in codex-package_SHA256SUMS." >&2
